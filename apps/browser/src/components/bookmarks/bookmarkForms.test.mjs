@@ -154,15 +154,16 @@ test("Bookmark Tabs into a new folder sends the folder, then every tab in one ba
   const first = S().windows[windowId].activeTabIds.default;
   S().navigate(first, "https://one.example/");
   const second = S().newTab(windowId, { url: "https://two.example/" });
+  const third = S().newTab(windowId, { url: "https://three.example/" });
   const shell = (await import("../../test-native/shell.ts")).shellNativeModules.SolaraShell;
   const prompt = shell.prompt;
   shell.prompt = () => Promise.resolve("Saved");
   try {
-    await bookmarkTabs(windowId, [first, second], "new");
+    await bookmarkTabs(windowId, [first, second, third], "new");
   } finally {
     shell.prompt = prompt;
   }
-  assert.deepEqual(owner.submitted.map((batch) => batch.map((m) => m.method)), [["addBookmarkFolder"], ["addBookmark", "addBookmark"]]);
+  assert.deepEqual(owner.submitted.map((batch) => batch.map((m) => m.method)), [["addBookmarkFolder"], ["addBookmark", "addBookmark", "addBookmark"]]);
   assert.ok(owner.submitted[1].every((m) => m.args[0].parentId === "n1"));
 });
 
@@ -241,4 +242,20 @@ test("while a form's save is pending, Cancel and a second Save are ignored", asy
   await save;
   await gate(false, () => events.push("cancel after"));
   assert.deepEqual(events, ["saved", "cancel after"]);
+});
+
+test("Bookmark Tabs passes a native folder id through before its JS replica arrives", async () => {
+  const owner = own();
+  const first = S().windows[windowId].activeTabIds.default;
+  S().navigate(first, "https://one.example/");
+  const ids = [first, S().newTab(windowId, { url: "https://two.example/" }), S().newTab(windowId, { url: "https://three.example/" })];
+  const target = "native-only-folder";
+  owner.document.nodes[target] = { ...folder(target, "Arrived in Swift"), parentId: owner.bar };
+  owner.document.nodes[owner.bar].children.push(target);
+  owner.revision += 1;
+  assert.equal(S().bookmarks.nodes[target], undefined);
+  await bookmarkTabs(windowId, ids, target);
+  assert.deepEqual(owner.submitted.map((batch) => batch.map((mutation) => mutation.method)), [["addBookmark", "addBookmark", "addBookmark"]]);
+  assert.ok(owner.submitted[0].every((mutation) => mutation.args[0].parentId === target));
+  assert.deepEqual(owner.document.nodes[target].children.map((id) => owner.document.nodes[id].url), ["https://one.example/", "https://two.example/", "https://three.example/"]);
 });

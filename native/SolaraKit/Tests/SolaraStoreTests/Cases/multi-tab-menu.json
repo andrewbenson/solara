@@ -1,0 +1,4595 @@
+{
+  "cases": [
+    {
+      "name": "ordinary selection",
+      "state": {
+        "profiles": {
+          "default": {
+            "id": "default",
+            "name": "Personal",
+            "color": "plum",
+            "icon": null,
+            "createdAt": 0
+          },
+          "work": {
+            "id": "work",
+            "name": "Work",
+            "color": "blue",
+            "icon": null,
+            "createdAt": 0
+          }
+        },
+        "profileOrder": [
+          "default",
+          "work"
+        ],
+        "windows": {
+          "w1": {
+            "id": "w1",
+            "profileId": "default",
+            "incognito": false,
+            "tabIds": [
+              "a",
+              "b",
+              "c"
+            ],
+            "activeTabIds": {
+              "default": "b"
+            },
+            "sidebarOpen": true,
+            "frame": [
+              80,
+              80,
+              1100,
+              760
+            ]
+          }
+        },
+        "windowOrder": [
+          "w1"
+        ],
+        "tabs": {
+          "a": {
+            "id": "a",
+            "windowId": "w1",
+            "profileId": "default",
+            "url": "https://a.example.com/",
+            "title": "A",
+            "favicon": null,
+            "pinned": false,
+            "muted": false,
+            "zoom": 1,
+            "customTitle": null,
+            "customIcon": null,
+            "pinnedUrl": null,
+            "createdAt": 0,
+            "lastActiveAt": 0
+          },
+          "b": {
+            "id": "b",
+            "windowId": "w1",
+            "profileId": "default",
+            "url": "https://b.example.com/",
+            "title": "B",
+            "favicon": null,
+            "pinned": false,
+            "muted": false,
+            "zoom": 1,
+            "customTitle": null,
+            "customIcon": null,
+            "pinnedUrl": null,
+            "createdAt": 0,
+            "lastActiveAt": 0
+          },
+          "c": {
+            "id": "c",
+            "windowId": "w1",
+            "profileId": "default",
+            "url": "https://c.example.com/",
+            "title": "C",
+            "favicon": null,
+            "pinned": false,
+            "muted": false,
+            "zoom": 1,
+            "customTitle": null,
+            "customIcon": null,
+            "pinnedUrl": null,
+            "createdAt": 0,
+            "lastActiveAt": 0
+          }
+        },
+        "groups": {},
+        "splits": {},
+        "selection": {
+          "w1": [
+            "a",
+            "b",
+            "c"
+          ]
+        },
+        "settings": {
+          "tabLayout": "sidebar",
+          "pageEngine": "chromium",
+          "protectedVideoInWebKit": false
+        },
+        "ui": {
+          "focusedWindowId": "w1",
+          "focusOrder": [
+            "w1"
+          ],
+          "lastProfileId": "default"
+        }
+      },
+      "windowId": "w1",
+      "ids": [
+        "a",
+        "b",
+        "c"
+      ],
+      "folders": [
+        {
+          "id": "folder:bar",
+          "title": "Bookmarks Bar",
+          "symbol": "menubar.rectangle"
+        },
+        {
+          "id": "folder:other@default",
+          "title": "Other Bookmarks",
+          "symbol": "folder"
+        },
+        {
+          "id": "folder:f2",
+          "title": "Zebra",
+          "symbol": "folder"
+        },
+        {
+          "id": "folder:f1",
+          "title": "Alpha",
+          "symbol": "folder"
+        },
+        {
+          "separator": true
+        },
+        {
+          "id": "folder:new",
+          "title": "New Folder…",
+          "symbol": "folder.badge.plus"
+        }
+      ],
+      "items": [
+        {
+          "id": "pin",
+          "title": "Move 3 Tabs to Top Apps",
+          "symbol": "pin",
+          "enabled": true,
+          "checked": false
+        },
+        {
+          "id": "pinRows",
+          "title": "Move 3 Tabs to Pinned in Personal",
+          "symbol": "list.bullet",
+          "enabled": true,
+          "checked": false
+        },
+        {
+          "id": "duplicate",
+          "title": "Duplicate 3 Tabs",
+          "symbol": "plus.square.on.square",
+          "enabled": true,
+          "checked": false
+        },
+        {
+          "id": "newGroup",
+          "title": "New Group with 3 Tabs",
+          "symbol": "plus.rectangle.on.rectangle",
+          "enabled": true,
+          "checked": false
+        },
+        {
+          "separator": true
+        },
+        {
+          "id": "copy",
+          "title": "Copy 3 URLs",
+          "symbol": "link",
+          "enabled": true,
+          "checked": false
+        },
+        {
+          "id": "copyMd",
+          "title": "Copy 3 URLs as Markdown",
+          "symbol": "text.badge.checkmark",
+          "enabled": true,
+          "checked": false
+        },
+        {
+          "id": "bar",
+          "title": "Add 3 Tabs to Bookmarks Bar",
+          "symbol": "bookmark",
+          "enabled": true,
+          "checked": false
+        },
+        {
+          "id": "bookmarkTo",
+          "title": "Add 3 Tabs to Bookmarks Folder",
+          "symbol": "folder",
+          "enabled": true,
+          "checked": false,
+          "children": [
+            {
+              "enabled": true,
+              "checked": false,
+              "id": "folder:bar",
+              "title": "Bookmarks Bar",
+              "symbol": "menubar.rectangle"
+            },
+            {
+              "enabled": true,
+              "checked": false,
+              "id": "folder:other@default",
+              "title": "Other Bookmarks",
+              "symbol": "folder"
+            },
+            {
+              "enabled": true,
+              "checked": false,
+              "id": "folder:f2",
+              "title": "Zebra",
+              "symbol": "folder"
+            },
+            {
+              "enabled": true,
+              "checked": false,
+              "id": "folder:f1",
+              "title": "Alpha",
+              "symbol": "folder"
+            },
+            {
+              "separator": true
+            },
+            {
+              "enabled": true,
+              "checked": false,
+              "id": "folder:new",
+              "title": "New Folder…",
+              "symbol": "folder.badge.plus"
+            }
+          ]
+        },
+        {
+          "separator": true
+        },
+        {
+          "id": "moveToWindow",
+          "title": "Move to Window",
+          "symbol": "macwindow",
+          "enabled": true,
+          "checked": false,
+          "children": [
+            {
+              "id": "window:new",
+              "title": "New Window",
+              "enabled": true,
+              "checked": false
+            }
+          ]
+        },
+        {
+          "separator": true
+        },
+        {
+          "id": "close",
+          "title": "Close 3 Tabs",
+          "symbol": "xmark",
+          "enabled": true,
+          "checked": false
+        }
+      ],
+      "commands": {
+        "pin": {
+          "name": "tabMenuSelection",
+          "args": [
+            "w1",
+            [
+              "a",
+              "b",
+              "c"
+            ],
+            "pin"
+          ]
+        },
+        "pinRows": {
+          "name": "tabMenuSelection",
+          "args": [
+            "w1",
+            [
+              "a",
+              "b",
+              "c"
+            ],
+            "pinRows"
+          ]
+        },
+        "duplicate": {
+          "name": "tabMenuSelection",
+          "args": [
+            "w1",
+            [
+              "a",
+              "b",
+              "c"
+            ],
+            "duplicate"
+          ]
+        },
+        "newGroup": {
+          "name": "tabMenuSelection",
+          "args": [
+            "w1",
+            [
+              "a",
+              "b",
+              "c"
+            ],
+            "newGroup"
+          ]
+        },
+        "group:g": null,
+        "ungroup": {
+          "name": "tabMenuSelection",
+          "args": [
+            "w1",
+            [
+              "a",
+              "b",
+              "c"
+            ],
+            "ungroup"
+          ]
+        },
+        "window:w2": null,
+        "window:new": {
+          "name": "tabMenuSelection",
+          "args": [
+            "w1",
+            [
+              "a",
+              "b",
+              "c"
+            ],
+            "window:new"
+          ]
+        },
+        "copy": null,
+        "copyMd": null,
+        "bar": null,
+        "folder:f2": null,
+        "folder:new": null,
+        "close": null,
+        "unknown": null
+      }
+    },
+    {
+      "name": "all pinned tiles",
+      "state": {
+        "profiles": {
+          "default": {
+            "id": "default",
+            "name": "Personal",
+            "color": "plum",
+            "icon": null,
+            "createdAt": 0
+          },
+          "work": {
+            "id": "work",
+            "name": "Work",
+            "color": "blue",
+            "icon": null,
+            "createdAt": 0
+          }
+        },
+        "profileOrder": [
+          "default",
+          "work"
+        ],
+        "windows": {
+          "w1": {
+            "id": "w1",
+            "profileId": "default",
+            "incognito": false,
+            "tabIds": [
+              "a",
+              "b",
+              "c"
+            ],
+            "activeTabIds": {
+              "default": "b"
+            },
+            "sidebarOpen": true,
+            "frame": [
+              80,
+              80,
+              1100,
+              760
+            ]
+          }
+        },
+        "windowOrder": [
+          "w1"
+        ],
+        "tabs": {
+          "a": {
+            "id": "a",
+            "windowId": "w1",
+            "profileId": "default",
+            "url": "https://a.example.com/",
+            "title": "A",
+            "favicon": null,
+            "pinned": true,
+            "muted": false,
+            "zoom": 1,
+            "customTitle": null,
+            "customIcon": null,
+            "pinnedUrl": "https://a.example.com/",
+            "createdAt": 0,
+            "lastActiveAt": 0,
+            "pinnedAsRow": false
+          },
+          "b": {
+            "id": "b",
+            "windowId": "w1",
+            "profileId": "default",
+            "url": "https://b.example.com/",
+            "title": "B",
+            "favicon": null,
+            "pinned": true,
+            "muted": false,
+            "zoom": 1,
+            "customTitle": null,
+            "customIcon": null,
+            "pinnedUrl": "https://b.example.com/",
+            "createdAt": 0,
+            "lastActiveAt": 0,
+            "pinnedAsRow": false
+          },
+          "c": {
+            "id": "c",
+            "windowId": "w1",
+            "profileId": "default",
+            "url": "https://c.example.com/",
+            "title": "C",
+            "favicon": null,
+            "pinned": true,
+            "muted": false,
+            "zoom": 1,
+            "customTitle": null,
+            "customIcon": null,
+            "pinnedUrl": "https://c.example.com/",
+            "createdAt": 0,
+            "lastActiveAt": 0,
+            "pinnedAsRow": false
+          }
+        },
+        "groups": {},
+        "splits": {},
+        "selection": {
+          "w1": [
+            "a",
+            "b",
+            "c"
+          ]
+        },
+        "settings": {
+          "tabLayout": "sidebar",
+          "pageEngine": "chromium",
+          "protectedVideoInWebKit": false
+        },
+        "ui": {
+          "focusedWindowId": "w1",
+          "focusOrder": [
+            "w1"
+          ],
+          "lastProfileId": "default"
+        }
+      },
+      "windowId": "w1",
+      "ids": [
+        "a",
+        "b",
+        "c"
+      ],
+      "folders": [
+        {
+          "id": "folder:bar",
+          "title": "Bookmarks Bar",
+          "symbol": "menubar.rectangle"
+        },
+        {
+          "id": "folder:other@default",
+          "title": "Other Bookmarks",
+          "symbol": "folder"
+        },
+        {
+          "id": "folder:f2",
+          "title": "Zebra",
+          "symbol": "folder"
+        },
+        {
+          "id": "folder:f1",
+          "title": "Alpha",
+          "symbol": "folder"
+        },
+        {
+          "separator": true
+        },
+        {
+          "id": "folder:new",
+          "title": "New Folder…",
+          "symbol": "folder.badge.plus"
+        }
+      ],
+      "items": [
+        {
+          "id": "pin",
+          "title": "Unpin 3 Tabs",
+          "symbol": "pin.slash",
+          "enabled": true,
+          "checked": false
+        },
+        {
+          "id": "pinRows",
+          "title": "Move 3 Tabs to Pinned in Personal",
+          "symbol": "list.bullet",
+          "enabled": true,
+          "checked": false
+        },
+        {
+          "id": "duplicate",
+          "title": "Duplicate 3 Tabs",
+          "symbol": "plus.square.on.square",
+          "enabled": true,
+          "checked": false
+        },
+        {
+          "id": "newGroup",
+          "title": "New Group with 3 Tabs",
+          "symbol": "plus.rectangle.on.rectangle",
+          "enabled": false,
+          "checked": false
+        },
+        {
+          "separator": true
+        },
+        {
+          "id": "copy",
+          "title": "Copy 3 URLs",
+          "symbol": "link",
+          "enabled": true,
+          "checked": false
+        },
+        {
+          "id": "copyMd",
+          "title": "Copy 3 URLs as Markdown",
+          "symbol": "text.badge.checkmark",
+          "enabled": true,
+          "checked": false
+        },
+        {
+          "id": "bar",
+          "title": "Add 3 Tabs to Bookmarks Bar",
+          "symbol": "bookmark",
+          "enabled": true,
+          "checked": false
+        },
+        {
+          "id": "bookmarkTo",
+          "title": "Add 3 Tabs to Bookmarks Folder",
+          "symbol": "folder",
+          "enabled": true,
+          "checked": false,
+          "children": [
+            {
+              "enabled": true,
+              "checked": false,
+              "id": "folder:bar",
+              "title": "Bookmarks Bar",
+              "symbol": "menubar.rectangle"
+            },
+            {
+              "enabled": true,
+              "checked": false,
+              "id": "folder:other@default",
+              "title": "Other Bookmarks",
+              "symbol": "folder"
+            },
+            {
+              "enabled": true,
+              "checked": false,
+              "id": "folder:f2",
+              "title": "Zebra",
+              "symbol": "folder"
+            },
+            {
+              "enabled": true,
+              "checked": false,
+              "id": "folder:f1",
+              "title": "Alpha",
+              "symbol": "folder"
+            },
+            {
+              "separator": true
+            },
+            {
+              "enabled": true,
+              "checked": false,
+              "id": "folder:new",
+              "title": "New Folder…",
+              "symbol": "folder.badge.plus"
+            }
+          ]
+        },
+        {
+          "separator": true
+        },
+        {
+          "id": "moveToWindow",
+          "title": "Move to Window",
+          "symbol": "macwindow",
+          "enabled": true,
+          "checked": false,
+          "children": [
+            {
+              "id": "window:new",
+              "title": "New Window",
+              "enabled": true,
+              "checked": false
+            }
+          ]
+        },
+        {
+          "separator": true
+        },
+        {
+          "id": "close",
+          "title": "Close 3 Tabs",
+          "symbol": "xmark",
+          "enabled": true,
+          "checked": false
+        }
+      ],
+      "commands": {
+        "pin": {
+          "name": "tabMenuSelection",
+          "args": [
+            "w1",
+            [
+              "a",
+              "b",
+              "c"
+            ],
+            "pin"
+          ]
+        },
+        "pinRows": {
+          "name": "tabMenuSelection",
+          "args": [
+            "w1",
+            [
+              "a",
+              "b",
+              "c"
+            ],
+            "pinRows"
+          ]
+        },
+        "duplicate": {
+          "name": "tabMenuSelection",
+          "args": [
+            "w1",
+            [
+              "a",
+              "b",
+              "c"
+            ],
+            "duplicate"
+          ]
+        },
+        "newGroup": null,
+        "group:g": null,
+        "ungroup": {
+          "name": "tabMenuSelection",
+          "args": [
+            "w1",
+            [
+              "a",
+              "b",
+              "c"
+            ],
+            "ungroup"
+          ]
+        },
+        "window:w2": null,
+        "window:new": {
+          "name": "tabMenuSelection",
+          "args": [
+            "w1",
+            [
+              "a",
+              "b",
+              "c"
+            ],
+            "window:new"
+          ]
+        },
+        "copy": null,
+        "copyMd": null,
+        "bar": null,
+        "folder:f2": null,
+        "folder:new": null,
+        "close": null,
+        "unknown": null
+      }
+    },
+    {
+      "name": "mixed pinned and open",
+      "state": {
+        "profiles": {
+          "default": {
+            "id": "default",
+            "name": "Personal",
+            "color": "plum",
+            "icon": null,
+            "createdAt": 0
+          },
+          "work": {
+            "id": "work",
+            "name": "Work",
+            "color": "blue",
+            "icon": null,
+            "createdAt": 0
+          }
+        },
+        "profileOrder": [
+          "default",
+          "work"
+        ],
+        "windows": {
+          "w1": {
+            "id": "w1",
+            "profileId": "default",
+            "incognito": false,
+            "tabIds": [
+              "a",
+              "b",
+              "c"
+            ],
+            "activeTabIds": {
+              "default": "b"
+            },
+            "sidebarOpen": true,
+            "frame": [
+              80,
+              80,
+              1100,
+              760
+            ]
+          }
+        },
+        "windowOrder": [
+          "w1"
+        ],
+        "tabs": {
+          "a": {
+            "id": "a",
+            "windowId": "w1",
+            "profileId": "default",
+            "url": "https://a.example.com/",
+            "title": "A",
+            "favicon": null,
+            "pinned": true,
+            "muted": false,
+            "zoom": 1,
+            "customTitle": null,
+            "customIcon": null,
+            "pinnedUrl": "https://a.example.com/",
+            "createdAt": 0,
+            "lastActiveAt": 0
+          },
+          "b": {
+            "id": "b",
+            "windowId": "w1",
+            "profileId": "default",
+            "url": "https://b.example.com/",
+            "title": "B",
+            "favicon": null,
+            "pinned": false,
+            "muted": false,
+            "zoom": 1,
+            "customTitle": null,
+            "customIcon": null,
+            "pinnedUrl": null,
+            "createdAt": 0,
+            "lastActiveAt": 0
+          },
+          "c": {
+            "id": "c",
+            "windowId": "w1",
+            "profileId": "default",
+            "url": "https://c.example.com/",
+            "title": "C",
+            "favicon": null,
+            "pinned": false,
+            "muted": false,
+            "zoom": 1,
+            "customTitle": null,
+            "customIcon": null,
+            "pinnedUrl": null,
+            "createdAt": 0,
+            "lastActiveAt": 0
+          }
+        },
+        "groups": {},
+        "splits": {},
+        "selection": {
+          "w1": [
+            "a",
+            "b",
+            "c"
+          ]
+        },
+        "settings": {
+          "tabLayout": "sidebar",
+          "pageEngine": "chromium",
+          "protectedVideoInWebKit": false
+        },
+        "ui": {
+          "focusedWindowId": "w1",
+          "focusOrder": [
+            "w1"
+          ],
+          "lastProfileId": "default"
+        }
+      },
+      "windowId": "w1",
+      "ids": [
+        "a",
+        "b",
+        "c"
+      ],
+      "folders": [
+        {
+          "id": "folder:bar",
+          "title": "Bookmarks Bar",
+          "symbol": "menubar.rectangle"
+        },
+        {
+          "id": "folder:other@default",
+          "title": "Other Bookmarks",
+          "symbol": "folder"
+        },
+        {
+          "id": "folder:f2",
+          "title": "Zebra",
+          "symbol": "folder"
+        },
+        {
+          "id": "folder:f1",
+          "title": "Alpha",
+          "symbol": "folder"
+        },
+        {
+          "separator": true
+        },
+        {
+          "id": "folder:new",
+          "title": "New Folder…",
+          "symbol": "folder.badge.plus"
+        }
+      ],
+      "items": [
+        {
+          "id": "pin",
+          "title": "Move 3 Tabs to Top Apps",
+          "symbol": "pin",
+          "enabled": true,
+          "checked": false
+        },
+        {
+          "id": "pinRows",
+          "title": "Move 3 Tabs to Pinned in Personal",
+          "symbol": "list.bullet",
+          "enabled": true,
+          "checked": false
+        },
+        {
+          "id": "duplicate",
+          "title": "Duplicate 3 Tabs",
+          "symbol": "plus.square.on.square",
+          "enabled": true,
+          "checked": false
+        },
+        {
+          "id": "newGroup",
+          "title": "New Group with 3 Tabs",
+          "symbol": "plus.rectangle.on.rectangle",
+          "enabled": true,
+          "checked": false
+        },
+        {
+          "separator": true
+        },
+        {
+          "id": "copy",
+          "title": "Copy 3 URLs",
+          "symbol": "link",
+          "enabled": true,
+          "checked": false
+        },
+        {
+          "id": "copyMd",
+          "title": "Copy 3 URLs as Markdown",
+          "symbol": "text.badge.checkmark",
+          "enabled": true,
+          "checked": false
+        },
+        {
+          "id": "bar",
+          "title": "Add 3 Tabs to Bookmarks Bar",
+          "symbol": "bookmark",
+          "enabled": true,
+          "checked": false
+        },
+        {
+          "id": "bookmarkTo",
+          "title": "Add 3 Tabs to Bookmarks Folder",
+          "symbol": "folder",
+          "enabled": true,
+          "checked": false,
+          "children": [
+            {
+              "enabled": true,
+              "checked": false,
+              "id": "folder:bar",
+              "title": "Bookmarks Bar",
+              "symbol": "menubar.rectangle"
+            },
+            {
+              "enabled": true,
+              "checked": false,
+              "id": "folder:other@default",
+              "title": "Other Bookmarks",
+              "symbol": "folder"
+            },
+            {
+              "enabled": true,
+              "checked": false,
+              "id": "folder:f2",
+              "title": "Zebra",
+              "symbol": "folder"
+            },
+            {
+              "enabled": true,
+              "checked": false,
+              "id": "folder:f1",
+              "title": "Alpha",
+              "symbol": "folder"
+            },
+            {
+              "separator": true
+            },
+            {
+              "enabled": true,
+              "checked": false,
+              "id": "folder:new",
+              "title": "New Folder…",
+              "symbol": "folder.badge.plus"
+            }
+          ]
+        },
+        {
+          "separator": true
+        },
+        {
+          "id": "moveToWindow",
+          "title": "Move to Window",
+          "symbol": "macwindow",
+          "enabled": true,
+          "checked": false,
+          "children": [
+            {
+              "id": "window:new",
+              "title": "New Window",
+              "enabled": true,
+              "checked": false
+            }
+          ]
+        },
+        {
+          "separator": true
+        },
+        {
+          "id": "close",
+          "title": "Close 3 Tabs",
+          "symbol": "xmark",
+          "enabled": true,
+          "checked": false
+        }
+      ],
+      "commands": {
+        "pin": {
+          "name": "tabMenuSelection",
+          "args": [
+            "w1",
+            [
+              "a",
+              "b",
+              "c"
+            ],
+            "pin"
+          ]
+        },
+        "pinRows": {
+          "name": "tabMenuSelection",
+          "args": [
+            "w1",
+            [
+              "a",
+              "b",
+              "c"
+            ],
+            "pinRows"
+          ]
+        },
+        "duplicate": {
+          "name": "tabMenuSelection",
+          "args": [
+            "w1",
+            [
+              "a",
+              "b",
+              "c"
+            ],
+            "duplicate"
+          ]
+        },
+        "newGroup": {
+          "name": "tabMenuSelection",
+          "args": [
+            "w1",
+            [
+              "a",
+              "b",
+              "c"
+            ],
+            "newGroup"
+          ]
+        },
+        "group:g": null,
+        "ungroup": {
+          "name": "tabMenuSelection",
+          "args": [
+            "w1",
+            [
+              "a",
+              "b",
+              "c"
+            ],
+            "ungroup"
+          ]
+        },
+        "window:w2": null,
+        "window:new": {
+          "name": "tabMenuSelection",
+          "args": [
+            "w1",
+            [
+              "a",
+              "b",
+              "c"
+            ],
+            "window:new"
+          ]
+        },
+        "copy": null,
+        "copyMd": null,
+        "bar": null,
+        "folder:f2": null,
+        "folder:new": null,
+        "close": null,
+        "unknown": null
+      }
+    },
+    {
+      "name": "all pinned rows",
+      "state": {
+        "profiles": {
+          "default": {
+            "id": "default",
+            "name": "Personal",
+            "color": "plum",
+            "icon": null,
+            "createdAt": 0
+          },
+          "work": {
+            "id": "work",
+            "name": "Work",
+            "color": "blue",
+            "icon": null,
+            "createdAt": 0
+          }
+        },
+        "profileOrder": [
+          "default",
+          "work"
+        ],
+        "windows": {
+          "w1": {
+            "id": "w1",
+            "profileId": "default",
+            "incognito": false,
+            "tabIds": [
+              "a",
+              "b",
+              "c"
+            ],
+            "activeTabIds": {
+              "default": "b"
+            },
+            "sidebarOpen": true,
+            "frame": [
+              80,
+              80,
+              1100,
+              760
+            ]
+          }
+        },
+        "windowOrder": [
+          "w1"
+        ],
+        "tabs": {
+          "a": {
+            "id": "a",
+            "windowId": "w1",
+            "profileId": "default",
+            "url": "https://a.example.com/",
+            "title": "A",
+            "favicon": null,
+            "pinned": true,
+            "muted": false,
+            "zoom": 1,
+            "customTitle": null,
+            "customIcon": null,
+            "pinnedUrl": "https://a.example.com/",
+            "createdAt": 0,
+            "lastActiveAt": 0,
+            "pinnedAsRow": true
+          },
+          "b": {
+            "id": "b",
+            "windowId": "w1",
+            "profileId": "default",
+            "url": "https://b.example.com/",
+            "title": "B",
+            "favicon": null,
+            "pinned": true,
+            "muted": false,
+            "zoom": 1,
+            "customTitle": null,
+            "customIcon": null,
+            "pinnedUrl": "https://b.example.com/",
+            "createdAt": 0,
+            "lastActiveAt": 0,
+            "pinnedAsRow": true
+          },
+          "c": {
+            "id": "c",
+            "windowId": "w1",
+            "profileId": "default",
+            "url": "https://c.example.com/",
+            "title": "C",
+            "favicon": null,
+            "pinned": true,
+            "muted": false,
+            "zoom": 1,
+            "customTitle": null,
+            "customIcon": null,
+            "pinnedUrl": "https://c.example.com/",
+            "createdAt": 0,
+            "lastActiveAt": 0,
+            "pinnedAsRow": true
+          }
+        },
+        "groups": {},
+        "splits": {},
+        "selection": {
+          "w1": [
+            "a",
+            "b",
+            "c"
+          ]
+        },
+        "settings": {
+          "tabLayout": "sidebar",
+          "pageEngine": "chromium",
+          "protectedVideoInWebKit": false
+        },
+        "ui": {
+          "focusedWindowId": "w1",
+          "focusOrder": [
+            "w1"
+          ],
+          "lastProfileId": "default"
+        }
+      },
+      "windowId": "w1",
+      "ids": [
+        "a",
+        "b",
+        "c"
+      ],
+      "folders": [
+        {
+          "id": "folder:bar",
+          "title": "Bookmarks Bar",
+          "symbol": "menubar.rectangle"
+        },
+        {
+          "id": "folder:other@default",
+          "title": "Other Bookmarks",
+          "symbol": "folder"
+        },
+        {
+          "id": "folder:f2",
+          "title": "Zebra",
+          "symbol": "folder"
+        },
+        {
+          "id": "folder:f1",
+          "title": "Alpha",
+          "symbol": "folder"
+        },
+        {
+          "separator": true
+        },
+        {
+          "id": "folder:new",
+          "title": "New Folder…",
+          "symbol": "folder.badge.plus"
+        }
+      ],
+      "items": [
+        {
+          "id": "pin",
+          "title": "Unpin 3 Tabs",
+          "symbol": "pin.slash",
+          "enabled": true,
+          "checked": false
+        },
+        {
+          "id": "duplicate",
+          "title": "Duplicate 3 Tabs",
+          "symbol": "plus.square.on.square",
+          "enabled": true,
+          "checked": false
+        },
+        {
+          "id": "newGroup",
+          "title": "New Group with 3 Tabs",
+          "symbol": "plus.rectangle.on.rectangle",
+          "enabled": true,
+          "checked": false
+        },
+        {
+          "separator": true
+        },
+        {
+          "id": "copy",
+          "title": "Copy 3 URLs",
+          "symbol": "link",
+          "enabled": true,
+          "checked": false
+        },
+        {
+          "id": "copyMd",
+          "title": "Copy 3 URLs as Markdown",
+          "symbol": "text.badge.checkmark",
+          "enabled": true,
+          "checked": false
+        },
+        {
+          "id": "bar",
+          "title": "Add 3 Tabs to Bookmarks Bar",
+          "symbol": "bookmark",
+          "enabled": true,
+          "checked": false
+        },
+        {
+          "id": "bookmarkTo",
+          "title": "Add 3 Tabs to Bookmarks Folder",
+          "symbol": "folder",
+          "enabled": true,
+          "checked": false,
+          "children": [
+            {
+              "enabled": true,
+              "checked": false,
+              "id": "folder:bar",
+              "title": "Bookmarks Bar",
+              "symbol": "menubar.rectangle"
+            },
+            {
+              "enabled": true,
+              "checked": false,
+              "id": "folder:other@default",
+              "title": "Other Bookmarks",
+              "symbol": "folder"
+            },
+            {
+              "enabled": true,
+              "checked": false,
+              "id": "folder:f2",
+              "title": "Zebra",
+              "symbol": "folder"
+            },
+            {
+              "enabled": true,
+              "checked": false,
+              "id": "folder:f1",
+              "title": "Alpha",
+              "symbol": "folder"
+            },
+            {
+              "separator": true
+            },
+            {
+              "enabled": true,
+              "checked": false,
+              "id": "folder:new",
+              "title": "New Folder…",
+              "symbol": "folder.badge.plus"
+            }
+          ]
+        },
+        {
+          "separator": true
+        },
+        {
+          "id": "moveToWindow",
+          "title": "Move to Window",
+          "symbol": "macwindow",
+          "enabled": true,
+          "checked": false,
+          "children": [
+            {
+              "id": "window:new",
+              "title": "New Window",
+              "enabled": true,
+              "checked": false
+            }
+          ]
+        },
+        {
+          "separator": true
+        },
+        {
+          "id": "close",
+          "title": "Close 3 Tabs",
+          "symbol": "xmark",
+          "enabled": true,
+          "checked": false
+        }
+      ],
+      "commands": {
+        "pin": {
+          "name": "tabMenuSelection",
+          "args": [
+            "w1",
+            [
+              "a",
+              "b",
+              "c"
+            ],
+            "pin"
+          ]
+        },
+        "pinRows": {
+          "name": "tabMenuSelection",
+          "args": [
+            "w1",
+            [
+              "a",
+              "b",
+              "c"
+            ],
+            "pinRows"
+          ]
+        },
+        "duplicate": {
+          "name": "tabMenuSelection",
+          "args": [
+            "w1",
+            [
+              "a",
+              "b",
+              "c"
+            ],
+            "duplicate"
+          ]
+        },
+        "newGroup": {
+          "name": "tabMenuSelection",
+          "args": [
+            "w1",
+            [
+              "a",
+              "b",
+              "c"
+            ],
+            "newGroup"
+          ]
+        },
+        "group:g": null,
+        "ungroup": {
+          "name": "tabMenuSelection",
+          "args": [
+            "w1",
+            [
+              "a",
+              "b",
+              "c"
+            ],
+            "ungroup"
+          ]
+        },
+        "window:w2": null,
+        "window:new": {
+          "name": "tabMenuSelection",
+          "args": [
+            "w1",
+            [
+              "a",
+              "b",
+              "c"
+            ],
+            "window:new"
+          ]
+        },
+        "copy": null,
+        "copyMd": null,
+        "bar": null,
+        "folder:f2": null,
+        "folder:new": null,
+        "close": null,
+        "unknown": null
+      }
+    },
+    {
+      "name": "some grouped",
+      "state": {
+        "profiles": {
+          "default": {
+            "id": "default",
+            "name": "Personal",
+            "color": "plum",
+            "icon": null,
+            "createdAt": 0
+          },
+          "work": {
+            "id": "work",
+            "name": "Work",
+            "color": "blue",
+            "icon": null,
+            "createdAt": 0
+          }
+        },
+        "profileOrder": [
+          "default",
+          "work"
+        ],
+        "windows": {
+          "w1": {
+            "id": "w1",
+            "profileId": "default",
+            "incognito": false,
+            "tabIds": [
+              "a",
+              "b",
+              "c"
+            ],
+            "activeTabIds": {
+              "default": "b"
+            },
+            "sidebarOpen": true,
+            "frame": [
+              80,
+              80,
+              1100,
+              760
+            ]
+          }
+        },
+        "windowOrder": [
+          "w1"
+        ],
+        "tabs": {
+          "a": {
+            "id": "a",
+            "windowId": "w1",
+            "profileId": "default",
+            "url": "https://a.example.com/",
+            "title": "A",
+            "favicon": null,
+            "pinned": false,
+            "muted": false,
+            "zoom": 1,
+            "customTitle": null,
+            "customIcon": null,
+            "pinnedUrl": null,
+            "createdAt": 0,
+            "lastActiveAt": 0
+          },
+          "b": {
+            "id": "b",
+            "windowId": "w1",
+            "profileId": "default",
+            "url": "https://b.example.com/",
+            "title": "B",
+            "favicon": null,
+            "pinned": false,
+            "muted": false,
+            "zoom": 1,
+            "customTitle": null,
+            "customIcon": null,
+            "pinnedUrl": null,
+            "createdAt": 0,
+            "lastActiveAt": 0
+          },
+          "c": {
+            "id": "c",
+            "windowId": "w1",
+            "profileId": "default",
+            "url": "https://c.example.com/",
+            "title": "C",
+            "favicon": null,
+            "pinned": false,
+            "muted": false,
+            "zoom": 1,
+            "customTitle": null,
+            "customIcon": null,
+            "pinnedUrl": null,
+            "createdAt": 0,
+            "lastActiveAt": 0
+          }
+        },
+        "groups": {
+          "g": {
+            "id": "g",
+            "windowId": "w1",
+            "profileId": "default",
+            "name": "g",
+            "icon": null,
+            "color": null,
+            "collapsed": false,
+            "pinned": false,
+            "tabIds": [
+              "b"
+            ]
+          }
+        },
+        "splits": {},
+        "selection": {
+          "w1": [
+            "a",
+            "b",
+            "c"
+          ]
+        },
+        "settings": {
+          "tabLayout": "sidebar",
+          "pageEngine": "chromium",
+          "protectedVideoInWebKit": false
+        },
+        "ui": {
+          "focusedWindowId": "w1",
+          "focusOrder": [
+            "w1"
+          ],
+          "lastProfileId": "default"
+        }
+      },
+      "windowId": "w1",
+      "ids": [
+        "a",
+        "b",
+        "c"
+      ],
+      "folders": [
+        {
+          "id": "folder:bar",
+          "title": "Bookmarks Bar",
+          "symbol": "menubar.rectangle"
+        },
+        {
+          "id": "folder:other@default",
+          "title": "Other Bookmarks",
+          "symbol": "folder"
+        },
+        {
+          "id": "folder:f2",
+          "title": "Zebra",
+          "symbol": "folder"
+        },
+        {
+          "id": "folder:f1",
+          "title": "Alpha",
+          "symbol": "folder"
+        },
+        {
+          "separator": true
+        },
+        {
+          "id": "folder:new",
+          "title": "New Folder…",
+          "symbol": "folder.badge.plus"
+        }
+      ],
+      "items": [
+        {
+          "id": "pin",
+          "title": "Move 3 Tabs to Top Apps",
+          "symbol": "pin",
+          "enabled": true,
+          "checked": false
+        },
+        {
+          "id": "pinRows",
+          "title": "Move 3 Tabs to Pinned in Personal",
+          "symbol": "list.bullet",
+          "enabled": true,
+          "checked": false
+        },
+        {
+          "id": "duplicate",
+          "title": "Duplicate 3 Tabs",
+          "symbol": "plus.square.on.square",
+          "enabled": true,
+          "checked": false
+        },
+        {
+          "id": "newGroup",
+          "title": "New Group with 3 Tabs",
+          "symbol": "plus.rectangle.on.rectangle",
+          "enabled": true,
+          "checked": false
+        },
+        {
+          "id": "moveToGroup",
+          "title": "Move to Group",
+          "symbol": "rectangle.stack",
+          "enabled": true,
+          "checked": false,
+          "children": [
+            {
+              "id": "group:g",
+              "title": "g",
+              "symbol": "square.on.square",
+              "enabled": true,
+              "checked": false
+            }
+          ]
+        },
+        {
+          "id": "ungroup",
+          "title": "Remove from Group",
+          "symbol": "folder.badge.minus",
+          "enabled": true,
+          "checked": false
+        },
+        {
+          "separator": true
+        },
+        {
+          "id": "copy",
+          "title": "Copy 3 URLs",
+          "symbol": "link",
+          "enabled": true,
+          "checked": false
+        },
+        {
+          "id": "copyMd",
+          "title": "Copy 3 URLs as Markdown",
+          "symbol": "text.badge.checkmark",
+          "enabled": true,
+          "checked": false
+        },
+        {
+          "id": "bar",
+          "title": "Add 3 Tabs to Bookmarks Bar",
+          "symbol": "bookmark",
+          "enabled": true,
+          "checked": false
+        },
+        {
+          "id": "bookmarkTo",
+          "title": "Add 3 Tabs to Bookmarks Folder",
+          "symbol": "folder",
+          "enabled": true,
+          "checked": false,
+          "children": [
+            {
+              "enabled": true,
+              "checked": false,
+              "id": "folder:bar",
+              "title": "Bookmarks Bar",
+              "symbol": "menubar.rectangle"
+            },
+            {
+              "enabled": true,
+              "checked": false,
+              "id": "folder:other@default",
+              "title": "Other Bookmarks",
+              "symbol": "folder"
+            },
+            {
+              "enabled": true,
+              "checked": false,
+              "id": "folder:f2",
+              "title": "Zebra",
+              "symbol": "folder"
+            },
+            {
+              "enabled": true,
+              "checked": false,
+              "id": "folder:f1",
+              "title": "Alpha",
+              "symbol": "folder"
+            },
+            {
+              "separator": true
+            },
+            {
+              "enabled": true,
+              "checked": false,
+              "id": "folder:new",
+              "title": "New Folder…",
+              "symbol": "folder.badge.plus"
+            }
+          ]
+        },
+        {
+          "separator": true
+        },
+        {
+          "id": "moveToWindow",
+          "title": "Move to Window",
+          "symbol": "macwindow",
+          "enabled": true,
+          "checked": false,
+          "children": [
+            {
+              "id": "window:new",
+              "title": "New Window",
+              "enabled": true,
+              "checked": false
+            }
+          ]
+        },
+        {
+          "separator": true
+        },
+        {
+          "id": "close",
+          "title": "Close 3 Tabs",
+          "symbol": "xmark",
+          "enabled": true,
+          "checked": false
+        }
+      ],
+      "commands": {
+        "pin": {
+          "name": "tabMenuSelection",
+          "args": [
+            "w1",
+            [
+              "a",
+              "b",
+              "c"
+            ],
+            "pin"
+          ]
+        },
+        "pinRows": {
+          "name": "tabMenuSelection",
+          "args": [
+            "w1",
+            [
+              "a",
+              "b",
+              "c"
+            ],
+            "pinRows"
+          ]
+        },
+        "duplicate": {
+          "name": "tabMenuSelection",
+          "args": [
+            "w1",
+            [
+              "a",
+              "b",
+              "c"
+            ],
+            "duplicate"
+          ]
+        },
+        "newGroup": {
+          "name": "tabMenuSelection",
+          "args": [
+            "w1",
+            [
+              "a",
+              "b",
+              "c"
+            ],
+            "newGroup"
+          ]
+        },
+        "group:g": {
+          "name": "tabMenuSelection",
+          "args": [
+            "w1",
+            [
+              "a",
+              "b",
+              "c"
+            ],
+            "group:g"
+          ]
+        },
+        "ungroup": {
+          "name": "tabMenuSelection",
+          "args": [
+            "w1",
+            [
+              "a",
+              "b",
+              "c"
+            ],
+            "ungroup"
+          ]
+        },
+        "window:w2": null,
+        "window:new": {
+          "name": "tabMenuSelection",
+          "args": [
+            "w1",
+            [
+              "a",
+              "b",
+              "c"
+            ],
+            "window:new"
+          ]
+        },
+        "copy": null,
+        "copyMd": null,
+        "bar": null,
+        "folder:f2": null,
+        "folder:new": null,
+        "close": null,
+        "unknown": null
+      }
+    },
+    {
+      "name": "other groups present",
+      "state": {
+        "profiles": {
+          "default": {
+            "id": "default",
+            "name": "Personal",
+            "color": "plum",
+            "icon": null,
+            "createdAt": 0
+          },
+          "work": {
+            "id": "work",
+            "name": "Work",
+            "color": "blue",
+            "icon": null,
+            "createdAt": 0
+          }
+        },
+        "profileOrder": [
+          "default",
+          "work"
+        ],
+        "windows": {
+          "w1": {
+            "id": "w1",
+            "profileId": "default",
+            "incognito": false,
+            "tabIds": [
+              "a",
+              "b",
+              "c"
+            ],
+            "activeTabIds": {
+              "default": "b"
+            },
+            "sidebarOpen": true,
+            "frame": [
+              80,
+              80,
+              1100,
+              760
+            ]
+          }
+        },
+        "windowOrder": [
+          "w1"
+        ],
+        "tabs": {
+          "a": {
+            "id": "a",
+            "windowId": "w1",
+            "profileId": "default",
+            "url": "https://a.example.com/",
+            "title": "A",
+            "favicon": null,
+            "pinned": false,
+            "muted": false,
+            "zoom": 1,
+            "customTitle": null,
+            "customIcon": null,
+            "pinnedUrl": null,
+            "createdAt": 0,
+            "lastActiveAt": 0
+          },
+          "b": {
+            "id": "b",
+            "windowId": "w1",
+            "profileId": "default",
+            "url": "https://b.example.com/",
+            "title": "B",
+            "favicon": null,
+            "pinned": false,
+            "muted": false,
+            "zoom": 1,
+            "customTitle": null,
+            "customIcon": null,
+            "pinnedUrl": null,
+            "createdAt": 0,
+            "lastActiveAt": 0
+          },
+          "c": {
+            "id": "c",
+            "windowId": "w1",
+            "profileId": "default",
+            "url": "https://c.example.com/",
+            "title": "C",
+            "favicon": null,
+            "pinned": false,
+            "muted": false,
+            "zoom": 1,
+            "customTitle": null,
+            "customIcon": null,
+            "pinnedUrl": null,
+            "createdAt": 0,
+            "lastActiveAt": 0
+          }
+        },
+        "groups": {
+          "g": {
+            "id": "g",
+            "windowId": "w1",
+            "profileId": "default",
+            "name": "g",
+            "icon": null,
+            "color": null,
+            "collapsed": false,
+            "pinned": false,
+            "tabIds": [
+              "b"
+            ]
+          },
+          "z": {
+            "id": "z",
+            "windowId": "w1",
+            "profileId": "default",
+            "name": "Zed",
+            "icon": null,
+            "color": null,
+            "collapsed": false,
+            "pinned": false,
+            "tabIds": []
+          }
+        },
+        "splits": {},
+        "selection": {
+          "w1": [
+            "a",
+            "b",
+            "c"
+          ]
+        },
+        "settings": {
+          "tabLayout": "sidebar",
+          "pageEngine": "chromium",
+          "protectedVideoInWebKit": false
+        },
+        "ui": {
+          "focusedWindowId": "w1",
+          "focusOrder": [
+            "w1"
+          ],
+          "lastProfileId": "default"
+        }
+      },
+      "windowId": "w1",
+      "ids": [
+        "a",
+        "b",
+        "c"
+      ],
+      "folders": [
+        {
+          "id": "folder:bar",
+          "title": "Bookmarks Bar",
+          "symbol": "menubar.rectangle"
+        },
+        {
+          "id": "folder:other@default",
+          "title": "Other Bookmarks",
+          "symbol": "folder"
+        },
+        {
+          "id": "folder:f2",
+          "title": "Zebra",
+          "symbol": "folder"
+        },
+        {
+          "id": "folder:f1",
+          "title": "Alpha",
+          "symbol": "folder"
+        },
+        {
+          "separator": true
+        },
+        {
+          "id": "folder:new",
+          "title": "New Folder…",
+          "symbol": "folder.badge.plus"
+        }
+      ],
+      "items": [
+        {
+          "id": "pin",
+          "title": "Move 3 Tabs to Top Apps",
+          "symbol": "pin",
+          "enabled": true,
+          "checked": false
+        },
+        {
+          "id": "pinRows",
+          "title": "Move 3 Tabs to Pinned in Personal",
+          "symbol": "list.bullet",
+          "enabled": true,
+          "checked": false
+        },
+        {
+          "id": "duplicate",
+          "title": "Duplicate 3 Tabs",
+          "symbol": "plus.square.on.square",
+          "enabled": true,
+          "checked": false
+        },
+        {
+          "id": "newGroup",
+          "title": "New Group with 3 Tabs",
+          "symbol": "plus.rectangle.on.rectangle",
+          "enabled": true,
+          "checked": false
+        },
+        {
+          "id": "moveToGroup",
+          "title": "Move to Group",
+          "symbol": "rectangle.stack",
+          "enabled": true,
+          "checked": false,
+          "children": [
+            {
+              "id": "group:z",
+              "title": "Zed",
+              "symbol": "square.on.square",
+              "enabled": true,
+              "checked": false
+            },
+            {
+              "id": "group:g",
+              "title": "g",
+              "symbol": "square.on.square",
+              "enabled": true,
+              "checked": false
+            }
+          ]
+        },
+        {
+          "id": "ungroup",
+          "title": "Remove from Group",
+          "symbol": "folder.badge.minus",
+          "enabled": true,
+          "checked": false
+        },
+        {
+          "separator": true
+        },
+        {
+          "id": "copy",
+          "title": "Copy 3 URLs",
+          "symbol": "link",
+          "enabled": true,
+          "checked": false
+        },
+        {
+          "id": "copyMd",
+          "title": "Copy 3 URLs as Markdown",
+          "symbol": "text.badge.checkmark",
+          "enabled": true,
+          "checked": false
+        },
+        {
+          "id": "bar",
+          "title": "Add 3 Tabs to Bookmarks Bar",
+          "symbol": "bookmark",
+          "enabled": true,
+          "checked": false
+        },
+        {
+          "id": "bookmarkTo",
+          "title": "Add 3 Tabs to Bookmarks Folder",
+          "symbol": "folder",
+          "enabled": true,
+          "checked": false,
+          "children": [
+            {
+              "enabled": true,
+              "checked": false,
+              "id": "folder:bar",
+              "title": "Bookmarks Bar",
+              "symbol": "menubar.rectangle"
+            },
+            {
+              "enabled": true,
+              "checked": false,
+              "id": "folder:other@default",
+              "title": "Other Bookmarks",
+              "symbol": "folder"
+            },
+            {
+              "enabled": true,
+              "checked": false,
+              "id": "folder:f2",
+              "title": "Zebra",
+              "symbol": "folder"
+            },
+            {
+              "enabled": true,
+              "checked": false,
+              "id": "folder:f1",
+              "title": "Alpha",
+              "symbol": "folder"
+            },
+            {
+              "separator": true
+            },
+            {
+              "enabled": true,
+              "checked": false,
+              "id": "folder:new",
+              "title": "New Folder…",
+              "symbol": "folder.badge.plus"
+            }
+          ]
+        },
+        {
+          "separator": true
+        },
+        {
+          "id": "moveToWindow",
+          "title": "Move to Window",
+          "symbol": "macwindow",
+          "enabled": true,
+          "checked": false,
+          "children": [
+            {
+              "id": "window:new",
+              "title": "New Window",
+              "enabled": true,
+              "checked": false
+            }
+          ]
+        },
+        {
+          "separator": true
+        },
+        {
+          "id": "close",
+          "title": "Close 3 Tabs",
+          "symbol": "xmark",
+          "enabled": true,
+          "checked": false
+        }
+      ],
+      "commands": {
+        "pin": {
+          "name": "tabMenuSelection",
+          "args": [
+            "w1",
+            [
+              "a",
+              "b",
+              "c"
+            ],
+            "pin"
+          ]
+        },
+        "pinRows": {
+          "name": "tabMenuSelection",
+          "args": [
+            "w1",
+            [
+              "a",
+              "b",
+              "c"
+            ],
+            "pinRows"
+          ]
+        },
+        "duplicate": {
+          "name": "tabMenuSelection",
+          "args": [
+            "w1",
+            [
+              "a",
+              "b",
+              "c"
+            ],
+            "duplicate"
+          ]
+        },
+        "newGroup": {
+          "name": "tabMenuSelection",
+          "args": [
+            "w1",
+            [
+              "a",
+              "b",
+              "c"
+            ],
+            "newGroup"
+          ]
+        },
+        "group:g": {
+          "name": "tabMenuSelection",
+          "args": [
+            "w1",
+            [
+              "a",
+              "b",
+              "c"
+            ],
+            "group:g"
+          ]
+        },
+        "ungroup": {
+          "name": "tabMenuSelection",
+          "args": [
+            "w1",
+            [
+              "a",
+              "b",
+              "c"
+            ],
+            "ungroup"
+          ]
+        },
+        "window:w2": null,
+        "window:new": {
+          "name": "tabMenuSelection",
+          "args": [
+            "w1",
+            [
+              "a",
+              "b",
+              "c"
+            ],
+            "window:new"
+          ]
+        },
+        "copy": null,
+        "copyMd": null,
+        "bar": null,
+        "folder:f2": null,
+        "folder:new": null,
+        "close": null,
+        "unknown": null
+      }
+    },
+    {
+      "name": "incognito selection",
+      "state": {
+        "profiles": {
+          "default": {
+            "id": "default",
+            "name": "Personal",
+            "color": "plum",
+            "icon": null,
+            "createdAt": 0
+          },
+          "work": {
+            "id": "work",
+            "name": "Work",
+            "color": "blue",
+            "icon": null,
+            "createdAt": 0
+          }
+        },
+        "profileOrder": [
+          "default",
+          "work"
+        ],
+        "windows": {
+          "w1": {
+            "id": "w1",
+            "profileId": "incognito:w1@default",
+            "incognito": true,
+            "tabIds": [
+              "a",
+              "b",
+              "c"
+            ],
+            "activeTabIds": {
+              "incognito:w1@default": "b"
+            },
+            "sidebarOpen": true,
+            "frame": [
+              80,
+              80,
+              1100,
+              760
+            ]
+          }
+        },
+        "windowOrder": [
+          "w1"
+        ],
+        "tabs": {
+          "a": {
+            "id": "a",
+            "windowId": "w1",
+            "profileId": "incognito:w1@default",
+            "url": "https://a.example.com/",
+            "title": "A",
+            "favicon": null,
+            "pinned": false,
+            "muted": false,
+            "zoom": 1,
+            "customTitle": null,
+            "customIcon": null,
+            "pinnedUrl": null,
+            "createdAt": 0,
+            "lastActiveAt": 0
+          },
+          "b": {
+            "id": "b",
+            "windowId": "w1",
+            "profileId": "incognito:w1@default",
+            "url": "https://b.example.com/",
+            "title": "B",
+            "favicon": null,
+            "pinned": false,
+            "muted": false,
+            "zoom": 1,
+            "customTitle": null,
+            "customIcon": null,
+            "pinnedUrl": null,
+            "createdAt": 0,
+            "lastActiveAt": 0
+          },
+          "c": {
+            "id": "c",
+            "windowId": "w1",
+            "profileId": "incognito:w1@default",
+            "url": "https://c.example.com/",
+            "title": "C",
+            "favicon": null,
+            "pinned": false,
+            "muted": false,
+            "zoom": 1,
+            "customTitle": null,
+            "customIcon": null,
+            "pinnedUrl": null,
+            "createdAt": 0,
+            "lastActiveAt": 0
+          }
+        },
+        "groups": {},
+        "splits": {},
+        "selection": {
+          "w1": [
+            "a",
+            "b",
+            "c"
+          ]
+        },
+        "settings": {
+          "tabLayout": "sidebar",
+          "pageEngine": "chromium",
+          "protectedVideoInWebKit": false
+        },
+        "ui": {
+          "focusedWindowId": "w1",
+          "focusOrder": [
+            "w1"
+          ],
+          "lastProfileId": "default"
+        }
+      },
+      "windowId": "w1",
+      "ids": [
+        "a",
+        "b",
+        "c"
+      ],
+      "folders": [
+        {
+          "id": "folder:bar",
+          "title": "Bookmarks Bar",
+          "symbol": "menubar.rectangle"
+        },
+        {
+          "id": "folder:other@default",
+          "title": "Other Bookmarks",
+          "symbol": "folder"
+        },
+        {
+          "id": "folder:f2",
+          "title": "Zebra",
+          "symbol": "folder"
+        },
+        {
+          "id": "folder:f1",
+          "title": "Alpha",
+          "symbol": "folder"
+        },
+        {
+          "separator": true
+        },
+        {
+          "id": "folder:new",
+          "title": "New Folder…",
+          "symbol": "folder.badge.plus"
+        }
+      ],
+      "items": [
+        {
+          "id": "pin",
+          "title": "Move 3 Tabs to Top Apps",
+          "symbol": "pin",
+          "enabled": true,
+          "checked": false
+        },
+        {
+          "id": "pinRows",
+          "title": "Move 3 Tabs to Pinned in Profile",
+          "symbol": "list.bullet",
+          "enabled": true,
+          "checked": false
+        },
+        {
+          "id": "duplicate",
+          "title": "Duplicate 3 Tabs",
+          "symbol": "plus.square.on.square",
+          "enabled": true,
+          "checked": false
+        },
+        {
+          "id": "newGroup",
+          "title": "New Group with 3 Tabs",
+          "symbol": "plus.rectangle.on.rectangle",
+          "enabled": true,
+          "checked": false
+        },
+        {
+          "separator": true
+        },
+        {
+          "id": "copy",
+          "title": "Copy 3 URLs",
+          "symbol": "link",
+          "enabled": true,
+          "checked": false
+        },
+        {
+          "id": "copyMd",
+          "title": "Copy 3 URLs as Markdown",
+          "symbol": "text.badge.checkmark",
+          "enabled": true,
+          "checked": false
+        },
+        {
+          "id": "bar",
+          "title": "Add 3 Tabs to Bookmarks Bar",
+          "symbol": "bookmark",
+          "enabled": true,
+          "checked": false
+        },
+        {
+          "id": "bookmarkTo",
+          "title": "Add 3 Tabs to Bookmarks Folder",
+          "symbol": "folder",
+          "enabled": true,
+          "checked": false,
+          "children": [
+            {
+              "enabled": true,
+              "checked": false,
+              "id": "folder:bar",
+              "title": "Bookmarks Bar",
+              "symbol": "menubar.rectangle"
+            },
+            {
+              "enabled": true,
+              "checked": false,
+              "id": "folder:other@default",
+              "title": "Other Bookmarks",
+              "symbol": "folder"
+            },
+            {
+              "enabled": true,
+              "checked": false,
+              "id": "folder:f2",
+              "title": "Zebra",
+              "symbol": "folder"
+            },
+            {
+              "enabled": true,
+              "checked": false,
+              "id": "folder:f1",
+              "title": "Alpha",
+              "symbol": "folder"
+            },
+            {
+              "separator": true
+            },
+            {
+              "enabled": true,
+              "checked": false,
+              "id": "folder:new",
+              "title": "New Folder…",
+              "symbol": "folder.badge.plus"
+            }
+          ]
+        },
+        {
+          "separator": true
+        },
+        {
+          "id": "moveToWindow",
+          "title": "Move to Window",
+          "symbol": "macwindow",
+          "enabled": false,
+          "checked": false,
+          "children": [
+            {
+              "id": "window:new",
+              "title": "New Window",
+              "enabled": true,
+              "checked": false
+            }
+          ]
+        },
+        {
+          "separator": true
+        },
+        {
+          "id": "close",
+          "title": "Close 3 Tabs",
+          "symbol": "xmark",
+          "enabled": true,
+          "checked": false
+        }
+      ],
+      "commands": {
+        "pin": {
+          "name": "tabMenuSelection",
+          "args": [
+            "w1",
+            [
+              "a",
+              "b",
+              "c"
+            ],
+            "pin"
+          ]
+        },
+        "pinRows": {
+          "name": "tabMenuSelection",
+          "args": [
+            "w1",
+            [
+              "a",
+              "b",
+              "c"
+            ],
+            "pinRows"
+          ]
+        },
+        "duplicate": {
+          "name": "tabMenuSelection",
+          "args": [
+            "w1",
+            [
+              "a",
+              "b",
+              "c"
+            ],
+            "duplicate"
+          ]
+        },
+        "newGroup": {
+          "name": "tabMenuSelection",
+          "args": [
+            "w1",
+            [
+              "a",
+              "b",
+              "c"
+            ],
+            "newGroup"
+          ]
+        },
+        "group:g": null,
+        "ungroup": {
+          "name": "tabMenuSelection",
+          "args": [
+            "w1",
+            [
+              "a",
+              "b",
+              "c"
+            ],
+            "ungroup"
+          ]
+        },
+        "window:w2": null,
+        "window:new": null,
+        "copy": null,
+        "copyMd": null,
+        "bar": null,
+        "folder:f2": null,
+        "folder:new": null,
+        "close": null,
+        "unknown": null
+      }
+    },
+    {
+      "name": "no other windows",
+      "state": {
+        "profiles": {
+          "default": {
+            "id": "default",
+            "name": "Personal",
+            "color": "plum",
+            "icon": null,
+            "createdAt": 0
+          },
+          "work": {
+            "id": "work",
+            "name": "Work",
+            "color": "blue",
+            "icon": null,
+            "createdAt": 0
+          }
+        },
+        "profileOrder": [
+          "default",
+          "work"
+        ],
+        "windows": {
+          "w1": {
+            "id": "w1",
+            "profileId": "default",
+            "incognito": false,
+            "tabIds": [
+              "a",
+              "b",
+              "c"
+            ],
+            "activeTabIds": {
+              "default": "b"
+            },
+            "sidebarOpen": true,
+            "frame": [
+              80,
+              80,
+              1100,
+              760
+            ]
+          }
+        },
+        "windowOrder": [
+          "w1"
+        ],
+        "tabs": {
+          "a": {
+            "id": "a",
+            "windowId": "w1",
+            "profileId": "default",
+            "url": "https://a.example.com/",
+            "title": "A",
+            "favicon": null,
+            "pinned": false,
+            "muted": false,
+            "zoom": 1,
+            "customTitle": null,
+            "customIcon": null,
+            "pinnedUrl": null,
+            "createdAt": 0,
+            "lastActiveAt": 0
+          },
+          "b": {
+            "id": "b",
+            "windowId": "w1",
+            "profileId": "default",
+            "url": "https://b.example.com/",
+            "title": "B",
+            "favicon": null,
+            "pinned": false,
+            "muted": false,
+            "zoom": 1,
+            "customTitle": null,
+            "customIcon": null,
+            "pinnedUrl": null,
+            "createdAt": 0,
+            "lastActiveAt": 0
+          },
+          "c": {
+            "id": "c",
+            "windowId": "w1",
+            "profileId": "default",
+            "url": "https://c.example.com/",
+            "title": "C",
+            "favicon": null,
+            "pinned": false,
+            "muted": false,
+            "zoom": 1,
+            "customTitle": null,
+            "customIcon": null,
+            "pinnedUrl": null,
+            "createdAt": 0,
+            "lastActiveAt": 0
+          }
+        },
+        "groups": {},
+        "splits": {},
+        "selection": {
+          "w1": [
+            "a",
+            "b",
+            "c"
+          ]
+        },
+        "settings": {
+          "tabLayout": "sidebar",
+          "pageEngine": "chromium",
+          "protectedVideoInWebKit": false
+        },
+        "ui": {
+          "focusedWindowId": "w1",
+          "focusOrder": [
+            "w1"
+          ],
+          "lastProfileId": "default"
+        }
+      },
+      "windowId": "w1",
+      "ids": [
+        "a",
+        "b",
+        "c"
+      ],
+      "folders": [
+        {
+          "id": "folder:bar",
+          "title": "Bookmarks Bar",
+          "symbol": "menubar.rectangle"
+        },
+        {
+          "id": "folder:other@default",
+          "title": "Other Bookmarks",
+          "symbol": "folder"
+        },
+        {
+          "id": "folder:f2",
+          "title": "Zebra",
+          "symbol": "folder"
+        },
+        {
+          "id": "folder:f1",
+          "title": "Alpha",
+          "symbol": "folder"
+        },
+        {
+          "separator": true
+        },
+        {
+          "id": "folder:new",
+          "title": "New Folder…",
+          "symbol": "folder.badge.plus"
+        }
+      ],
+      "items": [
+        {
+          "id": "pin",
+          "title": "Move 3 Tabs to Top Apps",
+          "symbol": "pin",
+          "enabled": true,
+          "checked": false
+        },
+        {
+          "id": "pinRows",
+          "title": "Move 3 Tabs to Pinned in Personal",
+          "symbol": "list.bullet",
+          "enabled": true,
+          "checked": false
+        },
+        {
+          "id": "duplicate",
+          "title": "Duplicate 3 Tabs",
+          "symbol": "plus.square.on.square",
+          "enabled": true,
+          "checked": false
+        },
+        {
+          "id": "newGroup",
+          "title": "New Group with 3 Tabs",
+          "symbol": "plus.rectangle.on.rectangle",
+          "enabled": true,
+          "checked": false
+        },
+        {
+          "separator": true
+        },
+        {
+          "id": "copy",
+          "title": "Copy 3 URLs",
+          "symbol": "link",
+          "enabled": true,
+          "checked": false
+        },
+        {
+          "id": "copyMd",
+          "title": "Copy 3 URLs as Markdown",
+          "symbol": "text.badge.checkmark",
+          "enabled": true,
+          "checked": false
+        },
+        {
+          "id": "bar",
+          "title": "Add 3 Tabs to Bookmarks Bar",
+          "symbol": "bookmark",
+          "enabled": true,
+          "checked": false
+        },
+        {
+          "id": "bookmarkTo",
+          "title": "Add 3 Tabs to Bookmarks Folder",
+          "symbol": "folder",
+          "enabled": true,
+          "checked": false,
+          "children": [
+            {
+              "enabled": true,
+              "checked": false,
+              "id": "folder:bar",
+              "title": "Bookmarks Bar",
+              "symbol": "menubar.rectangle"
+            },
+            {
+              "enabled": true,
+              "checked": false,
+              "id": "folder:other@default",
+              "title": "Other Bookmarks",
+              "symbol": "folder"
+            },
+            {
+              "enabled": true,
+              "checked": false,
+              "id": "folder:f2",
+              "title": "Zebra",
+              "symbol": "folder"
+            },
+            {
+              "enabled": true,
+              "checked": false,
+              "id": "folder:f1",
+              "title": "Alpha",
+              "symbol": "folder"
+            },
+            {
+              "separator": true
+            },
+            {
+              "enabled": true,
+              "checked": false,
+              "id": "folder:new",
+              "title": "New Folder…",
+              "symbol": "folder.badge.plus"
+            }
+          ]
+        },
+        {
+          "separator": true
+        },
+        {
+          "id": "moveToWindow",
+          "title": "Move to Window",
+          "symbol": "macwindow",
+          "enabled": true,
+          "checked": false,
+          "children": [
+            {
+              "id": "window:new",
+              "title": "New Window",
+              "enabled": true,
+              "checked": false
+            }
+          ]
+        },
+        {
+          "separator": true
+        },
+        {
+          "id": "close",
+          "title": "Close 3 Tabs",
+          "symbol": "xmark",
+          "enabled": true,
+          "checked": false
+        }
+      ],
+      "commands": {
+        "pin": {
+          "name": "tabMenuSelection",
+          "args": [
+            "w1",
+            [
+              "a",
+              "b",
+              "c"
+            ],
+            "pin"
+          ]
+        },
+        "pinRows": {
+          "name": "tabMenuSelection",
+          "args": [
+            "w1",
+            [
+              "a",
+              "b",
+              "c"
+            ],
+            "pinRows"
+          ]
+        },
+        "duplicate": {
+          "name": "tabMenuSelection",
+          "args": [
+            "w1",
+            [
+              "a",
+              "b",
+              "c"
+            ],
+            "duplicate"
+          ]
+        },
+        "newGroup": {
+          "name": "tabMenuSelection",
+          "args": [
+            "w1",
+            [
+              "a",
+              "b",
+              "c"
+            ],
+            "newGroup"
+          ]
+        },
+        "group:g": null,
+        "ungroup": {
+          "name": "tabMenuSelection",
+          "args": [
+            "w1",
+            [
+              "a",
+              "b",
+              "c"
+            ],
+            "ungroup"
+          ]
+        },
+        "window:w2": null,
+        "window:new": {
+          "name": "tabMenuSelection",
+          "args": [
+            "w1",
+            [
+              "a",
+              "b",
+              "c"
+            ],
+            "window:new"
+          ]
+        },
+        "copy": null,
+        "copyMd": null,
+        "bar": null,
+        "folder:f2": null,
+        "folder:new": null,
+        "close": null,
+        "unknown": null
+      }
+    },
+    {
+      "name": "selection spanning pinned and open",
+      "state": {
+        "profiles": {
+          "default": {
+            "id": "default",
+            "name": "Personal",
+            "color": "plum",
+            "icon": null,
+            "createdAt": 0
+          },
+          "work": {
+            "id": "work",
+            "name": "Work",
+            "color": "blue",
+            "icon": null,
+            "createdAt": 0
+          }
+        },
+        "profileOrder": [
+          "default",
+          "work"
+        ],
+        "windows": {
+          "w1": {
+            "id": "w1",
+            "profileId": "default",
+            "incognito": false,
+            "tabIds": [
+              "a",
+              "b",
+              "c"
+            ],
+            "activeTabIds": {
+              "default": "b"
+            },
+            "sidebarOpen": true,
+            "frame": [
+              80,
+              80,
+              1100,
+              760
+            ]
+          }
+        },
+        "windowOrder": [
+          "w1"
+        ],
+        "tabs": {
+          "a": {
+            "id": "a",
+            "windowId": "w1",
+            "profileId": "default",
+            "url": "https://a.example.com/",
+            "title": "A",
+            "favicon": null,
+            "pinned": true,
+            "muted": false,
+            "zoom": 1,
+            "customTitle": null,
+            "customIcon": null,
+            "pinnedUrl": "https://a.example.com/",
+            "createdAt": 0,
+            "lastActiveAt": 0
+          },
+          "b": {
+            "id": "b",
+            "windowId": "w1",
+            "profileId": "default",
+            "url": "https://b.example.com/",
+            "title": "B",
+            "favicon": null,
+            "pinned": true,
+            "muted": false,
+            "zoom": 1,
+            "customTitle": null,
+            "customIcon": null,
+            "pinnedUrl": "https://b.example.com/",
+            "createdAt": 0,
+            "lastActiveAt": 0,
+            "pinnedAsRow": true
+          },
+          "c": {
+            "id": "c",
+            "windowId": "w1",
+            "profileId": "default",
+            "url": "https://c.example.com/",
+            "title": "C",
+            "favicon": null,
+            "pinned": false,
+            "muted": false,
+            "zoom": 1,
+            "customTitle": null,
+            "customIcon": null,
+            "pinnedUrl": null,
+            "createdAt": 0,
+            "lastActiveAt": 0
+          }
+        },
+        "groups": {},
+        "splits": {},
+        "selection": {
+          "w1": [
+            "a",
+            "b",
+            "c"
+          ]
+        },
+        "settings": {
+          "tabLayout": "sidebar",
+          "pageEngine": "chromium",
+          "protectedVideoInWebKit": false
+        },
+        "ui": {
+          "focusedWindowId": "w1",
+          "focusOrder": [
+            "w1"
+          ],
+          "lastProfileId": "default"
+        }
+      },
+      "windowId": "w1",
+      "ids": [
+        "a",
+        "b",
+        "c"
+      ],
+      "folders": [
+        {
+          "id": "folder:bar",
+          "title": "Bookmarks Bar",
+          "symbol": "menubar.rectangle"
+        },
+        {
+          "id": "folder:other@default",
+          "title": "Other Bookmarks",
+          "symbol": "folder"
+        },
+        {
+          "id": "folder:f2",
+          "title": "Zebra",
+          "symbol": "folder"
+        },
+        {
+          "id": "folder:f1",
+          "title": "Alpha",
+          "symbol": "folder"
+        },
+        {
+          "separator": true
+        },
+        {
+          "id": "folder:new",
+          "title": "New Folder…",
+          "symbol": "folder.badge.plus"
+        }
+      ],
+      "items": [
+        {
+          "id": "pin",
+          "title": "Move 3 Tabs to Top Apps",
+          "symbol": "pin",
+          "enabled": true,
+          "checked": false
+        },
+        {
+          "id": "pinRows",
+          "title": "Move 3 Tabs to Pinned in Personal",
+          "symbol": "list.bullet",
+          "enabled": true,
+          "checked": false
+        },
+        {
+          "id": "duplicate",
+          "title": "Duplicate 3 Tabs",
+          "symbol": "plus.square.on.square",
+          "enabled": true,
+          "checked": false
+        },
+        {
+          "id": "newGroup",
+          "title": "New Group with 3 Tabs",
+          "symbol": "plus.rectangle.on.rectangle",
+          "enabled": true,
+          "checked": false
+        },
+        {
+          "separator": true
+        },
+        {
+          "id": "copy",
+          "title": "Copy 3 URLs",
+          "symbol": "link",
+          "enabled": true,
+          "checked": false
+        },
+        {
+          "id": "copyMd",
+          "title": "Copy 3 URLs as Markdown",
+          "symbol": "text.badge.checkmark",
+          "enabled": true,
+          "checked": false
+        },
+        {
+          "id": "bar",
+          "title": "Add 3 Tabs to Bookmarks Bar",
+          "symbol": "bookmark",
+          "enabled": true,
+          "checked": false
+        },
+        {
+          "id": "bookmarkTo",
+          "title": "Add 3 Tabs to Bookmarks Folder",
+          "symbol": "folder",
+          "enabled": true,
+          "checked": false,
+          "children": [
+            {
+              "enabled": true,
+              "checked": false,
+              "id": "folder:bar",
+              "title": "Bookmarks Bar",
+              "symbol": "menubar.rectangle"
+            },
+            {
+              "enabled": true,
+              "checked": false,
+              "id": "folder:other@default",
+              "title": "Other Bookmarks",
+              "symbol": "folder"
+            },
+            {
+              "enabled": true,
+              "checked": false,
+              "id": "folder:f2",
+              "title": "Zebra",
+              "symbol": "folder"
+            },
+            {
+              "enabled": true,
+              "checked": false,
+              "id": "folder:f1",
+              "title": "Alpha",
+              "symbol": "folder"
+            },
+            {
+              "separator": true
+            },
+            {
+              "enabled": true,
+              "checked": false,
+              "id": "folder:new",
+              "title": "New Folder…",
+              "symbol": "folder.badge.plus"
+            }
+          ]
+        },
+        {
+          "separator": true
+        },
+        {
+          "id": "moveToWindow",
+          "title": "Move to Window",
+          "symbol": "macwindow",
+          "enabled": true,
+          "checked": false,
+          "children": [
+            {
+              "id": "window:new",
+              "title": "New Window",
+              "enabled": true,
+              "checked": false
+            }
+          ]
+        },
+        {
+          "separator": true
+        },
+        {
+          "id": "close",
+          "title": "Close 3 Tabs",
+          "symbol": "xmark",
+          "enabled": true,
+          "checked": false
+        }
+      ],
+      "commands": {
+        "pin": {
+          "name": "tabMenuSelection",
+          "args": [
+            "w1",
+            [
+              "a",
+              "b",
+              "c"
+            ],
+            "pin"
+          ]
+        },
+        "pinRows": {
+          "name": "tabMenuSelection",
+          "args": [
+            "w1",
+            [
+              "a",
+              "b",
+              "c"
+            ],
+            "pinRows"
+          ]
+        },
+        "duplicate": {
+          "name": "tabMenuSelection",
+          "args": [
+            "w1",
+            [
+              "a",
+              "b",
+              "c"
+            ],
+            "duplicate"
+          ]
+        },
+        "newGroup": {
+          "name": "tabMenuSelection",
+          "args": [
+            "w1",
+            [
+              "a",
+              "b",
+              "c"
+            ],
+            "newGroup"
+          ]
+        },
+        "group:g": null,
+        "ungroup": {
+          "name": "tabMenuSelection",
+          "args": [
+            "w1",
+            [
+              "a",
+              "b",
+              "c"
+            ],
+            "ungroup"
+          ]
+        },
+        "window:w2": null,
+        "window:new": {
+          "name": "tabMenuSelection",
+          "args": [
+            "w1",
+            [
+              "a",
+              "b",
+              "c"
+            ],
+            "window:new"
+          ]
+        },
+        "copy": null,
+        "copyMd": null,
+        "bar": null,
+        "folder:f2": null,
+        "folder:new": null,
+        "close": null,
+        "unknown": null
+      }
+    },
+    {
+      "name": "folders in supplied order",
+      "state": {
+        "profiles": {
+          "default": {
+            "id": "default",
+            "name": "Personal",
+            "color": "plum",
+            "icon": null,
+            "createdAt": 0
+          },
+          "work": {
+            "id": "work",
+            "name": "Work",
+            "color": "blue",
+            "icon": null,
+            "createdAt": 0
+          }
+        },
+        "profileOrder": [
+          "default",
+          "work"
+        ],
+        "windows": {
+          "w1": {
+            "id": "w1",
+            "profileId": "default",
+            "incognito": false,
+            "tabIds": [
+              "a",
+              "b",
+              "c"
+            ],
+            "activeTabIds": {
+              "default": "b"
+            },
+            "sidebarOpen": true,
+            "frame": [
+              80,
+              80,
+              1100,
+              760
+            ]
+          }
+        },
+        "windowOrder": [
+          "w1"
+        ],
+        "tabs": {
+          "a": {
+            "id": "a",
+            "windowId": "w1",
+            "profileId": "default",
+            "url": "https://a.example.com/",
+            "title": "A",
+            "favicon": null,
+            "pinned": false,
+            "muted": false,
+            "zoom": 1,
+            "customTitle": null,
+            "customIcon": null,
+            "pinnedUrl": null,
+            "createdAt": 0,
+            "lastActiveAt": 0
+          },
+          "b": {
+            "id": "b",
+            "windowId": "w1",
+            "profileId": "default",
+            "url": "https://b.example.com/",
+            "title": "B",
+            "favicon": null,
+            "pinned": false,
+            "muted": false,
+            "zoom": 1,
+            "customTitle": null,
+            "customIcon": null,
+            "pinnedUrl": null,
+            "createdAt": 0,
+            "lastActiveAt": 0
+          },
+          "c": {
+            "id": "c",
+            "windowId": "w1",
+            "profileId": "default",
+            "url": "https://c.example.com/",
+            "title": "C",
+            "favicon": null,
+            "pinned": false,
+            "muted": false,
+            "zoom": 1,
+            "customTitle": null,
+            "customIcon": null,
+            "pinnedUrl": null,
+            "createdAt": 0,
+            "lastActiveAt": 0
+          }
+        },
+        "groups": {},
+        "splits": {},
+        "selection": {
+          "w1": [
+            "a",
+            "b",
+            "c"
+          ]
+        },
+        "settings": {
+          "tabLayout": "sidebar",
+          "pageEngine": "chromium",
+          "protectedVideoInWebKit": false
+        },
+        "ui": {
+          "focusedWindowId": "w1",
+          "focusOrder": [
+            "w1"
+          ],
+          "lastProfileId": "default"
+        }
+      },
+      "windowId": "w1",
+      "ids": [
+        "a",
+        "b",
+        "c"
+      ],
+      "folders": [
+        {
+          "id": "folder:bar",
+          "title": "Bookmarks Bar",
+          "symbol": "menubar.rectangle"
+        },
+        {
+          "id": "folder:other@default",
+          "title": "Other Bookmarks",
+          "symbol": "folder"
+        },
+        {
+          "id": "folder:f2",
+          "title": "Zebra",
+          "symbol": "folder"
+        },
+        {
+          "id": "folder:f1",
+          "title": "Alpha",
+          "symbol": "folder"
+        },
+        {
+          "separator": true
+        },
+        {
+          "id": "folder:new",
+          "title": "New Folder…",
+          "symbol": "folder.badge.plus"
+        }
+      ],
+      "items": [
+        {
+          "id": "pin",
+          "title": "Move 3 Tabs to Top Apps",
+          "symbol": "pin",
+          "enabled": true,
+          "checked": false
+        },
+        {
+          "id": "pinRows",
+          "title": "Move 3 Tabs to Pinned in Personal",
+          "symbol": "list.bullet",
+          "enabled": true,
+          "checked": false
+        },
+        {
+          "id": "duplicate",
+          "title": "Duplicate 3 Tabs",
+          "symbol": "plus.square.on.square",
+          "enabled": true,
+          "checked": false
+        },
+        {
+          "id": "newGroup",
+          "title": "New Group with 3 Tabs",
+          "symbol": "plus.rectangle.on.rectangle",
+          "enabled": true,
+          "checked": false
+        },
+        {
+          "separator": true
+        },
+        {
+          "id": "copy",
+          "title": "Copy 3 URLs",
+          "symbol": "link",
+          "enabled": true,
+          "checked": false
+        },
+        {
+          "id": "copyMd",
+          "title": "Copy 3 URLs as Markdown",
+          "symbol": "text.badge.checkmark",
+          "enabled": true,
+          "checked": false
+        },
+        {
+          "id": "bar",
+          "title": "Add 3 Tabs to Bookmarks Bar",
+          "symbol": "bookmark",
+          "enabled": true,
+          "checked": false
+        },
+        {
+          "id": "bookmarkTo",
+          "title": "Add 3 Tabs to Bookmarks Folder",
+          "symbol": "folder",
+          "enabled": true,
+          "checked": false,
+          "children": [
+            {
+              "enabled": true,
+              "checked": false,
+              "id": "folder:bar",
+              "title": "Bookmarks Bar",
+              "symbol": "menubar.rectangle"
+            },
+            {
+              "enabled": true,
+              "checked": false,
+              "id": "folder:other@default",
+              "title": "Other Bookmarks",
+              "symbol": "folder"
+            },
+            {
+              "enabled": true,
+              "checked": false,
+              "id": "folder:f2",
+              "title": "Zebra",
+              "symbol": "folder"
+            },
+            {
+              "enabled": true,
+              "checked": false,
+              "id": "folder:f1",
+              "title": "Alpha",
+              "symbol": "folder"
+            },
+            {
+              "separator": true
+            },
+            {
+              "enabled": true,
+              "checked": false,
+              "id": "folder:new",
+              "title": "New Folder…",
+              "symbol": "folder.badge.plus"
+            }
+          ]
+        },
+        {
+          "separator": true
+        },
+        {
+          "id": "moveToWindow",
+          "title": "Move to Window",
+          "symbol": "macwindow",
+          "enabled": true,
+          "checked": false,
+          "children": [
+            {
+              "id": "window:new",
+              "title": "New Window",
+              "enabled": true,
+              "checked": false
+            }
+          ]
+        },
+        {
+          "separator": true
+        },
+        {
+          "id": "close",
+          "title": "Close 3 Tabs",
+          "symbol": "xmark",
+          "enabled": true,
+          "checked": false
+        }
+      ],
+      "commands": {
+        "pin": {
+          "name": "tabMenuSelection",
+          "args": [
+            "w1",
+            [
+              "a",
+              "b",
+              "c"
+            ],
+            "pin"
+          ]
+        },
+        "pinRows": {
+          "name": "tabMenuSelection",
+          "args": [
+            "w1",
+            [
+              "a",
+              "b",
+              "c"
+            ],
+            "pinRows"
+          ]
+        },
+        "duplicate": {
+          "name": "tabMenuSelection",
+          "args": [
+            "w1",
+            [
+              "a",
+              "b",
+              "c"
+            ],
+            "duplicate"
+          ]
+        },
+        "newGroup": {
+          "name": "tabMenuSelection",
+          "args": [
+            "w1",
+            [
+              "a",
+              "b",
+              "c"
+            ],
+            "newGroup"
+          ]
+        },
+        "group:g": null,
+        "ungroup": {
+          "name": "tabMenuSelection",
+          "args": [
+            "w1",
+            [
+              "a",
+              "b",
+              "c"
+            ],
+            "ungroup"
+          ]
+        },
+        "window:w2": null,
+        "window:new": {
+          "name": "tabMenuSelection",
+          "args": [
+            "w1",
+            [
+              "a",
+              "b",
+              "c"
+            ],
+            "window:new"
+          ]
+        },
+        "copy": null,
+        "copyMd": null,
+        "bar": null,
+        "folder:f2": null,
+        "folder:new": null,
+        "close": null,
+        "unknown": null
+      }
+    },
+    {
+      "name": "missing bookmark roots",
+      "state": {
+        "profiles": {
+          "default": {
+            "id": "default",
+            "name": "Personal",
+            "color": "plum",
+            "icon": null,
+            "createdAt": 0
+          },
+          "work": {
+            "id": "work",
+            "name": "Work",
+            "color": "blue",
+            "icon": null,
+            "createdAt": 0
+          }
+        },
+        "profileOrder": [
+          "default",
+          "work"
+        ],
+        "windows": {
+          "w1": {
+            "id": "w1",
+            "profileId": "default",
+            "incognito": false,
+            "tabIds": [
+              "a",
+              "b",
+              "c"
+            ],
+            "activeTabIds": {
+              "default": "b"
+            },
+            "sidebarOpen": true,
+            "frame": [
+              80,
+              80,
+              1100,
+              760
+            ]
+          }
+        },
+        "windowOrder": [
+          "w1"
+        ],
+        "tabs": {
+          "a": {
+            "id": "a",
+            "windowId": "w1",
+            "profileId": "default",
+            "url": "https://a.example.com/",
+            "title": "A",
+            "favicon": null,
+            "pinned": false,
+            "muted": false,
+            "zoom": 1,
+            "customTitle": null,
+            "customIcon": null,
+            "pinnedUrl": null,
+            "createdAt": 0,
+            "lastActiveAt": 0
+          },
+          "b": {
+            "id": "b",
+            "windowId": "w1",
+            "profileId": "default",
+            "url": "https://b.example.com/",
+            "title": "B",
+            "favicon": null,
+            "pinned": false,
+            "muted": false,
+            "zoom": 1,
+            "customTitle": null,
+            "customIcon": null,
+            "pinnedUrl": null,
+            "createdAt": 0,
+            "lastActiveAt": 0
+          },
+          "c": {
+            "id": "c",
+            "windowId": "w1",
+            "profileId": "default",
+            "url": "https://c.example.com/",
+            "title": "C",
+            "favicon": null,
+            "pinned": false,
+            "muted": false,
+            "zoom": 1,
+            "customTitle": null,
+            "customIcon": null,
+            "pinnedUrl": null,
+            "createdAt": 0,
+            "lastActiveAt": 0
+          }
+        },
+        "groups": {},
+        "splits": {},
+        "selection": {
+          "w1": [
+            "a",
+            "b",
+            "c"
+          ]
+        },
+        "settings": {
+          "tabLayout": "sidebar",
+          "pageEngine": "chromium",
+          "protectedVideoInWebKit": false
+        },
+        "ui": {
+          "focusedWindowId": "w1",
+          "focusOrder": [
+            "w1"
+          ],
+          "lastProfileId": "default"
+        }
+      },
+      "windowId": "w1",
+      "ids": [
+        "a",
+        "b",
+        "c"
+      ],
+      "folders": [
+        {
+          "id": "folder:bar",
+          "title": "Bookmarks Bar",
+          "symbol": "menubar.rectangle"
+        },
+        {
+          "separator": true
+        },
+        {
+          "id": "folder:new",
+          "title": "New Folder…",
+          "symbol": "folder.badge.plus"
+        }
+      ],
+      "items": [
+        {
+          "id": "pin",
+          "title": "Move 3 Tabs to Top Apps",
+          "symbol": "pin",
+          "enabled": true,
+          "checked": false
+        },
+        {
+          "id": "pinRows",
+          "title": "Move 3 Tabs to Pinned in Personal",
+          "symbol": "list.bullet",
+          "enabled": true,
+          "checked": false
+        },
+        {
+          "id": "duplicate",
+          "title": "Duplicate 3 Tabs",
+          "symbol": "plus.square.on.square",
+          "enabled": true,
+          "checked": false
+        },
+        {
+          "id": "newGroup",
+          "title": "New Group with 3 Tabs",
+          "symbol": "plus.rectangle.on.rectangle",
+          "enabled": true,
+          "checked": false
+        },
+        {
+          "separator": true
+        },
+        {
+          "id": "copy",
+          "title": "Copy 3 URLs",
+          "symbol": "link",
+          "enabled": true,
+          "checked": false
+        },
+        {
+          "id": "copyMd",
+          "title": "Copy 3 URLs as Markdown",
+          "symbol": "text.badge.checkmark",
+          "enabled": true,
+          "checked": false
+        },
+        {
+          "id": "bar",
+          "title": "Add 3 Tabs to Bookmarks Bar",
+          "symbol": "bookmark",
+          "enabled": true,
+          "checked": false
+        },
+        {
+          "id": "bookmarkTo",
+          "title": "Add 3 Tabs to Bookmarks Folder",
+          "symbol": "folder",
+          "enabled": true,
+          "checked": false,
+          "children": [
+            {
+              "enabled": true,
+              "checked": false,
+              "id": "folder:bar",
+              "title": "Bookmarks Bar",
+              "symbol": "menubar.rectangle"
+            },
+            {
+              "separator": true
+            },
+            {
+              "enabled": true,
+              "checked": false,
+              "id": "folder:new",
+              "title": "New Folder…",
+              "symbol": "folder.badge.plus"
+            }
+          ]
+        },
+        {
+          "separator": true
+        },
+        {
+          "id": "moveToWindow",
+          "title": "Move to Window",
+          "symbol": "macwindow",
+          "enabled": true,
+          "checked": false,
+          "children": [
+            {
+              "id": "window:new",
+              "title": "New Window",
+              "enabled": true,
+              "checked": false
+            }
+          ]
+        },
+        {
+          "separator": true
+        },
+        {
+          "id": "close",
+          "title": "Close 3 Tabs",
+          "symbol": "xmark",
+          "enabled": true,
+          "checked": false
+        }
+      ],
+      "commands": {
+        "pin": {
+          "name": "tabMenuSelection",
+          "args": [
+            "w1",
+            [
+              "a",
+              "b",
+              "c"
+            ],
+            "pin"
+          ]
+        },
+        "pinRows": {
+          "name": "tabMenuSelection",
+          "args": [
+            "w1",
+            [
+              "a",
+              "b",
+              "c"
+            ],
+            "pinRows"
+          ]
+        },
+        "duplicate": {
+          "name": "tabMenuSelection",
+          "args": [
+            "w1",
+            [
+              "a",
+              "b",
+              "c"
+            ],
+            "duplicate"
+          ]
+        },
+        "newGroup": {
+          "name": "tabMenuSelection",
+          "args": [
+            "w1",
+            [
+              "a",
+              "b",
+              "c"
+            ],
+            "newGroup"
+          ]
+        },
+        "group:g": null,
+        "ungroup": {
+          "name": "tabMenuSelection",
+          "args": [
+            "w1",
+            [
+              "a",
+              "b",
+              "c"
+            ],
+            "ungroup"
+          ]
+        },
+        "window:w2": null,
+        "window:new": {
+          "name": "tabMenuSelection",
+          "args": [
+            "w1",
+            [
+              "a",
+              "b",
+              "c"
+            ],
+            "window:new"
+          ]
+        },
+        "copy": null,
+        "copyMd": null,
+        "bar": null,
+        "folder:f2": null,
+        "folder:new": null,
+        "close": null,
+        "unknown": null
+      }
+    },
+    {
+      "name": "window choices",
+      "state": {
+        "profiles": {
+          "default": {
+            "id": "default",
+            "name": "Personal",
+            "color": "plum",
+            "icon": null,
+            "createdAt": 0
+          },
+          "work": {
+            "id": "work",
+            "name": "Work",
+            "color": "blue",
+            "icon": null,
+            "createdAt": 0
+          }
+        },
+        "profileOrder": [
+          "default",
+          "work"
+        ],
+        "windows": {
+          "w1": {
+            "id": "w1",
+            "profileId": "default",
+            "incognito": false,
+            "tabIds": [
+              "a",
+              "b",
+              "c"
+            ],
+            "activeTabIds": {
+              "default": "b"
+            },
+            "sidebarOpen": true,
+            "frame": [
+              80,
+              80,
+              1100,
+              760
+            ]
+          },
+          "w2": {
+            "id": "w2",
+            "profileId": "work",
+            "incognito": false,
+            "tabIds": [
+              "x",
+              "y"
+            ],
+            "activeTabIds": {
+              "work": "x"
+            },
+            "sidebarOpen": true,
+            "frame": [
+              80,
+              80,
+              1100,
+              760
+            ]
+          },
+          "small": {
+            "id": "small",
+            "profileId": "default",
+            "incognito": false,
+            "tabIds": [],
+            "activeTabIds": {
+              "default": "b"
+            },
+            "sidebarOpen": true,
+            "frame": [
+              80,
+              80,
+              1100,
+              760
+            ],
+            "kind": "small"
+          },
+          "private": {
+            "id": "private",
+            "profileId": "default",
+            "incognito": true,
+            "tabIds": [],
+            "activeTabIds": {
+              "default": "b"
+            },
+            "sidebarOpen": true,
+            "frame": [
+              80,
+              80,
+              1100,
+              760
+            ]
+          }
+        },
+        "windowOrder": [
+          "w1",
+          "w2",
+          "small",
+          "private"
+        ],
+        "tabs": {
+          "a": {
+            "id": "a",
+            "windowId": "w1",
+            "profileId": "default",
+            "url": "https://a.example.com/",
+            "title": "A",
+            "favicon": null,
+            "pinned": false,
+            "muted": false,
+            "zoom": 1,
+            "customTitle": null,
+            "customIcon": null,
+            "pinnedUrl": null,
+            "createdAt": 0,
+            "lastActiveAt": 0
+          },
+          "b": {
+            "id": "b",
+            "windowId": "w1",
+            "profileId": "default",
+            "url": "https://b.example.com/",
+            "title": "B",
+            "favicon": null,
+            "pinned": false,
+            "muted": false,
+            "zoom": 1,
+            "customTitle": null,
+            "customIcon": null,
+            "pinnedUrl": null,
+            "createdAt": 0,
+            "lastActiveAt": 0
+          },
+          "c": {
+            "id": "c",
+            "windowId": "w1",
+            "profileId": "default",
+            "url": "https://c.example.com/",
+            "title": "C",
+            "favicon": null,
+            "pinned": false,
+            "muted": false,
+            "zoom": 1,
+            "customTitle": null,
+            "customIcon": null,
+            "pinnedUrl": null,
+            "createdAt": 0,
+            "lastActiveAt": 0
+          },
+          "x": {
+            "id": "x",
+            "windowId": "w2",
+            "profileId": "work",
+            "url": "https://x.example.com/",
+            "title": "X",
+            "favicon": null,
+            "pinned": false,
+            "muted": false,
+            "zoom": 1,
+            "customTitle": "Report",
+            "customIcon": null,
+            "pinnedUrl": null,
+            "createdAt": 0,
+            "lastActiveAt": 0
+          },
+          "y": {
+            "id": "y",
+            "windowId": "w2",
+            "profileId": "work",
+            "url": "https://y.example.com/",
+            "title": "Y",
+            "favicon": null,
+            "pinned": false,
+            "muted": false,
+            "zoom": 1,
+            "customTitle": null,
+            "customIcon": null,
+            "pinnedUrl": null,
+            "createdAt": 0,
+            "lastActiveAt": 0
+          }
+        },
+        "groups": {},
+        "splits": {},
+        "selection": {
+          "w1": [
+            "a",
+            "b",
+            "c"
+          ]
+        },
+        "settings": {
+          "tabLayout": "sidebar",
+          "pageEngine": "chromium",
+          "protectedVideoInWebKit": false
+        },
+        "ui": {
+          "focusedWindowId": "w1",
+          "focusOrder": [
+            "w1"
+          ],
+          "lastProfileId": "default"
+        }
+      },
+      "windowId": "w1",
+      "ids": [
+        "a",
+        "b",
+        "c"
+      ],
+      "folders": [
+        {
+          "id": "folder:bar",
+          "title": "Bookmarks Bar",
+          "symbol": "menubar.rectangle"
+        },
+        {
+          "id": "folder:other@default",
+          "title": "Other Bookmarks",
+          "symbol": "folder"
+        },
+        {
+          "id": "folder:f2",
+          "title": "Zebra",
+          "symbol": "folder"
+        },
+        {
+          "id": "folder:f1",
+          "title": "Alpha",
+          "symbol": "folder"
+        },
+        {
+          "separator": true
+        },
+        {
+          "id": "folder:new",
+          "title": "New Folder…",
+          "symbol": "folder.badge.plus"
+        }
+      ],
+      "items": [
+        {
+          "id": "pin",
+          "title": "Move 3 Tabs to Top Apps",
+          "symbol": "pin",
+          "enabled": true,
+          "checked": false
+        },
+        {
+          "id": "pinRows",
+          "title": "Move 3 Tabs to Pinned in Personal",
+          "symbol": "list.bullet",
+          "enabled": true,
+          "checked": false
+        },
+        {
+          "id": "duplicate",
+          "title": "Duplicate 3 Tabs",
+          "symbol": "plus.square.on.square",
+          "enabled": true,
+          "checked": false
+        },
+        {
+          "id": "newGroup",
+          "title": "New Group with 3 Tabs",
+          "symbol": "plus.rectangle.on.rectangle",
+          "enabled": true,
+          "checked": false
+        },
+        {
+          "separator": true
+        },
+        {
+          "id": "copy",
+          "title": "Copy 3 URLs",
+          "symbol": "link",
+          "enabled": true,
+          "checked": false
+        },
+        {
+          "id": "copyMd",
+          "title": "Copy 3 URLs as Markdown",
+          "symbol": "text.badge.checkmark",
+          "enabled": true,
+          "checked": false
+        },
+        {
+          "id": "bar",
+          "title": "Add 3 Tabs to Bookmarks Bar",
+          "symbol": "bookmark",
+          "enabled": true,
+          "checked": false
+        },
+        {
+          "id": "bookmarkTo",
+          "title": "Add 3 Tabs to Bookmarks Folder",
+          "symbol": "folder",
+          "enabled": true,
+          "checked": false,
+          "children": [
+            {
+              "enabled": true,
+              "checked": false,
+              "id": "folder:bar",
+              "title": "Bookmarks Bar",
+              "symbol": "menubar.rectangle"
+            },
+            {
+              "enabled": true,
+              "checked": false,
+              "id": "folder:other@default",
+              "title": "Other Bookmarks",
+              "symbol": "folder"
+            },
+            {
+              "enabled": true,
+              "checked": false,
+              "id": "folder:f2",
+              "title": "Zebra",
+              "symbol": "folder"
+            },
+            {
+              "enabled": true,
+              "checked": false,
+              "id": "folder:f1",
+              "title": "Alpha",
+              "symbol": "folder"
+            },
+            {
+              "separator": true
+            },
+            {
+              "enabled": true,
+              "checked": false,
+              "id": "folder:new",
+              "title": "New Folder…",
+              "symbol": "folder.badge.plus"
+            }
+          ]
+        },
+        {
+          "separator": true
+        },
+        {
+          "id": "moveToWindow",
+          "title": "Move to Window",
+          "symbol": "macwindow",
+          "enabled": true,
+          "checked": false,
+          "children": [
+            {
+              "id": "window:w2",
+              "title": "Work — Report & 1 Tab",
+              "enabled": true,
+              "checked": false
+            },
+            {
+              "separator": true
+            },
+            {
+              "id": "window:new",
+              "title": "New Window",
+              "enabled": true,
+              "checked": false
+            }
+          ]
+        },
+        {
+          "separator": true
+        },
+        {
+          "id": "close",
+          "title": "Close 3 Tabs",
+          "symbol": "xmark",
+          "enabled": true,
+          "checked": false
+        }
+      ],
+      "commands": {
+        "pin": {
+          "name": "tabMenuSelection",
+          "args": [
+            "w1",
+            [
+              "a",
+              "b",
+              "c"
+            ],
+            "pin"
+          ]
+        },
+        "pinRows": {
+          "name": "tabMenuSelection",
+          "args": [
+            "w1",
+            [
+              "a",
+              "b",
+              "c"
+            ],
+            "pinRows"
+          ]
+        },
+        "duplicate": {
+          "name": "tabMenuSelection",
+          "args": [
+            "w1",
+            [
+              "a",
+              "b",
+              "c"
+            ],
+            "duplicate"
+          ]
+        },
+        "newGroup": {
+          "name": "tabMenuSelection",
+          "args": [
+            "w1",
+            [
+              "a",
+              "b",
+              "c"
+            ],
+            "newGroup"
+          ]
+        },
+        "group:g": null,
+        "ungroup": {
+          "name": "tabMenuSelection",
+          "args": [
+            "w1",
+            [
+              "a",
+              "b",
+              "c"
+            ],
+            "ungroup"
+          ]
+        },
+        "window:w2": {
+          "name": "tabMenuSelection",
+          "args": [
+            "w1",
+            [
+              "a",
+              "b",
+              "c"
+            ],
+            "window:w2"
+          ]
+        },
+        "window:new": {
+          "name": "tabMenuSelection",
+          "args": [
+            "w1",
+            [
+              "a",
+              "b",
+              "c"
+            ],
+            "window:new"
+          ]
+        },
+        "copy": null,
+        "copyMd": null,
+        "bar": null,
+        "folder:f2": null,
+        "folder:new": null,
+        "close": null,
+        "unknown": null
+      }
+    }
+  ]
+}

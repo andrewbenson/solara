@@ -9,7 +9,7 @@ import { sidebarSession } from "./sidebar-position-test.mjs";
 const args = process.argv.slice(2);
 const positional = args.filter((arg) => !arg.startsWith("--"));
 if (args.includes("--help") || positional.length !== 2) {
-  console.log("usage: node apps/browser/scripts/tab-menu-test.mjs <Debug Solara.app> <scratch directory> [--keep-data]\n\nExercises the native single-tab context menu and its pin, group, profile and window commands. Each command is reversed by one applyState inverse transaction, matching PinnedRowsTests; Solara has no general store undo command. Playing-page and split moves are compared with the existing JavaScript actions. All test output stays under the supplied scratch directory.");
+  console.log("usage: node apps/browser/scripts/tab-menu-test.mjs <Debug Solara.app> <scratch directory> [--keep-data]\n\nExercises the native single-tab and multi-selection context menus and its pin, group, profile and window commands. Each command is reversed by one applyState inverse transaction, matching PinnedRowsTests; Solara has no general store undo command. Playing-page and split moves are compared with the existing JavaScript actions. All test output stays under the supplied scratch directory.");
   process.exit(args.includes("--help") ? 0 : 2);
 }
 const appPath = resolve(positional[0]);
@@ -118,6 +118,56 @@ const commandLeg = async (name, tabId, choice, setup, check) => rep.check(name, 
     if (setup) await reverse(beforeSetup, expectedSetup);
   }
 });
+const multiLeg = async (choice, setup, check) => rep.check(`selection ${choice} is one reversible commit`, async () => {
+  const initial = await capture();
+  const initialShape = await shape();
+  try {
+    if (setup) await run(`${setup}; return settle(300);`);
+    await run('st().setSelection("w1", ["a","b","c"]); return settle(300);');
+    const before = await capture();
+    const expected = await shape();
+    const rev = await run('return snap().rev;');
+    await open("b", choice);
+    await until(`${choice} selection result`, () => run(`const s = st(); return !s.selection.w1?.length && (${check});`)).catch(async (error) => {
+      rep.log(`${choice} state: ${JSON.stringify(await run(`const s = st(); return { tabs: Object.keys(s.tabs).length, expected: globalThis.multiTabCount ?? null, selection: s.selection.w1 ?? null, w1: s.windows.w1.tabIds };`))}`);
+      throw error;
+    });
+    await sleep(300);
+    const commits = JSON.parse(await run(`return A.catchUp(${rev});`));
+    assert.ok(Array.isArray(commits.patches), `${choice}: the commits after ${rev} come back as patches`);
+    const summary = commits.patches.map((p) => ({ rev: p.rev, keys: Object.keys(p).filter((k) => k !== "rev" && k !== "bridge") }));
+    rep.log(`${choice} commits after ${rev}: ${JSON.stringify(summary)}`);
+    assert.equal(summary[0]?.rev, rev + 1, `${choice}: the choice is the next commit`);
+    assert.ok(summary[0].keys.includes("selection"), `${choice}: the choice's commit clears the selection: ${JSON.stringify(summary)}`);
+    const structural = ["selection", "groups", "splits", "windowOrder", "pinChoices", "ui"];
+    const later = summary.slice(1).filter((p) => p.keys.some((k) => structural.includes(k)));
+    assert.deepEqual(later, [], `${choice} commits once; later commits are only page and window reports: ${JSON.stringify(summary)}`);
+    await reverse(before, expected);
+  } finally {
+    await reverse(initial, initialShape);
+  }
+});
+const multiFallbackLeg = async (choice, check) => rep.check(`selection ${choice} reaches JavaScript with every id`, async () => {
+  await run('st().setSelection("w1", ["a","b","c"]); return settle(300);');
+  const before = await capture();
+  const expected = await shape();
+  try {
+    if (choice === "copy" || choice === "copyMd") await run('globalThis.copiedTexts = []; globalThis.realCopyText ??= M.copyText; M.copyText = (text) => { globalThis.copiedTexts.push(text); }; return true;');
+    await open("b", choice);
+    await until(`${choice} fallback effect`, () => run(`const s = st(); return ${check};`));
+    if (choice === "copy" || choice === "copyMd") {
+      const texts = await until("copied text", () => run("return globalThis.copiedTexts;"), (got) => Array.isArray(got) && got.length === 1);
+      const text = texts[0];
+      for (const id of ["a", "b", "c"]) assert.ok(text.includes(url(id)), `${id} in clipboard: ${text}`);
+      assert.equal(text.split("\n").length, 3);
+      if (choice === "copyMd") assert.ok(text.split("\n").every((line) => line.startsWith("- [")));
+    }
+  } finally {
+    await run('if (globalThis.realCopyText) M.copyText = globalThis.realCopyText; return true;');
+    await reverse(before, expected);
+    await run('st().setSelection("w1", []); return true;');
+  }
+});
 const inPage = async (id, expression) => {
   const page = await app.page(url(id));
   try { return await page.eval(expression, { userGesture: true }); } finally { page.close(); }
@@ -159,6 +209,46 @@ const mediaLeg = async (tabId, target) => rep.check(`${tabId} to ${target}: play
   assert.deepEqual(observations[1], observations[0], JSON.stringify({ js: observations[0], swift: observations[1] }));
   rep.log(`${tabId} ${target}: ${JSON.stringify(observations[1])}`);
 });
+const multiMediaLeg = async () => rep.check("three-tab window move preserves playing media and a split pair as JavaScript does", async () => {
+  const observations = [];
+  const ids = ["media", "split", "mate"];
+  for (const path of ["JavaScript", "Swift"]) {
+    await run('st().activate("media"); st().createSplit(["split","mate"]); st().activate("split"); return settle(500);');
+    const beforePages = {};
+    for (const id of ids) {
+      await until(`${id} loaded`, () => inPage(id, "!!window.loadToken"));
+      await inPage(id, "tone.play().then(() => true)");
+      beforePages[id] = await until(`${id} plays`, () => pageState(id), (state) => !state.paused);
+    }
+    await run('st().setSelection("w1", ["media","split","mate"]); return settle(300);');
+    const before = await capture();
+    const expected = await shape();
+    const rev = await run('return snap().rev;');
+    if (path === "Swift") await open("split", "window:w2");
+    else await run('const ids = ["media","split","mate"]; const profile = st().tabs[ids[0]].profileId; const target = st().moveTabsToWindow(ids,"w2"); if (target) ac.actions.switchToTab(st().windows[target]?.activeTabIds[profile] ?? ids[0]); st().setSelection("w1", []); return true;');
+    await until("all selected tabs moved", () => run('return ["media","split","mate"].every((id) => st().tabs[id]?.windowId === "w2") && !st().selection.w1?.length;'));
+    if (path === "Swift") {
+      const commits = JSON.parse(await run(`return A.catchUp(${rev});`));
+      const summary = (commits.patches ?? []).map((p) => ({ rev: p.rev, keys: Object.keys(p).filter((k) => k !== "rev" && k !== "bridge") }));
+      assert.equal(summary[0]?.rev, rev + 1, "the move is the next commit");
+      assert.ok(summary[0].keys.includes("selection"), `the move's commit clears the selection: ${JSON.stringify(summary)}`);
+      assert.deepEqual(summary.slice(1).filter((p) => p.keys.some((k) => ["selection", "groups", "splits", "windowOrder", "pinChoices", "ui"].includes(k))), [], `the move commits once: ${JSON.stringify(summary)}`);
+    }
+    await sleep(800);
+    const pages = {};
+    for (const id of ids) {
+      const after = await pageState(id), before = beforePages[id];
+      pages[id] = { reloaded: after.token !== before.token, paused: after.paused, extraPause: after.pauses - before.pauses };
+      assert.deepEqual(pages[id], { reloaded: false, paused: false, extraPause: 0 }, `${path} ${id}`);
+    }
+    const state = await shape();
+    observations.push({ pages, splits: Object.values(state.splits).map(({tabIds,orientation}) => ({tabIds,orientation})), active: state.windows.w2.activeTabIds.default, focused: await run('return st().ui.focusedWindowId;') });
+    await reverse(before, expected);
+    await run('st().setSelection("w1", []); return true;');
+  }
+  assert.deepEqual(observations[1], observations[0]);
+});
+
 try {
   app = await launch(appPath, { data: join(scratch, "data"), fresh: true, onboarded: true, session: session(fixture), probe: true,
     env: { SOLARA_NATIVE_SHELL: "1", SOLARA_NATIVE_TOP_STRIP: "1", SOLARA_ALLOW_AUDIO: "1" },
@@ -186,6 +276,40 @@ try {
   await commandLeg("window moves and activates in an existing window", "a", "window:w2", null, 's.tabs.a.windowId === "w2" && s.windows.w2.activeTabIds.default === "a" && s.ui.focusedWindowId === "w2"');
   await commandLeg("window:new creates a window containing the tab", "a", "window:new", null, 's.tabs.a.windowId !== "w1" && s.tabs.a.windowId !== "w2" && s.windows[s.tabs.a.windowId].activeTabIds.default === "a" && s.ui.focusedWindowId === s.tabs.a.windowId');
   for (const id of ["media", "split"]) for (const target of ["window:w2", "profile:work"]) await mediaLeg(id, target);
+  await rep.check("multi menu rows and dismissal preserve the ordered selection", async () => {
+    await run('st().setSelection("w1", ["c","a","b"]); return settle(300);');
+    const rev = await run('return snap().rev;');
+    const menu = await open("b", null);
+    const rows = menu.items.map((item) => item.separator ? "-" : item.id ?? item.title);
+    assert.deepEqual(rows, ["pin","pinRows","duplicate","newGroup","Move to Group","ungroup","-","copy","copyMd","bar","Add 3 Tabs to Bookmarks Folder","-","Move to Window","-","close"]);
+    assert.equal(menu.items.find((item) => item.id === "pin").title, "Move 3 Tabs to Top Apps");
+    assert.deepEqual(await run('return st().selection.w1;'), ["c","a","b"]);
+    assert.equal(await run('return snap().rev;'), rev);
+    await run('st().setSelection("w1", []); return true;');
+  });
+  await multiLeg("pin", null, '["a","b","c"].every((id) => s.tabs[id].pinned)');
+  await multiLeg("pin", 'st().pinTabs(["a","b","c"], true)', '["a","b","c"].every((id) => !s.tabs[id].pinned)');
+  await multiLeg("pinRows", null, '["a","b","c"].every((id) => s.tabs[id].pinnedAsRow)');
+  await multiLeg("duplicate", 'globalThis.multiTabCount = Object.keys(snap().data.tabs).length', 'Object.keys(s.tabs).length === globalThis.multiTabCount + 3');
+  await multiLeg("newGroup", null, 'Object.values(s.groups).some((g) => ["a","b","c"].every((id) => g.tabIds.includes(id)))');
+  await multiLeg(`group:${groupId}`, null, `s.groups[${JSON.stringify(groupId)}].tabIds.includes("a")`);
+  await multiLeg("ungroup", null, '!["a","b","c"].some((id) => Object.values(s.groups).some((g) => g.tabIds.includes(id)))');
+  await multiLeg("window:w2", null, '["a","b","c"].every((id) => s.tabs[id].windowId === "w2") && s.windows.w2.activeTabIds.default === "c" && s.ui.focusedWindowId === "w2"');
+  await multiLeg("window:new", null, '["a","b","c"].every((id) => s.tabs[id].windowId === s.tabs.a.windowId) && !["w1","w2"].includes(s.tabs.a.windowId) && s.ui.focusedWindowId === s.tabs.a.windowId');
+  for (const choice of ["copy", "copyMd"]) await multiFallbackLeg(choice, 's.selection.w1?.length === 3');
+  await multiFallbackLeg("close", '!["a","b","c"].some((id) => s.tabs[id])');
+  const bookmarkIds = await run('return ac.bookmarks.addBookmarkFolder({profileId:"default",title:"Multi menu folder"}).then((folder) => ({folder,bar:st().bookmarks.roots.default.bar}));');
+  for (const [choice, parent] of [["bar", bookmarkIds.bar], ["folder:bar", bookmarkIds.bar], [`folder:${bookmarkIds.folder}`, bookmarkIds.folder]]) {
+    await run(`const parent = ${JSON.stringify(parent)}; const nodes = st().bookmarks.nodes; globalThis.multiBookmarksBefore = new Set(nodes[parent]?.children ?? []); return true;`);
+    await multiFallbackLeg(choice, `!s.selection.w1?.length && ["a","b","c"].every((id) => Object.values(s.bookmarks.nodes).some((node) => node.kind === "url" && node.parentId === ${JSON.stringify(parent)} && node.url === s.tabs[id]?.url && !globalThis.multiBookmarksBefore.has(node.id)))`);
+  }
+  await run('globalThis.multiMenuPrompt = M.prompt; M.prompt = () => Promise.resolve("Multi selection folder"); return true;');
+  try {
+    await multiFallbackLeg("folder:new", '!s.selection.w1?.length && Object.values(s.bookmarks.nodes).some((node) => node.kind === "folder" && node.title === "Multi selection folder" && ["a","b","c"].every((id) => node.children.some((child) => s.bookmarks.nodes[child]?.url === s.tabs[id]?.url)))');
+  } finally {
+    await run('M.prompt = globalThis.multiMenuPrompt; delete globalThis.multiMenuPrompt; return true;');
+  }
+  await multiMediaLeg();
   await rep.check("the top strip opens the same native menu", async () => {
     await run('st().updateSettings({tabLayout:"top"}); return settle(1000);');
     const items = await run('return expo.modules.SolaraTopStrip.items("w1").then(JSON.parse).then((s) => s.items);');
@@ -198,6 +322,15 @@ try {
     await run(`const f = st().windows.w1.frame; return Promise.resolve(expo.modules.SolaraCEF.chromeWindows()).then((windows) => { const native = windows.filter((w) => w.hasRoot).find((w) => { const r=w.frame.match(/[-\\d.]+/g).map(Number); return Math.abs(r[0]-f[0])<2 && Math.abs(r[2]-f[2])<2; }); return expo.modules.SolaraCEF.devWindow(native.window, "click:${Math.round(tab.windowX + Math.min(40, tab.width / 2))},20,right"); });`);
     await until("top strip native menu", () => run('return D.devTabMenus();'), (got) => got === count + 1);
     await until("strip Pin store result", () => run('return st().tabs.a.pinned;'));
+    await reverse(before, expected);
+    await run('st().setSelection("w1", ["a","b","c"]); return settle(300);');
+    const multiRev = await run('return snap().rev;');
+    const multiCount = await run('return D.devTabMenus();');
+    await run('return M.devContextMenu("arm", "pin");');
+    await run(`const f = st().windows.w1.frame; return Promise.resolve(expo.modules.SolaraCEF.chromeWindows()).then((windows) => { const native = windows.filter((w) => w.hasRoot).find((w) => { const r=w.frame.match(/[-\\d.]+/g).map(Number); return Math.abs(r[0]-f[0])<2 && Math.abs(r[2]-f[2])<2; }); return expo.modules.SolaraCEF.devWindow(native.window, "click:${Math.round(tab.windowX + Math.min(40, tab.width / 2))},20,right"); });`);
+    await until("top strip multi menu", () => run('return D.devTabMenus();'), (got) => got === multiCount + 1);
+    await until("strip multi Pin result", () => run('return ["a","b","c"].every((id) => st().tabs[id].pinned) && !st().selection.w1?.length;'));
+    assert.equal(await run('return snap().rev;'), multiRev + 1);
     await reverse(before, expected);
   });
 } finally {

@@ -28,7 +28,7 @@ import { openSettings } from "../settings/windows";
 import { clickTab, commitRename, endRename, startRename } from "./actions";
 import { pressGroupClose, pressTabClose } from "./closeControl";
 import { dismissHover, nativeRowHover } from "./hover";
-import { closeAllTabs, middleClickTab, openGroupMenu, openOverflowMenu, openSidebarMenu, openTabMenu, runGroupMenuChoice, runTabMenuChoice, showUndoToast } from "./menus";
+import { closeAllTabs, middleClickTab, openGroupMenu, openOverflowMenu, openSidebarMenu, openTabMenu, runGroupMenuChoice, runTabMenuChoice, runTabMenuSelectionChoice, showUndoToast } from "./menus";
 import { applyNativeRenameState, resetNativeRenames } from "./renameMirror";
 import { setSidebarUi, sidebarUi, useSidebarUi } from "./state";
 import { useSidebarTokens } from "./tokens";
@@ -208,7 +208,7 @@ addNativeSettingsHandlers({
     windowId: string,
     name: string,
     id: string,
-    extra: Mods & { kind?: "tab" | "group" | "folder" | "live"; split?: boolean; text?: string | null; action?: string; item?: string | null; cleared?: string; seq?: number; windows?: Record<string, number>; choice?: string },
+    extra: Mods & { kind?: "tab" | "group" | "folder" | "live"; split?: boolean; text?: string | null; action?: string; item?: string | null; cleared?: string; seq?: number; windows?: Record<string, number>; ids?: string[]; choice?: string },
   ) => {
     const s = useBrowser.getState();
     if (name === "hover") return nativeRowHover(windowId, extra.kind && id ? { kind: extra.kind, id } : null);
@@ -245,6 +245,8 @@ addNativeSettingsHandlers({
       }
       case "groupMenu":
         return void openGroupMenu(windowId, id);
+      case "tabMenuSelectionChoice":
+        return runTabMenuSelectionChoice(windowId, extra.ids ?? [], extra.choice ?? "");
       case "tabMenuChoice":
         return runTabMenuChoice(windowId, id, extra.choice ?? "");
       case "groupMenuChoice":

@@ -30,6 +30,100 @@ import Testing
     }
   }
 
+  @Test func sharedMultiCasesMatchTheJavaScriptPlanner() throws {
+    let path = URL(fileURLWithPath: #filePath).deletingLastPathComponent().appendingPathComponent("Cases/multi-tab-menu.json")
+    let cases = try #require(try JSONValue.parse(Data(contentsOf: path))["cases"]?.array)
+    #expect(cases.count >= 12)
+    for fixture in cases {
+      let state = try BrowserState(stateJSON: fixture["state"]?.object ?? [:])
+      let window = fixture["windowId"]?.string ?? ""
+      let ids = fixture["ids"]?.array?.compactMap(\.string) ?? []
+      let folders = (fixture["folders"]?.array ?? []).map(TabMenuItem.init(json:))
+      let items = TabMenuPlan.multiItems(state, windowId: window, ids: ids, folders: folders)
+      #expect(Self.canonical(.array(items.map(\.json))) == Self.canonical(fixture["items"] ?? .null), "\(fixture["name"]?.string ?? "?")")
+      for (choice, expected) in fixture["commands"]?.object ?? [:] {
+        let command = TabMenuPlan.multiCommand(choice, windowId: window, ids: ids, state: state)
+        #expect(Self.canonical(command?.json ?? .null) == Self.canonical(expected), "\(choice)")
+      }
+    }
+  }
+
+  @Test(arguments: ["pin", "pinRows", "duplicate", "newGroup", "group", "ungroup", "window", "window:new"])
+  func selectionChoicesCommitOnceClearSelectionAndRestore(_ choice: String) throws {
+    let f = try Self.fixture()
+    var picked = choice
+    if choice == "group" || choice == "ungroup" {
+      let id = try #require(try f.store.dispatch(Command("groupTabs", [[.string(f.ids[0])], ["pinned": false]])).result?.string)
+      if choice == "group" { picked = "group:\(id)" }
+    }
+    if choice == "window" { picked = "window:\(f.otherWindow)" }
+    let ids = JSONValue.array(f.ids.map(JSONValue.string))
+    try f.store.dispatch(Command("setSelection", [.string(f.window), ids]))
+    let before = Self.snapshot(f.store.state)
+    let count = f.store.state.tabs.count
+    let rev = f.store.deliveryCursor().committed
+    let command = try #require(TabMenuPlan.multiCommand(picked, windowId: f.window, ids: f.ids, state: f.store.state))
+    let commit = try f.store.dispatch(command, origin: .native)
+    #expect(f.store.deliveryCursor().committed == rev + 1)
+    #expect(commit.commands == [command])
+    #expect(f.store.state.selection[f.window]?.ids.isEmpty != false)
+    switch choice {
+    case "duplicate":
+      #expect(f.store.state.tabs.count == count + 3)
+      for id in f.ids {
+        #expect(f.store.state.tabs.values.filter { $0.url == f.store.state.tabs[id]?.url }.count == 2)
+      }
+    case "pin", "pinRows":
+      #expect(f.ids.allSatisfy { f.store.state.tabs[$0]?.pinned == true })
+      #expect(f.ids.allSatisfy { f.store.state.tabs[$0]?.isPinnedRow == (choice == "pinRows") })
+    case "newGroup":
+      let group = try #require(commit.result?.string)
+      #expect(f.store.state.groups[group]?.tabIds == f.ids)
+    case "group":
+      #expect(f.store.state.groups[String(picked.dropFirst(6))]?.tabIds == f.ids)
+    case "ungroup":
+      #expect(f.ids.allSatisfy { Groups.innermostGroupOf(f.store.state.groups, $0) == nil })
+    default:
+      let target = try #require(commit.result?.string)
+      #expect(f.ids.allSatisfy { f.store.state.tabs[$0]?.windowId == target })
+      #expect(f.store.state.ui.focusedWindowId == target)
+      #expect(f.store.state.activeTabId(target) == (choice == "window:new" ? f.ids.first : f.ids.last))
+    }
+    try f.store.dispatch(Command("applyState", [.object(before)]))
+    #expect(Self.snapshot(f.store.state) == before)
+  }
+
+  @Test func selectionGroupExcludesTilesAndWindowMoveMatchesSwitchToTab() throws {
+    let f = try Self.fixture()
+    try f.store.dispatch(Command("pinTabs", [[.string(f.ids[0])], true, false]))
+    let group = try #require(try f.store.dispatch(Command("tabMenuSelection", [.string(f.window), .array(f.ids.map(JSONValue.string)), "newGroup"])).result?.string)
+    #expect(f.store.state.groups[group]?.tabIds == Array(f.ids.dropFirst()))
+    let otherActive = try #require(f.store.state.activeTabId(f.otherWindow))
+    try f.store.dispatch(Command("openPeek", [.string(otherActive), "https://peek.example/"]))
+    let before = f.store.state
+    let expected = makeStore(before)
+    try expected.dispatch(Command("moveTabsToWindow", [.array(f.ids.map(JSONValue.string)), .string(f.otherWindow)]))
+    let active = expected.state.windows[f.otherWindow]?.activeTabIds[before.tabs[f.ids[0]]!.profileId] ?? f.ids[0]
+    try expected.dispatch(Command("activate", [.string(active)]))
+    try expected.dispatch(Command("setFocusedWindow", [.string(f.otherWindow)]))
+    try f.store.dispatch(Command("tabMenuSelection", [.string(f.window), .array(f.ids.map(JSONValue.string)), .string("window:\(f.otherWindow)")]))
+    func normalized(_ state: BrowserState) -> JSONObject {
+      var snapshot = Self.snapshot(state)
+      var tabs = snapshot["tabs"]?.object ?? [:]
+      for id in tabs.keys {
+        var tab = tabs[id]?.object ?? [:]
+        if var navigation = tab["navigation"]?.object {
+          navigation["seq"] = 0
+          tab["navigation"] = .object(navigation)
+        }
+        tabs[id] = .object(tab)
+      }
+      snapshot["tabs"] = .object(tabs)
+      return snapshot
+    }
+    #expect(normalized(f.store.state) == normalized(expected.state))
+  }
+
   struct Fixture {
     var store: Store
     var window: String

@@ -1,4 +1,5 @@
 import AppKit
+import SolaraEngine
 import SolaraModel
 import SolaraShell
 import SolaraStore
@@ -10,11 +11,16 @@ enum NativeTabMenu {
   private(set) static var handled = 0
   #endif
 
-  static func open(_ tabId: String, windowId: String, js: @escaping @MainActor (String, String) -> Void) -> Bool {
-    guard let store = WorkspaceWrites.store,
-      let items = TabMenuPlan.items(store.state, windowId: windowId, tabId: tabId) else { return false }
+  static func open(_ tabId: String, windowId: String, js: @escaping @MainActor (String, String, [String]?) -> Void) -> Bool {
+    guard let store = WorkspaceWrites.store, store.state.tabs[tabId]?.windowId == windowId else { return false }
+    let selected = store.state.viewTabIds(windowId).filter { store.state.selection[windowId]?.ids.contains($0) == true }
+    let multi = selected.count > 1 && selected.contains(tabId)
+    let planned = multi
+      ? TabMenuPlan.multiItems(store.state, windowId: windowId, ids: selected, folders: bookmarkFolderItems(store.state, windowId: windowId))
+      : TabMenuPlan.items(store.state, windowId: windowId, tabId: tabId)
+    guard let items = planned else { return false }
     guard !items.isEmpty else { return true }
-    if store.state.selection[windowId]?.ids.isEmpty == false {
+    if !multi, store.state.selection[windowId]?.ids.isEmpty == false {
       do {
         try store.dispatch(Command("setSelection", [.string(windowId), []]), origin: .native)
       } catch {
@@ -31,7 +37,15 @@ enum NativeTabMenu {
       guard let store = WorkspaceWrites.store, store === owner, store.state.tabs[tabId] != nil else {
         return NSLog("[tabs] %@: gone or stood down while its menu was open", tabId)
       }
-      run(choice, tabId: tabId, windowId: windowId, store: store, js: js)
+      if multi {
+        guard let command = TabMenuPlan.multiCommand(choice, windowId: windowId, ids: selected, state: store.state) else {
+          return js(tabId, choice, selected)
+        }
+        guard let result = dispatch(store, command) else { return }
+        finish(choice, result: result, windowId: windowId, store: store)
+      } else {
+        run(choice, tabId: tabId, windowId: windowId, store: store, js: js)
+      }
     }
     return true
   }
@@ -58,14 +72,18 @@ enum NativeTabMenu {
 
   private static func run(
     _ choice: String, tabId: String, windowId: String, store: Store,
-    js: @escaping @MainActor (String, String) -> Void
+    js: @escaping @MainActor (String, String, [String]?) -> Void
   ) {
     guard let command = TabMenuPlan.command(choice, windowId: windowId, tabId: tabId, state: store.state) else {
-      return js(tabId, choice)
+      return js(tabId, choice, nil)
     }
     let muted = store.state.tabs[tabId].map { !$0.muted }
     guard let result = dispatch(store, command) else { return }
     if choice == "mute", let muted { mutePage(tabId, muted: muted) }
+    finish(choice, result: result, windowId: windowId, store: store)
+  }
+
+  private static func finish(_ choice: String, result: JSONValue, windowId: String, store: Store) {
     if choice == "newGroup", let id = result.string, !id.isEmpty,
       WorkspaceActionRouter.sidebarShows(store.state, windowId: windowId) {
       if !NativeWorkspaceRename.begin(windowId: windowId, kind: .group, id: id) {
@@ -75,9 +93,28 @@ enum NativeTabMenu {
     if choice.hasPrefix("window:"), let id = result.string, !id.isEmpty { ShellScripting.showWindow(id) }
   }
 
+  private static func bookmarkFolderItems(_ state: BrowserState, windowId: String) -> [TabMenuItem] {
+    let bar = TabMenuItem(id: "folder:bar", title: "Bookmarks Bar", symbol: "menubar.rectangle")
+    let ending = [TabMenuItem(separator: true), TabMenuItem(id: "folder:new", title: "New Folder…", symbol: "folder.badge.plus")]
+    let profile = state.bookmarkProfileId(state.windows[windowId])
+    guard let owner = NativeBookmarkOwner.displayCurrent, let projection = try? owner.projection(),
+      let engine = projection["profiles"]?[profile]?["engine"]?.string,
+      let view = projection["views"]?[engine], view["hasView"]?.truthy == true,
+      let nodes = view["document"]?["nodes"]?.object else { return [bar] + ending }
+    let roots = BookmarkFlat.roots(engine)
+    guard nodes[roots.bar]?["kind"]?.string == "folder", nodes[roots.other]?["kind"]?.string == "folder" else { return [bar] + ending }
+    let folders = [roots.bar, roots.other].flatMap { root in
+      (nodes[root]?["children"]?.array ?? []).compactMap { child -> TabMenuItem? in
+        guard let id = child.string, let node = nodes[id], node["kind"]?.string == "folder" else { return nil }
+        return TabMenuItem(id: "folder:\(id)", title: node["title"]?.string ?? "", symbol: "folder")
+      }
+    }
+    return [bar, TabMenuItem(id: "folder:\(roots.other)", title: "Other Bookmarks", symbol: "folder")] + folders + ending
+  }
+
   private static func dictionary(_ item: TabMenuItem, hints: [JSKey: String]) -> [String: Any] {
     var row = item.dictionary
-    let commands = ["copy": "copyUrl", "backToPin": "returnToPinnedUrl", "newGroup": "newGroupWithTabs", "bookmark": "bookmarkPage", "close": "closeTab"]
+    let commands = ["copy": "copyUrl", "copyMd": "copyUrlAsMarkdown", "backToPin": "returnToPinnedUrl", "newGroup": "newGroupWithTabs", "bookmark": "bookmarkPage", "close": "closeTab"]
     if let id = item.id, let command = commands[id], let hint = hints[JSKey(command)], let key = GroupMenu.menuKey(hint) {
       row["key"] = key.key
       row["modifiers"] = key.modifiers

@@ -94,8 +94,8 @@ public class SidebarDragModule: Module {
         if WorkspaceWrites.store != nil {
           Task { @MainActor in _ = await SettingsAdapters.js("sidebar.action", windowId, "handled", tabId, [String: Any]()) }
         }
-        return NativeTabMenu.open(tabId, windowId: windowId) { id, choice in
-          Task { @MainActor in _ = await SettingsAdapters.js("sidebar.action", windowId, "tabMenuChoice", id, ["choice": choice]) }
+        return NativeTabMenu.open(tabId, windowId: windowId) { id, choice, ids in
+          Task { @MainActor in _ = await SettingsAdapters.js("sidebar.action", windowId, ids == nil ? "tabMenuChoice" : "tabMenuSelectionChoice", id, ["choice": choice, "ids": ids ?? []]) }
         }
       }
     }.runOnQueue(.main)

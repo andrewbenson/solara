@@ -150,6 +150,63 @@ public enum TabMenuPlan {
     return rows
   }
 
+  public static func multiItems(_ state: BrowserState, windowId: String, ids: [String], folders: [TabMenuItem]) -> [TabMenuItem] {
+    let tabs = ids.compactMap { state.tabs[$0] }
+    guard !tabs.isEmpty, tabs.count == ids.count, tabs.allSatisfy({ $0.windowId == windowId }), let window = state.windows[windowId] else { return [] }
+    let n = ids.count
+    let allPinned = tabs.allSatisfy(\.pinned)
+    let allTiles = tabs.allSatisfy { $0.pinSection == .tile }
+    let incognito = tabs.contains { Ids.isIncognitoProfile($0.profileId) }
+    let session = Session(state: state, memory: StoreMemory(), env: PlainWebAddressing(), config: StoreConfig(), now: 0)
+    let groups = state.groups.values.filter { $0.windowId == windowId && $0.profileId == window.profileId }.map { group in
+      TabMenuItem(id: "group:\(group.id)", title: Groups.groupPath(state.groups, group.id).compactMap { state.groups[$0] }.map { session.groupLabel(state, $0) }.joined(separator: " › "), symbol: group.pinned ? "pin" : "square.on.square")
+    }.sorted { $0.title.utf16.lexicographicallyPrecedes($1.title.utf16) }
+    var rows: [TabMenuItem] = [.init(id: "pin", title: allPinned ? "Unpin \(n) Tabs" : "Move \(n) Tabs to Top Apps", symbol: allPinned ? "pin.slash" : "pin")]
+    if !tabs.allSatisfy(\.isPinnedRow) {
+      rows.append(.init(id: "pinRows", title: "Move \(n) Tabs to Pinned in \(state.profiles[tabs[0].profileId]?.name ?? "Profile")", symbol: "list.bullet"))
+    }
+    rows += [
+      .init(id: "duplicate", title: "Duplicate \(n) Tabs", symbol: "plus.square.on.square"),
+      .init(id: "newGroup", title: "New Group with \(n) Tabs", symbol: "plus.rectangle.on.rectangle", enabled: !allTiles),
+    ]
+    if !groups.isEmpty { rows.append(.init(id: "moveToGroup", title: "Move to Group", symbol: "rectangle.stack", children: groups)) }
+    if ids.contains(where: { Groups.innermostGroupOf(state.groups, $0) != nil }) {
+      rows.append(.init(id: "ungroup", title: "Remove from Group", symbol: "folder.badge.minus"))
+    }
+    let others = state.windowOrder.filter { $0 != windowId && state.windows[$0]?.incognito == false && state.windows[$0]?.isSmall == false }
+    var windows = others.map { TabMenuItem(id: "window:\($0)", title: windowTitle(state, $0)) }
+    if !windows.isEmpty { windows.append(.divider) }
+    windows.append(.init(id: "window:new", title: "New Window"))
+    rows += [
+      .divider,
+      .init(id: "copy", title: "Copy \(n) URLs", symbol: "link"),
+      .init(id: "copyMd", title: "Copy \(n) URLs as Markdown", symbol: "text.badge.checkmark"),
+      .init(id: "bar", title: "Add \(n) Tabs to Bookmarks Bar", symbol: "bookmark"),
+      .init(id: "bookmarkTo", title: "Add \(n) Tabs to Bookmarks Folder", symbol: "folder", children: folders),
+      .divider,
+      .init(id: "moveToWindow", title: "Move to Window", symbol: "macwindow", enabled: !incognito, children: windows),
+      .divider,
+      .init(id: "close", title: "Close \(n) Tabs", symbol: "xmark"),
+    ]
+    return rows
+  }
+
+  public static func multiCommand(_ choice: String, windowId: String, ids: [String], state: BrowserState) -> Command? {
+    let tabs = ids.compactMap { state.tabs[$0] }
+    guard !tabs.isEmpty, tabs.count == ids.count, tabs.allSatisfy({ $0.windowId == windowId }), let window = state.windows[windowId] else { return nil }
+    var handled = ["pin", "pinRows", "duplicate", "ungroup"].contains(choice)
+    if choice == "newGroup" { handled = tabs.contains { $0.pinSection != .tile } }
+    if choice.hasPrefix("group:") {
+      let group = state.groups[String(choice.dropFirst(6))]
+      handled = group?.windowId == windowId && group?.profileId == window.profileId
+    }
+    if choice.hasPrefix("window:") {
+      let target = String(choice.dropFirst(7))
+      handled = !tabs.contains { Ids.isIncognitoProfile($0.profileId) } && (target == "new" || state.windows[target] != nil)
+    }
+    return handled ? Command("tabMenuSelection", [.string(windowId), .array(ids.map(JSONValue.string)), .string(choice)]) : nil
+  }
+
   public static func command(_ choice: String, windowId: String, tabId: String, state: BrowserState) -> Command? {
     guard let tab = state.tabs[tabId], tab.windowId == windowId else { return nil }
     let id = JSONValue.string(tabId)
@@ -234,6 +291,35 @@ public enum TabMenuPlan {
 }
 
 extension Session {
+  public func tabMenuSelection(_ windowId: String, _ ids: [String], _ choice: String) -> String? {
+    guard TabMenuPlan.multiCommand(choice, windowId: windowId, ids: ids, state: state) != nil else { return nil }
+    var result: String?
+    transaction {
+      switch choice {
+      case "pin": pinTabs(ids, pinned: !ids.allSatisfy { state.tabs[$0]?.pinned == true }, row: nil)
+      case "pinRows": pinTabs(ids, pinned: true, row: true)
+      case "duplicate": for id in ids { _ = duplicateTab(id) }
+      case "newGroup": result = groupTabs(ids.filter { state.tabs[$0]?.pinSection != .tile }, pinned: true, name: nil)
+      case "ungroup": removeTabsFromGroup(ids)
+      default:
+        if choice.hasPrefix("group:") {
+          placeTabs(ids, TabPlacement(json: ["pinned": false, "groupId": .string(String(choice.dropFirst(6)))]))
+        } else if choice.hasPrefix("window:"), let first = state.tabs[ids[0]] {
+          let target = String(choice.dropFirst(7))
+          if let window = moveTabsToWindow(ids, target == "new" ? nil : target) {
+            hear()
+            let active = state.windows[window]?.activeTabIds[first.profileId] ?? ids[0]
+            activate(active)
+            if let moved = state.tabs[active], moved.windowId != state.ui.focusedWindowId { setFocusedWindow(moved.windowId) }
+            result = window
+          }
+        }
+      }
+      setSelection(windowId, [])
+    }
+    return result
+  }
+
   public func tabMenuMoveToWindow(_ tabId: String, _ target: String?) -> String? {
     guard let window = moveTabsToWindow([tabId], target) else { return nil }
     hear()

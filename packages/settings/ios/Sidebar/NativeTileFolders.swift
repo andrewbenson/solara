@@ -203,8 +203,8 @@ enum NativeTileFolders {
     case .tabMenu(let tabId):
       guard WorkspaceActionRouter.ownedStore?.state.tabs[tabId] != nil else { return }
       dismissHover(windowId)
-      let opened = NativeTabMenu.open(tabId, windowId: windowId) { id, choice in
-        Task { @MainActor in _ = await SettingsAdapters.js("sidebar.action", windowId, "tabMenuChoice", id, ["choice": choice]) }
+      let opened = NativeTabMenu.open(tabId, windowId: windowId) { id, choice, ids in
+        Task { @MainActor in _ = await SettingsAdapters.js("sidebar.action", windowId, ids == nil ? "tabMenuChoice" : "tabMenuSelectionChoice", id, ["choice": choice, "ids": ids ?? []]) }
       }
       if !opened {
         Task { @MainActor in _ = await SettingsAdapters.js("sidebar.action", windowId, "tabMenu", tabId, [String: Any]()) }

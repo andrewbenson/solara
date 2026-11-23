@@ -5,8 +5,8 @@ import { reportBookmarkFailure } from "../../lib/bookmarkWriter";
 import { menuShortcut } from "../../lib/commandShortcuts";
 import { folderChildren } from "../../store/bookmarks";
 import { useBrowser } from "../../store/browser";
-import { bookmarkProfileId, inPinnedContainer, isIncognitoProfile, isPinnedRow, pinnedSectionTitle, pinSection, plural, tabLabel, viewTabIds } from "../../store/model";
-import { canUndoClear, cleanedTabsFor, groupLabel, groupOf, keptDeletedGroups, selectedTabIds, type ClearedTabs } from "../../store/organize";
+import { bookmarkProfileId, inPinnedContainer, plural, tabLabel, viewTabIds } from "../../store/model";
+import { canUndoClear, cleanedTabsFor, keptDeletedGroups, selectedTabIds, type ClearedTabs } from "../../store/organize";
 import type { GroupColor, Tab } from "../../store/types";
 import {
   allMuted,
@@ -26,14 +26,13 @@ import { shareTab } from "../site/share";
 import { calendarMenuItem, newLiveFolderMenuItem, runCalendarMenu, runNewLiveFolder } from "./liveMenus";
 import { openSyncedTab, syncedDevicesMenuItem } from "../../sync/menu";
 import { setSidebarUi } from "./state";
-import { moveToProfileItems } from "./moveToProfileItems";
 import { hasOwnGroupIcon } from "./TabIcon";
 import { newFolderWithTab, removeFromFolder } from "./tileFolderUi";
 import { toggleNewTabBar } from "../omnibox/newTabBar";
 import { togglePageEngine } from "../../lib/engines";
 import { GROUP_COLORS, NEUTRAL_GROUP_SWATCH, nearestGroupColor, type GroupTint } from "./tokens";
 
-import { tabMenuGroupItems, tabMenuItems, tabMenuWindowItems } from "./tabMenuPlan";
+import { multiTabMenuItems, tabMenuItems } from "./tabMenuPlan";
 
 import { setSidebarPosition, sidebarPositionOf, sidebarPositionSupported } from "../../store/sidebarRail";
 
@@ -53,14 +52,6 @@ function bookmarkFolderItems(windowId: string, prefix: string): MenuItem[] {
     sep,
     { id: `${prefix}new`, title: "New Folder…", symbol: "folder.badge.plus" },
   ];
-}
-
-function moveToWindowItems(windowId: string): MenuItem[] {
-  return tabMenuWindowItems(store(), windowId);
-}
-
-function moveToGroupItems(windowId: string, exclude: string | undefined): MenuItem[] {
-  return tabMenuGroupItems(store(), windowId, exclude);
 }
 
 export async function openTabMenu(windowId: string, tab: Tab) {
@@ -121,31 +112,16 @@ export function runTabMenuChoice(windowId: string, tabId: string, choice: string
 }
 
 async function openMultiMenu(windowId: string, ids: string[]) {
+  const shortcuts = Object.fromEntries(["copyUrl", "copyUrlAsMarkdown", "newGroupWithTabs", "closeTab"].map((command) => [command, menuShortcut(command)]));
+  const choice = await showMenu(multiTabMenuItems(store(), windowId, ids, { folders: bookmarkFolderItems(windowId, "folder:"), shortcuts }));
+  if (choice) runTabMenuSelectionChoice(windowId, ids, choice);
+}
+
+export function runTabMenuSelectionChoice(windowId: string, ids: string[], choice: string) {
   const s = store();
-  const n = ids.length;
+  if (!choice || !ids.length || ids.some((id) => !s.tabs[id] || s.tabs[id]!.windowId !== windowId)) return;
   const tabs = ids.map((id) => s.tabs[id]!);
   const allPinned = tabs.every((t) => t.pinned);
-  const allTiles = tabs.every((t) => pinSection(t) === "tile");
-  const incognito = tabs.some((t) => isIncognitoProfile(t.profileId));
-  const groups = moveToGroupItems(windowId, undefined);
-  const choice = await showMenu([
-    { id: "pin", title: allPinned ? `Unpin ${n} Tabs` : `Move ${n} Tabs to Top Apps`, symbol: allPinned ? "pin.slash" : "pin" },
-    ...(tabs.every(isPinnedRow) ? [] : [{ id: "pinRows", title: `Move ${n} Tabs to ${pinnedSectionTitle(s, tabs[0])}`, symbol: "list.bullet" }]),
-    { id: "duplicate", title: `Duplicate ${n} Tabs`, symbol: "plus.square.on.square" },
-    { id: "newGroup", title: `New Group with ${n} Tabs`, symbol: "plus.rectangle.on.rectangle", enabled: !allTiles, ...menuShortcut("newGroupWithTabs") },
-    ...(groups.length ? [{ id: "moveToGroup", title: "Move to Group", symbol: "rectangle.stack", children: groups }] : []),
-    ...(tabs.some((t) => groupOf(s, t.id)) ? [{ id: "ungroup", title: "Remove from Group", symbol: "folder.badge.minus" }] : []),
-    sep,
-    { id: "copy", title: `Copy ${n} URLs`, symbol: "link", ...menuShortcut("copyUrl") },
-    { id: "copyMd", title: `Copy ${n} URLs as Markdown`, symbol: "text.badge.checkmark", ...menuShortcut("copyUrlAsMarkdown") },
-    { id: "bar", title: `Add ${n} Tabs to Bookmarks Bar`, symbol: "bookmark" },
-    { id: "bookmarkTo", title: `Add ${n} Tabs to Bookmarks Folder`, symbol: "folder", children: bookmarkFolderItems(windowId, "folder:") },
-    sep,
-    { id: "moveToWindow", title: "Move to Window", symbol: "macwindow", enabled: !incognito, children: moveToWindowItems(windowId) },
-    sep,
-    { id: "close", title: `Close ${n} Tabs`, symbol: "xmark", ...menuShortcut("closeTab") },
-  ]);
-  if (!choice) return;
   if (choice === "pin") s.pinTabs(ids, !allPinned);
   else if (choice === "pinRows") s.pinTabs(ids, true, true);
   else if (choice === "duplicate") ids.forEach((id) => store().duplicateTab(id));

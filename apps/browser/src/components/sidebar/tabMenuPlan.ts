@@ -126,3 +126,49 @@ export function tabMenuItems(s: BrowserState, windowId: string, tabId: string, c
         ]),
   ];
 }
+
+export type MultiTabMenuContext = { folders: MenuItem[]; shortcuts?: Record<string, Shortcut> };
+
+export function multiTabMenuItems(s: BrowserState, windowId: string, ids: string[], context: MultiTabMenuContext): MenuItem[] {
+  const n = ids.length;
+  const tabs = ids.map((id) => s.tabs[id]!);
+  if (!tabs.length || tabs.some((tab) => !tab || tab.windowId !== windowId) || !s.windows[windowId]) return [];
+  const allPinned = tabs.every((t) => t.pinned);
+  const allTiles = tabs.every((t) => pinSection(t) === "tile");
+  const incognito = tabs.some((t) => isIncognitoProfile(t.profileId));
+  const groups = tabMenuGroupItems(s, windowId, undefined);
+  const shortcut = (command: string): Shortcut => context.shortcuts?.[command] ?? {};
+  return [
+    { id: "pin", title: allPinned ? `Unpin ${n} Tabs` : `Move ${n} Tabs to Top Apps`, symbol: allPinned ? "pin.slash" : "pin" },
+    ...(tabs.every(isPinnedRow) ? [] : [{ id: "pinRows", title: `Move ${n} Tabs to ${pinnedSectionTitle(s, tabs[0])}`, symbol: "list.bullet" }]),
+    { id: "duplicate", title: `Duplicate ${n} Tabs`, symbol: "plus.square.on.square" },
+    { id: "newGroup", title: `New Group with ${n} Tabs`, symbol: "plus.rectangle.on.rectangle", enabled: !allTiles, ...shortcut("newGroupWithTabs") },
+    ...(groups.length ? [{ id: "moveToGroup", title: "Move to Group", symbol: "rectangle.stack", children: groups }] : []),
+    ...(tabs.some((t) => groupOf(s, t.id)) ? [{ id: "ungroup", title: "Remove from Group", symbol: "folder.badge.minus" }] : []),
+    sep,
+    { id: "copy", title: `Copy ${n} URLs`, symbol: "link", ...shortcut("copyUrl") },
+    { id: "copyMd", title: `Copy ${n} URLs as Markdown`, symbol: "text.badge.checkmark", ...shortcut("copyUrlAsMarkdown") },
+    { id: "bar", title: `Add ${n} Tabs to Bookmarks Bar`, symbol: "bookmark" },
+    { id: "bookmarkTo", title: `Add ${n} Tabs to Bookmarks Folder`, symbol: "folder", children: context.folders },
+    sep,
+    { id: "moveToWindow", title: "Move to Window", symbol: "macwindow", enabled: !incognito, children: tabMenuWindowItems(s, windowId) },
+    sep,
+    { id: "close", title: `Close ${n} Tabs`, symbol: "xmark", ...shortcut("closeTab") },
+  ];
+}
+
+export function multiTabMenuCommand(choice: string, windowId: string, ids: string[], s: BrowserState): { name: string; args: unknown[] } | null {
+  const tabs = ids.map((id) => s.tabs[id]);
+  if (!tabs.length || !s.windows[windowId] || tabs.some((tab) => !tab || tab.windowId !== windowId)) return null;
+  let handled = ["pin", "pinRows", "duplicate", "ungroup"].includes(choice);
+  if (choice === "newGroup") handled = tabs.some((tab) => pinSection(tab) !== "tile");
+  if (choice.startsWith("group:")) {
+    const group = s.groups[choice.slice(6)];
+    handled = !!group && group.windowId === windowId && group.profileId === s.windows[windowId]!.profileId;
+  }
+  if (choice.startsWith("window:")) {
+    const target = choice.slice(7);
+    handled = !tabs.some((tab) => isIncognitoProfile(tab!.profileId)) && (target === "new" || !!s.windows[target]);
+  }
+  return handled ? { name: "tabMenuSelection", args: [windowId, ids, choice] } : null;
+}

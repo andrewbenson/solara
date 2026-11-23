@@ -19,7 +19,7 @@ import { engineMark, ENGINE_SYMBOLS } from "../../store/engines";
 import { addNativeSettingsHandlers } from "../settings/nativeSettings";
 import { clickTab } from "../sidebar/actions";
 import { pressGroupClose, pressTabClose } from "../sidebar/closeControl";
-import { openGroupMenu, openTabMenu, runGroupMenuChoice, runTabMenuChoice, showUndoToast } from "../sidebar/menus";
+import { openGroupMenu, openTabMenu, runGroupMenuChoice, runTabMenuChoice, runTabMenuSelectionChoice, showUndoToast } from "../sidebar/menus";
 import { openTileFolderMenu } from "../sidebar/tileFolderUi";
 import { toggleNewTabBar } from "../omnibox/newTabBar";
 import { developerModeFor } from "../site/developerMode";
@@ -85,7 +85,7 @@ const THEME_KEYS = [
 const NONE: string[] = [];
 
 addNativeSettingsHandlers({
-  "topStrip.action": (windowId: string, name: string, id: string, extra: { meta?: boolean; shift?: boolean; alt?: boolean; collapse?: boolean; split?: boolean; cleared?: string; choice?: string }) => {
+  "topStrip.action": (windowId: string, name: string, id: string, extra: { meta?: boolean; shift?: boolean; alt?: boolean; collapse?: boolean; split?: boolean; cleared?: string; ids?: string[]; choice?: string }) => {
     const s = useBrowser.getState();
     switch (name) {
       case "click":
@@ -104,6 +104,8 @@ addNativeSettingsHandlers({
       }
       case "groupMenu":
         return void openGroupMenu(windowId, id);
+      case "tabMenuSelectionChoice":
+        return runTabMenuSelectionChoice(windowId, extra.ids ?? [], extra.choice ?? "");
       case "tabMenuChoice":
         return runTabMenuChoice(windowId, id, extra.choice ?? "");
       case "groupMenuChoice":

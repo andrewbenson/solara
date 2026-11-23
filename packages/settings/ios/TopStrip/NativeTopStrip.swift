@@ -354,9 +354,9 @@ final class TopStripHost {
     case .toggleMute(let tabId):
       if !NativeTabMenu.sidebarAction("toggleMute", tabId: tabId, windowId: windowId) { call("toggleMute", tabId) }
     case .tabMenu(let tabId):
-      let opened = NativeTabMenu.open(tabId, windowId: windowId) { [weak self] id, choice in
+      let opened = NativeTabMenu.open(tabId, windowId: windowId) { [weak self] id, choice, ids in
         guard let self, !self.stopped else { return NSLog("[tabs] %@: its menu's %@ arrived after the host closed", id, choice) }
-        self.call("tabMenuChoice", id, ["choice": choice])
+        self.call(ids == nil ? "tabMenuChoice" : "tabMenuSelectionChoice", id, ["choice": choice, "ids": ids ?? []])
       }
       if !opened { call("tabMenu", tabId) }
     case .groupMenu(let groupId):

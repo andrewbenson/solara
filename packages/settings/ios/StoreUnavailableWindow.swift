@@ -15,6 +15,7 @@ public enum StoreUnavailableWindow {
   private static var reported: StoreUnavailableView.ReportedLink?
   private static var choices: [StoreUnavailableView.Choice] = []
   private static var context: StoreUnavailableView.Context = .launch
+  private static var launchHideObserver: NSObjectProtocol?
   #if DEBUG
   private static var lastReportLink: String?
   private static var revealedFolder: String?
@@ -32,8 +33,19 @@ public enum StoreUnavailableWindow {
       folderExists: StoreUnavailableView.folderExists(failure.dataFolder), reportAvailable: AdvancedAdapter.releaseRepo != nil)
     NSLog("[store] showing the store-unavailable window (%@, %@)", failure.causeName, choices.map(\.rawValue).joined(separator: ","))
     NSApp.mainMenu = makeMainMenu()
-    showWithoutStealingFocus(makeWindow(failure))
+    if background {
+      Task { @MainActor in showAtLaunch(failure) }
+    } else {
+      showAtLaunch(failure)
+    }
     return true
+  }
+
+  private static func showAtLaunch(_ failure: StoreUnavailable) {
+    showWithoutStealingFocus(makeWindow(failure))
+    #if DEBUG
+    traceVisibility()
+    #endif
   }
 
   public static func presentForInertJS(detail: String) -> Bool {
@@ -80,12 +92,30 @@ public enum StoreUnavailableWindow {
   private static func showWithoutStealingFocus(_ window: NSWindow) {
     if background {
       window.orderBack(nil)
+      orderBackAgainAfterLaunchHide()
     } else if SolaraCoreHost.launchedHidden {
       window.orderFront(nil)
     } else {
       NSApp.activate()
       window.makeKeyAndOrderFront(nil)
     }
+  }
+
+  private static func orderBackAgainAfterLaunchHide() {
+    Task { @MainActor in orderBackIfHidden() }
+    guard launchHideObserver == nil else { return }
+    launchHideObserver = NotificationCenter.default.addObserver(forName: NSApplication.didHideNotification, object: nil, queue: .main) { _ in
+      Task { @MainActor in
+        if let observer = launchHideObserver { NotificationCenter.default.removeObserver(observer) }
+        launchHideObserver = nil
+        orderBackIfHidden()
+      }
+    }
+  }
+
+  private static func orderBackIfHidden() {
+    guard let window, !window.isVisible else { return }
+    window.orderBack(nil)
   }
 
   public static func droppedOpen(_ urls: [URL]) {
@@ -211,8 +241,45 @@ public enum StoreUnavailableWindow {
 
   private static func orNull(_ value: Any?) -> Any { value ?? NSNull() }
 
+  #if DEBUG
+  private static func onScreen(_ window: NSWindow) -> Bool {
+    guard window.windowNumber > 0, let info = CGWindowListCopyWindowInfo(.optionIncludingWindow, CGWindowID(window.windowNumber)) as? [[String: Any]] else { return false }
+    return info.first?[kCGWindowIsOnscreen as String] as? Bool ?? false
+  }
+
+  private static func traceVisibility() {
+    guard ProcessInfo.processInfo.environment["SOLARA_DATA_DIR"]?.isEmpty == false, let window else { return }
+    func line(_ when: String) {
+      let visible = NSApp.windows.filter(\.isVisible).map { "\(type(of: $0))#\($0.windowNumber)" }
+      NSLog(
+        "[store] unavailable window %@: visible=%d onScreen=%d occlusionVisible=%d number=%ld level=%ld appHidden=%d appActive=%d policy=%ld frame=%@ screen=%d visibleWindows=%@",
+        when, window.isVisible, onScreen(window),
+        window.occlusionState.contains(.visible), window.windowNumber, window.level.rawValue, NSApp.isHidden, NSApp.isActive,
+        NSApp.activationPolicy().rawValue, NSStringFromRect(window.frame), window.screen != nil, visible.joined(separator: ","))
+    }
+    line("shown")
+    for delay in [0.0, 0.2, 1.0, 3.0] {
+      DispatchQueue.main.asyncAfter(deadline: .now() + delay) { MainActor.assumeIsolated { line("after \(delay) s") } }
+    }
+    let center = NotificationCenter.default
+    for name in [NSApplication.didHideNotification, NSApplication.didUnhideNotification, NSApplication.didFinishLaunchingNotification] {
+      center.addObserver(forName: name, object: nil, queue: .main) { note in
+        let name = note.name.rawValue
+        MainActor.assumeIsolated { line(name) }
+      }
+    }
+    for name in [NSWindow.willCloseNotification, NSWindow.didMiniaturizeNotification, NSWindow.didChangeOcclusionStateNotification] {
+      center.addObserver(forName: name, object: window, queue: .main) { note in
+        let name = note.name.rawValue
+        MainActor.assumeIsolated { line(name) }
+      }
+    }
+  }
+  #endif
+
   public static func press(_ name: String) -> Bool {
     guard window != nil, let choice = StoreUnavailableView.Choice(rawValue: name), choices.contains(choice), let failure else { return false }
+    NSLog("[store] pressed %@ in the store-unavailable window", name)
     switch choice {
     case .quit: NSApp.terminate(nil)
     case .safeMode: openInSafeMode()

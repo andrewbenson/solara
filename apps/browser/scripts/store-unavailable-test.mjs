@@ -5,9 +5,9 @@ import { createHash } from "node:crypto";
 import { existsSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { homedir, tmpdir } from "node:os";
 import { join, resolve } from "node:path";
-import { commandIsBinary, isAlive, launch, listenerPids, processInfo, realPath, reporter, session, sleep, uiGateWatch } from "../../../scripts/lib/instance.mjs";
+import { binaryOf, binaryPids, commandIsBinary, isAlive, launch, listenerPids, processInfo, realPath, reporter, session, sleep, uiGateWatch } from "../../../scripts/lib/instance.mjs";
 
-const LEGS = ["refused", "openFailed", "earlyWindow", "noFolder", "safeMode", "report", "autoSafeMode", "quit", "savesNothingReload", "savesNothingRefused"];
+const LEGS = ["refused", "openFailed", "earlyWindow", "noFolder", "safeMode", "report", "autoSafeMode", "quit", "savesNothingReload", "savesNothingRefused", "visibleRepeat"];
 const HELP = `usage: node apps/browser/scripts/store-unavailable-test.mjs <Debug Solara.app> [leg…] [--list] [--keep-data] [--naive-control]
 
 A store that never opens shows the native store-unavailable window, and nothing else, in hidden instances with no JS
@@ -39,6 +39,10 @@ SOLARA_TEST_STORE_OPEN_FAIL=openFailed|noFolder|safeOpenFailed.
   savesNothingRefused
                 session.json {"version":99} with SOLARA_TEST_START_RN_WHEN_UNAVAILABLE=1, so React Native starts over a
                 store that never opened: the same checks from launch through quit
+
+  visibleRepeat the refused launch STORE_UNAVAILABLE_REPEAT times (12 by default), each fresh: the window is visible
+                within 20 s every time, whichever way the app delegate arrived ("set before AppKit finished launching" or
+                "launched"); the log counts both, since only the first is the race this leg is for
 
 --naive-control inverts the two savesNothing legs: run them against a bundle whose persist.ts lacks the
 startPersistence guard, and each must log at least one attempted write, or the run proves nothing.
@@ -113,6 +117,17 @@ const settled = async (app, ms = 60000) => {
   throw new Error(`neither the window nor the store came up within ${ms / 1000} s: ${q(last)}`);
 };
 const press = (app, button) => app.probe("storeUnavailable.press", { button }, { timeout: 15000 });
+const pressExiting = async (app, button) => {
+  const pid = app.pid;
+  try {
+    return await press(app, button);
+  } catch (e) {
+    if (!/exited/.test(e.message)) throw e;
+    assert.ok(app.output().includes(`[store] pressed ${button} in the store-unavailable window`), `the app logged the ${button} press before exiting: ${e.message}`);
+    rep.log(`the ${button} press reply was lost to the exit; the app logged the press`);
+    return { pressed: button, pid };
+  }
+};
 const exited = async (pid, ms) => {
   for (const end = Date.now() + ms; Date.now() < end; await sleep(100)) if (!isAlive(pid)) return true;
   return !isAlive(pid);
@@ -128,7 +143,13 @@ const onlyTheWindow = (state) => {
   assert.equal(state.isKey, false, "a hidden instance never makes the window key");
 };
 
-const leg = (name, fn) => legs.includes(name) ? rep.check(name, fn) : null;
+const leg = (name, fn) => legs.includes(name) ? rep.check(name, async () => {
+  try {
+    await fn();
+  } finally {
+    for (const app of [...running]) await stop(app).catch((e) => rep.log(`couldn't quit pid ${app.pid} after ${name}: ${e.message}`));
+  }
+}) : null;
 
 const PROTECTED = /\[documents\] attempt (write|remove) (session\.json|downloads\.json|launch-look\.json|sync\S*|onboarding\.json|release-notes\.json)/g;
 const attemptsIn = (text) => [...text.matchAll(PROTECTED)].map((m) => `${m[1]} ${m[2]}`);
@@ -240,7 +261,7 @@ try {
     assert.ok(state.buttons.includes("safeMode"), q(state.buttons));
     const oldPid = app.pid;
     const port = app.port;
-    const pressed = await press(app, "safeMode");
+    const pressed = await pressExiting(app, "safeMode");
     assert.equal(pressed.pid, oldPid);
     assert.ok(await exited(oldPid, 20000), `the old pid ${oldPid} exits`);
     running.delete(app);
@@ -336,7 +357,7 @@ try {
     await settled(app);
     const before = storeFiles(data);
     const pid = app.pid;
-    const pressed = await press(app, "quit");
+    const pressed = await pressExiting(app, "quit");
     assert.equal(pressed.pressed, "quit");
     const t0 = Date.now();
     assert.ok(await exited(pid, 15000), "Quit exits within 15 s");
@@ -346,6 +367,30 @@ try {
     assert.deepEqual(storeFiles(data), before, "the store's files are unchanged");
     assert.equal(defaultsRead(suite, "SolaraLaunchSwitchFailedLaunches"), "1", "Quit leaves the failed launch counted");
   });
+  await leg("visibleRepeat", async () => {
+    const times = Number(process.env.STORE_UNAVAILABLE_REPEAT ?? 12);
+    const paths = { early: 0, launched: 0, unknown: 0 };
+    const misses = [];
+    for (let n = 1; n <= times; n++) {
+      const data = join(scratch, `visibleRepeat-${n}`);
+      const app = await start(data, { fresh: true, suite: suiteFor(`visibleRepeat-${n}`), files: { "session.json": '{"version":99}' } });
+      let state = null;
+      for (const end = Date.now() + 20000; Date.now() < end; await sleep(200)) {
+        state = await readState(app, 5000).catch(() => state);
+        if (state?.shown) break;
+      }
+      const out = app.output();
+      const path = /set before AppKit finished launching/.test(out) ? "early" : /app delegate \S+ launched/.test(out) ? "launched" : "unknown";
+      paths[path]++;
+      const trace = out.split("\n").filter((l) => l.includes("[store] unavailable window")).map((l) => l.replace(/^.*\[store\] /, "")).slice(0, 8);
+      rep.log(`launch ${n}: ${path}, shown ${state?.shown === true}${trace.length ? `\n    ${trace.join("\n    ")}` : ""}`);
+      if (!state?.shown) misses.push({ n, path, state });
+      await stop(app);
+    }
+    rep.log(`delegate paths: ${q(paths)}`);
+    assert.deepEqual(misses, [], `the window was visible within 20 s on every launch: ${q(misses)}`);
+  });
+
   await leg("savesNothingReload", async () => {
     const data = join(scratch, "savesNothingReload");
     const app = await start(data, { fresh: true, suite: suiteFor("savesNothingReload"), js: "pinned", ready: "return Object.keys(ac.store.getState().windows).length > 0" });
@@ -399,6 +444,14 @@ try {
   for (const app of [...running]) {
     try { await app.quit(); } catch (e) { process.stderr.write(`couldn't quit pid ${app.pid}: ${e.message}\n`); }
   }
+  const binary = binaryOf(appPath);
+  const orphans = [...binaryPids(binary)];
+  for (const pid of orphans) {
+    process.stderr.write(`quitting pid ${pid}, still running from ${binary} after the legs (a relaunch no leg adopted)\n`);
+    try { process.kill(pid, "SIGTERM"); } catch {}
+  }
+  for (const end = Date.now() + 10000; orphans.some(isAlive) && Date.now() < end; await sleep(200));
+  for (const pid of orphans.filter(isAlive)) try { process.kill(pid, "SIGKILL"); } catch {}
   for (const suite of suites) spawnSync("defaults", ["delete", suite], { stdio: "ignore", timeout: 5000 });
 }
 process.exit(rep.summary() ? 0 : 1);

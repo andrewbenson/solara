@@ -1,6 +1,7 @@
 import AppKit
 import SolaraShell
 import Foundation
+import SolaraImportAdapter
 import SolaraModel
 import SolaraUI
 import SwiftUI
@@ -48,6 +49,9 @@ enum NativeImportWindow {
       ImportRuns.shared.devTrace = []
     case "profiles":
       model.sourceProfiles = (argument ?? "").split(separator: ",").map(String.init)
+    case "html":
+      ImportService.devChosenFile = argument
+      await model.importHTML()
     #endif
     default: break
     }

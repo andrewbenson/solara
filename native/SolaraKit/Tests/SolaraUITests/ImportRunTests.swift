@@ -57,6 +57,9 @@ final class FakeImportEngine: ImportEngine {
   var faviconStores: [(String, [ImportFaviconRow])] = []
   var readCount = 0
   var onRead: ((Int) -> Void)?
+  var chosenFile: String? = "/fixtures/bookmarks.html"
+  var onChoose: (() async -> Void)?
+  var fileRoots: [String: ImportBookmarkNode] = ["/fixtures/bookmarks.html": FakeImportEngine.tree]
 
   func transientImportRefused() { calls.append("refused") }
   func isUnlocked(_ browserId: String) -> Bool { unlocked.contains(browserId) }
@@ -129,6 +132,17 @@ final class FakeImportEngine: ImportEngine {
   }
 
   func reportBookmarkFailure() { bookmarkReports += 1 }
+
+  func chooseImportFile(_ kind: ImportFileKind) async -> String? {
+    calls.append("choose:\(kind.rawValue)")
+    await onChoose?()
+    return chosenFile
+  }
+
+  func readBookmarksFile(path: String) async -> ImportBookmarkNode? {
+    calls.append("readFile:\(path)")
+    return fileRoots[path]
+  }
 
   func importWorkspace(profile: String, windows: [JSONValue]) -> Int? {
     steps.append("workspace")
@@ -244,6 +258,10 @@ final class FakeScriptPath: ImportScriptPath {
   }
   func scriptCancel() { calls.append("cancel") }
   func scriptDispose() { calls.append("dispose") }
+  func scriptBookmarksHTML(target: String, session: Int) async -> ImportFileOutcome {
+    calls.append("html:\(target):\(session)")
+    return .imported(ImportCounts(bookmarks: 1), failed: [])
+  }
 }
 
 @MainActor
@@ -991,5 +1009,114 @@ struct ImportRunTests {
       #expect(!text.contains("hunter2"))
       #expect(!text.contains("me"))
     }
+  }
+
+  @Test func aBookmarksFileIsPlacedUnderTheTargetAsImportedFromHTMLFile() async {
+    let (runs, engine, script, session) = setup()
+    engine.parents = ImportBookmarkParents(bar: "bar", other: "other", barEmpty: false, otherEmpty: false)
+    let outcome = await runs.importBookmarksFile(target: "work", session: session, engine: engine, script: script, scriptSession: 7)
+    #expect(outcome == .imported(ImportCounts(bookmarks: 4), failed: []))
+    #expect(engine.calls == ["choose:bookmarksHTML", "readFile:/fixtures/bookmarks.html"])
+    #expect(engine.bookmarkSubmits.count == 1)
+    let edits = engine.bookmarkSubmits.first ?? []
+    #expect(edits.map(\.method) == ["addBookmarkTree", "addBookmarkTree"])
+    #expect(edits.allSatisfy { $0.args.first == .string("work") })
+    #expect(edits.allSatisfy { $0.args[1].array?.first?["title"]?.string == "Imported from HTML File" })
+    #expect(engine.logs.contains("[import] file bookmarksHTML route=swift"))
+    #expect(script.calls.isEmpty)
+    #expect(engine.bookmarkReports == 0)
+  }
+
+  @Test func noChosenFileIsACancelAndReadsNothing() async {
+    let (runs, engine, script, session) = setup()
+    engine.chosenFile = nil
+    let outcome = await runs.importBookmarksFile(target: "default", session: session, engine: engine, script: script, scriptSession: 7)
+    #expect(outcome == .cancelled)
+    #expect(engine.calls == ["choose:bookmarksHTML"])
+    #expect(engine.bookmarkSubmits.isEmpty)
+  }
+
+  @Test func anUnreadableBookmarksFileIsInvalidAndPlacesNothing() async {
+    let (runs, engine, script, session) = setup()
+    engine.fileRoots = [:]
+    let outcome = await runs.importBookmarksFile(target: "default", session: session, engine: engine, script: script, scriptSession: 7)
+    #expect(outcome == .failed(code: "invalid"))
+    #expect(engine.bookmarkSubmits.isEmpty)
+    #expect(engine.bookmarkReports == 0)
+  }
+
+  @Test func aBookmarksFileWithNoEntriesImportsNothingWithoutFailing() async {
+    let (runs, engine, script, session) = setup()
+    engine.fileRoots = ["/fixtures/bookmarks.html": FakeImportEngine.folder("", [])]
+    let outcome = await runs.importBookmarksFile(target: "default", session: session, engine: engine, script: script, scriptSession: 7)
+    #expect(outcome == .imported(ImportCounts(), failed: []))
+    #expect(engine.bookmarkSubmits.isEmpty)
+  }
+
+  @Test func aFailedBookmarksFileWriteIsReportedAndFailsBookmarks() async {
+    let (runs, engine, script, session) = setup()
+    engine.bookmarkFails = true
+    let outcome = await runs.importBookmarksFile(target: "default", session: session, engine: engine, script: script, scriptSession: 7)
+    #expect(outcome == .imported(ImportCounts(), failed: [.bookmarks]))
+    #expect(engine.bookmarkReports == 1)
+  }
+
+  @Test func aConditionFailureOnABookmarksFileRetriesLikeARun() async {
+    let (runs, engine, script, session) = setup()
+    engine.conditionFailures = 2
+    let outcome = await runs.importBookmarksFile(target: "default", session: session, engine: engine, script: script, scriptSession: 7)
+    #expect(outcome == .imported(ImportCounts(bookmarks: 4), failed: []))
+    #expect(engine.bookmarkSubmits.count == 3)
+  }
+
+  @Test func theScriptRouteDefaultSendsTheBookmarksFileToJS() async {
+    let (runs, engine, script, session) = setup()
+    runs.scriptRouteDefault = { "script" }
+    let outcome = await runs.importBookmarksFile(target: "default", session: session, engine: engine, script: script, scriptSession: 7)
+    #expect(outcome == .imported(ImportCounts(bookmarks: 1), failed: []))
+    #expect(script.calls == ["html:default:7"])
+    #expect(engine.calls.isEmpty)
+    #expect(engine.logs == ["[import] route=js reason=defaults", "[import] file bookmarksHTML route=js"])
+
+    let (runs2, engine2, script2, session2) = setup()
+    runs2.scriptRouteDefault = { "js" }
+    _ = await runs2.importBookmarksFile(target: "default", session: session2, engine: engine2, script: script2, scriptSession: 7)
+    #expect(script2.calls.isEmpty)
+    #expect(engine2.logs == ["[import] file bookmarksHTML route=swift"])
+  }
+
+  @Test func aDrainWhileTheFileIsChosenEndsCancelledBeforeReading() async {
+    let (runs, engine, script, session) = setup()
+    engine.onChoose = { await runs.drain(engine: engine) }
+    let outcome = await runs.importBookmarksFile(target: "default", session: session, engine: engine, script: script, scriptSession: 7)
+    #expect(outcome == .cancelled)
+    #expect(engine.calls.filter { $0.hasPrefix("choose") || $0.hasPrefix("readFile") } == ["choose:bookmarksHTML"])
+    #expect(engine.bookmarkSubmits.isEmpty)
+  }
+
+  @Test func aDrainWaitsForTheBookmarksFileAndEndsItCancelled() async {
+    let (runs, engine, script, session) = setup()
+    var drained = false
+    var draining: Task<Void, Never>?
+    engine.onBookmarkSubmit = {
+      draining = Task { @MainActor in
+        await runs.drain(engine: engine)
+        drained = true
+      }
+    }
+    let outcome = await runs.importBookmarksFile(target: "default", session: session, engine: engine, script: script, scriptSession: 7)
+    #expect(!drained)
+    #expect(outcome == .cancelled)
+    await draining?.value
+    #expect(drained)
+    #expect(!runs.admitted(session))
+  }
+
+  @Test func aRevokedSessionNeverOpensTheChooser() async {
+    let (runs, engine, script, session) = setup()
+    await runs.drain(engine: engine)
+    let outcome = await runs.importBookmarksFile(target: "default", session: session, engine: engine, script: script, scriptSession: 7)
+    #expect(outcome == .cancelled)
+    #expect(!engine.calls.contains { $0.hasPrefix("choose") || $0.hasPrefix("readFile") })
   }
 }

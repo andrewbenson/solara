@@ -189,6 +189,11 @@ final class ImportAdapter: ImportServices, ImportScriptPath {
   }
 
   func importBookmarksHTML(target: String) async -> ImportFileOutcome {
+    guard direct else { return await scriptBookmarksHTML(target: target, session: session) }
+    return await ImportRuns.shared.importBookmarksFile(target: target, session: swiftSession, engine: ImportRunEngine.shared, script: self, scriptSession: session)
+  }
+
+  func scriptBookmarksHTML(target: String, session: Int) async -> ImportFileOutcome {
     Self.fileOutcome(await SettingsAdapters.js("import.bookmarksHtml", target, session))
   }
 
@@ -413,6 +418,12 @@ final class ImportRunEngine: ImportEngine {
 
   func reportBookmarkFailure() {
     NSLog("[bookmarks] the import's bookmarks were not saved")
+  }
+
+  func chooseImportFile(_ kind: SolaraUI.ImportFileKind) async -> String? { await ImportService.chooseFile(kind.rawValue) }
+
+  func readBookmarksFile(path: String) async -> ImportBookmarkNode? {
+    await Task.detached { (try? NetscapeBookmarks.load(ImportModule.fileURL(path))).map(Self.bookmark) }.value
   }
 
   func importWorkspace(profile: String, windows: [JSONValue]) -> Int? {

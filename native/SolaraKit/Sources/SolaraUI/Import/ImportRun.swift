@@ -109,6 +109,8 @@ public protocol ImportEngine: AnyObject {
   func bookmarkParents(_ profile: String) -> ImportBookmarkParents?
   func submitBookmarks(profile: String, mutations: [BookmarkMutation]) async throws
   func reportBookmarkFailure()
+  func chooseImportFile(_ kind: ImportFileKind) async -> String?
+  func readBookmarksFile(path: String) async -> ImportBookmarkNode?
   func importWorkspace(profile: String, windows: [JSONValue]) -> Int?
   func adoptHistory(profile: String, rows: [ImportHistoryRow], deadline: TimeInterval) async -> Int?
   func importHistory(engineProfile: String, rows: [ImportHistoryRow]) async
@@ -132,6 +134,7 @@ public protocol ImportScriptPath: AnyObject {
   func scriptRun(_ request: ImportRunRequest, session: Int) async -> ImportRunOutcome
   func scriptCancel()
   func scriptDispose()
+  func scriptBookmarksHTML(target: String, session: Int) async -> ImportFileOutcome
 }
 
 public enum ImportRoute: String, Sendable {
@@ -293,7 +296,25 @@ public final class ImportRuns {
 
   public func run(_ request: ImportRunRequest, session id: Int, engine: ImportEngine, script: ImportScriptPath, scriptSession: Int) async -> ImportRunOutcome {
     let source = browsers.first { $0.id == request.browserId }
-    var route = ImportRoute.of(source, kinds: request.kinds)
+    let route = preferred(ImportRoute.of(source, kinds: request.kinds), engine: engine)
+    routes[request.runId] = route
+    engine.log("[import] run \(request.runId) route=\(route.rawValue) family=\(source?.family.rawValue ?? "unknown")")
+    guard route == .swift else { return await script.scriptRun(request, session: scriptSession) }
+    guard admitted(id) else { return .cancelledRun }
+    return await whileActive { await ImportRunner(runs: self, engine: engine, session: id).run(request) }
+  }
+
+  public func importBookmarksFile(target: String, session id: Int, engine: ImportEngine, script: ImportScriptPath, scriptSession: Int) async -> ImportFileOutcome {
+    let route = preferred(.swift, engine: engine)
+    engine.log("[import] file bookmarksHTML route=\(route.rawValue)")
+    guard route == .swift else { return await script.scriptBookmarksHTML(target: target, session: scriptSession) }
+    let runner = ImportRunner(runs: self, engine: engine, session: id)
+    guard !runner.cancelled(), let path = await engine.chooseImportFile(.bookmarksHTML), !runner.cancelled() else { return .cancelled }
+    return await whileActive { await runner.placeBookmarksFile(path: path, target: target) }
+  }
+
+  private func preferred(_ route: ImportRoute, engine: ImportEngine) -> ImportRoute {
+    var route = route
     if route == .swift, scriptRouteDefault() == "script" {
       route = .js
       engine.log("[import] route=js reason=defaults")
@@ -301,10 +322,10 @@ public final class ImportRuns {
     #if DEBUG
     if forceScript { route = .js }
     #endif
-    routes[request.runId] = route
-    engine.log("[import] run \(request.runId) route=\(route.rawValue) family=\(source?.family.rawValue ?? "unknown")")
-    guard route == .swift else { return await script.scriptRun(request, session: scriptSession) }
-    guard admitted(id) else { return .cancelledRun }
+    return route
+  }
+
+  private func whileActive<T>(_ work: () async -> T) async -> T {
     active += 1
     defer {
       active -= 1
@@ -314,7 +335,7 @@ public final class ImportRuns {
         waiting.forEach { $0.resume() }
       }
     }
-    return await ImportRunner(runs: self, engine: engine, session: id).run(request)
+    return await work()
   }
 
   public func cancel(engine: ImportEngine, script: ImportScriptPath) {
@@ -631,6 +652,21 @@ final class ImportRunner {
     } catch {
       return nil
     }
+  }
+
+  func placeBookmarksFile(path: String, target: String) async -> ImportFileOutcome {
+    let root = await engine.readBookmarksFile(path: path)
+    if cancelled() { return .cancelled }
+    guard let root else { return .failed(code: "invalid") }
+    runs.traceStep("bookmarks")
+    let placed = await runs.bookmarkQueue.run {
+      await self.placeBookmarks(profile: target, root: root, browserName: "HTML File", stopped: { false })
+    }
+    guard let placed else {
+      engine.reportBookmarkFailure()
+      return cancelled() ? .cancelled : .imported(ImportCounts(), failed: [.bookmarks])
+    }
+    return cancelled() ? .cancelled : .imported(ImportCounts(bookmarks: placed), failed: [])
   }
 
   func stoppedOutcome(_ total: ImportCounts, _ order: [ImportKind]) -> ImportRunOutcome {

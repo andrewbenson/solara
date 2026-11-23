@@ -181,7 +181,17 @@ public final class ImportService: @unchecked Sendable {
     if ProcessInfo.processInfo.environment["SOLARA_BACKGROUND"] == "1" { NSLog("[import] background instance, not opening %@", url.absoluteString) } else { NSWorkspace.shared.open(url) }
   }
 
+  #if DEBUG
+  @MainActor public static var devChosenFile: String?
+  #endif
+
   @MainActor public static func chooseFile(_ kind: String) async -> String? {
+    #if DEBUG
+    if let chosen = devChosenFile {
+      devChosenFile = nil
+      return chosen
+    }
+    #endif
     let panel = NSOpenPanel()
     panel.allowsMultipleSelection = false
     switch kind {
@@ -392,7 +402,7 @@ public class ImportModule: Module {
     )
   }
 
-  static func fileURL(_ path: String) -> URL {
+  public static func fileURL(_ path: String) -> URL {
     if path.hasPrefix("file://"), let url = URL(string: path) { return url }
     return URL(fileURLWithPath: (path as NSString).expandingTildeInPath)
   }

@@ -25,7 +25,7 @@ let package = Package(
   ],
   targets: [
     .target(name: "SolaraModel"),
-    .target(name: "SolaraStore", dependencies: ["SolaraModel"]),
+    .target(name: "SolaraStore", dependencies: ["SolaraModel", "SolaraOmnibox"]),
     .target(name: "SolaraDurability", linkerSettings: [.linkedLibrary("sqlite3")]),
     .target(name: "SolaraPersistence", dependencies: ["SolaraDurability", "SolaraModel", "SolaraStore", .product(name: "GRDB", package: "GRDB.swift")]),
     .target(name: "SolaraBridgeCore", dependencies: ["SolaraModel", "SolaraStore", "SolaraPersistence", "SolaraOmnibox"]),

@@ -202,7 +202,13 @@ enum NativeTileFolders {
       dispatch(store, TileFolderPanel.plainClick(windowId: windowId, tabId: tabId))
     case .tabMenu(let tabId):
       guard WorkspaceActionRouter.ownedStore?.state.tabs[tabId] != nil else { return }
-      Task { @MainActor in _ = await SettingsAdapters.js("sidebar.action", windowId, "tabMenu", tabId, [String: Any]()) }
+      dismissHover(windowId)
+      let opened = NativeTabMenu.open(tabId, windowId: windowId) { id, choice in
+        Task { @MainActor in _ = await SettingsAdapters.js("sidebar.action", windowId, "tabMenuChoice", id, ["choice": choice]) }
+      }
+      if !opened {
+        Task { @MainActor in _ = await SettingsAdapters.js("sidebar.action", windowId, "tabMenu", tabId, [String: Any]()) }
+      }
     case .folderMenu:
       folderMenu(windowId: windowId, folderId: folderId)
     case .outsidePress, .drag:

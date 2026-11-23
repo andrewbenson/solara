@@ -37,7 +37,7 @@ public struct Command: Sendable, Equatable {
     "closeCommandTabs", "reopenCommandClosed", "restoreCommandWindow", "duplicateTab", "togglePin", "moveTab",
     "moveTabBy", "createWindow", "closeWindow", "restoreClosingWindow", "forgetClosedWindow", "setWindowKeptOnClose",
     "setWindowFrame", "setWindowFullScreen", "toggleSidebar",
-    "switchProfile", "moveTabsToWindow", "moveTabToProfile", "mergeAllWindows", "reopenClosed", "reopenClosedTab", "reopenClosedWindow",
+    "switchProfile", "tabMenuMoveToWindow", "moveTabsToWindow", "moveTabToProfile", "mergeAllWindows", "reopenClosed", "reopenClosedTab", "reopenClosedWindow",
     "restoreClosed", "createProfile", "updateProfile", "deleteProfile", "reorderProfiles", "setDefaultProfile", "profileDataDeleted",
     "createGroup", "updateGroup", "addTabsToGroup", "removeTabsFromGroup", "ungroup", "newNestedGroup", "closeGroup", "deleteGroup",
     "placeTabs", "dropTabs", "pinTabs", "togglePinnedRows", "returnToPinnedUrl", "setPinnedUrl", "setMuted", "setSiteMuted", "groupTabs", "groupOnto", "moveGroup",
@@ -227,6 +227,7 @@ extension Session {
     case "setWindowFullScreen": setWindowFullScreen(try a.requireString(0), a.bool(1))
     case "toggleSidebar": toggleSidebar(try a.requireString(0))
     case "switchProfile": switchProfile(try a.requireString(0), try a.requireString(1))
+    case "tabMenuMoveToWindow": result = JSONValue(tabMenuMoveToWindow(try a.requireString(0), a.string(1)))
     case "moveTabsToWindow": result = JSONValue(moveTabsToWindow(a.strings(0), a.string(1)))
     case "moveTabToProfile": moveTabToProfile(try a.requireString(0), try a.requireString(1))
     case "mergeAllWindows": mergeAllWindows(try a.requireString(0))

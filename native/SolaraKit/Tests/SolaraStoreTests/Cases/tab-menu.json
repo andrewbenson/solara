@@ -1,0 +1,6893 @@
+{
+  "cases": [
+    {
+      "name": "ordinary middle tab",
+      "state": {
+        "profiles": {
+          "default": {
+            "id": "default",
+            "name": "Personal",
+            "color": "plum",
+            "icon": null,
+            "createdAt": 0
+          },
+          "work": {
+            "id": "work",
+            "name": "Work",
+            "color": "blue",
+            "icon": null,
+            "createdAt": 0
+          }
+        },
+        "profileOrder": [
+          "default",
+          "work"
+        ],
+        "windows": {
+          "w1": {
+            "id": "w1",
+            "profileId": "default",
+            "incognito": false,
+            "tabIds": [
+              "a",
+              "b",
+              "c"
+            ],
+            "activeTabIds": {
+              "default": "b"
+            },
+            "sidebarOpen": true,
+            "frame": [
+              80,
+              80,
+              1100,
+              760
+            ]
+          }
+        },
+        "windowOrder": [
+          "w1"
+        ],
+        "tabs": {
+          "a": {
+            "id": "a",
+            "windowId": "w1",
+            "profileId": "default",
+            "url": "https://a.example.com/",
+            "title": "A",
+            "favicon": null,
+            "pinned": false,
+            "muted": false,
+            "zoom": 1,
+            "customTitle": null,
+            "customIcon": null,
+            "pinnedUrl": null,
+            "createdAt": 0,
+            "lastActiveAt": 0
+          },
+          "b": {
+            "id": "b",
+            "windowId": "w1",
+            "profileId": "default",
+            "url": "https://b.example.com/",
+            "title": "B",
+            "favicon": null,
+            "pinned": false,
+            "muted": false,
+            "zoom": 1,
+            "customTitle": null,
+            "customIcon": null,
+            "pinnedUrl": null,
+            "createdAt": 0,
+            "lastActiveAt": 0
+          },
+          "c": {
+            "id": "c",
+            "windowId": "w1",
+            "profileId": "default",
+            "url": "https://c.example.com/",
+            "title": "C",
+            "favicon": null,
+            "pinned": false,
+            "muted": false,
+            "zoom": 1,
+            "customTitle": null,
+            "customIcon": null,
+            "pinnedUrl": null,
+            "createdAt": 0,
+            "lastActiveAt": 0
+          }
+        },
+        "groups": {},
+        "splits": {},
+        "selection": {},
+        "settings": {
+          "tabLayout": "sidebar",
+          "pageEngine": "chromium",
+          "protectedVideoInWebKit": false
+        },
+        "ui": {
+          "focusedWindowId": "w1",
+          "focusOrder": [
+            "w1"
+          ],
+          "lastProfileId": "default"
+        }
+      },
+      "windowId": "w1",
+      "tabId": "b",
+      "items": [
+        {
+          "id": "copy",
+          "title": "Copy Link",
+          "symbol": "link",
+          "enabled": true,
+          "checked": false
+        },
+        {
+          "id": "share",
+          "title": "Share",
+          "symbol": "square.and.arrow.up",
+          "enabled": true,
+          "share": true,
+          "checked": false
+        },
+        {
+          "separator": true
+        },
+        {
+          "id": "rename",
+          "title": "Rename…",
+          "symbol": "character.cursor.ibeam",
+          "enabled": true,
+          "checked": false
+        },
+        {
+          "id": "icon",
+          "title": "Change Icon…",
+          "symbol": "face.smiling",
+          "enabled": true,
+          "checked": false
+        },
+        {
+          "id": "mute",
+          "title": "Mute Site",
+          "symbol": "speaker.slash",
+          "enabled": true,
+          "checked": false
+        },
+        {
+          "separator": true
+        },
+        {
+          "id": "duplicate",
+          "title": "Duplicate",
+          "symbol": "plus.square.on.square",
+          "enabled": true,
+          "checked": false
+        },
+        {
+          "id": "bookmark",
+          "title": "Add to Bookmarks…",
+          "symbol": "bookmark",
+          "enabled": true,
+          "checked": false
+        },
+        {
+          "id": "engine",
+          "title": "Open Page in WebKit",
+          "symbol": "safari",
+          "enabled": true,
+          "checked": false
+        },
+        {
+          "id": "moveTo",
+          "title": "Move to",
+          "symbol": "arrow.right.square",
+          "children": [
+            {
+              "id": "pinTile",
+              "title": "Top Apps",
+              "symbol": "app",
+              "enabled": true,
+              "checked": false
+            },
+            {
+              "id": "pinRow",
+              "title": "Pinned in Personal",
+              "symbol": "list.bullet",
+              "enabled": true,
+              "checked": false
+            },
+            {
+              "id": "newGroup",
+              "title": "New Group",
+              "symbol": "plus.rectangle.on.rectangle",
+              "enabled": true,
+              "checked": false
+            },
+            {
+              "separator": true
+            },
+            {
+              "id": "profile:default",
+              "title": "Personal",
+              "checked": true,
+              "enabled": false
+            },
+            {
+              "id": "profile:work",
+              "title": "Work",
+              "checked": false,
+              "enabled": true
+            },
+            {
+              "id": "profile:new",
+              "title": "New Profile…",
+              "enabled": true,
+              "checked": false
+            },
+            {
+              "separator": true
+            },
+            {
+              "id": "moveToWindow",
+              "title": "Window",
+              "symbol": "macwindow",
+              "enabled": true,
+              "children": [
+                {
+                  "id": "window:new",
+                  "title": "New Window",
+                  "enabled": true,
+                  "checked": false
+                }
+              ],
+              "checked": false
+            }
+          ],
+          "enabled": true,
+          "checked": false
+        },
+        {
+          "separator": true
+        },
+        {
+          "id": "pin",
+          "title": "Move to Top Apps",
+          "symbol": "pin",
+          "enabled": true,
+          "checked": false
+        },
+        {
+          "id": "close",
+          "title": "Close Tab",
+          "symbol": "xmark",
+          "enabled": true,
+          "checked": false
+        },
+        {
+          "id": "closeMore",
+          "title": "Close Tabs",
+          "enabled": true,
+          "children": [
+            {
+              "id": "closeOthers",
+              "title": "Other Tabs",
+              "enabled": true,
+              "checked": false
+            },
+            {
+              "id": "closeAbove",
+              "title": "Tabs Above",
+              "enabled": true,
+              "checked": false
+            },
+            {
+              "id": "closeBelow",
+              "title": "Tabs Below",
+              "enabled": true,
+              "checked": false
+            }
+          ],
+          "checked": false
+        }
+      ]
+    },
+    {
+      "name": "empty first tab",
+      "state": {
+        "profiles": {
+          "default": {
+            "id": "default",
+            "name": "Personal",
+            "color": "plum",
+            "icon": null,
+            "createdAt": 0
+          },
+          "work": {
+            "id": "work",
+            "name": "Work",
+            "color": "blue",
+            "icon": null,
+            "createdAt": 0
+          }
+        },
+        "profileOrder": [
+          "default",
+          "work"
+        ],
+        "windows": {
+          "w1": {
+            "id": "w1",
+            "profileId": "default",
+            "incognito": false,
+            "tabIds": [
+              "a",
+              "b",
+              "c"
+            ],
+            "activeTabIds": {
+              "default": "b"
+            },
+            "sidebarOpen": true,
+            "frame": [
+              80,
+              80,
+              1100,
+              760
+            ]
+          }
+        },
+        "windowOrder": [
+          "w1"
+        ],
+        "tabs": {
+          "a": {
+            "id": "a",
+            "windowId": "w1",
+            "profileId": "default",
+            "url": "",
+            "title": "A",
+            "favicon": null,
+            "pinned": false,
+            "muted": false,
+            "zoom": 1,
+            "customTitle": null,
+            "customIcon": null,
+            "pinnedUrl": null,
+            "createdAt": 0,
+            "lastActiveAt": 0
+          },
+          "b": {
+            "id": "b",
+            "windowId": "w1",
+            "profileId": "default",
+            "url": "https://b.example.com/",
+            "title": "B",
+            "favicon": null,
+            "pinned": false,
+            "muted": false,
+            "zoom": 1,
+            "customTitle": null,
+            "customIcon": null,
+            "pinnedUrl": null,
+            "createdAt": 0,
+            "lastActiveAt": 0
+          },
+          "c": {
+            "id": "c",
+            "windowId": "w1",
+            "profileId": "default",
+            "url": "https://c.example.com/",
+            "title": "C",
+            "favicon": null,
+            "pinned": false,
+            "muted": false,
+            "zoom": 1,
+            "customTitle": null,
+            "customIcon": null,
+            "pinnedUrl": null,
+            "createdAt": 0,
+            "lastActiveAt": 0
+          }
+        },
+        "groups": {},
+        "splits": {},
+        "selection": {},
+        "settings": {
+          "tabLayout": "sidebar",
+          "pageEngine": "chromium",
+          "protectedVideoInWebKit": false
+        },
+        "ui": {
+          "focusedWindowId": "w1",
+          "focusOrder": [
+            "w1"
+          ],
+          "lastProfileId": "default"
+        }
+      },
+      "windowId": "w1",
+      "tabId": "a",
+      "items": [
+        {
+          "id": "copy",
+          "title": "Copy Link",
+          "symbol": "link",
+          "enabled": false,
+          "checked": false
+        },
+        {
+          "id": "share",
+          "title": "Share",
+          "symbol": "square.and.arrow.up",
+          "enabled": false,
+          "share": true,
+          "checked": false
+        },
+        {
+          "separator": true
+        },
+        {
+          "id": "rename",
+          "title": "Rename…",
+          "symbol": "character.cursor.ibeam",
+          "enabled": true,
+          "checked": false
+        },
+        {
+          "id": "icon",
+          "title": "Change Icon…",
+          "symbol": "face.smiling",
+          "enabled": true,
+          "checked": false
+        },
+        {
+          "id": "mute",
+          "title": "Mute Site",
+          "symbol": "speaker.slash",
+          "enabled": false,
+          "checked": false
+        },
+        {
+          "separator": true
+        },
+        {
+          "id": "duplicate",
+          "title": "Duplicate",
+          "symbol": "plus.square.on.square",
+          "enabled": true,
+          "checked": false
+        },
+        {
+          "id": "bookmark",
+          "title": "Add to Bookmarks…",
+          "symbol": "bookmark",
+          "enabled": false,
+          "checked": false
+        },
+        {
+          "id": "moveTo",
+          "title": "Move to",
+          "symbol": "arrow.right.square",
+          "children": [
+            {
+              "id": "pinTile",
+              "title": "Top Apps",
+              "symbol": "app",
+              "enabled": true,
+              "checked": false
+            },
+            {
+              "id": "pinRow",
+              "title": "Pinned in Personal",
+              "symbol": "list.bullet",
+              "enabled": true,
+              "checked": false
+            },
+            {
+              "id": "newGroup",
+              "title": "New Group",
+              "symbol": "plus.rectangle.on.rectangle",
+              "enabled": true,
+              "checked": false
+            },
+            {
+              "separator": true
+            },
+            {
+              "id": "profile:default",
+              "title": "Personal",
+              "checked": true,
+              "enabled": false
+            },
+            {
+              "id": "profile:work",
+              "title": "Work",
+              "checked": false,
+              "enabled": true
+            },
+            {
+              "id": "profile:new",
+              "title": "New Profile…",
+              "enabled": true,
+              "checked": false
+            },
+            {
+              "separator": true
+            },
+            {
+              "id": "moveToWindow",
+              "title": "Window",
+              "symbol": "macwindow",
+              "enabled": true,
+              "children": [
+                {
+                  "id": "window:new",
+                  "title": "New Window",
+                  "enabled": true,
+                  "checked": false
+                }
+              ],
+              "checked": false
+            }
+          ],
+          "enabled": true,
+          "checked": false
+        },
+        {
+          "separator": true
+        },
+        {
+          "id": "pin",
+          "title": "Move to Top Apps",
+          "symbol": "pin",
+          "enabled": true,
+          "checked": false
+        },
+        {
+          "id": "close",
+          "title": "Close Tab",
+          "symbol": "xmark",
+          "enabled": true,
+          "checked": false
+        },
+        {
+          "id": "closeMore",
+          "title": "Close Tabs",
+          "enabled": true,
+          "children": [
+            {
+              "id": "closeOthers",
+              "title": "Other Tabs",
+              "enabled": true,
+              "checked": false
+            },
+            {
+              "id": "closeAbove",
+              "title": "Tabs Above",
+              "enabled": false,
+              "checked": false
+            },
+            {
+              "id": "closeBelow",
+              "title": "Tabs Below",
+              "enabled": true,
+              "checked": false
+            }
+          ],
+          "checked": false
+        }
+      ]
+    },
+    {
+      "name": "last tab in top strip",
+      "state": {
+        "profiles": {
+          "default": {
+            "id": "default",
+            "name": "Personal",
+            "color": "plum",
+            "icon": null,
+            "createdAt": 0
+          },
+          "work": {
+            "id": "work",
+            "name": "Work",
+            "color": "blue",
+            "icon": null,
+            "createdAt": 0
+          }
+        },
+        "profileOrder": [
+          "default",
+          "work"
+        ],
+        "windows": {
+          "w1": {
+            "id": "w1",
+            "profileId": "default",
+            "incognito": false,
+            "tabIds": [
+              "a",
+              "b",
+              "c"
+            ],
+            "activeTabIds": {
+              "default": "b"
+            },
+            "sidebarOpen": true,
+            "frame": [
+              80,
+              80,
+              1100,
+              760
+            ]
+          }
+        },
+        "windowOrder": [
+          "w1"
+        ],
+        "tabs": {
+          "a": {
+            "id": "a",
+            "windowId": "w1",
+            "profileId": "default",
+            "url": "https://a.example.com/",
+            "title": "A",
+            "favicon": null,
+            "pinned": false,
+            "muted": false,
+            "zoom": 1,
+            "customTitle": null,
+            "customIcon": null,
+            "pinnedUrl": null,
+            "createdAt": 0,
+            "lastActiveAt": 0
+          },
+          "b": {
+            "id": "b",
+            "windowId": "w1",
+            "profileId": "default",
+            "url": "https://b.example.com/",
+            "title": "B",
+            "favicon": null,
+            "pinned": false,
+            "muted": false,
+            "zoom": 1,
+            "customTitle": null,
+            "customIcon": null,
+            "pinnedUrl": null,
+            "createdAt": 0,
+            "lastActiveAt": 0
+          },
+          "c": {
+            "id": "c",
+            "windowId": "w1",
+            "profileId": "default",
+            "url": "https://c.example.com/",
+            "title": "C",
+            "favicon": null,
+            "pinned": false,
+            "muted": false,
+            "zoom": 1,
+            "customTitle": null,
+            "customIcon": null,
+            "pinnedUrl": null,
+            "createdAt": 0,
+            "lastActiveAt": 0
+          }
+        },
+        "groups": {},
+        "splits": {},
+        "selection": {},
+        "settings": {
+          "tabLayout": "top",
+          "pageEngine": "chromium",
+          "protectedVideoInWebKit": false
+        },
+        "ui": {
+          "focusedWindowId": "w1",
+          "focusOrder": [
+            "w1"
+          ],
+          "lastProfileId": "default"
+        }
+      },
+      "windowId": "w1",
+      "tabId": "c",
+      "items": [
+        {
+          "id": "copy",
+          "title": "Copy Link",
+          "symbol": "link",
+          "enabled": true,
+          "checked": false
+        },
+        {
+          "id": "share",
+          "title": "Share",
+          "symbol": "square.and.arrow.up",
+          "enabled": true,
+          "share": true,
+          "checked": false
+        },
+        {
+          "separator": true
+        },
+        {
+          "id": "rename",
+          "title": "Rename…",
+          "symbol": "character.cursor.ibeam",
+          "enabled": true,
+          "checked": false
+        },
+        {
+          "id": "icon",
+          "title": "Change Icon…",
+          "symbol": "face.smiling",
+          "enabled": true,
+          "checked": false
+        },
+        {
+          "id": "mute",
+          "title": "Mute Site",
+          "symbol": "speaker.slash",
+          "enabled": true,
+          "checked": false
+        },
+        {
+          "separator": true
+        },
+        {
+          "id": "duplicate",
+          "title": "Duplicate",
+          "symbol": "plus.square.on.square",
+          "enabled": true,
+          "checked": false
+        },
+        {
+          "id": "bookmark",
+          "title": "Add to Bookmarks…",
+          "symbol": "bookmark",
+          "enabled": true,
+          "checked": false
+        },
+        {
+          "id": "engine",
+          "title": "Open Page in WebKit",
+          "symbol": "safari",
+          "enabled": true,
+          "checked": false
+        },
+        {
+          "id": "moveTo",
+          "title": "Move to",
+          "symbol": "arrow.right.square",
+          "children": [
+            {
+              "id": "pinTile",
+              "title": "Top Apps",
+              "symbol": "app",
+              "enabled": true,
+              "checked": false
+            },
+            {
+              "id": "pinRow",
+              "title": "Pinned in Personal",
+              "symbol": "list.bullet",
+              "enabled": true,
+              "checked": false
+            },
+            {
+              "id": "newGroup",
+              "title": "New Group",
+              "symbol": "plus.rectangle.on.rectangle",
+              "enabled": true,
+              "checked": false
+            },
+            {
+              "separator": true
+            },
+            {
+              "id": "profile:default",
+              "title": "Personal",
+              "checked": true,
+              "enabled": false
+            },
+            {
+              "id": "profile:work",
+              "title": "Work",
+              "checked": false,
+              "enabled": true
+            },
+            {
+              "id": "profile:new",
+              "title": "New Profile…",
+              "enabled": true,
+              "checked": false
+            },
+            {
+              "separator": true
+            },
+            {
+              "id": "moveToWindow",
+              "title": "Window",
+              "symbol": "macwindow",
+              "enabled": true,
+              "children": [
+                {
+                  "id": "window:new",
+                  "title": "New Window",
+                  "enabled": true,
+                  "checked": false
+                }
+              ],
+              "checked": false
+            }
+          ],
+          "enabled": true,
+          "checked": false
+        },
+        {
+          "separator": true
+        },
+        {
+          "id": "pin",
+          "title": "Move to Top Apps",
+          "symbol": "pin",
+          "enabled": true,
+          "checked": false
+        },
+        {
+          "id": "close",
+          "title": "Close Tab",
+          "symbol": "xmark",
+          "enabled": true,
+          "checked": false
+        },
+        {
+          "id": "closeMore",
+          "title": "Close Tabs",
+          "enabled": true,
+          "children": [
+            {
+              "id": "closeOthers",
+              "title": "Other Tabs",
+              "enabled": true,
+              "checked": false
+            },
+            {
+              "id": "closeAbove",
+              "title": "Tabs to the Left",
+              "enabled": true,
+              "checked": false
+            },
+            {
+              "id": "closeBelow",
+              "title": "Tabs to the Right",
+              "enabled": false,
+              "checked": false
+            }
+          ],
+          "checked": false
+        }
+      ]
+    },
+    {
+      "name": "window layout overrides global layout",
+      "state": {
+        "profiles": {
+          "default": {
+            "id": "default",
+            "name": "Personal",
+            "color": "plum",
+            "icon": null,
+            "createdAt": 0
+          },
+          "work": {
+            "id": "work",
+            "name": "Work",
+            "color": "blue",
+            "icon": null,
+            "createdAt": 0
+          }
+        },
+        "profileOrder": [
+          "default",
+          "work"
+        ],
+        "windows": {
+          "w1": {
+            "id": "w1",
+            "profileId": "default",
+            "incognito": false,
+            "tabIds": [
+              "a",
+              "b",
+              "c"
+            ],
+            "activeTabIds": {
+              "default": "b"
+            },
+            "sidebarOpen": true,
+            "frame": [
+              80,
+              80,
+              1100,
+              760
+            ],
+            "tabLayout": "sidebar"
+          }
+        },
+        "windowOrder": [
+          "w1"
+        ],
+        "tabs": {
+          "a": {
+            "id": "a",
+            "windowId": "w1",
+            "profileId": "default",
+            "url": "https://a.example.com/",
+            "title": "A",
+            "favicon": null,
+            "pinned": false,
+            "muted": false,
+            "zoom": 1,
+            "customTitle": null,
+            "customIcon": null,
+            "pinnedUrl": null,
+            "createdAt": 0,
+            "lastActiveAt": 0
+          },
+          "b": {
+            "id": "b",
+            "windowId": "w1",
+            "profileId": "default",
+            "url": "https://b.example.com/",
+            "title": "B",
+            "favicon": null,
+            "pinned": false,
+            "muted": false,
+            "zoom": 1,
+            "customTitle": null,
+            "customIcon": null,
+            "pinnedUrl": null,
+            "createdAt": 0,
+            "lastActiveAt": 0
+          },
+          "c": {
+            "id": "c",
+            "windowId": "w1",
+            "profileId": "default",
+            "url": "https://c.example.com/",
+            "title": "C",
+            "favicon": null,
+            "pinned": false,
+            "muted": false,
+            "zoom": 1,
+            "customTitle": null,
+            "customIcon": null,
+            "pinnedUrl": null,
+            "createdAt": 0,
+            "lastActiveAt": 0
+          }
+        },
+        "groups": {},
+        "splits": {},
+        "selection": {},
+        "settings": {
+          "tabLayout": "top",
+          "pageEngine": "chromium",
+          "protectedVideoInWebKit": false
+        },
+        "ui": {
+          "focusedWindowId": "w1",
+          "focusOrder": [
+            "w1"
+          ],
+          "lastProfileId": "default"
+        }
+      },
+      "windowId": "w1",
+      "tabId": "b",
+      "items": [
+        {
+          "id": "copy",
+          "title": "Copy Link",
+          "symbol": "link",
+          "enabled": true,
+          "checked": false
+        },
+        {
+          "id": "share",
+          "title": "Share",
+          "symbol": "square.and.arrow.up",
+          "enabled": true,
+          "share": true,
+          "checked": false
+        },
+        {
+          "separator": true
+        },
+        {
+          "id": "rename",
+          "title": "Rename…",
+          "symbol": "character.cursor.ibeam",
+          "enabled": true,
+          "checked": false
+        },
+        {
+          "id": "icon",
+          "title": "Change Icon…",
+          "symbol": "face.smiling",
+          "enabled": true,
+          "checked": false
+        },
+        {
+          "id": "mute",
+          "title": "Mute Site",
+          "symbol": "speaker.slash",
+          "enabled": true,
+          "checked": false
+        },
+        {
+          "separator": true
+        },
+        {
+          "id": "duplicate",
+          "title": "Duplicate",
+          "symbol": "plus.square.on.square",
+          "enabled": true,
+          "checked": false
+        },
+        {
+          "id": "bookmark",
+          "title": "Add to Bookmarks…",
+          "symbol": "bookmark",
+          "enabled": true,
+          "checked": false
+        },
+        {
+          "id": "engine",
+          "title": "Open Page in WebKit",
+          "symbol": "safari",
+          "enabled": true,
+          "checked": false
+        },
+        {
+          "id": "moveTo",
+          "title": "Move to",
+          "symbol": "arrow.right.square",
+          "children": [
+            {
+              "id": "pinTile",
+              "title": "Top Apps",
+              "symbol": "app",
+              "enabled": true,
+              "checked": false
+            },
+            {
+              "id": "pinRow",
+              "title": "Pinned in Personal",
+              "symbol": "list.bullet",
+              "enabled": true,
+              "checked": false
+            },
+            {
+              "id": "newGroup",
+              "title": "New Group",
+              "symbol": "plus.rectangle.on.rectangle",
+              "enabled": true,
+              "checked": false
+            },
+            {
+              "separator": true
+            },
+            {
+              "id": "profile:default",
+              "title": "Personal",
+              "checked": true,
+              "enabled": false
+            },
+            {
+              "id": "profile:work",
+              "title": "Work",
+              "checked": false,
+              "enabled": true
+            },
+            {
+              "id": "profile:new",
+              "title": "New Profile…",
+              "enabled": true,
+              "checked": false
+            },
+            {
+              "separator": true
+            },
+            {
+              "id": "moveToWindow",
+              "title": "Window",
+              "symbol": "macwindow",
+              "enabled": true,
+              "children": [
+                {
+                  "id": "window:new",
+                  "title": "New Window",
+                  "enabled": true,
+                  "checked": false
+                }
+              ],
+              "checked": false
+            }
+          ],
+          "enabled": true,
+          "checked": false
+        },
+        {
+          "separator": true
+        },
+        {
+          "id": "pin",
+          "title": "Move to Top Apps",
+          "symbol": "pin",
+          "enabled": true,
+          "checked": false
+        },
+        {
+          "id": "close",
+          "title": "Close Tab",
+          "symbol": "xmark",
+          "enabled": true,
+          "checked": false
+        },
+        {
+          "id": "closeMore",
+          "title": "Close Tabs",
+          "enabled": true,
+          "children": [
+            {
+              "id": "closeOthers",
+              "title": "Other Tabs",
+              "enabled": true,
+              "checked": false
+            },
+            {
+              "id": "closeAbove",
+              "title": "Tabs Above",
+              "enabled": true,
+              "checked": false
+            },
+            {
+              "id": "closeBelow",
+              "title": "Tabs Below",
+              "enabled": true,
+              "checked": false
+            }
+          ],
+          "checked": false
+        }
+      ]
+    },
+    {
+      "name": "custom title icon muted",
+      "state": {
+        "profiles": {
+          "default": {
+            "id": "default",
+            "name": "Personal",
+            "color": "plum",
+            "icon": null,
+            "createdAt": 0
+          },
+          "work": {
+            "id": "work",
+            "name": "Work",
+            "color": "blue",
+            "icon": null,
+            "createdAt": 0
+          }
+        },
+        "profileOrder": [
+          "default",
+          "work"
+        ],
+        "windows": {
+          "w1": {
+            "id": "w1",
+            "profileId": "default",
+            "incognito": false,
+            "tabIds": [
+              "a",
+              "b",
+              "c"
+            ],
+            "activeTabIds": {
+              "default": "b"
+            },
+            "sidebarOpen": true,
+            "frame": [
+              80,
+              80,
+              1100,
+              760
+            ]
+          }
+        },
+        "windowOrder": [
+          "w1"
+        ],
+        "tabs": {
+          "a": {
+            "id": "a",
+            "windowId": "w1",
+            "profileId": "default",
+            "url": "https://a.example.com/",
+            "title": "A",
+            "favicon": null,
+            "pinned": false,
+            "muted": false,
+            "zoom": 1,
+            "customTitle": null,
+            "customIcon": null,
+            "pinnedUrl": null,
+            "createdAt": 0,
+            "lastActiveAt": 0
+          },
+          "b": {
+            "id": "b",
+            "windowId": "w1",
+            "profileId": "default",
+            "url": "https://b.example.com/",
+            "title": "B",
+            "favicon": null,
+            "pinned": false,
+            "muted": true,
+            "zoom": 1,
+            "customTitle": "Named",
+            "customIcon": "star",
+            "pinnedUrl": null,
+            "createdAt": 0,
+            "lastActiveAt": 0
+          },
+          "c": {
+            "id": "c",
+            "windowId": "w1",
+            "profileId": "default",
+            "url": "https://c.example.com/",
+            "title": "C",
+            "favicon": null,
+            "pinned": false,
+            "muted": false,
+            "zoom": 1,
+            "customTitle": null,
+            "customIcon": null,
+            "pinnedUrl": null,
+            "createdAt": 0,
+            "lastActiveAt": 0
+          }
+        },
+        "groups": {},
+        "splits": {},
+        "selection": {},
+        "settings": {
+          "tabLayout": "sidebar",
+          "pageEngine": "chromium",
+          "protectedVideoInWebKit": false
+        },
+        "ui": {
+          "focusedWindowId": "w1",
+          "focusOrder": [
+            "w1"
+          ],
+          "lastProfileId": "default"
+        }
+      },
+      "windowId": "w1",
+      "tabId": "b",
+      "items": [
+        {
+          "id": "copy",
+          "title": "Copy Link",
+          "symbol": "link",
+          "enabled": true,
+          "checked": false
+        },
+        {
+          "id": "share",
+          "title": "Share",
+          "symbol": "square.and.arrow.up",
+          "enabled": true,
+          "share": true,
+          "checked": false
+        },
+        {
+          "separator": true
+        },
+        {
+          "id": "rename",
+          "title": "Rename…",
+          "symbol": "character.cursor.ibeam",
+          "enabled": true,
+          "checked": false
+        },
+        {
+          "id": "resetName",
+          "title": "Reset Name",
+          "symbol": "arrow.counterclockwise",
+          "enabled": true,
+          "checked": false
+        },
+        {
+          "id": "icon",
+          "title": "Change Icon…",
+          "symbol": "face.smiling",
+          "enabled": true,
+          "checked": false
+        },
+        {
+          "id": "resetIcon",
+          "title": "Reset Icon",
+          "symbol": "arrow.counterclockwise",
+          "enabled": true,
+          "checked": false
+        },
+        {
+          "id": "mute",
+          "title": "Unmute Site",
+          "symbol": "speaker.wave.2",
+          "enabled": true,
+          "checked": false
+        },
+        {
+          "separator": true
+        },
+        {
+          "id": "duplicate",
+          "title": "Duplicate",
+          "symbol": "plus.square.on.square",
+          "enabled": true,
+          "checked": false
+        },
+        {
+          "id": "bookmark",
+          "title": "Add to Bookmarks…",
+          "symbol": "bookmark",
+          "enabled": true,
+          "checked": false
+        },
+        {
+          "id": "engine",
+          "title": "Open Page in WebKit",
+          "symbol": "safari",
+          "enabled": true,
+          "checked": false
+        },
+        {
+          "id": "moveTo",
+          "title": "Move to",
+          "symbol": "arrow.right.square",
+          "children": [
+            {
+              "id": "pinTile",
+              "title": "Top Apps",
+              "symbol": "app",
+              "enabled": true,
+              "checked": false
+            },
+            {
+              "id": "pinRow",
+              "title": "Pinned in Personal",
+              "symbol": "list.bullet",
+              "enabled": true,
+              "checked": false
+            },
+            {
+              "id": "newGroup",
+              "title": "New Group",
+              "symbol": "plus.rectangle.on.rectangle",
+              "enabled": true,
+              "checked": false
+            },
+            {
+              "separator": true
+            },
+            {
+              "id": "profile:default",
+              "title": "Personal",
+              "checked": true,
+              "enabled": false
+            },
+            {
+              "id": "profile:work",
+              "title": "Work",
+              "checked": false,
+              "enabled": true
+            },
+            {
+              "id": "profile:new",
+              "title": "New Profile…",
+              "enabled": true,
+              "checked": false
+            },
+            {
+              "separator": true
+            },
+            {
+              "id": "moveToWindow",
+              "title": "Window",
+              "symbol": "macwindow",
+              "enabled": true,
+              "children": [
+                {
+                  "id": "window:new",
+                  "title": "New Window",
+                  "enabled": true,
+                  "checked": false
+                }
+              ],
+              "checked": false
+            }
+          ],
+          "enabled": true,
+          "checked": false
+        },
+        {
+          "separator": true
+        },
+        {
+          "id": "pin",
+          "title": "Move to Top Apps",
+          "symbol": "pin",
+          "enabled": true,
+          "checked": false
+        },
+        {
+          "id": "close",
+          "title": "Close Tab",
+          "symbol": "xmark",
+          "enabled": true,
+          "checked": false
+        },
+        {
+          "id": "closeMore",
+          "title": "Close Tabs",
+          "enabled": true,
+          "children": [
+            {
+              "id": "closeOthers",
+              "title": "Other Tabs",
+              "enabled": true,
+              "checked": false
+            },
+            {
+              "id": "closeAbove",
+              "title": "Tabs Above",
+              "enabled": true,
+              "checked": false
+            },
+            {
+              "id": "closeBelow",
+              "title": "Tabs Below",
+              "enabled": true,
+              "checked": false
+            }
+          ],
+          "checked": false
+        }
+      ]
+    },
+    {
+      "name": "tile away from pin",
+      "state": {
+        "profiles": {
+          "default": {
+            "id": "default",
+            "name": "Personal",
+            "color": "plum",
+            "icon": null,
+            "createdAt": 0
+          },
+          "work": {
+            "id": "work",
+            "name": "Work",
+            "color": "blue",
+            "icon": null,
+            "createdAt": 0
+          }
+        },
+        "profileOrder": [
+          "default",
+          "work"
+        ],
+        "windows": {
+          "w1": {
+            "id": "w1",
+            "profileId": "default",
+            "incognito": false,
+            "tabIds": [
+              "a",
+              "b",
+              "c"
+            ],
+            "activeTabIds": {
+              "default": "b"
+            },
+            "sidebarOpen": true,
+            "frame": [
+              80,
+              80,
+              1100,
+              760
+            ]
+          }
+        },
+        "windowOrder": [
+          "w1"
+        ],
+        "tabs": {
+          "a": {
+            "id": "a",
+            "windowId": "w1",
+            "profileId": "default",
+            "url": "https://a.example.com/",
+            "title": "A",
+            "favicon": null,
+            "pinned": false,
+            "muted": false,
+            "zoom": 1,
+            "customTitle": null,
+            "customIcon": null,
+            "pinnedUrl": null,
+            "createdAt": 0,
+            "lastActiveAt": 0
+          },
+          "b": {
+            "id": "b",
+            "windowId": "w1",
+            "profileId": "default",
+            "url": "https://b.example.com/",
+            "title": "B",
+            "favicon": null,
+            "pinned": true,
+            "muted": false,
+            "zoom": 1,
+            "customTitle": null,
+            "customIcon": null,
+            "pinnedUrl": "https://home.example.com/",
+            "createdAt": 0,
+            "lastActiveAt": 0
+          },
+          "c": {
+            "id": "c",
+            "windowId": "w1",
+            "profileId": "default",
+            "url": "https://c.example.com/",
+            "title": "C",
+            "favicon": null,
+            "pinned": false,
+            "muted": false,
+            "zoom": 1,
+            "customTitle": null,
+            "customIcon": null,
+            "pinnedUrl": null,
+            "createdAt": 0,
+            "lastActiveAt": 0
+          }
+        },
+        "groups": {},
+        "splits": {},
+        "selection": {},
+        "settings": {
+          "tabLayout": "sidebar",
+          "pageEngine": "chromium",
+          "protectedVideoInWebKit": false
+        },
+        "ui": {
+          "focusedWindowId": "w1",
+          "focusOrder": [
+            "w1"
+          ],
+          "lastProfileId": "default"
+        }
+      },
+      "windowId": "w1",
+      "tabId": "b",
+      "items": [
+        {
+          "id": "copy",
+          "title": "Copy Link",
+          "symbol": "link",
+          "enabled": true,
+          "checked": false
+        },
+        {
+          "id": "share",
+          "title": "Share",
+          "symbol": "square.and.arrow.up",
+          "enabled": true,
+          "share": true,
+          "checked": false
+        },
+        {
+          "separator": true
+        },
+        {
+          "id": "rename",
+          "title": "Rename…",
+          "symbol": "character.cursor.ibeam",
+          "enabled": true,
+          "checked": false
+        },
+        {
+          "id": "icon",
+          "title": "Change Icon…",
+          "symbol": "face.smiling",
+          "enabled": true,
+          "checked": false
+        },
+        {
+          "id": "mute",
+          "title": "Mute Site",
+          "symbol": "speaker.slash",
+          "enabled": true,
+          "checked": false
+        },
+        {
+          "id": "pinnedPage",
+          "title": "Edit Pinned Page",
+          "symbol": "pin",
+          "children": [
+            {
+              "id": "backToPin",
+              "title": "Back to Pinned URL",
+              "symbol": "arrow.uturn.backward",
+              "enabled": true,
+              "checked": false
+            },
+            {
+              "id": "replacePin",
+              "title": "Replace Pin with Current Page",
+              "symbol": "pin",
+              "enabled": true,
+              "checked": false
+            },
+            {
+              "separator": true
+            },
+            {
+              "id": "editPin",
+              "title": "Edit…",
+              "symbol": "pencil",
+              "enabled": true,
+              "checked": false
+            }
+          ],
+          "enabled": true,
+          "checked": false
+        },
+        {
+          "separator": true
+        },
+        {
+          "id": "duplicate",
+          "title": "Duplicate",
+          "symbol": "plus.square.on.square",
+          "enabled": true,
+          "checked": false
+        },
+        {
+          "id": "bookmark",
+          "title": "Add to Bookmarks…",
+          "symbol": "bookmark",
+          "enabled": true,
+          "checked": false
+        },
+        {
+          "id": "engine",
+          "title": "Open Page in WebKit",
+          "symbol": "safari",
+          "enabled": true,
+          "checked": false
+        },
+        {
+          "id": "moveTo",
+          "title": "Move to",
+          "symbol": "arrow.right.square",
+          "children": [
+            {
+              "id": "pinRow",
+              "title": "Pinned in Personal",
+              "symbol": "list.bullet",
+              "enabled": true,
+              "checked": false
+            },
+            {
+              "id": "newFolder",
+              "title": "New Folder…",
+              "symbol": "folder.badge.plus",
+              "enabled": true,
+              "checked": false
+            },
+            {
+              "separator": true
+            },
+            {
+              "id": "profile:default",
+              "title": "Personal",
+              "checked": true,
+              "enabled": false
+            },
+            {
+              "id": "profile:work",
+              "title": "Work",
+              "checked": false,
+              "enabled": true
+            },
+            {
+              "id": "profile:new",
+              "title": "New Profile…",
+              "enabled": true,
+              "checked": false
+            },
+            {
+              "separator": true
+            },
+            {
+              "id": "moveToWindow",
+              "title": "Window",
+              "symbol": "macwindow",
+              "enabled": true,
+              "children": [
+                {
+                  "id": "window:new",
+                  "title": "New Window",
+                  "enabled": true,
+                  "checked": false
+                }
+              ],
+              "checked": false
+            }
+          ],
+          "enabled": true,
+          "checked": false
+        },
+        {
+          "separator": true
+        },
+        {
+          "id": "pin",
+          "title": "Unpin from Top Apps",
+          "symbol": "pin.slash",
+          "enabled": true,
+          "checked": false
+        }
+      ]
+    },
+    {
+      "name": "tile in folder",
+      "state": {
+        "profiles": {
+          "default": {
+            "id": "default",
+            "name": "Personal",
+            "color": "plum",
+            "icon": null,
+            "createdAt": 0
+          },
+          "work": {
+            "id": "work",
+            "name": "Work",
+            "color": "blue",
+            "icon": null,
+            "createdAt": 0
+          }
+        },
+        "profileOrder": [
+          "default",
+          "work"
+        ],
+        "windows": {
+          "w1": {
+            "id": "w1",
+            "profileId": "default",
+            "incognito": false,
+            "tabIds": [
+              "a",
+              "b",
+              "c"
+            ],
+            "activeTabIds": {
+              "default": "b"
+            },
+            "sidebarOpen": true,
+            "frame": [
+              80,
+              80,
+              1100,
+              760
+            ]
+          }
+        },
+        "windowOrder": [
+          "w1"
+        ],
+        "tabs": {
+          "a": {
+            "id": "a",
+            "windowId": "w1",
+            "profileId": "default",
+            "url": "https://a.example.com/",
+            "title": "A",
+            "favicon": null,
+            "pinned": false,
+            "muted": false,
+            "zoom": 1,
+            "customTitle": null,
+            "customIcon": null,
+            "pinnedUrl": null,
+            "createdAt": 0,
+            "lastActiveAt": 0
+          },
+          "b": {
+            "id": "b",
+            "windowId": "w1",
+            "profileId": "default",
+            "url": "https://b.example.com/",
+            "title": "B",
+            "favicon": null,
+            "pinned": true,
+            "muted": false,
+            "zoom": 1,
+            "customTitle": null,
+            "customIcon": null,
+            "pinnedUrl": "https://b.example.com/",
+            "createdAt": 0,
+            "lastActiveAt": 0,
+            "tileFolder": {
+              "id": "folder",
+              "name": "Folder"
+            }
+          },
+          "c": {
+            "id": "c",
+            "windowId": "w1",
+            "profileId": "default",
+            "url": "https://c.example.com/",
+            "title": "C",
+            "favicon": null,
+            "pinned": false,
+            "muted": false,
+            "zoom": 1,
+            "customTitle": null,
+            "customIcon": null,
+            "pinnedUrl": null,
+            "createdAt": 0,
+            "lastActiveAt": 0
+          }
+        },
+        "groups": {},
+        "splits": {},
+        "selection": {},
+        "settings": {
+          "tabLayout": "sidebar",
+          "pageEngine": "chromium",
+          "protectedVideoInWebKit": false
+        },
+        "ui": {
+          "focusedWindowId": "w1",
+          "focusOrder": [
+            "w1"
+          ],
+          "lastProfileId": "default"
+        }
+      },
+      "windowId": "w1",
+      "tabId": "b",
+      "items": [
+        {
+          "id": "copy",
+          "title": "Copy Link",
+          "symbol": "link",
+          "enabled": true,
+          "checked": false
+        },
+        {
+          "id": "share",
+          "title": "Share",
+          "symbol": "square.and.arrow.up",
+          "enabled": true,
+          "share": true,
+          "checked": false
+        },
+        {
+          "separator": true
+        },
+        {
+          "id": "rename",
+          "title": "Rename…",
+          "symbol": "character.cursor.ibeam",
+          "enabled": true,
+          "checked": false
+        },
+        {
+          "id": "icon",
+          "title": "Change Icon…",
+          "symbol": "face.smiling",
+          "enabled": true,
+          "checked": false
+        },
+        {
+          "id": "mute",
+          "title": "Mute Site",
+          "symbol": "speaker.slash",
+          "enabled": true,
+          "checked": false
+        },
+        {
+          "id": "pinnedPage",
+          "title": "Edit Pinned Page",
+          "symbol": "pin",
+          "children": [
+            {
+              "id": "backToPin",
+              "title": "Back to Pinned URL",
+              "symbol": "arrow.uturn.backward",
+              "enabled": false,
+              "checked": false
+            },
+            {
+              "id": "replacePin",
+              "title": "Replace Pin with Current Page",
+              "symbol": "pin",
+              "enabled": false,
+              "checked": false
+            },
+            {
+              "separator": true
+            },
+            {
+              "id": "editPin",
+              "title": "Edit…",
+              "symbol": "pencil",
+              "enabled": true,
+              "checked": false
+            }
+          ],
+          "enabled": true,
+          "checked": false
+        },
+        {
+          "separator": true
+        },
+        {
+          "id": "duplicate",
+          "title": "Duplicate",
+          "symbol": "plus.square.on.square",
+          "enabled": true,
+          "checked": false
+        },
+        {
+          "id": "bookmark",
+          "title": "Add to Bookmarks…",
+          "symbol": "bookmark",
+          "enabled": true,
+          "checked": false
+        },
+        {
+          "id": "engine",
+          "title": "Open Page in WebKit",
+          "symbol": "safari",
+          "enabled": true,
+          "checked": false
+        },
+        {
+          "id": "moveTo",
+          "title": "Move to",
+          "symbol": "arrow.right.square",
+          "children": [
+            {
+              "id": "pinRow",
+              "title": "Pinned in Personal",
+              "symbol": "list.bullet",
+              "enabled": true,
+              "checked": false
+            },
+            {
+              "id": "leaveFolder",
+              "title": "Out of Folder",
+              "symbol": "folder.badge.minus",
+              "enabled": true,
+              "checked": false
+            },
+            {
+              "separator": true
+            },
+            {
+              "id": "profile:default",
+              "title": "Personal",
+              "checked": true,
+              "enabled": false
+            },
+            {
+              "id": "profile:work",
+              "title": "Work",
+              "checked": false,
+              "enabled": true
+            },
+            {
+              "id": "profile:new",
+              "title": "New Profile…",
+              "enabled": true,
+              "checked": false
+            },
+            {
+              "separator": true
+            },
+            {
+              "id": "moveToWindow",
+              "title": "Window",
+              "symbol": "macwindow",
+              "enabled": true,
+              "children": [
+                {
+                  "id": "window:new",
+                  "title": "New Window",
+                  "enabled": true,
+                  "checked": false
+                }
+              ],
+              "checked": false
+            }
+          ],
+          "enabled": true,
+          "checked": false
+        },
+        {
+          "separator": true
+        },
+        {
+          "id": "pin",
+          "title": "Unpin from Top Apps",
+          "symbol": "pin.slash",
+          "enabled": true,
+          "checked": false
+        }
+      ]
+    },
+    {
+      "name": "row with equivalent pinned URL",
+      "state": {
+        "profiles": {
+          "default": {
+            "id": "default",
+            "name": "Personal",
+            "color": "plum",
+            "icon": null,
+            "createdAt": 0
+          },
+          "work": {
+            "id": "work",
+            "name": "Work",
+            "color": "blue",
+            "icon": null,
+            "createdAt": 0
+          }
+        },
+        "profileOrder": [
+          "default",
+          "work"
+        ],
+        "windows": {
+          "w1": {
+            "id": "w1",
+            "profileId": "default",
+            "incognito": false,
+            "tabIds": [
+              "a",
+              "b",
+              "c"
+            ],
+            "activeTabIds": {
+              "default": "b"
+            },
+            "sidebarOpen": true,
+            "frame": [
+              80,
+              80,
+              1100,
+              760
+            ]
+          }
+        },
+        "windowOrder": [
+          "w1"
+        ],
+        "tabs": {
+          "a": {
+            "id": "a",
+            "windowId": "w1",
+            "profileId": "default",
+            "url": "https://a.example.com/",
+            "title": "A",
+            "favicon": null,
+            "pinned": false,
+            "muted": false,
+            "zoom": 1,
+            "customTitle": null,
+            "customIcon": null,
+            "pinnedUrl": null,
+            "createdAt": 0,
+            "lastActiveAt": 0
+          },
+          "b": {
+            "id": "b",
+            "windowId": "w1",
+            "profileId": "default",
+            "url": "https://b.example.com/",
+            "title": "B",
+            "favicon": null,
+            "pinned": true,
+            "muted": false,
+            "zoom": 1,
+            "customTitle": null,
+            "customIcon": null,
+            "pinnedUrl": "https://b.example.com/#section",
+            "createdAt": 0,
+            "lastActiveAt": 0,
+            "pinnedAsRow": true
+          },
+          "c": {
+            "id": "c",
+            "windowId": "w1",
+            "profileId": "default",
+            "url": "https://c.example.com/",
+            "title": "C",
+            "favicon": null,
+            "pinned": false,
+            "muted": false,
+            "zoom": 1,
+            "customTitle": null,
+            "customIcon": null,
+            "pinnedUrl": null,
+            "createdAt": 0,
+            "lastActiveAt": 0
+          }
+        },
+        "groups": {},
+        "splits": {},
+        "selection": {},
+        "settings": {
+          "tabLayout": "sidebar",
+          "pageEngine": "chromium",
+          "protectedVideoInWebKit": false
+        },
+        "ui": {
+          "focusedWindowId": "w1",
+          "focusOrder": [
+            "w1"
+          ],
+          "lastProfileId": "default"
+        }
+      },
+      "windowId": "w1",
+      "tabId": "b",
+      "items": [
+        {
+          "id": "copy",
+          "title": "Copy Link",
+          "symbol": "link",
+          "enabled": true,
+          "checked": false
+        },
+        {
+          "id": "share",
+          "title": "Share",
+          "symbol": "square.and.arrow.up",
+          "enabled": true,
+          "share": true,
+          "checked": false
+        },
+        {
+          "separator": true
+        },
+        {
+          "id": "rename",
+          "title": "Rename…",
+          "symbol": "character.cursor.ibeam",
+          "enabled": true,
+          "checked": false
+        },
+        {
+          "id": "icon",
+          "title": "Change Icon…",
+          "symbol": "face.smiling",
+          "enabled": true,
+          "checked": false
+        },
+        {
+          "id": "mute",
+          "title": "Mute Site",
+          "symbol": "speaker.slash",
+          "enabled": true,
+          "checked": false
+        },
+        {
+          "id": "pinnedPage",
+          "title": "Edit Pinned Page",
+          "symbol": "pin",
+          "children": [
+            {
+              "id": "backToPin",
+              "title": "Back to Pinned URL",
+              "symbol": "arrow.uturn.backward",
+              "enabled": false,
+              "checked": false
+            },
+            {
+              "id": "replacePin",
+              "title": "Replace Pin with Current Page",
+              "symbol": "pin",
+              "enabled": false,
+              "checked": false
+            },
+            {
+              "separator": true
+            },
+            {
+              "id": "editPin",
+              "title": "Edit…",
+              "symbol": "pencil",
+              "enabled": true,
+              "checked": false
+            }
+          ],
+          "enabled": true,
+          "checked": false
+        },
+        {
+          "separator": true
+        },
+        {
+          "id": "duplicate",
+          "title": "Duplicate",
+          "symbol": "plus.square.on.square",
+          "enabled": true,
+          "checked": false
+        },
+        {
+          "id": "bookmark",
+          "title": "Add to Bookmarks…",
+          "symbol": "bookmark",
+          "enabled": true,
+          "checked": false
+        },
+        {
+          "id": "engine",
+          "title": "Open Page in WebKit",
+          "symbol": "safari",
+          "enabled": true,
+          "checked": false
+        },
+        {
+          "id": "moveTo",
+          "title": "Move to",
+          "symbol": "arrow.right.square",
+          "children": [
+            {
+              "id": "pinTile",
+              "title": "Top Apps",
+              "symbol": "app",
+              "enabled": true,
+              "checked": false
+            },
+            {
+              "id": "newGroup",
+              "title": "New Group",
+              "symbol": "plus.rectangle.on.rectangle",
+              "enabled": true,
+              "checked": false
+            },
+            {
+              "separator": true
+            },
+            {
+              "id": "profile:default",
+              "title": "Personal",
+              "checked": true,
+              "enabled": false
+            },
+            {
+              "id": "profile:work",
+              "title": "Work",
+              "checked": false,
+              "enabled": true
+            },
+            {
+              "id": "profile:new",
+              "title": "New Profile…",
+              "enabled": true,
+              "checked": false
+            },
+            {
+              "separator": true
+            },
+            {
+              "id": "moveToWindow",
+              "title": "Window",
+              "symbol": "macwindow",
+              "enabled": true,
+              "children": [
+                {
+                  "id": "window:new",
+                  "title": "New Window",
+                  "enabled": true,
+                  "checked": false
+                }
+              ],
+              "checked": false
+            }
+          ],
+          "enabled": true,
+          "checked": false
+        },
+        {
+          "separator": true
+        },
+        {
+          "id": "pin",
+          "title": "Unpin",
+          "symbol": "pin.slash",
+          "enabled": true,
+          "checked": false
+        }
+      ]
+    },
+    {
+      "name": "member of pinned group",
+      "state": {
+        "profiles": {
+          "default": {
+            "id": "default",
+            "name": "Personal",
+            "color": "plum",
+            "icon": null,
+            "createdAt": 0
+          },
+          "work": {
+            "id": "work",
+            "name": "Work",
+            "color": "blue",
+            "icon": null,
+            "createdAt": 0
+          }
+        },
+        "profileOrder": [
+          "default",
+          "work"
+        ],
+        "windows": {
+          "w1": {
+            "id": "w1",
+            "profileId": "default",
+            "incognito": false,
+            "tabIds": [
+              "a",
+              "b",
+              "c"
+            ],
+            "activeTabIds": {
+              "default": "b"
+            },
+            "sidebarOpen": true,
+            "frame": [
+              80,
+              80,
+              1100,
+              760
+            ]
+          }
+        },
+        "windowOrder": [
+          "w1"
+        ],
+        "tabs": {
+          "a": {
+            "id": "a",
+            "windowId": "w1",
+            "profileId": "default",
+            "url": "https://a.example.com/",
+            "title": "A",
+            "favicon": null,
+            "pinned": false,
+            "muted": false,
+            "zoom": 1,
+            "customTitle": null,
+            "customIcon": null,
+            "pinnedUrl": null,
+            "createdAt": 0,
+            "lastActiveAt": 0
+          },
+          "b": {
+            "id": "b",
+            "windowId": "w1",
+            "profileId": "default",
+            "url": "https://b.example.com/",
+            "title": "B",
+            "favicon": null,
+            "pinned": false,
+            "muted": false,
+            "zoom": 1,
+            "customTitle": null,
+            "customIcon": null,
+            "pinnedUrl": null,
+            "createdAt": 0,
+            "lastActiveAt": 0
+          },
+          "c": {
+            "id": "c",
+            "windowId": "w1",
+            "profileId": "default",
+            "url": "https://c.example.com/",
+            "title": "C",
+            "favicon": null,
+            "pinned": false,
+            "muted": false,
+            "zoom": 1,
+            "customTitle": null,
+            "customIcon": null,
+            "pinnedUrl": null,
+            "createdAt": 0,
+            "lastActiveAt": 0
+          }
+        },
+        "groups": {
+          "g": {
+            "id": "g",
+            "windowId": "w1",
+            "profileId": "default",
+            "name": "g",
+            "icon": null,
+            "color": null,
+            "collapsed": false,
+            "pinned": true,
+            "tabIds": [
+              "b"
+            ]
+          }
+        },
+        "splits": {},
+        "selection": {},
+        "settings": {
+          "tabLayout": "sidebar",
+          "pageEngine": "chromium",
+          "protectedVideoInWebKit": false
+        },
+        "ui": {
+          "focusedWindowId": "w1",
+          "focusOrder": [
+            "w1"
+          ],
+          "lastProfileId": "default"
+        }
+      },
+      "windowId": "w1",
+      "tabId": "b",
+      "items": [
+        {
+          "id": "copy",
+          "title": "Copy Link",
+          "symbol": "link",
+          "enabled": true,
+          "checked": false
+        },
+        {
+          "id": "share",
+          "title": "Share",
+          "symbol": "square.and.arrow.up",
+          "enabled": true,
+          "share": true,
+          "checked": false
+        },
+        {
+          "separator": true
+        },
+        {
+          "id": "rename",
+          "title": "Rename…",
+          "symbol": "character.cursor.ibeam",
+          "enabled": true,
+          "checked": false
+        },
+        {
+          "id": "icon",
+          "title": "Change Icon…",
+          "symbol": "face.smiling",
+          "enabled": true,
+          "checked": false
+        },
+        {
+          "id": "mute",
+          "title": "Mute Site",
+          "symbol": "speaker.slash",
+          "enabled": true,
+          "checked": false
+        },
+        {
+          "id": "pinnedPage",
+          "title": "Edit Pinned Page",
+          "symbol": "pin",
+          "children": [
+            {
+              "id": "backToPin",
+              "title": "Back to Pinned URL",
+              "symbol": "arrow.uturn.backward",
+              "enabled": false,
+              "checked": false
+            },
+            {
+              "id": "replacePin",
+              "title": "Replace Pin with Current Page",
+              "symbol": "pin",
+              "enabled": false,
+              "checked": false
+            },
+            {
+              "separator": true
+            },
+            {
+              "id": "editPin",
+              "title": "Edit…",
+              "symbol": "pencil",
+              "enabled": true,
+              "checked": false
+            }
+          ],
+          "enabled": true,
+          "checked": false
+        },
+        {
+          "separator": true
+        },
+        {
+          "id": "duplicate",
+          "title": "Duplicate",
+          "symbol": "plus.square.on.square",
+          "enabled": true,
+          "checked": false
+        },
+        {
+          "id": "bookmark",
+          "title": "Add to Bookmarks…",
+          "symbol": "bookmark",
+          "enabled": true,
+          "checked": false
+        },
+        {
+          "id": "engine",
+          "title": "Open Page in WebKit",
+          "symbol": "safari",
+          "enabled": true,
+          "checked": false
+        },
+        {
+          "id": "moveTo",
+          "title": "Move to",
+          "symbol": "arrow.right.square",
+          "children": [
+            {
+              "id": "pinTile",
+              "title": "Top Apps",
+              "symbol": "app",
+              "enabled": true,
+              "checked": false
+            },
+            {
+              "id": "pinRow",
+              "title": "Pinned in Personal",
+              "symbol": "list.bullet",
+              "enabled": true,
+              "checked": false
+            },
+            {
+              "id": "newGroup",
+              "title": "New Group",
+              "symbol": "plus.rectangle.on.rectangle",
+              "enabled": true,
+              "checked": false
+            },
+            {
+              "separator": true
+            },
+            {
+              "id": "profile:default",
+              "title": "Personal",
+              "checked": true,
+              "enabled": false
+            },
+            {
+              "id": "profile:work",
+              "title": "Work",
+              "checked": false,
+              "enabled": true
+            },
+            {
+              "id": "profile:new",
+              "title": "New Profile…",
+              "enabled": true,
+              "checked": false
+            },
+            {
+              "separator": true
+            },
+            {
+              "id": "moveToWindow",
+              "title": "Window",
+              "symbol": "macwindow",
+              "enabled": true,
+              "children": [
+                {
+                  "id": "window:new",
+                  "title": "New Window",
+                  "enabled": true,
+                  "checked": false
+                }
+              ],
+              "checked": false
+            }
+          ],
+          "enabled": true,
+          "checked": false
+        },
+        {
+          "separator": true
+        },
+        {
+          "id": "unpinMember",
+          "title": "Unpin",
+          "symbol": "pin.slash",
+          "enabled": true,
+          "checked": false
+        }
+      ]
+    },
+    {
+      "name": "member of ordinary group",
+      "state": {
+        "profiles": {
+          "default": {
+            "id": "default",
+            "name": "Personal",
+            "color": "plum",
+            "icon": null,
+            "createdAt": 0
+          },
+          "work": {
+            "id": "work",
+            "name": "Work",
+            "color": "blue",
+            "icon": null,
+            "createdAt": 0
+          }
+        },
+        "profileOrder": [
+          "default",
+          "work"
+        ],
+        "windows": {
+          "w1": {
+            "id": "w1",
+            "profileId": "default",
+            "incognito": false,
+            "tabIds": [
+              "a",
+              "b",
+              "c"
+            ],
+            "activeTabIds": {
+              "default": "b"
+            },
+            "sidebarOpen": true,
+            "frame": [
+              80,
+              80,
+              1100,
+              760
+            ]
+          }
+        },
+        "windowOrder": [
+          "w1"
+        ],
+        "tabs": {
+          "a": {
+            "id": "a",
+            "windowId": "w1",
+            "profileId": "default",
+            "url": "https://a.example.com/",
+            "title": "A",
+            "favicon": null,
+            "pinned": false,
+            "muted": false,
+            "zoom": 1,
+            "customTitle": null,
+            "customIcon": null,
+            "pinnedUrl": null,
+            "createdAt": 0,
+            "lastActiveAt": 0
+          },
+          "b": {
+            "id": "b",
+            "windowId": "w1",
+            "profileId": "default",
+            "url": "https://b.example.com/",
+            "title": "B",
+            "favicon": null,
+            "pinned": false,
+            "muted": false,
+            "zoom": 1,
+            "customTitle": null,
+            "customIcon": null,
+            "pinnedUrl": null,
+            "createdAt": 0,
+            "lastActiveAt": 0
+          },
+          "c": {
+            "id": "c",
+            "windowId": "w1",
+            "profileId": "default",
+            "url": "https://c.example.com/",
+            "title": "C",
+            "favicon": null,
+            "pinned": false,
+            "muted": false,
+            "zoom": 1,
+            "customTitle": null,
+            "customIcon": null,
+            "pinnedUrl": null,
+            "createdAt": 0,
+            "lastActiveAt": 0
+          }
+        },
+        "groups": {
+          "g": {
+            "id": "g",
+            "windowId": "w1",
+            "profileId": "default",
+            "name": "g",
+            "icon": null,
+            "color": null,
+            "collapsed": false,
+            "pinned": false,
+            "tabIds": [
+              "b"
+            ]
+          }
+        },
+        "splits": {},
+        "selection": {},
+        "settings": {
+          "tabLayout": "sidebar",
+          "pageEngine": "chromium",
+          "protectedVideoInWebKit": false
+        },
+        "ui": {
+          "focusedWindowId": "w1",
+          "focusOrder": [
+            "w1"
+          ],
+          "lastProfileId": "default"
+        }
+      },
+      "windowId": "w1",
+      "tabId": "b",
+      "items": [
+        {
+          "id": "copy",
+          "title": "Copy Link",
+          "symbol": "link",
+          "enabled": true,
+          "checked": false
+        },
+        {
+          "id": "share",
+          "title": "Share",
+          "symbol": "square.and.arrow.up",
+          "enabled": true,
+          "share": true,
+          "checked": false
+        },
+        {
+          "separator": true
+        },
+        {
+          "id": "rename",
+          "title": "Rename…",
+          "symbol": "character.cursor.ibeam",
+          "enabled": true,
+          "checked": false
+        },
+        {
+          "id": "icon",
+          "title": "Change Icon…",
+          "symbol": "face.smiling",
+          "enabled": true,
+          "checked": false
+        },
+        {
+          "id": "mute",
+          "title": "Mute Site",
+          "symbol": "speaker.slash",
+          "enabled": true,
+          "checked": false
+        },
+        {
+          "separator": true
+        },
+        {
+          "id": "duplicate",
+          "title": "Duplicate",
+          "symbol": "plus.square.on.square",
+          "enabled": true,
+          "checked": false
+        },
+        {
+          "id": "bookmark",
+          "title": "Add to Bookmarks…",
+          "symbol": "bookmark",
+          "enabled": true,
+          "checked": false
+        },
+        {
+          "id": "engine",
+          "title": "Open Page in WebKit",
+          "symbol": "safari",
+          "enabled": true,
+          "checked": false
+        },
+        {
+          "id": "moveTo",
+          "title": "Move to",
+          "symbol": "arrow.right.square",
+          "children": [
+            {
+              "id": "pinTile",
+              "title": "Top Apps",
+              "symbol": "app",
+              "enabled": true,
+              "checked": false
+            },
+            {
+              "id": "pinRow",
+              "title": "Pinned in Personal",
+              "symbol": "list.bullet",
+              "enabled": true,
+              "checked": false
+            },
+            {
+              "id": "newGroup",
+              "title": "New Group",
+              "symbol": "plus.rectangle.on.rectangle",
+              "enabled": true,
+              "checked": false
+            },
+            {
+              "id": "ungroupTab",
+              "title": "Out of Group",
+              "symbol": "folder.badge.minus",
+              "enabled": true,
+              "checked": false
+            },
+            {
+              "separator": true
+            },
+            {
+              "id": "profile:default",
+              "title": "Personal",
+              "checked": true,
+              "enabled": false
+            },
+            {
+              "id": "profile:work",
+              "title": "Work",
+              "checked": false,
+              "enabled": true
+            },
+            {
+              "id": "profile:new",
+              "title": "New Profile…",
+              "enabled": true,
+              "checked": false
+            },
+            {
+              "separator": true
+            },
+            {
+              "id": "moveToWindow",
+              "title": "Window",
+              "symbol": "macwindow",
+              "enabled": true,
+              "children": [
+                {
+                  "id": "window:new",
+                  "title": "New Window",
+                  "enabled": true,
+                  "checked": false
+                }
+              ],
+              "checked": false
+            }
+          ],
+          "enabled": true,
+          "checked": false
+        },
+        {
+          "separator": true
+        },
+        {
+          "id": "pin",
+          "title": "Move to Top Apps",
+          "symbol": "pin",
+          "enabled": true,
+          "checked": false
+        },
+        {
+          "id": "close",
+          "title": "Close Tab",
+          "symbol": "xmark",
+          "enabled": true,
+          "checked": false
+        },
+        {
+          "id": "closeMore",
+          "title": "Close Tabs",
+          "enabled": true,
+          "children": [
+            {
+              "id": "closeOthers",
+              "title": "Other Tabs",
+              "enabled": true,
+              "checked": false
+            },
+            {
+              "id": "closeAbove",
+              "title": "Tabs Above",
+              "enabled": true,
+              "checked": false
+            },
+            {
+              "id": "closeBelow",
+              "title": "Tabs Below",
+              "enabled": true,
+              "checked": false
+            }
+          ],
+          "checked": false
+        }
+      ]
+    },
+    {
+      "name": "nested groups sorted by path",
+      "state": {
+        "profiles": {
+          "default": {
+            "id": "default",
+            "name": "Personal",
+            "color": "plum",
+            "icon": null,
+            "createdAt": 0
+          },
+          "work": {
+            "id": "work",
+            "name": "Work",
+            "color": "blue",
+            "icon": null,
+            "createdAt": 0
+          }
+        },
+        "profileOrder": [
+          "default",
+          "work"
+        ],
+        "windows": {
+          "w1": {
+            "id": "w1",
+            "profileId": "default",
+            "incognito": false,
+            "tabIds": [
+              "a",
+              "b",
+              "c"
+            ],
+            "activeTabIds": {
+              "default": "b"
+            },
+            "sidebarOpen": true,
+            "frame": [
+              80,
+              80,
+              1100,
+              760
+            ]
+          }
+        },
+        "windowOrder": [
+          "w1"
+        ],
+        "tabs": {
+          "a": {
+            "id": "a",
+            "windowId": "w1",
+            "profileId": "default",
+            "url": "https://a.example.com/",
+            "title": "A",
+            "favicon": null,
+            "pinned": false,
+            "muted": false,
+            "zoom": 1,
+            "customTitle": null,
+            "customIcon": null,
+            "pinnedUrl": null,
+            "createdAt": 0,
+            "lastActiveAt": 0
+          },
+          "b": {
+            "id": "b",
+            "windowId": "w1",
+            "profileId": "default",
+            "url": "https://b.example.com/",
+            "title": "B",
+            "favicon": null,
+            "pinned": false,
+            "muted": false,
+            "zoom": 1,
+            "customTitle": null,
+            "customIcon": null,
+            "pinnedUrl": null,
+            "createdAt": 0,
+            "lastActiveAt": 0
+          },
+          "c": {
+            "id": "c",
+            "windowId": "w1",
+            "profileId": "default",
+            "url": "https://c.example.com/",
+            "title": "C",
+            "favicon": null,
+            "pinned": false,
+            "muted": false,
+            "zoom": 1,
+            "customTitle": null,
+            "customIcon": null,
+            "pinnedUrl": null,
+            "createdAt": 0,
+            "lastActiveAt": 0
+          }
+        },
+        "groups": {
+          "z": {
+            "id": "z",
+            "windowId": "w1",
+            "profileId": "default",
+            "name": "Zulu",
+            "icon": null,
+            "color": null,
+            "collapsed": false,
+            "pinned": false,
+            "tabIds": []
+          },
+          "a": {
+            "id": "a",
+            "windowId": "w1",
+            "profileId": "default",
+            "name": "Alpha",
+            "icon": null,
+            "color": null,
+            "collapsed": false,
+            "pinned": true,
+            "tabIds": []
+          },
+          "child": {
+            "id": "child",
+            "windowId": "w1",
+            "profileId": "default",
+            "name": "Child",
+            "icon": null,
+            "color": null,
+            "collapsed": false,
+            "pinned": false,
+            "tabIds": [],
+            "parentId": "a"
+          },
+          "other": {
+            "id": "other",
+            "windowId": "other",
+            "profileId": "default",
+            "name": "Excluded",
+            "icon": null,
+            "color": null,
+            "collapsed": false,
+            "pinned": false,
+            "tabIds": []
+          }
+        },
+        "splits": {},
+        "selection": {},
+        "settings": {
+          "tabLayout": "sidebar",
+          "pageEngine": "chromium",
+          "protectedVideoInWebKit": false
+        },
+        "ui": {
+          "focusedWindowId": "w1",
+          "focusOrder": [
+            "w1"
+          ],
+          "lastProfileId": "default"
+        }
+      },
+      "windowId": "w1",
+      "tabId": "b",
+      "items": [
+        {
+          "id": "copy",
+          "title": "Copy Link",
+          "symbol": "link",
+          "enabled": true,
+          "checked": false
+        },
+        {
+          "id": "share",
+          "title": "Share",
+          "symbol": "square.and.arrow.up",
+          "enabled": true,
+          "share": true,
+          "checked": false
+        },
+        {
+          "separator": true
+        },
+        {
+          "id": "rename",
+          "title": "Rename…",
+          "symbol": "character.cursor.ibeam",
+          "enabled": true,
+          "checked": false
+        },
+        {
+          "id": "icon",
+          "title": "Change Icon…",
+          "symbol": "face.smiling",
+          "enabled": true,
+          "checked": false
+        },
+        {
+          "id": "mute",
+          "title": "Mute Site",
+          "symbol": "speaker.slash",
+          "enabled": true,
+          "checked": false
+        },
+        {
+          "separator": true
+        },
+        {
+          "id": "duplicate",
+          "title": "Duplicate",
+          "symbol": "plus.square.on.square",
+          "enabled": true,
+          "checked": false
+        },
+        {
+          "id": "bookmark",
+          "title": "Add to Bookmarks…",
+          "symbol": "bookmark",
+          "enabled": true,
+          "checked": false
+        },
+        {
+          "id": "engine",
+          "title": "Open Page in WebKit",
+          "symbol": "safari",
+          "enabled": true,
+          "checked": false
+        },
+        {
+          "id": "moveTo",
+          "title": "Move to",
+          "symbol": "arrow.right.square",
+          "children": [
+            {
+              "id": "pinTile",
+              "title": "Top Apps",
+              "symbol": "app",
+              "enabled": true,
+              "checked": false
+            },
+            {
+              "id": "pinRow",
+              "title": "Pinned in Personal",
+              "symbol": "list.bullet",
+              "enabled": true,
+              "checked": false
+            },
+            {
+              "id": "newGroup",
+              "title": "New Group",
+              "symbol": "plus.rectangle.on.rectangle",
+              "enabled": true,
+              "checked": false
+            },
+            {
+              "id": "moveToGroup",
+              "title": "Group",
+              "symbol": "rectangle.stack",
+              "children": [
+                {
+                  "id": "group:a",
+                  "title": "Alpha",
+                  "symbol": "pin",
+                  "enabled": true,
+                  "checked": false
+                },
+                {
+                  "id": "group:child",
+                  "title": "Alpha › Child",
+                  "symbol": "square.on.square",
+                  "enabled": true,
+                  "checked": false
+                },
+                {
+                  "id": "group:z",
+                  "title": "Zulu",
+                  "symbol": "square.on.square",
+                  "enabled": true,
+                  "checked": false
+                }
+              ],
+              "enabled": true,
+              "checked": false
+            },
+            {
+              "separator": true
+            },
+            {
+              "id": "profile:default",
+              "title": "Personal",
+              "checked": true,
+              "enabled": false
+            },
+            {
+              "id": "profile:work",
+              "title": "Work",
+              "checked": false,
+              "enabled": true
+            },
+            {
+              "id": "profile:new",
+              "title": "New Profile…",
+              "enabled": true,
+              "checked": false
+            },
+            {
+              "separator": true
+            },
+            {
+              "id": "moveToWindow",
+              "title": "Window",
+              "symbol": "macwindow",
+              "enabled": true,
+              "children": [
+                {
+                  "id": "window:new",
+                  "title": "New Window",
+                  "enabled": true,
+                  "checked": false
+                }
+              ],
+              "checked": false
+            }
+          ],
+          "enabled": true,
+          "checked": false
+        },
+        {
+          "separator": true
+        },
+        {
+          "id": "pin",
+          "title": "Move to Top Apps",
+          "symbol": "pin",
+          "enabled": true,
+          "checked": false
+        },
+        {
+          "id": "close",
+          "title": "Close Tab",
+          "symbol": "xmark",
+          "enabled": true,
+          "checked": false
+        },
+        {
+          "id": "closeMore",
+          "title": "Close Tabs",
+          "enabled": true,
+          "children": [
+            {
+              "id": "closeOthers",
+              "title": "Other Tabs",
+              "enabled": true,
+              "checked": false
+            },
+            {
+              "id": "closeAbove",
+              "title": "Tabs Above",
+              "enabled": true,
+              "checked": false
+            },
+            {
+              "id": "closeBelow",
+              "title": "Tabs Below",
+              "enabled": true,
+              "checked": false
+            }
+          ],
+          "checked": false
+        }
+      ]
+    },
+    {
+      "name": "window labels and exclusions",
+      "state": {
+        "profiles": {
+          "default": {
+            "id": "default",
+            "name": "Personal",
+            "color": "plum",
+            "icon": null,
+            "createdAt": 0
+          },
+          "work": {
+            "id": "work",
+            "name": "Work",
+            "color": "blue",
+            "icon": null,
+            "createdAt": 0
+          }
+        },
+        "profileOrder": [
+          "default",
+          "work"
+        ],
+        "windows": {
+          "w1": {
+            "id": "w1",
+            "profileId": "default",
+            "incognito": false,
+            "tabIds": [
+              "a",
+              "b",
+              "c"
+            ],
+            "activeTabIds": {
+              "default": "b"
+            },
+            "sidebarOpen": true,
+            "frame": [
+              80,
+              80,
+              1100,
+              760
+            ]
+          },
+          "w2": {
+            "id": "w2",
+            "profileId": "work",
+            "incognito": false,
+            "tabIds": [
+              "x",
+              "y"
+            ],
+            "activeTabIds": {
+              "work": "x"
+            },
+            "sidebarOpen": true,
+            "frame": [
+              80,
+              80,
+              1100,
+              760
+            ]
+          },
+          "small": {
+            "id": "small",
+            "profileId": "default",
+            "incognito": false,
+            "tabIds": [],
+            "activeTabIds": {
+              "default": "b"
+            },
+            "sidebarOpen": true,
+            "frame": [
+              80,
+              80,
+              1100,
+              760
+            ],
+            "kind": "small"
+          },
+          "private": {
+            "id": "private",
+            "profileId": "default",
+            "incognito": true,
+            "tabIds": [],
+            "activeTabIds": {
+              "default": "b"
+            },
+            "sidebarOpen": true,
+            "frame": [
+              80,
+              80,
+              1100,
+              760
+            ]
+          }
+        },
+        "windowOrder": [
+          "w1",
+          "w2",
+          "small",
+          "private"
+        ],
+        "tabs": {
+          "a": {
+            "id": "a",
+            "windowId": "w1",
+            "profileId": "default",
+            "url": "https://a.example.com/",
+            "title": "A",
+            "favicon": null,
+            "pinned": false,
+            "muted": false,
+            "zoom": 1,
+            "customTitle": null,
+            "customIcon": null,
+            "pinnedUrl": null,
+            "createdAt": 0,
+            "lastActiveAt": 0
+          },
+          "b": {
+            "id": "b",
+            "windowId": "w1",
+            "profileId": "default",
+            "url": "https://b.example.com/",
+            "title": "B",
+            "favicon": null,
+            "pinned": false,
+            "muted": false,
+            "zoom": 1,
+            "customTitle": null,
+            "customIcon": null,
+            "pinnedUrl": null,
+            "createdAt": 0,
+            "lastActiveAt": 0
+          },
+          "c": {
+            "id": "c",
+            "windowId": "w1",
+            "profileId": "default",
+            "url": "https://c.example.com/",
+            "title": "C",
+            "favicon": null,
+            "pinned": false,
+            "muted": false,
+            "zoom": 1,
+            "customTitle": null,
+            "customIcon": null,
+            "pinnedUrl": null,
+            "createdAt": 0,
+            "lastActiveAt": 0
+          },
+          "x": {
+            "id": "x",
+            "windowId": "w2",
+            "profileId": "work",
+            "url": "https://x.example.com/",
+            "title": "X",
+            "favicon": null,
+            "pinned": false,
+            "muted": false,
+            "zoom": 1,
+            "customTitle": "Report",
+            "customIcon": null,
+            "pinnedUrl": null,
+            "createdAt": 0,
+            "lastActiveAt": 0
+          },
+          "y": {
+            "id": "y",
+            "windowId": "w2",
+            "profileId": "work",
+            "url": "https://y.example.com/",
+            "title": "Y",
+            "favicon": null,
+            "pinned": false,
+            "muted": false,
+            "zoom": 1,
+            "customTitle": null,
+            "customIcon": null,
+            "pinnedUrl": null,
+            "createdAt": 0,
+            "lastActiveAt": 0
+          }
+        },
+        "groups": {},
+        "splits": {},
+        "selection": {},
+        "settings": {
+          "tabLayout": "sidebar",
+          "pageEngine": "chromium",
+          "protectedVideoInWebKit": false
+        },
+        "ui": {
+          "focusedWindowId": "w1",
+          "focusOrder": [
+            "w1"
+          ],
+          "lastProfileId": "default"
+        }
+      },
+      "windowId": "w1",
+      "tabId": "b",
+      "items": [
+        {
+          "id": "copy",
+          "title": "Copy Link",
+          "symbol": "link",
+          "enabled": true,
+          "checked": false
+        },
+        {
+          "id": "share",
+          "title": "Share",
+          "symbol": "square.and.arrow.up",
+          "enabled": true,
+          "share": true,
+          "checked": false
+        },
+        {
+          "separator": true
+        },
+        {
+          "id": "rename",
+          "title": "Rename…",
+          "symbol": "character.cursor.ibeam",
+          "enabled": true,
+          "checked": false
+        },
+        {
+          "id": "icon",
+          "title": "Change Icon…",
+          "symbol": "face.smiling",
+          "enabled": true,
+          "checked": false
+        },
+        {
+          "id": "mute",
+          "title": "Mute Site",
+          "symbol": "speaker.slash",
+          "enabled": true,
+          "checked": false
+        },
+        {
+          "separator": true
+        },
+        {
+          "id": "duplicate",
+          "title": "Duplicate",
+          "symbol": "plus.square.on.square",
+          "enabled": true,
+          "checked": false
+        },
+        {
+          "id": "bookmark",
+          "title": "Add to Bookmarks…",
+          "symbol": "bookmark",
+          "enabled": true,
+          "checked": false
+        },
+        {
+          "id": "engine",
+          "title": "Open Page in WebKit",
+          "symbol": "safari",
+          "enabled": true,
+          "checked": false
+        },
+        {
+          "id": "moveTo",
+          "title": "Move to",
+          "symbol": "arrow.right.square",
+          "children": [
+            {
+              "id": "pinTile",
+              "title": "Top Apps",
+              "symbol": "app",
+              "enabled": true,
+              "checked": false
+            },
+            {
+              "id": "pinRow",
+              "title": "Pinned in Personal",
+              "symbol": "list.bullet",
+              "enabled": true,
+              "checked": false
+            },
+            {
+              "id": "newGroup",
+              "title": "New Group",
+              "symbol": "plus.rectangle.on.rectangle",
+              "enabled": true,
+              "checked": false
+            },
+            {
+              "separator": true
+            },
+            {
+              "id": "profile:default",
+              "title": "Personal",
+              "checked": true,
+              "enabled": false
+            },
+            {
+              "id": "profile:work",
+              "title": "Work",
+              "checked": false,
+              "enabled": true
+            },
+            {
+              "id": "profile:new",
+              "title": "New Profile…",
+              "enabled": true,
+              "checked": false
+            },
+            {
+              "separator": true
+            },
+            {
+              "id": "moveToWindow",
+              "title": "Window",
+              "symbol": "macwindow",
+              "enabled": true,
+              "children": [
+                {
+                  "id": "window:w2",
+                  "title": "Work — Report & 1 Tab",
+                  "enabled": true,
+                  "checked": false
+                },
+                {
+                  "separator": true
+                },
+                {
+                  "id": "window:new",
+                  "title": "New Window",
+                  "enabled": true,
+                  "checked": false
+                }
+              ],
+              "checked": false
+            }
+          ],
+          "enabled": true,
+          "checked": false
+        },
+        {
+          "separator": true
+        },
+        {
+          "id": "pin",
+          "title": "Move to Top Apps",
+          "symbol": "pin",
+          "enabled": true,
+          "checked": false
+        },
+        {
+          "id": "close",
+          "title": "Close Tab",
+          "symbol": "xmark",
+          "enabled": true,
+          "checked": false
+        },
+        {
+          "id": "closeMore",
+          "title": "Close Tabs",
+          "enabled": true,
+          "children": [
+            {
+              "id": "closeOthers",
+              "title": "Other Tabs",
+              "enabled": true,
+              "checked": false
+            },
+            {
+              "id": "closeAbove",
+              "title": "Tabs Above",
+              "enabled": true,
+              "checked": false
+            },
+            {
+              "id": "closeBelow",
+              "title": "Tabs Below",
+              "enabled": true,
+              "checked": false
+            }
+          ],
+          "checked": false
+        }
+      ]
+    },
+    {
+      "name": "split row suppresses pin targets",
+      "state": {
+        "profiles": {
+          "default": {
+            "id": "default",
+            "name": "Personal",
+            "color": "plum",
+            "icon": null,
+            "createdAt": 0
+          },
+          "work": {
+            "id": "work",
+            "name": "Work",
+            "color": "blue",
+            "icon": null,
+            "createdAt": 0
+          }
+        },
+        "profileOrder": [
+          "default",
+          "work"
+        ],
+        "windows": {
+          "w1": {
+            "id": "w1",
+            "profileId": "default",
+            "incognito": false,
+            "tabIds": [
+              "a",
+              "b",
+              "c"
+            ],
+            "activeTabIds": {
+              "default": "b"
+            },
+            "sidebarOpen": true,
+            "frame": [
+              80,
+              80,
+              1100,
+              760
+            ]
+          }
+        },
+        "windowOrder": [
+          "w1"
+        ],
+        "tabs": {
+          "a": {
+            "id": "a",
+            "windowId": "w1",
+            "profileId": "default",
+            "url": "https://a.example.com/",
+            "title": "A",
+            "favicon": null,
+            "pinned": false,
+            "muted": false,
+            "zoom": 1,
+            "customTitle": null,
+            "customIcon": null,
+            "pinnedUrl": null,
+            "createdAt": 0,
+            "lastActiveAt": 0
+          },
+          "b": {
+            "id": "b",
+            "windowId": "w1",
+            "profileId": "default",
+            "url": "https://b.example.com/",
+            "title": "B",
+            "favicon": null,
+            "pinned": false,
+            "muted": false,
+            "zoom": 1,
+            "customTitle": null,
+            "customIcon": null,
+            "pinnedUrl": null,
+            "createdAt": 0,
+            "lastActiveAt": 0
+          },
+          "c": {
+            "id": "c",
+            "windowId": "w1",
+            "profileId": "default",
+            "url": "https://c.example.com/",
+            "title": "C",
+            "favicon": null,
+            "pinned": false,
+            "muted": false,
+            "zoom": 1,
+            "customTitle": null,
+            "customIcon": null,
+            "pinnedUrl": null,
+            "createdAt": 0,
+            "lastActiveAt": 0
+          }
+        },
+        "groups": {},
+        "splits": {
+          "split": {
+            "id": "split",
+            "windowId": "w1",
+            "tabIds": [
+              "b",
+              "c"
+            ],
+            "orientation": "horizontal",
+            "sizes": [
+              0.5,
+              0.5
+            ]
+          }
+        },
+        "selection": {},
+        "settings": {
+          "tabLayout": "sidebar",
+          "pageEngine": "chromium",
+          "protectedVideoInWebKit": false
+        },
+        "ui": {
+          "focusedWindowId": "w1",
+          "focusOrder": [
+            "w1"
+          ],
+          "lastProfileId": "default"
+        }
+      },
+      "windowId": "w1",
+      "tabId": "b",
+      "items": [
+        {
+          "id": "copy",
+          "title": "Copy Link",
+          "symbol": "link",
+          "enabled": true,
+          "checked": false
+        },
+        {
+          "id": "share",
+          "title": "Share",
+          "symbol": "square.and.arrow.up",
+          "enabled": true,
+          "share": true,
+          "checked": false
+        },
+        {
+          "separator": true
+        },
+        {
+          "id": "rename",
+          "title": "Rename…",
+          "symbol": "character.cursor.ibeam",
+          "enabled": true,
+          "checked": false
+        },
+        {
+          "id": "icon",
+          "title": "Change Icon…",
+          "symbol": "face.smiling",
+          "enabled": true,
+          "checked": false
+        },
+        {
+          "id": "mute",
+          "title": "Mute Site",
+          "symbol": "speaker.slash",
+          "enabled": true,
+          "checked": false
+        },
+        {
+          "separator": true
+        },
+        {
+          "id": "duplicate",
+          "title": "Duplicate",
+          "symbol": "plus.square.on.square",
+          "enabled": true,
+          "checked": false
+        },
+        {
+          "id": "bookmark",
+          "title": "Add to Bookmarks…",
+          "symbol": "bookmark",
+          "enabled": true,
+          "checked": false
+        },
+        {
+          "id": "engine",
+          "title": "Open Page in WebKit",
+          "symbol": "safari",
+          "enabled": true,
+          "checked": false
+        },
+        {
+          "id": "unsplit",
+          "title": "Remove from Split View",
+          "symbol": "rectangle.split.2x1.slash",
+          "enabled": true,
+          "checked": false
+        },
+        {
+          "id": "moveTo",
+          "title": "Move to",
+          "symbol": "arrow.right.square",
+          "children": [
+            {
+              "id": "newGroup",
+              "title": "New Group",
+              "symbol": "plus.rectangle.on.rectangle",
+              "enabled": true,
+              "checked": false
+            },
+            {
+              "separator": true
+            },
+            {
+              "id": "profile:default",
+              "title": "Personal",
+              "checked": true,
+              "enabled": false
+            },
+            {
+              "id": "profile:work",
+              "title": "Work",
+              "checked": false,
+              "enabled": true
+            },
+            {
+              "id": "profile:new",
+              "title": "New Profile…",
+              "enabled": true,
+              "checked": false
+            },
+            {
+              "separator": true
+            },
+            {
+              "id": "moveToWindow",
+              "title": "Window",
+              "symbol": "macwindow",
+              "enabled": true,
+              "children": [
+                {
+                  "id": "window:new",
+                  "title": "New Window",
+                  "enabled": true,
+                  "checked": false
+                }
+              ],
+              "checked": false
+            }
+          ],
+          "enabled": true,
+          "checked": false
+        },
+        {
+          "separator": true
+        },
+        {
+          "id": "pin",
+          "title": "Move to Top Apps",
+          "symbol": "pin",
+          "enabled": true,
+          "checked": false
+        },
+        {
+          "id": "close",
+          "title": "Close Tab",
+          "symbol": "xmark",
+          "enabled": true,
+          "checked": false
+        },
+        {
+          "id": "closeMore",
+          "title": "Close Tabs",
+          "enabled": true,
+          "children": [
+            {
+              "id": "closeOthers",
+              "title": "Other Tabs",
+              "enabled": true,
+              "checked": false
+            },
+            {
+              "id": "closeAbove",
+              "title": "Tabs Above",
+              "enabled": true,
+              "checked": false
+            },
+            {
+              "id": "closeBelow",
+              "title": "Tabs Below",
+              "enabled": true,
+              "checked": false
+            }
+          ],
+          "checked": false
+        }
+      ]
+    },
+    {
+      "name": "split pinned rows",
+      "state": {
+        "profiles": {
+          "default": {
+            "id": "default",
+            "name": "Personal",
+            "color": "plum",
+            "icon": null,
+            "createdAt": 0
+          },
+          "work": {
+            "id": "work",
+            "name": "Work",
+            "color": "blue",
+            "icon": null,
+            "createdAt": 0
+          }
+        },
+        "profileOrder": [
+          "default",
+          "work"
+        ],
+        "windows": {
+          "w1": {
+            "id": "w1",
+            "profileId": "default",
+            "incognito": false,
+            "tabIds": [
+              "a",
+              "b",
+              "c"
+            ],
+            "activeTabIds": {
+              "default": "b"
+            },
+            "sidebarOpen": true,
+            "frame": [
+              80,
+              80,
+              1100,
+              760
+            ]
+          }
+        },
+        "windowOrder": [
+          "w1"
+        ],
+        "tabs": {
+          "a": {
+            "id": "a",
+            "windowId": "w1",
+            "profileId": "default",
+            "url": "https://a.example.com/",
+            "title": "A",
+            "favicon": null,
+            "pinned": false,
+            "muted": false,
+            "zoom": 1,
+            "customTitle": null,
+            "customIcon": null,
+            "pinnedUrl": null,
+            "createdAt": 0,
+            "lastActiveAt": 0
+          },
+          "b": {
+            "id": "b",
+            "windowId": "w1",
+            "profileId": "default",
+            "url": "https://b.example.com/",
+            "title": "B",
+            "favicon": null,
+            "pinned": true,
+            "muted": false,
+            "zoom": 1,
+            "customTitle": null,
+            "customIcon": null,
+            "pinnedUrl": null,
+            "createdAt": 0,
+            "lastActiveAt": 0,
+            "pinnedAsRow": true
+          },
+          "c": {
+            "id": "c",
+            "windowId": "w1",
+            "profileId": "default",
+            "url": "https://c.example.com/",
+            "title": "C",
+            "favicon": null,
+            "pinned": true,
+            "muted": false,
+            "zoom": 1,
+            "customTitle": null,
+            "customIcon": null,
+            "pinnedUrl": null,
+            "createdAt": 0,
+            "lastActiveAt": 0,
+            "pinnedAsRow": true
+          }
+        },
+        "groups": {},
+        "splits": {
+          "split": {
+            "id": "split",
+            "windowId": "w1",
+            "tabIds": [
+              "b",
+              "c"
+            ],
+            "orientation": "horizontal",
+            "sizes": [
+              0.5,
+              0.5
+            ]
+          }
+        },
+        "selection": {},
+        "settings": {
+          "tabLayout": "sidebar",
+          "pageEngine": "chromium",
+          "protectedVideoInWebKit": false
+        },
+        "ui": {
+          "focusedWindowId": "w1",
+          "focusOrder": [
+            "w1"
+          ],
+          "lastProfileId": "default"
+        }
+      },
+      "windowId": "w1",
+      "tabId": "b",
+      "items": [
+        {
+          "id": "copy",
+          "title": "Copy Link",
+          "symbol": "link",
+          "enabled": true,
+          "checked": false
+        },
+        {
+          "id": "share",
+          "title": "Share",
+          "symbol": "square.and.arrow.up",
+          "enabled": true,
+          "share": true,
+          "checked": false
+        },
+        {
+          "separator": true
+        },
+        {
+          "id": "rename",
+          "title": "Rename…",
+          "symbol": "character.cursor.ibeam",
+          "enabled": true,
+          "checked": false
+        },
+        {
+          "id": "icon",
+          "title": "Change Icon…",
+          "symbol": "face.smiling",
+          "enabled": true,
+          "checked": false
+        },
+        {
+          "id": "mute",
+          "title": "Mute Site",
+          "symbol": "speaker.slash",
+          "enabled": true,
+          "checked": false
+        },
+        {
+          "id": "pinnedPage",
+          "title": "Edit Pinned Page",
+          "symbol": "pin",
+          "children": [
+            {
+              "id": "backToPin",
+              "title": "Back to Pinned URL",
+              "symbol": "arrow.uturn.backward",
+              "enabled": false,
+              "checked": false
+            },
+            {
+              "id": "replacePin",
+              "title": "Replace Pin with Current Page",
+              "symbol": "pin",
+              "enabled": false,
+              "checked": false
+            },
+            {
+              "separator": true
+            },
+            {
+              "id": "editPin",
+              "title": "Edit…",
+              "symbol": "pencil",
+              "enabled": true,
+              "checked": false
+            }
+          ],
+          "enabled": true,
+          "checked": false
+        },
+        {
+          "separator": true
+        },
+        {
+          "id": "duplicate",
+          "title": "Duplicate",
+          "symbol": "plus.square.on.square",
+          "enabled": true,
+          "checked": false
+        },
+        {
+          "id": "bookmark",
+          "title": "Add to Bookmarks…",
+          "symbol": "bookmark",
+          "enabled": true,
+          "checked": false
+        },
+        {
+          "id": "engine",
+          "title": "Open Page in WebKit",
+          "symbol": "safari",
+          "enabled": true,
+          "checked": false
+        },
+        {
+          "id": "unsplit",
+          "title": "Remove from Split View",
+          "symbol": "rectangle.split.2x1.slash",
+          "enabled": true,
+          "checked": false
+        },
+        {
+          "id": "moveTo",
+          "title": "Move to",
+          "symbol": "arrow.right.square",
+          "children": [
+            {
+              "id": "newGroup",
+              "title": "New Group",
+              "symbol": "plus.rectangle.on.rectangle",
+              "enabled": true,
+              "checked": false
+            },
+            {
+              "separator": true
+            },
+            {
+              "id": "profile:default",
+              "title": "Personal",
+              "checked": true,
+              "enabled": false
+            },
+            {
+              "id": "profile:work",
+              "title": "Work",
+              "checked": false,
+              "enabled": true
+            },
+            {
+              "id": "profile:new",
+              "title": "New Profile…",
+              "enabled": true,
+              "checked": false
+            },
+            {
+              "separator": true
+            },
+            {
+              "id": "moveToWindow",
+              "title": "Window",
+              "symbol": "macwindow",
+              "enabled": true,
+              "children": [
+                {
+                  "id": "window:new",
+                  "title": "New Window",
+                  "enabled": true,
+                  "checked": false
+                }
+              ],
+              "checked": false
+            }
+          ],
+          "enabled": true,
+          "checked": false
+        },
+        {
+          "separator": true
+        },
+        {
+          "id": "pin",
+          "title": "Unpin",
+          "symbol": "pin.slash",
+          "enabled": true,
+          "checked": false
+        }
+      ]
+    },
+    {
+      "name": "private tab",
+      "state": {
+        "profiles": {
+          "default": {
+            "id": "default",
+            "name": "Personal",
+            "color": "plum",
+            "icon": null,
+            "createdAt": 0
+          },
+          "work": {
+            "id": "work",
+            "name": "Work",
+            "color": "blue",
+            "icon": null,
+            "createdAt": 0
+          }
+        },
+        "profileOrder": [
+          "default",
+          "work"
+        ],
+        "windows": {
+          "w1": {
+            "id": "w1",
+            "profileId": "incognito:w1@default",
+            "incognito": true,
+            "tabIds": [
+              "a",
+              "b",
+              "c"
+            ],
+            "activeTabIds": {
+              "incognito:w1@default": "b"
+            },
+            "sidebarOpen": true,
+            "frame": [
+              80,
+              80,
+              1100,
+              760
+            ]
+          }
+        },
+        "windowOrder": [
+          "w1"
+        ],
+        "tabs": {
+          "a": {
+            "id": "a",
+            "windowId": "w1",
+            "profileId": "incognito:w1@default",
+            "url": "https://a.example.com/",
+            "title": "A",
+            "favicon": null,
+            "pinned": false,
+            "muted": false,
+            "zoom": 1,
+            "customTitle": null,
+            "customIcon": null,
+            "pinnedUrl": null,
+            "createdAt": 0,
+            "lastActiveAt": 0
+          },
+          "b": {
+            "id": "b",
+            "windowId": "w1",
+            "profileId": "incognito:w1@default",
+            "url": "https://b.example.com/",
+            "title": "B",
+            "favicon": null,
+            "pinned": false,
+            "muted": false,
+            "zoom": 1,
+            "customTitle": null,
+            "customIcon": null,
+            "pinnedUrl": null,
+            "createdAt": 0,
+            "lastActiveAt": 0
+          },
+          "c": {
+            "id": "c",
+            "windowId": "w1",
+            "profileId": "incognito:w1@default",
+            "url": "https://c.example.com/",
+            "title": "C",
+            "favicon": null,
+            "pinned": false,
+            "muted": false,
+            "zoom": 1,
+            "customTitle": null,
+            "customIcon": null,
+            "pinnedUrl": null,
+            "createdAt": 0,
+            "lastActiveAt": 0
+          }
+        },
+        "groups": {},
+        "splits": {},
+        "selection": {},
+        "settings": {
+          "tabLayout": "sidebar",
+          "pageEngine": "chromium",
+          "protectedVideoInWebKit": false
+        },
+        "ui": {
+          "focusedWindowId": "w1",
+          "focusOrder": [
+            "w1"
+          ],
+          "lastProfileId": "default"
+        }
+      },
+      "windowId": "w1",
+      "tabId": "b",
+      "items": [
+        {
+          "id": "copy",
+          "title": "Copy Link",
+          "symbol": "link",
+          "enabled": true,
+          "checked": false
+        },
+        {
+          "id": "share",
+          "title": "Share",
+          "symbol": "square.and.arrow.up",
+          "enabled": true,
+          "share": true,
+          "checked": false
+        },
+        {
+          "separator": true
+        },
+        {
+          "id": "rename",
+          "title": "Rename…",
+          "symbol": "character.cursor.ibeam",
+          "enabled": true,
+          "checked": false
+        },
+        {
+          "id": "icon",
+          "title": "Change Icon…",
+          "symbol": "face.smiling",
+          "enabled": true,
+          "checked": false
+        },
+        {
+          "id": "mute",
+          "title": "Mute Site",
+          "symbol": "speaker.slash",
+          "enabled": true,
+          "checked": false
+        },
+        {
+          "separator": true
+        },
+        {
+          "id": "duplicate",
+          "title": "Duplicate",
+          "symbol": "plus.square.on.square",
+          "enabled": true,
+          "checked": false
+        },
+        {
+          "id": "bookmark",
+          "title": "Add to Bookmarks…",
+          "symbol": "bookmark",
+          "enabled": true,
+          "checked": false
+        },
+        {
+          "id": "engine",
+          "title": "Open Page in WebKit",
+          "symbol": "safari",
+          "enabled": true,
+          "checked": false
+        },
+        {
+          "id": "moveTo",
+          "title": "Move to",
+          "symbol": "arrow.right.square",
+          "children": [
+            {
+              "id": "pinTile",
+              "title": "Top Apps",
+              "symbol": "app",
+              "enabled": true,
+              "checked": false
+            },
+            {
+              "id": "pinRow",
+              "title": "Pinned in Profile",
+              "symbol": "list.bullet",
+              "enabled": true,
+              "checked": false
+            },
+            {
+              "id": "newGroup",
+              "title": "New Group",
+              "symbol": "plus.rectangle.on.rectangle",
+              "enabled": true,
+              "checked": false
+            },
+            {
+              "separator": true
+            },
+            {
+              "id": "moveToWindow",
+              "title": "Window",
+              "symbol": "macwindow",
+              "enabled": false,
+              "children": [
+                {
+                  "id": "window:new",
+                  "title": "New Window",
+                  "enabled": true,
+                  "checked": false
+                }
+              ],
+              "checked": false
+            }
+          ],
+          "enabled": true,
+          "checked": false
+        },
+        {
+          "separator": true
+        },
+        {
+          "id": "pin",
+          "title": "Move to Top Apps",
+          "symbol": "pin",
+          "enabled": true,
+          "checked": false
+        },
+        {
+          "id": "close",
+          "title": "Close Tab",
+          "symbol": "xmark",
+          "enabled": true,
+          "checked": false
+        },
+        {
+          "id": "closeMore",
+          "title": "Close Tabs",
+          "enabled": true,
+          "children": [
+            {
+              "id": "closeOthers",
+              "title": "Other Tabs",
+              "enabled": true,
+              "checked": false
+            },
+            {
+              "id": "closeAbove",
+              "title": "Tabs Above",
+              "enabled": true,
+              "checked": false
+            },
+            {
+              "id": "closeBelow",
+              "title": "Tabs Below",
+              "enabled": true,
+              "checked": false
+            }
+          ],
+          "checked": false
+        }
+      ]
+    },
+    {
+      "name": "explicit webkit engine",
+      "state": {
+        "profiles": {
+          "default": {
+            "id": "default",
+            "name": "Personal",
+            "color": "plum",
+            "icon": null,
+            "createdAt": 0
+          },
+          "work": {
+            "id": "work",
+            "name": "Work",
+            "color": "blue",
+            "icon": null,
+            "createdAt": 0
+          }
+        },
+        "profileOrder": [
+          "default",
+          "work"
+        ],
+        "windows": {
+          "w1": {
+            "id": "w1",
+            "profileId": "default",
+            "incognito": false,
+            "tabIds": [
+              "a",
+              "b",
+              "c"
+            ],
+            "activeTabIds": {
+              "default": "b"
+            },
+            "sidebarOpen": true,
+            "frame": [
+              80,
+              80,
+              1100,
+              760
+            ]
+          }
+        },
+        "windowOrder": [
+          "w1"
+        ],
+        "tabs": {
+          "a": {
+            "id": "a",
+            "windowId": "w1",
+            "profileId": "default",
+            "url": "https://a.example.com/",
+            "title": "A",
+            "favicon": null,
+            "pinned": false,
+            "muted": false,
+            "zoom": 1,
+            "customTitle": null,
+            "customIcon": null,
+            "pinnedUrl": null,
+            "createdAt": 0,
+            "lastActiveAt": 0
+          },
+          "b": {
+            "id": "b",
+            "windowId": "w1",
+            "profileId": "default",
+            "url": "https://b.example.com/",
+            "title": "B",
+            "favicon": null,
+            "pinned": false,
+            "muted": false,
+            "zoom": 1,
+            "customTitle": null,
+            "customIcon": null,
+            "pinnedUrl": null,
+            "createdAt": 0,
+            "lastActiveAt": 0,
+            "engine": "webkit"
+          },
+          "c": {
+            "id": "c",
+            "windowId": "w1",
+            "profileId": "default",
+            "url": "https://c.example.com/",
+            "title": "C",
+            "favicon": null,
+            "pinned": false,
+            "muted": false,
+            "zoom": 1,
+            "customTitle": null,
+            "customIcon": null,
+            "pinnedUrl": null,
+            "createdAt": 0,
+            "lastActiveAt": 0
+          }
+        },
+        "groups": {},
+        "splits": {},
+        "selection": {},
+        "settings": {
+          "tabLayout": "sidebar",
+          "pageEngine": "chromium",
+          "protectedVideoInWebKit": false
+        },
+        "ui": {
+          "focusedWindowId": "w1",
+          "focusOrder": [
+            "w1"
+          ],
+          "lastProfileId": "default"
+        }
+      },
+      "windowId": "w1",
+      "tabId": "b",
+      "items": [
+        {
+          "id": "copy",
+          "title": "Copy Link",
+          "symbol": "link",
+          "enabled": true,
+          "checked": false
+        },
+        {
+          "id": "share",
+          "title": "Share",
+          "symbol": "square.and.arrow.up",
+          "enabled": true,
+          "share": true,
+          "checked": false
+        },
+        {
+          "separator": true
+        },
+        {
+          "id": "rename",
+          "title": "Rename…",
+          "symbol": "character.cursor.ibeam",
+          "enabled": true,
+          "checked": false
+        },
+        {
+          "id": "icon",
+          "title": "Change Icon…",
+          "symbol": "face.smiling",
+          "enabled": true,
+          "checked": false
+        },
+        {
+          "id": "mute",
+          "title": "Mute Site",
+          "symbol": "speaker.slash",
+          "enabled": true,
+          "checked": false
+        },
+        {
+          "separator": true
+        },
+        {
+          "id": "duplicate",
+          "title": "Duplicate",
+          "symbol": "plus.square.on.square",
+          "enabled": true,
+          "checked": false
+        },
+        {
+          "id": "bookmark",
+          "title": "Add to Bookmarks…",
+          "symbol": "bookmark",
+          "enabled": true,
+          "checked": false
+        },
+        {
+          "id": "engine",
+          "title": "Open Page in Chromium",
+          "symbol": "globe",
+          "enabled": true,
+          "checked": false
+        },
+        {
+          "id": "moveTo",
+          "title": "Move to",
+          "symbol": "arrow.right.square",
+          "children": [
+            {
+              "id": "pinTile",
+              "title": "Top Apps",
+              "symbol": "app",
+              "enabled": true,
+              "checked": false
+            },
+            {
+              "id": "pinRow",
+              "title": "Pinned in Personal",
+              "symbol": "list.bullet",
+              "enabled": true,
+              "checked": false
+            },
+            {
+              "id": "newGroup",
+              "title": "New Group",
+              "symbol": "plus.rectangle.on.rectangle",
+              "enabled": true,
+              "checked": false
+            },
+            {
+              "separator": true
+            },
+            {
+              "id": "profile:default",
+              "title": "Personal",
+              "checked": true,
+              "enabled": false
+            },
+            {
+              "id": "profile:work",
+              "title": "Work",
+              "checked": false,
+              "enabled": true
+            },
+            {
+              "id": "profile:new",
+              "title": "New Profile…",
+              "enabled": true,
+              "checked": false
+            },
+            {
+              "separator": true
+            },
+            {
+              "id": "moveToWindow",
+              "title": "Window",
+              "symbol": "macwindow",
+              "enabled": true,
+              "children": [
+                {
+                  "id": "window:new",
+                  "title": "New Window",
+                  "enabled": true,
+                  "checked": false
+                }
+              ],
+              "checked": false
+            }
+          ],
+          "enabled": true,
+          "checked": false
+        },
+        {
+          "separator": true
+        },
+        {
+          "id": "pin",
+          "title": "Move to Top Apps",
+          "symbol": "pin",
+          "enabled": true,
+          "checked": false
+        },
+        {
+          "id": "close",
+          "title": "Close Tab",
+          "symbol": "xmark",
+          "enabled": true,
+          "checked": false
+        },
+        {
+          "id": "closeMore",
+          "title": "Close Tabs",
+          "enabled": true,
+          "children": [
+            {
+              "id": "closeOthers",
+              "title": "Other Tabs",
+              "enabled": true,
+              "checked": false
+            },
+            {
+              "id": "closeAbove",
+              "title": "Tabs Above",
+              "enabled": true,
+              "checked": false
+            },
+            {
+              "id": "closeBelow",
+              "title": "Tabs Below",
+              "enabled": true,
+              "checked": false
+            }
+          ],
+          "checked": false
+        }
+      ]
+    },
+    {
+      "name": "chromium-only URL",
+      "state": {
+        "profiles": {
+          "default": {
+            "id": "default",
+            "name": "Personal",
+            "color": "plum",
+            "icon": null,
+            "createdAt": 0
+          },
+          "work": {
+            "id": "work",
+            "name": "Work",
+            "color": "blue",
+            "icon": null,
+            "createdAt": 0
+          }
+        },
+        "profileOrder": [
+          "default",
+          "work"
+        ],
+        "windows": {
+          "w1": {
+            "id": "w1",
+            "profileId": "default",
+            "incognito": false,
+            "tabIds": [
+              "a",
+              "b",
+              "c"
+            ],
+            "activeTabIds": {
+              "default": "b"
+            },
+            "sidebarOpen": true,
+            "frame": [
+              80,
+              80,
+              1100,
+              760
+            ]
+          }
+        },
+        "windowOrder": [
+          "w1"
+        ],
+        "tabs": {
+          "a": {
+            "id": "a",
+            "windowId": "w1",
+            "profileId": "default",
+            "url": "https://a.example.com/",
+            "title": "A",
+            "favicon": null,
+            "pinned": false,
+            "muted": false,
+            "zoom": 1,
+            "customTitle": null,
+            "customIcon": null,
+            "pinnedUrl": null,
+            "createdAt": 0,
+            "lastActiveAt": 0
+          },
+          "b": {
+            "id": "b",
+            "windowId": "w1",
+            "profileId": "default",
+            "url": "chrome://settings/",
+            "title": "B",
+            "favicon": null,
+            "pinned": false,
+            "muted": false,
+            "zoom": 1,
+            "customTitle": null,
+            "customIcon": null,
+            "pinnedUrl": null,
+            "createdAt": 0,
+            "lastActiveAt": 0
+          },
+          "c": {
+            "id": "c",
+            "windowId": "w1",
+            "profileId": "default",
+            "url": "https://c.example.com/",
+            "title": "C",
+            "favicon": null,
+            "pinned": false,
+            "muted": false,
+            "zoom": 1,
+            "customTitle": null,
+            "customIcon": null,
+            "pinnedUrl": null,
+            "createdAt": 0,
+            "lastActiveAt": 0
+          }
+        },
+        "groups": {},
+        "splits": {},
+        "selection": {},
+        "settings": {
+          "tabLayout": "sidebar",
+          "pageEngine": "chromium",
+          "protectedVideoInWebKit": false
+        },
+        "ui": {
+          "focusedWindowId": "w1",
+          "focusOrder": [
+            "w1"
+          ],
+          "lastProfileId": "default"
+        }
+      },
+      "windowId": "w1",
+      "tabId": "b",
+      "items": [
+        {
+          "id": "copy",
+          "title": "Copy Link",
+          "symbol": "link",
+          "enabled": true,
+          "checked": false
+        },
+        {
+          "id": "share",
+          "title": "Share",
+          "symbol": "square.and.arrow.up",
+          "enabled": false,
+          "share": true,
+          "checked": false
+        },
+        {
+          "separator": true
+        },
+        {
+          "id": "rename",
+          "title": "Rename…",
+          "symbol": "character.cursor.ibeam",
+          "enabled": true,
+          "checked": false
+        },
+        {
+          "id": "icon",
+          "title": "Change Icon…",
+          "symbol": "face.smiling",
+          "enabled": true,
+          "checked": false
+        },
+        {
+          "id": "mute",
+          "title": "Mute Site",
+          "symbol": "speaker.slash",
+          "enabled": true,
+          "checked": false
+        },
+        {
+          "separator": true
+        },
+        {
+          "id": "duplicate",
+          "title": "Duplicate",
+          "symbol": "plus.square.on.square",
+          "enabled": true,
+          "checked": false
+        },
+        {
+          "id": "bookmark",
+          "title": "Add to Bookmarks…",
+          "symbol": "bookmark",
+          "enabled": true,
+          "checked": false
+        },
+        {
+          "id": "moveTo",
+          "title": "Move to",
+          "symbol": "arrow.right.square",
+          "children": [
+            {
+              "id": "pinTile",
+              "title": "Top Apps",
+              "symbol": "app",
+              "enabled": true,
+              "checked": false
+            },
+            {
+              "id": "pinRow",
+              "title": "Pinned in Personal",
+              "symbol": "list.bullet",
+              "enabled": true,
+              "checked": false
+            },
+            {
+              "id": "newGroup",
+              "title": "New Group",
+              "symbol": "plus.rectangle.on.rectangle",
+              "enabled": true,
+              "checked": false
+            },
+            {
+              "separator": true
+            },
+            {
+              "id": "profile:default",
+              "title": "Personal",
+              "checked": true,
+              "enabled": false
+            },
+            {
+              "id": "profile:work",
+              "title": "Work",
+              "checked": false,
+              "enabled": true
+            },
+            {
+              "id": "profile:new",
+              "title": "New Profile…",
+              "enabled": true,
+              "checked": false
+            },
+            {
+              "separator": true
+            },
+            {
+              "id": "moveToWindow",
+              "title": "Window",
+              "symbol": "macwindow",
+              "enabled": true,
+              "children": [
+                {
+                  "id": "window:new",
+                  "title": "New Window",
+                  "enabled": true,
+                  "checked": false
+                }
+              ],
+              "checked": false
+            }
+          ],
+          "enabled": true,
+          "checked": false
+        },
+        {
+          "separator": true
+        },
+        {
+          "id": "pin",
+          "title": "Move to Top Apps",
+          "symbol": "pin",
+          "enabled": true,
+          "checked": false
+        },
+        {
+          "id": "close",
+          "title": "Close Tab",
+          "symbol": "xmark",
+          "enabled": true,
+          "checked": false
+        },
+        {
+          "id": "closeMore",
+          "title": "Close Tabs",
+          "enabled": true,
+          "children": [
+            {
+              "id": "closeOthers",
+              "title": "Other Tabs",
+              "enabled": true,
+              "checked": false
+            },
+            {
+              "id": "closeAbove",
+              "title": "Tabs Above",
+              "enabled": true,
+              "checked": false
+            },
+            {
+              "id": "closeBelow",
+              "title": "Tabs Below",
+              "enabled": true,
+              "checked": false
+            }
+          ],
+          "checked": false
+        }
+      ]
+    },
+    {
+      "name": "file URL can switch engine",
+      "state": {
+        "profiles": {
+          "default": {
+            "id": "default",
+            "name": "Personal",
+            "color": "plum",
+            "icon": null,
+            "createdAt": 0
+          },
+          "work": {
+            "id": "work",
+            "name": "Work",
+            "color": "blue",
+            "icon": null,
+            "createdAt": 0
+          }
+        },
+        "profileOrder": [
+          "default",
+          "work"
+        ],
+        "windows": {
+          "w1": {
+            "id": "w1",
+            "profileId": "default",
+            "incognito": false,
+            "tabIds": [
+              "a",
+              "b",
+              "c"
+            ],
+            "activeTabIds": {
+              "default": "b"
+            },
+            "sidebarOpen": true,
+            "frame": [
+              80,
+              80,
+              1100,
+              760
+            ]
+          }
+        },
+        "windowOrder": [
+          "w1"
+        ],
+        "tabs": {
+          "a": {
+            "id": "a",
+            "windowId": "w1",
+            "profileId": "default",
+            "url": "https://a.example.com/",
+            "title": "A",
+            "favicon": null,
+            "pinned": false,
+            "muted": false,
+            "zoom": 1,
+            "customTitle": null,
+            "customIcon": null,
+            "pinnedUrl": null,
+            "createdAt": 0,
+            "lastActiveAt": 0
+          },
+          "b": {
+            "id": "b",
+            "windowId": "w1",
+            "profileId": "default",
+            "url": "file:///example.html",
+            "title": "B",
+            "favicon": null,
+            "pinned": false,
+            "muted": false,
+            "zoom": 1,
+            "customTitle": null,
+            "customIcon": null,
+            "pinnedUrl": null,
+            "createdAt": 0,
+            "lastActiveAt": 0
+          },
+          "c": {
+            "id": "c",
+            "windowId": "w1",
+            "profileId": "default",
+            "url": "https://c.example.com/",
+            "title": "C",
+            "favicon": null,
+            "pinned": false,
+            "muted": false,
+            "zoom": 1,
+            "customTitle": null,
+            "customIcon": null,
+            "pinnedUrl": null,
+            "createdAt": 0,
+            "lastActiveAt": 0
+          }
+        },
+        "groups": {},
+        "splits": {},
+        "selection": {},
+        "settings": {
+          "tabLayout": "sidebar",
+          "pageEngine": "chromium",
+          "protectedVideoInWebKit": false
+        },
+        "ui": {
+          "focusedWindowId": "w1",
+          "focusOrder": [
+            "w1"
+          ],
+          "lastProfileId": "default"
+        }
+      },
+      "windowId": "w1",
+      "tabId": "b",
+      "items": [
+        {
+          "id": "copy",
+          "title": "Copy Link",
+          "symbol": "link",
+          "enabled": true,
+          "checked": false
+        },
+        {
+          "id": "share",
+          "title": "Share",
+          "symbol": "square.and.arrow.up",
+          "enabled": false,
+          "share": true,
+          "checked": false
+        },
+        {
+          "separator": true
+        },
+        {
+          "id": "rename",
+          "title": "Rename…",
+          "symbol": "character.cursor.ibeam",
+          "enabled": true,
+          "checked": false
+        },
+        {
+          "id": "icon",
+          "title": "Change Icon…",
+          "symbol": "face.smiling",
+          "enabled": true,
+          "checked": false
+        },
+        {
+          "id": "mute",
+          "title": "Mute Site",
+          "symbol": "speaker.slash",
+          "enabled": true,
+          "checked": false
+        },
+        {
+          "separator": true
+        },
+        {
+          "id": "duplicate",
+          "title": "Duplicate",
+          "symbol": "plus.square.on.square",
+          "enabled": true,
+          "checked": false
+        },
+        {
+          "id": "bookmark",
+          "title": "Add to Bookmarks…",
+          "symbol": "bookmark",
+          "enabled": true,
+          "checked": false
+        },
+        {
+          "id": "engine",
+          "title": "Open Page in WebKit",
+          "symbol": "safari",
+          "enabled": true,
+          "checked": false
+        },
+        {
+          "id": "moveTo",
+          "title": "Move to",
+          "symbol": "arrow.right.square",
+          "children": [
+            {
+              "id": "pinTile",
+              "title": "Top Apps",
+              "symbol": "app",
+              "enabled": true,
+              "checked": false
+            },
+            {
+              "id": "pinRow",
+              "title": "Pinned in Personal",
+              "symbol": "list.bullet",
+              "enabled": true,
+              "checked": false
+            },
+            {
+              "id": "newGroup",
+              "title": "New Group",
+              "symbol": "plus.rectangle.on.rectangle",
+              "enabled": true,
+              "checked": false
+            },
+            {
+              "separator": true
+            },
+            {
+              "id": "profile:default",
+              "title": "Personal",
+              "checked": true,
+              "enabled": false
+            },
+            {
+              "id": "profile:work",
+              "title": "Work",
+              "checked": false,
+              "enabled": true
+            },
+            {
+              "id": "profile:new",
+              "title": "New Profile…",
+              "enabled": true,
+              "checked": false
+            },
+            {
+              "separator": true
+            },
+            {
+              "id": "moveToWindow",
+              "title": "Window",
+              "symbol": "macwindow",
+              "enabled": true,
+              "children": [
+                {
+                  "id": "window:new",
+                  "title": "New Window",
+                  "enabled": true,
+                  "checked": false
+                }
+              ],
+              "checked": false
+            }
+          ],
+          "enabled": true,
+          "checked": false
+        },
+        {
+          "separator": true
+        },
+        {
+          "id": "pin",
+          "title": "Move to Top Apps",
+          "symbol": "pin",
+          "enabled": true,
+          "checked": false
+        },
+        {
+          "id": "close",
+          "title": "Close Tab",
+          "symbol": "xmark",
+          "enabled": true,
+          "checked": false
+        },
+        {
+          "id": "closeMore",
+          "title": "Close Tabs",
+          "enabled": true,
+          "children": [
+            {
+              "id": "closeOthers",
+              "title": "Other Tabs",
+              "enabled": true,
+              "checked": false
+            },
+            {
+              "id": "closeAbove",
+              "title": "Tabs Above",
+              "enabled": true,
+              "checked": false
+            },
+            {
+              "id": "closeBelow",
+              "title": "Tabs Below",
+              "enabled": true,
+              "checked": false
+            }
+          ],
+          "checked": false
+        }
+      ]
+    },
+    {
+      "name": "calendar without live snapshot delegates",
+      "state": {
+        "profiles": {
+          "default": {
+            "id": "default",
+            "name": "Personal",
+            "color": "plum",
+            "icon": null,
+            "createdAt": 0
+          },
+          "work": {
+            "id": "work",
+            "name": "Work",
+            "color": "blue",
+            "icon": null,
+            "createdAt": 0
+          }
+        },
+        "profileOrder": [
+          "default",
+          "work"
+        ],
+        "windows": {
+          "w1": {
+            "id": "w1",
+            "profileId": "default",
+            "incognito": false,
+            "tabIds": [
+              "a",
+              "b",
+              "c"
+            ],
+            "activeTabIds": {
+              "default": "b"
+            },
+            "sidebarOpen": true,
+            "frame": [
+              80,
+              80,
+              1100,
+              760
+            ]
+          }
+        },
+        "windowOrder": [
+          "w1"
+        ],
+        "tabs": {
+          "a": {
+            "id": "a",
+            "windowId": "w1",
+            "profileId": "default",
+            "url": "https://a.example.com/",
+            "title": "A",
+            "favicon": null,
+            "pinned": false,
+            "muted": false,
+            "zoom": 1,
+            "customTitle": null,
+            "customIcon": null,
+            "pinnedUrl": null,
+            "createdAt": 0,
+            "lastActiveAt": 0
+          },
+          "b": {
+            "id": "b",
+            "windowId": "w1",
+            "profileId": "default",
+            "url": "https://calendar.google.com/",
+            "title": "B",
+            "favicon": null,
+            "pinned": true,
+            "muted": false,
+            "zoom": 1,
+            "customTitle": null,
+            "customIcon": null,
+            "pinnedUrl": null,
+            "createdAt": 0,
+            "lastActiveAt": 0
+          },
+          "c": {
+            "id": "c",
+            "windowId": "w1",
+            "profileId": "default",
+            "url": "https://c.example.com/",
+            "title": "C",
+            "favicon": null,
+            "pinned": false,
+            "muted": false,
+            "zoom": 1,
+            "customTitle": null,
+            "customIcon": null,
+            "pinnedUrl": null,
+            "createdAt": 0,
+            "lastActiveAt": 0
+          }
+        },
+        "groups": {},
+        "splits": {},
+        "selection": {},
+        "settings": {
+          "tabLayout": "sidebar",
+          "pageEngine": "chromium",
+          "protectedVideoInWebKit": false
+        },
+        "ui": {
+          "focusedWindowId": "w1",
+          "focusOrder": [
+            "w1"
+          ],
+          "lastProfileId": "default"
+        }
+      },
+      "windowId": "w1",
+      "tabId": "b",
+      "items": null
+    },
+    {
+      "name": "calendar explicit live snapshot",
+      "state": {
+        "profiles": {
+          "default": {
+            "id": "default",
+            "name": "Personal",
+            "color": "plum",
+            "icon": null,
+            "createdAt": 0
+          },
+          "work": {
+            "id": "work",
+            "name": "Work",
+            "color": "blue",
+            "icon": null,
+            "createdAt": 0
+          }
+        },
+        "profileOrder": [
+          "default",
+          "work"
+        ],
+        "windows": {
+          "w1": {
+            "id": "w1",
+            "profileId": "default",
+            "incognito": false,
+            "tabIds": [
+              "a",
+              "b",
+              "c"
+            ],
+            "activeTabIds": {
+              "default": "b"
+            },
+            "sidebarOpen": true,
+            "frame": [
+              80,
+              80,
+              1100,
+              760
+            ]
+          }
+        },
+        "windowOrder": [
+          "w1"
+        ],
+        "tabs": {
+          "a": {
+            "id": "a",
+            "windowId": "w1",
+            "profileId": "default",
+            "url": "https://a.example.com/",
+            "title": "A",
+            "favicon": null,
+            "pinned": false,
+            "muted": false,
+            "zoom": 1,
+            "customTitle": null,
+            "customIcon": null,
+            "pinnedUrl": null,
+            "createdAt": 0,
+            "lastActiveAt": 0
+          },
+          "b": {
+            "id": "b",
+            "windowId": "w1",
+            "profileId": "default",
+            "url": "https://calendar.google.com/",
+            "title": "B",
+            "favicon": null,
+            "pinned": true,
+            "muted": false,
+            "zoom": 1,
+            "customTitle": null,
+            "customIcon": null,
+            "pinnedUrl": null,
+            "createdAt": 0,
+            "lastActiveAt": 0
+          },
+          "c": {
+            "id": "c",
+            "windowId": "w1",
+            "profileId": "default",
+            "url": "https://c.example.com/",
+            "title": "C",
+            "favicon": null,
+            "pinned": false,
+            "muted": false,
+            "zoom": 1,
+            "customTitle": null,
+            "customIcon": null,
+            "pinnedUrl": null,
+            "createdAt": 0,
+            "lastActiveAt": 0
+          }
+        },
+        "groups": {},
+        "splits": {},
+        "selection": {},
+        "settings": {
+          "tabLayout": "sidebar",
+          "pageEngine": "chromium",
+          "protectedVideoInWebKit": false
+        },
+        "ui": {
+          "focusedWindowId": "w1",
+          "focusOrder": [
+            "w1"
+          ],
+          "lastProfileId": "default"
+        }
+      },
+      "windowId": "w1",
+      "tabId": "b",
+      "context": {
+        "calendarItem": {
+          "id": "cal",
+          "title": "Calendar",
+          "symbol": "calendar",
+          "children": [
+            {
+              "id": "cal:preview",
+              "title": "Show Calendar Preview",
+              "checked": true
+            },
+            {
+              "separator": true
+            },
+            {
+              "id": "cal:settings",
+              "title": "Calendar Settings…",
+              "symbol": "gearshape"
+            }
+          ]
+        }
+      },
+      "items": [
+        {
+          "id": "copy",
+          "title": "Copy Link",
+          "symbol": "link",
+          "enabled": true,
+          "checked": false
+        },
+        {
+          "id": "share",
+          "title": "Share",
+          "symbol": "square.and.arrow.up",
+          "enabled": true,
+          "share": true,
+          "checked": false
+        },
+        {
+          "separator": true
+        },
+        {
+          "id": "rename",
+          "title": "Rename…",
+          "symbol": "character.cursor.ibeam",
+          "enabled": true,
+          "checked": false
+        },
+        {
+          "id": "icon",
+          "title": "Change Icon…",
+          "symbol": "face.smiling",
+          "enabled": true,
+          "checked": false
+        },
+        {
+          "id": "mute",
+          "title": "Mute Site",
+          "symbol": "speaker.slash",
+          "enabled": true,
+          "checked": false
+        },
+        {
+          "id": "pinnedPage",
+          "title": "Edit Pinned Page",
+          "symbol": "pin",
+          "children": [
+            {
+              "id": "backToPin",
+              "title": "Back to Pinned URL",
+              "symbol": "arrow.uturn.backward",
+              "enabled": false,
+              "checked": false
+            },
+            {
+              "id": "replacePin",
+              "title": "Replace Pin with Current Page",
+              "symbol": "pin",
+              "enabled": false,
+              "checked": false
+            },
+            {
+              "separator": true
+            },
+            {
+              "id": "editPin",
+              "title": "Edit…",
+              "symbol": "pencil",
+              "enabled": true,
+              "checked": false
+            }
+          ],
+          "enabled": true,
+          "checked": false
+        },
+        {
+          "id": "cal",
+          "title": "Calendar",
+          "symbol": "calendar",
+          "children": [
+            {
+              "id": "cal:preview",
+              "title": "Show Calendar Preview",
+              "checked": true,
+              "enabled": true
+            },
+            {
+              "separator": true
+            },
+            {
+              "id": "cal:settings",
+              "title": "Calendar Settings…",
+              "symbol": "gearshape",
+              "enabled": true,
+              "checked": false
+            }
+          ],
+          "enabled": true,
+          "checked": false
+        },
+        {
+          "separator": true
+        },
+        {
+          "id": "duplicate",
+          "title": "Duplicate",
+          "symbol": "plus.square.on.square",
+          "enabled": true,
+          "checked": false
+        },
+        {
+          "id": "bookmark",
+          "title": "Add to Bookmarks…",
+          "symbol": "bookmark",
+          "enabled": true,
+          "checked": false
+        },
+        {
+          "id": "engine",
+          "title": "Open Page in WebKit",
+          "symbol": "safari",
+          "enabled": true,
+          "checked": false
+        },
+        {
+          "id": "moveTo",
+          "title": "Move to",
+          "symbol": "arrow.right.square",
+          "children": [
+            {
+              "id": "pinRow",
+              "title": "Pinned in Personal",
+              "symbol": "list.bullet",
+              "enabled": true,
+              "checked": false
+            },
+            {
+              "id": "newFolder",
+              "title": "New Folder…",
+              "symbol": "folder.badge.plus",
+              "enabled": true,
+              "checked": false
+            },
+            {
+              "separator": true
+            },
+            {
+              "id": "profile:default",
+              "title": "Personal",
+              "checked": true,
+              "enabled": false
+            },
+            {
+              "id": "profile:work",
+              "title": "Work",
+              "checked": false,
+              "enabled": true
+            },
+            {
+              "id": "profile:new",
+              "title": "New Profile…",
+              "enabled": true,
+              "checked": false
+            },
+            {
+              "separator": true
+            },
+            {
+              "id": "moveToWindow",
+              "title": "Window",
+              "symbol": "macwindow",
+              "enabled": true,
+              "children": [
+                {
+                  "id": "window:new",
+                  "title": "New Window",
+                  "enabled": true,
+                  "checked": false
+                }
+              ],
+              "checked": false
+            }
+          ],
+          "enabled": true,
+          "checked": false
+        },
+        {
+          "separator": true
+        },
+        {
+          "id": "pin",
+          "title": "Unpin from Top Apps",
+          "symbol": "pin.slash",
+          "enabled": true,
+          "checked": false
+        }
+      ]
+    },
+    {
+      "name": "selection includes tab delegates multi menu",
+      "state": {
+        "profiles": {
+          "default": {
+            "id": "default",
+            "name": "Personal",
+            "color": "plum",
+            "icon": null,
+            "createdAt": 0
+          },
+          "work": {
+            "id": "work",
+            "name": "Work",
+            "color": "blue",
+            "icon": null,
+            "createdAt": 0
+          }
+        },
+        "profileOrder": [
+          "default",
+          "work"
+        ],
+        "windows": {
+          "w1": {
+            "id": "w1",
+            "profileId": "default",
+            "incognito": false,
+            "tabIds": [
+              "a",
+              "b",
+              "c"
+            ],
+            "activeTabIds": {
+              "default": "b"
+            },
+            "sidebarOpen": true,
+            "frame": [
+              80,
+              80,
+              1100,
+              760
+            ]
+          }
+        },
+        "windowOrder": [
+          "w1"
+        ],
+        "tabs": {
+          "a": {
+            "id": "a",
+            "windowId": "w1",
+            "profileId": "default",
+            "url": "https://a.example.com/",
+            "title": "A",
+            "favicon": null,
+            "pinned": false,
+            "muted": false,
+            "zoom": 1,
+            "customTitle": null,
+            "customIcon": null,
+            "pinnedUrl": null,
+            "createdAt": 0,
+            "lastActiveAt": 0
+          },
+          "b": {
+            "id": "b",
+            "windowId": "w1",
+            "profileId": "default",
+            "url": "https://b.example.com/",
+            "title": "B",
+            "favicon": null,
+            "pinned": false,
+            "muted": false,
+            "zoom": 1,
+            "customTitle": null,
+            "customIcon": null,
+            "pinnedUrl": null,
+            "createdAt": 0,
+            "lastActiveAt": 0
+          },
+          "c": {
+            "id": "c",
+            "windowId": "w1",
+            "profileId": "default",
+            "url": "https://c.example.com/",
+            "title": "C",
+            "favicon": null,
+            "pinned": false,
+            "muted": false,
+            "zoom": 1,
+            "customTitle": null,
+            "customIcon": null,
+            "pinnedUrl": null,
+            "createdAt": 0,
+            "lastActiveAt": 0
+          }
+        },
+        "groups": {},
+        "splits": {},
+        "selection": {
+          "w1": [
+            "a",
+            "b"
+          ]
+        },
+        "settings": {
+          "tabLayout": "sidebar",
+          "pageEngine": "chromium",
+          "protectedVideoInWebKit": false
+        },
+        "ui": {
+          "focusedWindowId": "w1",
+          "focusOrder": [
+            "w1"
+          ],
+          "lastProfileId": "default"
+        }
+      },
+      "windowId": "w1",
+      "tabId": "b",
+      "items": null
+    },
+    {
+      "name": "selection excludes tab uses single menu",
+      "state": {
+        "profiles": {
+          "default": {
+            "id": "default",
+            "name": "Personal",
+            "color": "plum",
+            "icon": null,
+            "createdAt": 0
+          },
+          "work": {
+            "id": "work",
+            "name": "Work",
+            "color": "blue",
+            "icon": null,
+            "createdAt": 0
+          }
+        },
+        "profileOrder": [
+          "default",
+          "work"
+        ],
+        "windows": {
+          "w1": {
+            "id": "w1",
+            "profileId": "default",
+            "incognito": false,
+            "tabIds": [
+              "a",
+              "b",
+              "c"
+            ],
+            "activeTabIds": {
+              "default": "b"
+            },
+            "sidebarOpen": true,
+            "frame": [
+              80,
+              80,
+              1100,
+              760
+            ]
+          }
+        },
+        "windowOrder": [
+          "w1"
+        ],
+        "tabs": {
+          "a": {
+            "id": "a",
+            "windowId": "w1",
+            "profileId": "default",
+            "url": "https://a.example.com/",
+            "title": "A",
+            "favicon": null,
+            "pinned": false,
+            "muted": false,
+            "zoom": 1,
+            "customTitle": null,
+            "customIcon": null,
+            "pinnedUrl": null,
+            "createdAt": 0,
+            "lastActiveAt": 0
+          },
+          "b": {
+            "id": "b",
+            "windowId": "w1",
+            "profileId": "default",
+            "url": "https://b.example.com/",
+            "title": "B",
+            "favicon": null,
+            "pinned": false,
+            "muted": false,
+            "zoom": 1,
+            "customTitle": null,
+            "customIcon": null,
+            "pinnedUrl": null,
+            "createdAt": 0,
+            "lastActiveAt": 0
+          },
+          "c": {
+            "id": "c",
+            "windowId": "w1",
+            "profileId": "default",
+            "url": "https://c.example.com/",
+            "title": "C",
+            "favicon": null,
+            "pinned": false,
+            "muted": false,
+            "zoom": 1,
+            "customTitle": null,
+            "customIcon": null,
+            "pinnedUrl": null,
+            "createdAt": 0,
+            "lastActiveAt": 0
+          }
+        },
+        "groups": {},
+        "splits": {},
+        "selection": {
+          "w1": [
+            "a",
+            "c"
+          ]
+        },
+        "settings": {
+          "tabLayout": "sidebar",
+          "pageEngine": "chromium",
+          "protectedVideoInWebKit": false
+        },
+        "ui": {
+          "focusedWindowId": "w1",
+          "focusOrder": [
+            "w1"
+          ],
+          "lastProfileId": "default"
+        }
+      },
+      "windowId": "w1",
+      "tabId": "b",
+      "items": [
+        {
+          "id": "copy",
+          "title": "Copy Link",
+          "symbol": "link",
+          "enabled": true,
+          "checked": false
+        },
+        {
+          "id": "share",
+          "title": "Share",
+          "symbol": "square.and.arrow.up",
+          "enabled": true,
+          "share": true,
+          "checked": false
+        },
+        {
+          "separator": true
+        },
+        {
+          "id": "rename",
+          "title": "Rename…",
+          "symbol": "character.cursor.ibeam",
+          "enabled": true,
+          "checked": false
+        },
+        {
+          "id": "icon",
+          "title": "Change Icon…",
+          "symbol": "face.smiling",
+          "enabled": true,
+          "checked": false
+        },
+        {
+          "id": "mute",
+          "title": "Mute Site",
+          "symbol": "speaker.slash",
+          "enabled": true,
+          "checked": false
+        },
+        {
+          "separator": true
+        },
+        {
+          "id": "duplicate",
+          "title": "Duplicate",
+          "symbol": "plus.square.on.square",
+          "enabled": true,
+          "checked": false
+        },
+        {
+          "id": "bookmark",
+          "title": "Add to Bookmarks…",
+          "symbol": "bookmark",
+          "enabled": true,
+          "checked": false
+        },
+        {
+          "id": "engine",
+          "title": "Open Page in WebKit",
+          "symbol": "safari",
+          "enabled": true,
+          "checked": false
+        },
+        {
+          "id": "moveTo",
+          "title": "Move to",
+          "symbol": "arrow.right.square",
+          "children": [
+            {
+              "id": "pinTile",
+              "title": "Top Apps",
+              "symbol": "app",
+              "enabled": true,
+              "checked": false
+            },
+            {
+              "id": "pinRow",
+              "title": "Pinned in Personal",
+              "symbol": "list.bullet",
+              "enabled": true,
+              "checked": false
+            },
+            {
+              "id": "newGroup",
+              "title": "New Group",
+              "symbol": "plus.rectangle.on.rectangle",
+              "enabled": true,
+              "checked": false
+            },
+            {
+              "separator": true
+            },
+            {
+              "id": "profile:default",
+              "title": "Personal",
+              "checked": true,
+              "enabled": false
+            },
+            {
+              "id": "profile:work",
+              "title": "Work",
+              "checked": false,
+              "enabled": true
+            },
+            {
+              "id": "profile:new",
+              "title": "New Profile…",
+              "enabled": true,
+              "checked": false
+            },
+            {
+              "separator": true
+            },
+            {
+              "id": "moveToWindow",
+              "title": "Window",
+              "symbol": "macwindow",
+              "enabled": true,
+              "children": [
+                {
+                  "id": "window:new",
+                  "title": "New Window",
+                  "enabled": true,
+                  "checked": false
+                }
+              ],
+              "checked": false
+            }
+          ],
+          "enabled": true,
+          "checked": false
+        },
+        {
+          "separator": true
+        },
+        {
+          "id": "pin",
+          "title": "Move to Top Apps",
+          "symbol": "pin",
+          "enabled": true,
+          "checked": false
+        },
+        {
+          "id": "close",
+          "title": "Close Tab",
+          "symbol": "xmark",
+          "enabled": true,
+          "checked": false
+        },
+        {
+          "id": "closeMore",
+          "title": "Close Tabs",
+          "enabled": true,
+          "children": [
+            {
+              "id": "closeOthers",
+              "title": "Other Tabs",
+              "enabled": true,
+              "checked": false
+            },
+            {
+              "id": "closeAbove",
+              "title": "Tabs Above",
+              "enabled": true,
+              "checked": false
+            },
+            {
+              "id": "closeBelow",
+              "title": "Tabs Below",
+              "enabled": true,
+              "checked": false
+            }
+          ],
+          "checked": false
+        }
+      ]
+    },
+    {
+      "name": "selection outside view is ignored",
+      "state": {
+        "profiles": {
+          "default": {
+            "id": "default",
+            "name": "Personal",
+            "color": "plum",
+            "icon": null,
+            "createdAt": 0
+          },
+          "work": {
+            "id": "work",
+            "name": "Work",
+            "color": "blue",
+            "icon": null,
+            "createdAt": 0
+          }
+        },
+        "profileOrder": [
+          "default",
+          "work"
+        ],
+        "windows": {
+          "w1": {
+            "id": "w1",
+            "profileId": "default",
+            "incognito": false,
+            "tabIds": [
+              "a",
+              "b",
+              "c"
+            ],
+            "activeTabIds": {
+              "default": "b"
+            },
+            "sidebarOpen": true,
+            "frame": [
+              80,
+              80,
+              1100,
+              760
+            ]
+          }
+        },
+        "windowOrder": [
+          "w1"
+        ],
+        "tabs": {
+          "a": {
+            "id": "a",
+            "windowId": "w1",
+            "profileId": "default",
+            "url": "https://a.example.com/",
+            "title": "A",
+            "favicon": null,
+            "pinned": false,
+            "muted": false,
+            "zoom": 1,
+            "customTitle": null,
+            "customIcon": null,
+            "pinnedUrl": null,
+            "createdAt": 0,
+            "lastActiveAt": 0
+          },
+          "b": {
+            "id": "b",
+            "windowId": "w1",
+            "profileId": "default",
+            "url": "https://b.example.com/",
+            "title": "B",
+            "favicon": null,
+            "pinned": false,
+            "muted": false,
+            "zoom": 1,
+            "customTitle": null,
+            "customIcon": null,
+            "pinnedUrl": null,
+            "createdAt": 0,
+            "lastActiveAt": 0
+          },
+          "c": {
+            "id": "c",
+            "windowId": "w1",
+            "profileId": "default",
+            "url": "https://c.example.com/",
+            "title": "C",
+            "favicon": null,
+            "pinned": false,
+            "muted": false,
+            "zoom": 1,
+            "customTitle": null,
+            "customIcon": null,
+            "pinnedUrl": null,
+            "createdAt": 0,
+            "lastActiveAt": 0
+          }
+        },
+        "groups": {},
+        "splits": {},
+        "selection": {
+          "w1": [
+            "b",
+            "missing"
+          ]
+        },
+        "settings": {
+          "tabLayout": "sidebar",
+          "pageEngine": "chromium",
+          "protectedVideoInWebKit": false
+        },
+        "ui": {
+          "focusedWindowId": "w1",
+          "focusOrder": [
+            "w1"
+          ],
+          "lastProfileId": "default"
+        }
+      },
+      "windowId": "w1",
+      "tabId": "b",
+      "items": [
+        {
+          "id": "copy",
+          "title": "Copy Link",
+          "symbol": "link",
+          "enabled": true,
+          "checked": false
+        },
+        {
+          "id": "share",
+          "title": "Share",
+          "symbol": "square.and.arrow.up",
+          "enabled": true,
+          "share": true,
+          "checked": false
+        },
+        {
+          "separator": true
+        },
+        {
+          "id": "rename",
+          "title": "Rename…",
+          "symbol": "character.cursor.ibeam",
+          "enabled": true,
+          "checked": false
+        },
+        {
+          "id": "icon",
+          "title": "Change Icon…",
+          "symbol": "face.smiling",
+          "enabled": true,
+          "checked": false
+        },
+        {
+          "id": "mute",
+          "title": "Mute Site",
+          "symbol": "speaker.slash",
+          "enabled": true,
+          "checked": false
+        },
+        {
+          "separator": true
+        },
+        {
+          "id": "duplicate",
+          "title": "Duplicate",
+          "symbol": "plus.square.on.square",
+          "enabled": true,
+          "checked": false
+        },
+        {
+          "id": "bookmark",
+          "title": "Add to Bookmarks…",
+          "symbol": "bookmark",
+          "enabled": true,
+          "checked": false
+        },
+        {
+          "id": "engine",
+          "title": "Open Page in WebKit",
+          "symbol": "safari",
+          "enabled": true,
+          "checked": false
+        },
+        {
+          "id": "moveTo",
+          "title": "Move to",
+          "symbol": "arrow.right.square",
+          "children": [
+            {
+              "id": "pinTile",
+              "title": "Top Apps",
+              "symbol": "app",
+              "enabled": true,
+              "checked": false
+            },
+            {
+              "id": "pinRow",
+              "title": "Pinned in Personal",
+              "symbol": "list.bullet",
+              "enabled": true,
+              "checked": false
+            },
+            {
+              "id": "newGroup",
+              "title": "New Group",
+              "symbol": "plus.rectangle.on.rectangle",
+              "enabled": true,
+              "checked": false
+            },
+            {
+              "separator": true
+            },
+            {
+              "id": "profile:default",
+              "title": "Personal",
+              "checked": true,
+              "enabled": false
+            },
+            {
+              "id": "profile:work",
+              "title": "Work",
+              "checked": false,
+              "enabled": true
+            },
+            {
+              "id": "profile:new",
+              "title": "New Profile…",
+              "enabled": true,
+              "checked": false
+            },
+            {
+              "separator": true
+            },
+            {
+              "id": "moveToWindow",
+              "title": "Window",
+              "symbol": "macwindow",
+              "enabled": true,
+              "children": [
+                {
+                  "id": "window:new",
+                  "title": "New Window",
+                  "enabled": true,
+                  "checked": false
+                }
+              ],
+              "checked": false
+            }
+          ],
+          "enabled": true,
+          "checked": false
+        },
+        {
+          "separator": true
+        },
+        {
+          "id": "pin",
+          "title": "Move to Top Apps",
+          "symbol": "pin",
+          "enabled": true,
+          "checked": false
+        },
+        {
+          "id": "close",
+          "title": "Close Tab",
+          "symbol": "xmark",
+          "enabled": true,
+          "checked": false
+        },
+        {
+          "id": "closeMore",
+          "title": "Close Tabs",
+          "enabled": true,
+          "children": [
+            {
+              "id": "closeOthers",
+              "title": "Other Tabs",
+              "enabled": true,
+              "checked": false
+            },
+            {
+              "id": "closeAbove",
+              "title": "Tabs Above",
+              "enabled": true,
+              "checked": false
+            },
+            {
+              "id": "closeBelow",
+              "title": "Tabs Below",
+              "enabled": true,
+              "checked": false
+            }
+          ],
+          "checked": false
+        }
+      ]
+    },
+    {
+      "name": "missing tab",
+      "state": {
+        "profiles": {
+          "default": {
+            "id": "default",
+            "name": "Personal",
+            "color": "plum",
+            "icon": null,
+            "createdAt": 0
+          },
+          "work": {
+            "id": "work",
+            "name": "Work",
+            "color": "blue",
+            "icon": null,
+            "createdAt": 0
+          }
+        },
+        "profileOrder": [
+          "default",
+          "work"
+        ],
+        "windows": {
+          "w1": {
+            "id": "w1",
+            "profileId": "default",
+            "incognito": false,
+            "tabIds": [
+              "a",
+              "b",
+              "c"
+            ],
+            "activeTabIds": {
+              "default": "b"
+            },
+            "sidebarOpen": true,
+            "frame": [
+              80,
+              80,
+              1100,
+              760
+            ]
+          }
+        },
+        "windowOrder": [
+          "w1"
+        ],
+        "tabs": {
+          "a": {
+            "id": "a",
+            "windowId": "w1",
+            "profileId": "default",
+            "url": "https://a.example.com/",
+            "title": "A",
+            "favicon": null,
+            "pinned": false,
+            "muted": false,
+            "zoom": 1,
+            "customTitle": null,
+            "customIcon": null,
+            "pinnedUrl": null,
+            "createdAt": 0,
+            "lastActiveAt": 0
+          },
+          "b": {
+            "id": "b",
+            "windowId": "w1",
+            "profileId": "default",
+            "url": "https://b.example.com/",
+            "title": "B",
+            "favicon": null,
+            "pinned": false,
+            "muted": false,
+            "zoom": 1,
+            "customTitle": null,
+            "customIcon": null,
+            "pinnedUrl": null,
+            "createdAt": 0,
+            "lastActiveAt": 0
+          },
+          "c": {
+            "id": "c",
+            "windowId": "w1",
+            "profileId": "default",
+            "url": "https://c.example.com/",
+            "title": "C",
+            "favicon": null,
+            "pinned": false,
+            "muted": false,
+            "zoom": 1,
+            "customTitle": null,
+            "customIcon": null,
+            "pinnedUrl": null,
+            "createdAt": 0,
+            "lastActiveAt": 0
+          }
+        },
+        "groups": {},
+        "splits": {},
+        "selection": {},
+        "settings": {
+          "tabLayout": "sidebar",
+          "pageEngine": "chromium",
+          "protectedVideoInWebKit": false
+        },
+        "ui": {
+          "focusedWindowId": "w1",
+          "focusOrder": [
+            "w1"
+          ],
+          "lastProfileId": "default"
+        }
+      },
+      "windowId": "w1",
+      "tabId": "missing",
+      "items": null
+    },
+    {
+      "name": "missing window",
+      "state": {
+        "profiles": {
+          "default": {
+            "id": "default",
+            "name": "Personal",
+            "color": "plum",
+            "icon": null,
+            "createdAt": 0
+          },
+          "work": {
+            "id": "work",
+            "name": "Work",
+            "color": "blue",
+            "icon": null,
+            "createdAt": 0
+          }
+        },
+        "profileOrder": [
+          "default",
+          "work"
+        ],
+        "windows": {
+          "w1": {
+            "id": "w1",
+            "profileId": "default",
+            "incognito": false,
+            "tabIds": [
+              "a",
+              "b",
+              "c"
+            ],
+            "activeTabIds": {
+              "default": "b"
+            },
+            "sidebarOpen": true,
+            "frame": [
+              80,
+              80,
+              1100,
+              760
+            ]
+          }
+        },
+        "windowOrder": [
+          "w1"
+        ],
+        "tabs": {
+          "a": {
+            "id": "a",
+            "windowId": "w1",
+            "profileId": "default",
+            "url": "https://a.example.com/",
+            "title": "A",
+            "favicon": null,
+            "pinned": false,
+            "muted": false,
+            "zoom": 1,
+            "customTitle": null,
+            "customIcon": null,
+            "pinnedUrl": null,
+            "createdAt": 0,
+            "lastActiveAt": 0
+          },
+          "b": {
+            "id": "b",
+            "windowId": "w1",
+            "profileId": "default",
+            "url": "https://b.example.com/",
+            "title": "B",
+            "favicon": null,
+            "pinned": false,
+            "muted": false,
+            "zoom": 1,
+            "customTitle": null,
+            "customIcon": null,
+            "pinnedUrl": null,
+            "createdAt": 0,
+            "lastActiveAt": 0
+          },
+          "c": {
+            "id": "c",
+            "windowId": "w1",
+            "profileId": "default",
+            "url": "https://c.example.com/",
+            "title": "C",
+            "favicon": null,
+            "pinned": false,
+            "muted": false,
+            "zoom": 1,
+            "customTitle": null,
+            "customIcon": null,
+            "pinnedUrl": null,
+            "createdAt": 0,
+            "lastActiveAt": 0
+          }
+        },
+        "groups": {},
+        "splits": {},
+        "selection": {},
+        "settings": {
+          "tabLayout": "sidebar",
+          "pageEngine": "chromium",
+          "protectedVideoInWebKit": false
+        },
+        "ui": {
+          "focusedWindowId": "w1",
+          "focusOrder": [
+            "w1"
+          ],
+          "lastProfileId": "default"
+        }
+      },
+      "windowId": "missing",
+      "tabId": "b",
+      "items": null
+    }
+  ]
+}

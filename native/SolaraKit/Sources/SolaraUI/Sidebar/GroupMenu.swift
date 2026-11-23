@@ -155,7 +155,7 @@ public enum GroupMenu {
     return label
   }
 
-  static func menuKey(_ hint: String) -> (key: String, modifiers: [String])? {
+  public static func menuKey(_ hint: String) -> (key: String, modifiers: [String])? {
     let names: [Character: String] = ["⌃": "control", "⌥": "option", "⇧": "shift", "⌘": "command"]
     var modifiers: [String] = []
     var rest = Substring(hint)

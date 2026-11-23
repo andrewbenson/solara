@@ -85,6 +85,21 @@ public class SidebarDragModule: Module {
       FrameUpdates.readOnMain { NativeGroupMenu.handled }
     }.runOnQueue(.main)
 
+    AsyncFunction("devTabMenus") { () -> Int in
+      FrameUpdates.readOnMain { NativeTabMenu.handled }
+    }.runOnQueue(.main)
+
+    AsyncFunction("devTabMenu") { (windowId: String, tabId: String) -> Bool in
+      FrameUpdates.readOnMain {
+        if WorkspaceWrites.store != nil {
+          Task { @MainActor in _ = await SettingsAdapters.js("sidebar.action", windowId, "handled", tabId, [String: Any]()) }
+        }
+        return NativeTabMenu.open(tabId, windowId: windowId) { id, choice in
+          Task { @MainActor in _ = await SettingsAdapters.js("sidebar.action", windowId, "tabMenuChoice", id, ["choice": choice]) }
+        }
+      }
+    }.runOnQueue(.main)
+
     AsyncFunction("devRevealHeld") { (windowId: String) -> Bool? in
       FrameUpdates.readOnMain { NativeLayoutChrome.devRevealHeld(windowId) }
     }.runOnQueue(.main)

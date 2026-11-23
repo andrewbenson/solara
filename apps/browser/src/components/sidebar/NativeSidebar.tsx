@@ -28,7 +28,7 @@ import { openSettings } from "../settings/windows";
 import { clickTab, commitRename, endRename, startRename } from "./actions";
 import { pressGroupClose, pressTabClose } from "./closeControl";
 import { dismissHover, nativeRowHover } from "./hover";
-import { closeAllTabs, middleClickTab, openGroupMenu, openOverflowMenu, openSidebarMenu, openTabMenu, runGroupMenuChoice, showUndoToast } from "./menus";
+import { closeAllTabs, middleClickTab, openGroupMenu, openOverflowMenu, openSidebarMenu, openTabMenu, runGroupMenuChoice, runTabMenuChoice, showUndoToast } from "./menus";
 import { applyNativeRenameState, resetNativeRenames } from "./renameMirror";
 import { setSidebarUi, sidebarUi, useSidebarUi } from "./state";
 import { useSidebarTokens } from "./tokens";
@@ -245,6 +245,8 @@ addNativeSettingsHandlers({
       }
       case "groupMenu":
         return void openGroupMenu(windowId, id);
+      case "tabMenuChoice":
+        return runTabMenuChoice(windowId, id, extra.choice ?? "");
       case "groupMenuChoice":
         return runGroupMenuChoice(windowId, id, extra.choice ?? "");
       case "toggleGroup": {

@@ -19,7 +19,7 @@ import { engineMark, ENGINE_SYMBOLS } from "../../store/engines";
 import { addNativeSettingsHandlers } from "../settings/nativeSettings";
 import { clickTab } from "../sidebar/actions";
 import { pressGroupClose, pressTabClose } from "../sidebar/closeControl";
-import { openGroupMenu, openTabMenu, runGroupMenuChoice, showUndoToast } from "../sidebar/menus";
+import { openGroupMenu, openTabMenu, runGroupMenuChoice, runTabMenuChoice, showUndoToast } from "../sidebar/menus";
 import { openTileFolderMenu } from "../sidebar/tileFolderUi";
 import { toggleNewTabBar } from "../omnibox/newTabBar";
 import { developerModeFor } from "../site/developerMode";
@@ -104,6 +104,8 @@ addNativeSettingsHandlers({
       }
       case "groupMenu":
         return void openGroupMenu(windowId, id);
+      case "tabMenuChoice":
+        return runTabMenuChoice(windowId, id, extra.choice ?? "");
       case "groupMenuChoice":
         return runGroupMenuChoice(windowId, id, extra.choice ?? "");
       case "toggleGroup":

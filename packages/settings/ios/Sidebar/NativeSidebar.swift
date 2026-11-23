@@ -270,10 +270,19 @@ final class SidebarHost {
       }
     case .rename(let kind, let id):
       if !NativeWorkspaceRename.begin(windowId: windowId, kind: kind == "group" ? .group : .tab, id: id) { call("rename", id, ["kind": kind]) }
-    case .backToPinned(let tabId): call("backToPinned", tabId)
-    case .tileDoubleClick(let tabId): call("tileDoubleClick", tabId)
-    case .toggleMute(let tabId): call("toggleMute", tabId)
-    case .tabMenu(let tabId): call("tabMenu", tabId)
+    case .backToPinned(let tabId):
+      if NativeTabMenu.sidebarAction("backToPinned", tabId: tabId, windowId: windowId) { call("handled", tabId) } else { call("backToPinned", tabId) }
+    case .tileDoubleClick(let tabId):
+      if NativeTabMenu.sidebarAction("tileDoubleClick", tabId: tabId, windowId: windowId) { call("handled", tabId) } else { call("tileDoubleClick", tabId) }
+    case .toggleMute(let tabId):
+      if NativeTabMenu.sidebarAction("toggleMute", tabId: tabId, windowId: windowId) { call("handled", tabId) } else { call("toggleMute", tabId) }
+    case .tabMenu(let tabId):
+      if WorkspaceWrites.store != nil { call("handled", tabId) }
+      let opened = NativeTabMenu.open(tabId, windowId: windowId) { [weak self] id, choice in
+        guard let self, !self.stopped else { return NSLog("[tabs] %@: its menu's %@ arrived after the host closed", id, choice) }
+        self.call("tabMenuChoice", id, ["choice": choice])
+      }
+      if !opened { call("tabMenu", tabId) }
     case .groupMenu(let groupId):
       let opened = NativeGroupMenu.open(groupId, windowId: windowId) { [weak self] id, choice in
         guard let self, !self.stopped else { return NSLog("[groups] %@: the %@ closed before its menu's %@ reached JS", id, "sidebar", choice) }

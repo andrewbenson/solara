@@ -237,8 +237,7 @@ try {
         if (s.player.driver === from) assert.deepEqual(s.cards, startCards, `${label}: the cards stay put until the switch commits (${JSON.stringify(s)})`);
       }
       const last = result.samples.at(-1);
-      const want = rest.all.filter((id) => id !== result.shown);
-      assert.deepEqual(last.cards.map(([id]) => id), want, `${label}: after the switch the stack hides only the tab this window now shows (${result.shown})`);
+      assert.deepEqual(last.cards.map(([id]) => id), rest.all, `${label}: after the switch the stack is the same shared stack, whatever this profile shows (${result.shown})`);
       return { samples: result.samples.length, moved: moved.length, widest: Math.max(...moved.map((s) => Math.max(...s.pages.map(([, x]) => Math.abs(x))))),
         drivers: [...new Set(result.samples.map((s) => s.player.driver))], shown: result.shown, cards: last.cards.map(([id]) => id), end: last.cards };
     };
@@ -259,14 +258,17 @@ try {
     return { rest, back, forward, home };
   });
 
-  await rep.check("watched-tab-hides-only-here", async () => {
+  await rep.check("front-video-on-screen-hides-the-stack-only-there", async () => {
+    const shown = (id) => `return globalThis.expo.modules.SolaraHosted.sidebarPages(${JSON.stringify(id)}).then(JSON.parse).then((pages) => pages.find((entry) => entry.player)?.player ?? null).then((p) => !!p?.made && !p.hidden && p.alpha > 0)`;
     await run(`ac.actions.switchToTab("a"); return true;`);
-    const w1 = await stackIs("w1", ["d", "c"]);
+    const w1 = await stackIs("w1", ["d", "c", "a"]);
     await stackIs("w2", ["d", "c", "a"]);
     await run(`ac.actions.switchToTab("d"); return true;`);
-    const w2 = await stackIs("w2", ["c", "a"]);
-    await stackIs("w1", ["d", "c"]);
+    const w2 = await until("w2 hides its mini player while d, the front video, is on screen", `${shown("w2")}.then((on) => on ? null : "hidden");`);
+    await stackIs("w1", ["d", "c", "a"]);
+    assert.equal(await run(`${shown("w1")};`), true, "w1 keeps its mini player");
     await run(`ac.actions.switchToTab("a2"); ac.actions.switchToTab("d2"); return true;`);
+    await until("w2 shows its mini player again", `${shown("w2")}.then((on) => on || null);`);
     await stackIs("w1", ["d", "c", "a"]);
     await stackIs("w2", ["d", "c", "a"]);
     return { w1, w2 };
@@ -449,8 +451,10 @@ try {
     }
     await run(`return rows("w1").then((r) => click("w1", centre(r.find((row) => row.tabId === "c").frames.art))).then(() => true);`);
     const shown = await until("c shown in w1", `const w = st().windows.w1; return w.profileId === "work" && w.activeTabIds.work === "c" ? { profile: w.profileId, tab: w.activeTabIds.work } : null;`, 4000);
-    await stackIs("w1", ["d", "a"]);
-    return shown;
+    const shared = await run(`return ids("w2");`);
+    assert.notEqual(shared[0], "c", `c isn't the front card here: ${JSON.stringify(shared)}`);
+    await stackIs("w1", shared);
+    return { ...shown, shared };
   });
   await rep.check("picture-in-picture-from-the-card", async () => {
     const holder = () => run(`return C.devPictureInPictureHolder();`);
@@ -530,6 +534,54 @@ try {
     assert.equal(out.order[0], "w", `the new holder isn't in front: ${JSON.stringify(out)}`);
     assert.ok(out.order.indexOf("v") > 0, `the paused old holder came to the front: ${JSON.stringify(out)}`);
     assert.equal(out.order2[0], "w", `w2 disagrees: ${JSON.stringify(out)}`);
+    return out;
+  });
+  await rep.check("front-card-is-the-same-on-every-profile", async () => {
+    const touch = async (name, tab) => {
+      await inPage(name, "(document.getElementById('tone').pause(), true)");
+      await until(`${tab} paused`, `return M.probe("media.nowPlaying", "w1").then(JSON.parse).then((rows) => rows.some((e) => e.tabId === ${JSON.stringify(tab)} && e.playbackState === "paused") || null);`, 6000);
+      await play(name);
+    };
+    await run(`ac.actions.switchToTab("d2"); return true;`);
+    await touch("player-a", "a");
+    await touch("player-c", "c");
+    const shared = await until("the shared stack has c, then a, in front", `return ids("w2").then((got) => got[0] === "c" && got[1] === "a" ? got : null);`, 6000);
+    await run(`ac.actions.switchToTab("c"); return settle(300).then(() => { ac.actions.switchToTab("a"); return true; });`);
+    await until("w1 shows a in Personal and c in Work", `const w = st().windows.w1; return w.profileId === "default" && w.activeTabIds.default === "a" && w.activeTabIds.work === "c" || null;`, 5000);
+    await sleep(800);
+    const stackState = () => run(`return globalThis.expo.modules.SolaraHosted.sidebarPages("w1").then(JSON.parse).then((pages) => pages.find((entry) => entry.player)?.player ?? null).then((player) => rows("w1").then((cards) => ({ shown: !!player?.made && !player.hidden && player.alpha > 0, cards: cards.map((card) => card.tabId) })));`);
+    const swipe = (sign) => run(`
+      const H = globalThis.expo.modules.SolaraHosted;
+      const steps = [
+        { phase: "began", dx: 0, dy: 0 }, { phase: "changed", dx: ${18 * sign}, dy: 0 }, { phase: "changed", dx: ${22 * sign}, dy: 0 },
+        { phase: "changed", dx: ${22 * sign}, dy: 0 }, { phase: "changed", dx: ${22 * sign}, dy: 0 }, { phase: "ended", dx: 0, dy: 0 },
+      ].map((step, i) => ({ ...step, atMs: i * 16, timestampMs: i * 16 }));
+      const samples = [];
+      let done = false;
+      const tick = () => Promise.all([H.sidebarPages("w1").then(JSON.parse), rows("w1")]).then(([pages, cards]) => {
+        const player = pages.find((entry) => entry.player)?.player ?? null;
+        samples.push({ shown: !!player?.made && !player.hidden && player.alpha > 0, cards: cards.map((card) => card.tabId) });
+        return done ? null : settle(8).then(tick);
+      });
+      const sampling = tick();
+      return win("w1").then((n) => globalThis.expo.modules.SolaraSwipe.devSimulate(120, 400, n, steps, true))
+        .then(() => settle(900)).then(() => { done = true; return sampling; })
+        .then(() => ({ samples, profile: st().windows.w1.profileId }));
+    `);
+    const fronts = (samples) => [...new Set(samples.filter((s) => s.shown && s.cards.length).map((s) => s.cards[0]))];
+    const personal = await stackState();
+    const toWork = await swipe(-1);
+    const onWork = await stackState();
+    const toPersonal = await swipe(1);
+    const backHome = await stackState();
+    const out = { shared, personal, onWork, backHome, profiles: [toWork.profile, toPersonal.profile], frontsToWork: fronts(toWork.samples), frontsToPersonal: fronts(toPersonal.samples) };
+    rep.log(`front card across profiles: ${JSON.stringify(out)}`);
+    await run(`ac.actions.switchToTab("a2"); return true;`);
+    assert.deepEqual(out.profiles, ["work", "default"], `both swipes switch the profile: ${JSON.stringify(out)}`);
+    assert.deepEqual(personal, { shown: true, cards: shared }, `Personal, where the front video isn't on screen, shows the whole shared stack: ${JSON.stringify(out)}`);
+    assert.equal(onWork.shown, false, `Work, where the front video c is on screen, hides the mini player instead of promoting another card: ${JSON.stringify(out)}`);
+    assert.deepEqual(backHome, { shown: true, cards: shared }, `back on Personal the same stack returns: ${JSON.stringify(out)}`);
+    assert.deepEqual([...new Set([...out.frontsToWork, ...out.frontsToPersonal])], ["c"], `the front card never changes during either swipe: ${JSON.stringify(out)}`);
     return out;
   });
 } catch (e) {

@@ -26,9 +26,8 @@ public enum MediaStack {
   }
 
   public static func visible(_ entries: [MediaStackEntry], state: BrowserState, windowId: String) -> [MediaStackEntry] {
-    guard hidesWatchedTab else { return entries }
-    let hidden = watched(state: state, windowId: windowId)
-    return entries.filter { !hidden.contains($0.tabId) }
+    guard hidesWatchedTab, let front = entries.first else { return entries }
+    return watched(state: state, windowId: windowId).contains(front.tabId) ? [] : entries
   }
 
   public static func kind(of state: BrowserState, tabId: String) -> MediaStackKind? {

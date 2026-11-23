@@ -6,10 +6,10 @@ import Testing
 
 @MainActor
 @Suite(.serialized) struct MediaStackTests {
-  private func state() throws -> BrowserState {
+  private func state(w1Profile: String = "p1") throws -> BrowserState {
     let json = #"""
     {"windows":{
-      "w1":{"id":"w1","profileId":"p1","tabIds":["a","b","c","d"],"activeTabIds":{"p1":"a","p2":"c"}},
+      "w1":{"id":"w1","profileId":"\#(w1Profile)","tabIds":["a","b","c","d"],"activeTabIds":{"p1":"a","p2":"c"}},
       "w2":{"id":"w2","profileId":"p2","tabIds":["e"],"activeTabIds":{"p2":"e"}},
       "w3":{"id":"w3","profileId":"p1","incognito":true,"tabIds":["x","y"],"activeTabIds":{"p1":"x"}}},
      "windowOrder":["w1","w2","w3"],
@@ -123,16 +123,31 @@ import Testing
     #expect(store.entries["a"] == nil)
   }
 
-  @Test func eachWindowHidesOnlyTheCardForTheTabItShowsAndTheSharedStackStaysTheSame() throws {
-    let state = try state()
+  @Test func everyProfileShowsTheSameStackAndHidesItWhereTheFrontVideoIsOnScreen() throws {
+    let personal = try state()
+    let work = try state(w1Profile: "p2")
     let store = makeStore()
     for id in ["a", "c", "e"] { store.report(tabId: id, playing) }
-    let shared = MediaStack.entries(state: state, store: store.entries, kind: .normal)
+    let shared = MediaStack.entries(state: personal, store: store.entries, kind: .normal)
     #expect(shared.map(\.tabId) == ["e", "c", "a"])
-    #expect(MediaStack.watched(state: state, windowId: "w1") == ["a"])
-    #expect(MediaStack.visible(shared, state: state, windowId: "w1").map(\.tabId) == ["e", "c"])
-    #expect(MediaStack.visible(shared, state: state, windowId: "w2").map(\.tabId) == ["c", "a"])
-    #expect(MediaStack.entries(state: state, store: store.entries, kind: .normal) == shared)
+    #expect(MediaStack.watched(state: personal, windowId: "w1") == ["a"])
+    #expect(MediaStack.visible(shared, state: personal, windowId: "w1").map(\.tabId) == ["e", "c", "a"])
+    #expect(MediaStack.visible(shared, state: work, windowId: "w1").map(\.tabId) == ["e", "c", "a"])
+    #expect(MediaStack.visible(shared, state: personal, windowId: "w2").isEmpty)
+    #expect(MediaStack.entries(state: personal, store: store.entries, kind: .normal) == shared)
+  }
+
+  @Test func switchingProfilesNeverSwapsTheFrontCardItOnlyShowsOrHidesTheStack() throws {
+    let personal = try state()
+    let work = try state(w1Profile: "p2")
+    let store = makeStore()
+    for id in ["a", "e", "c"] { store.report(tabId: id, playing) }
+    let shared = MediaStack.entries(state: personal, store: store.entries, kind: .normal)
+    #expect(shared.map(\.tabId) == ["c", "e", "a"])
+    #expect(MediaStack.visible(shared, state: work, windowId: "w1").isEmpty)
+    let shown = MediaStack.visible(shared, state: personal, windowId: "w1")
+    #expect(shown.map(\.tabId) == ["c", "e", "a"])
+    #expect(shown.first?.tabId == shared.first?.tabId)
   }
 
   @Test func onlyWhatACardShowsPostsAChangeAndAtMostOncePerTurn() {

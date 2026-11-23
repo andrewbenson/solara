@@ -30,7 +30,7 @@ const run = (body, timeout = 4000) => app.eval(body, { timeout });
 const nativeState = async () => (await run(`
   const module = expo.modules.SolaraStoreAdapter;
   const status = module.status();
-  if (!status.active || status.scope !== "everything") throw new Error("native workspace ownership required");
+  if (!status.active || status.frozen !== false) throw new Error("native workspace ownership required");
   return JSON.parse(module.snapshot());
 `)).data;
 const menu = (windowId, command) =>
@@ -59,6 +59,7 @@ const typeAtOnce = async (windowId, first, text, wait = 700) => {
 };
 const pageEval = (tabId, expression) =>
   run(`return ac.webviews.get(${JSON.stringify(tabId)}).evaluate(${JSON.stringify(`post("result", JSON.stringify(${expression}))`)});`);
+const focusTrace = async () => (await run("return expo.modules.SolaraApp.devFocusHandoffTrace();")).filter((line) => /hold|adopt|release|late begin|begin|claim|replay|drop/.test(line)).slice(-12);
 const focusTimes = async () => {
   if (baseline) return null;
   const seam = await run("return expo.modules.SolaraSettings.devPageCommands();");
@@ -154,12 +155,14 @@ try {
 
   await press("w1", { key: "\u0000", keyCode: 0, modifiers: [] }, { focus: "page", send: false, dry: true, wait: 50 });
   const first = await typeAtOnce("w1", { ...keys.f, focus: "page" }, "needle");
-  if (!await typed("⌘F then typing at once: every letter lands in the find field", "coldTyping", false)) {
+  if (!await typed("⌘F then typing at once: every letter lands in the find field", "coldTyping")) {
     await run('ac.store.getState().setFind("a", { query: "needle" }); return true;');
   }
   assert.ok(isField(await responder("w1")), "the find field is first responder");
   await handledNatively("⌘F then typing");
-  pass("⌘F then typing at once: every letter lands in the find field", { responderAfter: first.firstResponderAfter });
+  observed.coldTrace = baseline ? null : await focusTrace();
+  if (!baseline) assert.ok(observed.coldTrace.some((line) => /adopt 6 after \d+ ms/.test(line)), `the six letters were held and handed to the find field: ${JSON.stringify(observed.coldTrace)}`);
+  pass("⌘F then typing at once: every letter lands in the find field", { responderAfter: first.firstResponderAfter, trace: observed.coldTrace });
   observed.coldFind = await focusTimes();
 
   await closeFind("w1", "a");
@@ -196,6 +199,84 @@ try {
   await closeFind("w1", "a");
   assert.ok(isPage(await responder("w1")), "Escape gives the page its focus back");
   pass("Escape closes find and the page takes focus again");
+
+  if (!baseline) {
+    await pageEval("a", `(() => { window.__keys = []; window.__ownFind = (e) => { if (e.metaKey && (e.key === "f" || e.key === "l")) e.preventDefault(); window.__keys.push(e.key); }; document.addEventListener("keydown", window.__ownFind, true); return true; })()`);
+    await typeAtOnce("w1", { ...keys.f, focus: "page" }, "needle", 900);
+    const keysSeen = await pageEval("a", "window.__keys");
+    const seen = typeof keysSeen === "string" ? JSON.parse(keysSeen) : keysSeen;
+    const ownTrace = await focusTrace();
+    observed.pageOwnFind = { seen, trace: ownTrace };
+    const from = seen.indexOf("f");
+    assert.deepEqual(from < 0 ? seen : seen.slice(from, from + 7), ["f", ..."needle"], `a page that takes ⌘F itself gets every letter, in order: ${JSON.stringify(observed.pageOwnFind)}`);
+    assert.equal(find(await nativeState(), "a").open, false, "a page that takes ⌘F itself keeps Solara's find closed");
+    assert.ok(isPage(await responder("w1")), "a page that takes ⌘F itself keeps its focus");
+    assert.ok(ownTrace.some((line) => /release 6 to the page \(cap\) after \d+ ms/.test(line)), `the held letters went back to the page at the cap: ${JSON.stringify(ownTrace)}`);
+    pass("a page that takes ⌘F itself gets every letter, in order, after the hold's cap", observed.pageOwnFind);
+
+    const rawTrace = async () => run("return expo.modules.SolaraApp.devFocusHandoffTrace();");
+    const traceBefore = (await rawTrace()).length;
+    await pageEval("a", `(() => { window.__keys = []; return true; })()`);
+    await run(`return expo.modules.SolaraApp.devPostKeys("w1", ${JSON.stringify([{ ...keys.f, after: 0 }, { ...letter("a"), after: 0 }, { ...keys.l, after: 0 }, { ...letter("b"), after: 0 }, { ...letter("c"), after: 250 }, { ...letter("d"), after: 30 }])});`);
+    await sleep(900);
+    const replaySeen = await pageEval("a", "window.__keys");
+    const releaseTrace = (await rawTrace()).slice(traceBefore).filter((line) => /hold|adopt|release|drop/.test(line));
+    observed.releaseOrder = { seen: replaySeen, trace: releaseTrace };
+    console.log(`OBSERVED a held ⌘L re-sent at the cap: ${JSON.stringify(observed.releaseOrder)}`);
+    const released = releaseTrace.findIndex((line) => /release \d+ to the page/.test(line));
+    assert.ok(released >= 0, `the held keys went back to the page: ${JSON.stringify(observed.releaseOrder)}`);
+    assert.ok(!releaseTrace.slice(released + 1).some((line) => /hold for/.test(line)), `re-sending the held ⌘L opens no second hold: ${JSON.stringify(releaseTrace)}`);
+    assert.ok(replaySeen.indexOf("a") >= 0 && replaySeen.indexOf("a") < replaySeen.indexOf("c") && replaySeen.indexOf("c") < replaySeen.indexOf("d"), `released and later letters keep their order: ${JSON.stringify(replaySeen)}`);
+    await press("w1", keys.escape, { wait: 150 });
+    await press("w1", keys.escape, { wait: 150 });
+    if (find(await nativeState(), "a").open) await closeFind("w1", "a", isField(await responder("w1")));
+    handlerBaseline = await run("return ac.commandHandlers.stats();");
+    pass("held keys re-sent at the cap, including a held ⌘L, open no second hold and keep their order", observed.releaseOrder);
+
+    await run('ac.store.getState().activate("b"); return true;');
+    await until("tab b is loaded for the switch leg", (s) => s.windows.w1.activeTabIds[s.windows.w1.profileId] === "b" && s.tabs.b?.title === "Page /b");
+    await sleep(300);
+    await pageEval("b", `(() => { window.__keys = []; document.addEventListener("keydown", (e) => window.__keys.push(e.key), true); return true; })()`);
+    await run('ac.store.getState().activate("a"); return true;');
+    await until("tab a is active for the switch leg", (s) => s.windows.w1.activeTabIds[s.windows.w1.profileId] === "a");
+    await sleep(400);
+    await run(`return ac.shell.devKeyEquivalent("w1", { key: "\\u0000", keyCode: 0, modifiers: [], focus: "page", dry: true, wait: 50 });`);
+    await pageEval("a", `(() => { window.__keys = []; return true; })()`);
+    await run(`expo.modules.SolaraApp.devPostKeys("w1", ${JSON.stringify([{ ...keys.f, after: 0 }, { ...letter("n"), after: 0 }, { ...letter("e"), after: 0 }])}); setTimeout(() => ac.store.getState().activate("b"), 30); return true;`);
+    await sleep(900);
+    const onB = await pageEval("b", "window.__keys");
+    const onA = await pageEval("a", "window.__keys");
+    observed.switchDuringHold = { onA, onB, trace: (await focusTrace()).slice(-4) };
+    console.log(`OBSERVED a tab switch during the hold: ${JSON.stringify(observed.switchDuringHold)}`);
+    await run('ac.store.getState().activate("a"); return true;');
+    await until("tab a is active again after the switch leg", (s) => s.windows.w1.activeTabIds[s.windows.w1.profileId] === "a");
+    await sleep(300);
+    assert.deepEqual(onB.filter((k) => k === "n" || k === "e"), [], `keys typed for tab a never reach tab b: ${JSON.stringify(observed.switchDuringHold)}`);
+    pass("keys held for one tab never reach another tab that took its place during the hold", observed.switchDuringHold);
+    await run(`return ac.shell.devKeyEquivalent("w1", { key: "\\u0000", keyCode: 0, modifiers: [], focus: "page", dry: true, wait: 50 });`);
+    await pageEval("a", `(() => { window.__events = []; window.__ownUps = (e) => window.__events.push(e.type + ":" + e.key); document.addEventListener("keydown", window.__ownUps, true); document.addEventListener("keyup", window.__ownUps, true); return true; })()`);
+    await run(`return expo.modules.SolaraApp.devPostKeys("w1", ${JSON.stringify([{ ...keys.f, after: 0 }, { ...letter("a"), phase: "down", after: 0 }, { ...letter("b"), phase: "down", after: 0 }, { ...letter("a"), phase: "up", after: 0 }, { ...letter("b"), phase: "up", after: 0 }])});`);
+    await sleep(700);
+    const overlap = (await pageEval("a", "window.__events")).filter((e) => !e.endsWith(":f") && !e.endsWith(":Meta"));
+    await pageEval("a", `(() => { document.removeEventListener("keydown", window.__ownUps, true); document.removeEventListener("keyup", window.__ownUps, true); return true; })()`);
+    observed.overlap = overlap;
+    console.log(`OBSERVED overlapping keys held and released: ${JSON.stringify(overlap)}`);
+    assert.deepEqual(overlap.slice(0, 4), ["keydown:a", "keydown:b", "keyup:a", "keyup:b"], `overlapping presses keep their down and up order: ${JSON.stringify(overlap)}`);
+    pass("overlapping presses held for a page that keeps ⌘F keep their down and up order", { overlap });
+
+    await pageEval("a", `(() => { document.removeEventListener("keydown", window.__ownFind, true); return true; })()`);
+
+    await pageEval("a", `(() => { setTimeout(() => { const t = performance.now(); while (performance.now() - t < 300) {} }, 0); return true; })()`);
+    await sleep(20);
+    await typeAtOnce("w1", { ...keys.f, focus: "page" }, "needle", 1200);
+    const busyTrace = await focusTrace();
+    const busyFind = find(await nativeState(), "a");
+    observed.busyPage = { trace: busyTrace, find: busyFind };
+    console.log(`OBSERVED ⌘F while the page is busy for 300 ms: ${JSON.stringify(observed.busyPage)}`);
+    assert.ok(busyTrace.some((line) => /adopt 6 after \d+ ms|late begin \d+ ms, 6 already released/.test(line)), `a busy page either has the letters adopted or the late command logged: ${JSON.stringify(busyTrace)}`);
+    pass("⌘F while the page is busy: the letters are adopted, or the late command is logged", observed.busyPage);
+    if (busyFind.open) await closeFind("w1", "a", isField(await responder("w1")));
+  }
 
   await pageEval("a", `(() => { const r = document.createRange(); r.selectNodeContents(document.getElementById("w")); getSelection().removeAllRanges(); getSelection().addRange(r); return true; })()`);
   await press("w1", keys.e, { focus: "page" });

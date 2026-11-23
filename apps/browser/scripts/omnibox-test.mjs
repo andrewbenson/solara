@@ -498,6 +498,47 @@ try {
     await nativeWindow("fixture start tab selected again", (window) => window?.selectedTabId === "a");
     rep.log("long then short Cmd-L", results);
   });
+  for (const surface of [
+    { name: "page-focused Cmd-L", variant: "panel", addressBar: "toolbar", newTab: false, press: { key: "l", keyCode: 37, modifiers: ["command"] } },
+    { name: "page-focused Cmd-T", variant: "panel", addressBar: "toolbar", newTab: true, press: { key: "t", keyCode: 17, modifiers: ["command"] } },
+  ]) {
+    await check(`${surface.name} then typing at once: every letter lands in the Command Bar`, async () => {
+      current = surface;
+      await activate("a");
+      await run(`ac.store.getState().updateSettings({ addressBar: "toolbar", commandBarPlacement: "field", newTabOpens: "commandBar" }); return true;`);
+      await nativeWindow(`${surface.name} begins with the panel closed`, (window) => window?.selectedTabId === "a" && window.panelOpen === false);
+      await until(`${surface.name}: native address anchor ready`, () => run(`return acPerf.findFibers("NativeOmniboxBar", 30).some((f) => {
+        const props = f.memoizedProps;
+        const panel = props.panel && JSON.parse(props.panel);
+        return props.tabId === "a" && panel && !panel.open && panel.ready;
+      });`));
+      const focused = await run(`return ac.shell.devKeyEquivalent("w1", { key: "\\u0000", keyCode: 0, modifiers: [], focus: "page", dry: true, wait: 50 });`);
+      assert.equal(focused.firstResponder, "RenderWidgetHostViewCocoa", "the page has focus before the shortcut");
+      const letters = { n: 45, e: 14, d: 2, l: 37 };
+      const presses = [{ ...surface.press, after: 0 }, ...[..."needle"].map((ch) => ({ key: ch, keyCode: letters[ch], modifiers: [], after: 0 }))];
+      await run(`return expo.modules.SolaraApp.devPostKeys("w1", ${JSON.stringify(presses)});`);
+      await until(`${surface.name} opens the Command Bar`, () => run(`return ac.store.getState().windowUi.w1?.panel.open === true;`));
+      await bindNativeBar(surface);
+      const state = await until(`${surface.name}: the bar holds every letter`, async () => {
+        const s = await run(`return globalThis.__omniboxNative.driverState().then((json) => JSON.parse(json));`);
+        return s?.focused && s.typed === "needle" && s.fieldValue?.startsWith("needle") ? s : false;
+      }, Boolean, 3000).catch(async (error) => {
+        const s = await run(`return globalThis.__omniboxNative.driverState().then((json) => JSON.parse(json));`).catch(() => null);
+        throw new Error(`${error.message}: typed ${JSON.stringify(s?.typed)}, field ${JSON.stringify(s?.fieldValue)}`);
+      });
+      const trace = (await run(`return expo.modules.SolaraApp.devFocusHandoffTrace();`)).filter((line) => /hold|adopt|release|late begin|replay|drop/.test(line)).slice(-6);
+      rep.log(`${surface.name} focus trace`, trace);
+      assert.ok(trace.some((line) => /adopt 6 after \d+ ms|replay 6 into/.test(line)), `the six letters were held for the bar, by the hold or by the gate: ${JSON.stringify(trace)}`);
+      assert.ok(!trace.some((line) => /drop/.test(line)), `no held letter was dropped: ${JSON.stringify(trace)}`);
+      assert.equal(state.typed, "needle");
+      await activate("a");
+      await nativeWindow(`${surface.name} closes again`, (window) => window?.panelOpen === false);
+      if (surface.newTab) {
+        await run(`const s = ac.store.getState(); for (const id of s.windows.w1.tabIds) if (id !== "a" && id !== "b") s.closeTab(id); s.activate("a"); return true;`);
+        await nativeWindow("fixture tabs restored", (window) => window?.tabIds.length === 2);
+      }
+    });
+  }
 } catch (error) {
   rep.record("run", { error });
 } finally {

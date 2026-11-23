@@ -246,7 +246,7 @@ final class MenuTarget: NSObject, NSMenuItemValidation {
   static let shared = MenuTarget()
   var handler: ((String, String?, String?) -> Void)?
 
-  private static let focusMovingCommands: Set<String> = ["newTab", "focusCommandBar", "findInPage"]
+  static let focusMovingCommands: Set<String> = ["newTab", "focusCommandBar", "findInPage"]
 
   @objc(commandDispatch:) func performCommand(_ sender: NSMenuItem) {
     guard let item = sender as? CommandItem else { return }
@@ -1011,6 +1011,41 @@ enum MainMenu {
   private static func modifiers(_ names: some Sequence<String>) -> NSEvent.ModifierFlags {
     let names = Set(names)
     return NSEvent.ModifierFlags(modifierNames.filter { names.contains($0.0) }.map(\.1))
+  }
+
+  private final class CommandItemRef {
+    weak var item: CommandItem?
+    init(_ item: CommandItem) { self.item = item }
+  }
+
+  private static var commandItemCache: (commands: Set<String>, refs: [CommandItemRef])?
+
+  static func command(for event: NSEvent, among commands: Set<String>) -> String? {
+    guard let key = event.charactersIgnoringModifiers?.lowercased(), !key.isEmpty else { return nil }
+    let combo = comboKey(key, event.modifierFlags)
+    return commandItems(among: commands).first { item in
+      !item.keyEquivalent.isEmpty && (!item.isHidden || item.allowsKeyEquivalentWhenHidden)
+        && comboKey(item.keyEquivalent, item.keyEquivalentModifierMask) == combo
+    }?.command
+  }
+
+  private static func commandItems(among commands: Set<String>) -> [CommandItem] {
+    if let cache = commandItemCache, cache.commands == commands {
+      let items = cache.refs.compactMap(\.item)
+      if !items.isEmpty, items.count == cache.refs.count, items.allSatisfy(inMainMenu) { return items }
+    }
+    var items: [CommandItem] = []
+    walk(NSApp.mainMenu) { item, _ in
+      if let item = item as? CommandItem, commands.contains(item.command) { items.append(item) }
+    }
+    commandItemCache = (commands, items.map(CommandItemRef.init))
+    return items
+  }
+
+  private static func inMainMenu(_ item: NSMenuItem) -> Bool {
+    var menu = item.menu
+    while let parent = menu?.supermenu { menu = parent }
+    return menu != nil && menu === NSApp.mainMenu
   }
 
   static func comboKey(_ key: String, _ mods: NSEvent.ModifierFlags) -> String {

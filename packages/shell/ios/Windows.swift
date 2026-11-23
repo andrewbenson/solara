@@ -1,4 +1,5 @@
 import AppKit
+import os
 
 public enum WindowHost {
   public static var makeWindow: (() -> NSWindow)?
@@ -1252,6 +1253,25 @@ final class FocusHandoff {
     case key(NSEvent, up: NSEvent?)
   }
 
+  private final class Pending {
+    weak var window: NSWindow?
+    weak var page: NSView?
+    var hold: FocusKeyHold
+    var held: [Held] = []
+    var stream: [NSEvent] = []
+    init(_ window: NSWindow, page: NSView?, _ hold: FocusKeyHold) {
+      self.window = window
+      self.page = page
+      self.hold = hold
+    }
+  }
+
+  private struct Released {
+    let pressedAt: TimeInterval
+    let count: Int
+    let command: String
+  }
+
   private struct Held {
     var input: Input
     var generation: Int?
@@ -1285,6 +1305,11 @@ final class FocusHandoff {
   private static let lifetime: CFTimeInterval = 0.4
   private static let capacity = 64
   private var gates: [ObjectIdentifier: Gate] = [:]
+  private var pendings: [ObjectIdentifier: Pending] = [:]
+  private var resending = false
+  private var reposted: Set<String> = []
+  private var lastReleased: [ObjectIdentifier: Released] = [:]
+  private static let log = Logger(subsystem: Bundle.main.bundleIdentifier ?? "Solara", category: "focus")
   private var generations = 0
   private var begun: Int?
   private var monitor: Any?
@@ -1321,6 +1346,7 @@ final class FocusHandoff {
     gate.generations.append(Generation(generations))
     begun = generations
     note("begin \(generations)")
+    adoptPending(in: window, from: focused, into: gate)
     return generations
   }
 
@@ -1422,10 +1448,21 @@ final class FocusHandoff {
 
   func install() {
     guard monitor == nil else { return }
-    monitor = NSEvent.addLocalMonitorForEvents(matching: [.keyDown, .keyUp, .leftMouseDown, .rightMouseDown]) { [weak self] event in
+    monitor = NSEvent.addLocalMonitorForEvents(matching: [.keyDown, .keyUp, .flagsChanged, .leftMouseDown, .rightMouseDown]) { [weak self] event in
       guard let self, let window = event.window else { return event }
       let gate = self.gates[ObjectIdentifier(window)]
+      let replayed = self.reposted.remove(Self.repostKey(event)) != nil
+      if event.type == .flagsChanged {
+        guard !replayed, !self.resending, let pending = self.pendings[ObjectIdentifier(window)], !pending.held.isEmpty else { return event }
+        pending.stream.append(event)
+        return nil
+      }
       if event.type == .leftMouseDown || event.type == .rightMouseDown {
+        let windows = replayed ? [] : self.pendings.values.compactMap(\.window)
+        if !windows.isEmpty {
+          for (index, held) in windows.enumerated() { self.releasePending(in: held, reason: "click", then: index == windows.count - 1 ? event : nil) }
+          return nil
+        }
         if let gate { self.end(gate, restoring: false) }
         return event
       }
@@ -1433,6 +1470,10 @@ final class FocusHandoff {
         self.editKeys.setObject([window.windowNumber, self.epochs[window.windowNumber] ?? 0] as NSArray, forKey: event)
       }
       if event.type == .keyUp { return self.releases(event, in: gate) ? nil : event }
+      if !self.resending, !replayed {
+        if self.holdsPending(event, in: window) { return nil }
+        if gate == nil { self.openPending(event, in: window) }
+      }
       if gate == nil, !event.modifierFlags.contains(.command) { self.noteTyped(event, in: window) }
       guard let gate, !event.modifierFlags.contains(.command), self.live(gate), !gate.generations.isEmpty else {
         if !event.isARepeat { self.releases[event.keyCode] = nil }
@@ -1448,11 +1489,19 @@ final class FocusHandoff {
       self.epochs[window.windowNumber, default: 0] += 1
     }
     for name in [NSApplication.didResignActiveNotification, NSWindow.didResignKeyNotification] {
-      center.addObserver(forName: name, object: nil, queue: .main) { [weak self] _ in self?.releases.removeAll() }
+      center.addObserver(forName: name, object: nil, queue: .main) { [weak self] _ in
+        guard let self else { return }
+        for pending in Array(self.pendings.values) {
+          if let window = pending.window, !window.isKeyWindow { self.releasePending(in: window, reason: "resigned") }
+        }
+        self.releases.removeAll()
+      }
     }
     center.addObserver(forName: NSWindow.willCloseNotification, object: nil, queue: .main) { [weak self] note in
       guard let self, let window = note.object as? NSWindow else { return }
       self.closedAt[window.windowNumber] = nil
+      self.pendings[ObjectIdentifier(window)] = nil
+      self.lastReleased[ObjectIdentifier(window)] = nil
       self.typedAfterGate[window.windowNumber] = nil
       self.barCommittedAt[window.windowNumber] = nil
     }
@@ -1475,15 +1524,149 @@ final class FocusHandoff {
 
   private func releases(_ up: NSEvent, in gate: Gate?) -> Bool {
     guard let release = releases.removeValue(forKey: up.keyCode) else { return false }
-    if let gate, let index = gate.held.lastIndex(where: {
-      if case .key(let down, nil) = $0.input { return down.keyCode == up.keyCode }
-      return false
-    }), case .key(let down, _) = gate.held[index].input {
+    let pending = up.window.flatMap { pendings[ObjectIdentifier($0)] }
+    if let pending, let index = Self.unreleasedDown(up, in: pending.held), case .key(let down, _) = pending.held[index].input {
+      pending.held[index].input = .key(down, up: up)
+      pending.stream.append(up)
+    } else if let gate, let index = Self.unreleasedDown(up, in: gate.held), case .key(let down, _) = gate.held[index].input {
       gate.held[index].input = .key(down, up: up)
     } else {
       release.target?.keyUp(with: up)
     }
     return true
+  }
+
+  private static func unreleasedDown(_ up: NSEvent, in held: [Held]) -> Int? {
+    held.lastIndex {
+      if case .key(let down, nil) = $0.input { return down.keyCode == up.keyCode }
+      return false
+    }
+  }
+
+  private func openPending(_ event: NSEvent, in window: NSWindow) {
+    guard event.type == .keyDown, event.modifierFlags.contains(.command), window.isKeyWindow, WindowManager.shared.id(of: window) != nil else { return }
+    let focused = window.firstResponder
+    let marked = (focused as? NSTextInputClient)?.hasMarkedText() ?? false
+    let key = ObjectIdentifier(window)
+    guard FocusKeyHold.opens(focusMoving: true, pageFocused: Self.isPage(focused), markedText: marked, gateOpen: gates[key] != nil,
+      holding: pendings[key] != nil, isRepeat: event.isARepeat),
+      let command = MainMenu.command(for: event, among: MenuTarget.focusMovingCommands) else { return }
+    let pending = Pending(window, page: focused as? NSView, FocusKeyHold(command: command, pressedAt: event.timestamp))
+    pendings[key] = pending
+    note("hold for \(command)")
+    DispatchQueue.main.asyncAfter(deadline: .now() + FocusKeyHold.cap) { [weak self, weak pending, weak window] in
+      guard let self, let pending, let window, self.pendings[ObjectIdentifier(window)] === pending else { return }
+      self.releasePending(in: window, reason: "cap")
+    }
+  }
+
+  private func holdsPending(_ event: NSEvent, in window: NSWindow) -> Bool {
+    guard event.type == .keyDown, let pending = pendings[ObjectIdentifier(window)] else { return false }
+    if event.isARepeat, !pending.held.contains(where: { if case .key(let down, _) = $0.input { return down.keyCode == event.keyCode }; return false }) {
+      return false
+    }
+    switch pending.hold.keyDown(command: event.modifierFlags.contains(.command), at: event.timestamp) {
+    case .pass:
+      return false
+    case .release:
+      releasePending(in: window, reason: pending.hold.held >= FocusKeyHold.capacity ? "full" : "cap", then: event)
+      return true
+    case .hold:
+      releases[event.keyCode] = Release()
+      pending.held.append(Held(input: .key(event, up: nil), generation: nil, at: event.timestamp))
+      pending.stream.append(event)
+      return true
+    }
+  }
+
+  private func adoptPending(in window: NSWindow, from focused: NSResponder?, into gate: Gate) {
+    let key = ObjectIdentifier(window)
+    let now = ProcessInfo.processInfo.systemUptime
+    if let pending = pendings[key], pending.page == nil || pending.page !== focused {
+      releasePending(in: window, reason: "page changed")
+    } else if let pending = pendings.removeValue(forKey: key) {
+      let ms = pending.hold.milliseconds(at: now)
+      note("adopt \(pending.held.count) after \(ms) ms")
+      Self.log.info("focus hold for \(pending.hold.command, privacy: .public): \(pending.held.count) keys adopted \(ms) ms after the press")
+      for entry in pending.held { hold(entry.input, at: entry.at, in: gate) }
+    } else if let released = lastReleased.removeValue(forKey: key),
+      FocusKeyHold.beganLate(pressedAt: released.pressedAt, released: released.count, at: now) {
+      let ms = Int(((now - released.pressedAt) * 1000).rounded())
+      note("late begin \(ms) ms, \(released.count) already released")
+      Self.log.notice("focus hold for \(released.command, privacy: .public): the command arrived \(ms) ms after the press, after \(released.count) keys went to the page")
+    }
+  }
+
+  private static func repostKey(_ event: NSEvent) -> String {
+    let code = event.type == .keyDown || event.type == .keyUp ? Int(event.keyCode) : -1
+    return "\(event.type.rawValue)|\(code)|\(event.timestamp)|\(event.windowNumber)"
+  }
+
+  private func repost(_ events: [NSEvent]) {
+    for event in events.reversed() {
+      reposted.insert(Self.repostKey(event))
+      NSApp.postEvent(event, atStart: true)
+    }
+  }
+
+  private func releasePending(in window: NSWindow, reason: String, then trailing: NSEvent? = nil) {
+    guard let pending = pendings.removeValue(forKey: ObjectIdentifier(window)) else { return }
+    let ms = pending.hold.milliseconds(at: ProcessInfo.processInfo.systemUptime)
+    guard !pending.held.isEmpty else {
+      if let trailing { repost([trailing]) }
+      return note("hold for \(pending.hold.command) ended empty (\(reason)) after \(ms) ms")
+    }
+    note("release \(pending.held.count) to the page (\(reason)) after \(ms) ms")
+    Self.log.notice("focus hold for \(pending.hold.command, privacy: .public): \(pending.held.count) keys released to the page (\(reason, privacy: .public)) \(ms) ms after the press")
+    lastReleased[ObjectIdentifier(window)] = Released(pressedAt: pending.hold.pressedAt, count: pending.held.count, command: pending.hold.command)
+    let samePage = reason != "resigned" && pending.page != nil && window.firstResponder === pending.page
+    if samePage {
+      for event in pending.stream where event.type == .keyDown && !pending.held.contains(where: { Self.upHeld(for: event, in: $0) }) {
+        releases[event.keyCode] = nil
+      }
+      repost(pending.stream + (trailing.map { [$0] } ?? []))
+      return
+    }
+    deliver(pending, straightTo: window, reason: reason)
+    if let trailing { repost([trailing]) }
+  }
+
+  private static func upHeld(for down: NSEvent, in entry: Held) -> Bool {
+    if case .key(let held, let up) = entry.input { return held === down && up != nil }
+    return false
+  }
+
+  private func deliver(_ pending: Pending, straightTo window: NSWindow, reason: String) {
+    guard let page = pending.page, page.window === window else {
+      for event in pending.stream where event.type == .keyDown { releases[event.keyCode] = nil }
+      note("drop \(pending.held.count): the page is gone (\(reason))")
+      Self.log.notice("focus hold for \(pending.hold.command, privacy: .public): \(pending.held.count) keys dropped because their page went away (\(reason, privacy: .public))")
+      return NSSound.beep()
+    }
+    var shortcuts = 0
+    var skipped: Set<UInt16> = []
+    for event in pending.stream {
+      switch event.type {
+      case .keyDown where event.modifierFlags.contains(.command):
+        shortcuts += 1
+        skipped.insert(event.keyCode)
+        releases[event.keyCode] = nil
+      case .keyDown:
+        skipped.remove(event.keyCode)
+        page.keyDown(with: event)
+        releases[event.keyCode]?.target = page
+      case .keyUp where !skipped.contains(event.keyCode):
+        page.keyUp(with: event)
+      case .flagsChanged:
+        page.flagsChanged(with: event)
+      default:
+        break
+      }
+    }
+    guard shortcuts > 0 else { return }
+    note("drop \(shortcuts) held shortcuts (\(reason))")
+    Self.log.notice("focus hold for \(pending.hold.command, privacy: .public): \(shortcuts) held shortcuts dropped because the focus moved (\(reason, privacy: .public))")
+    NSSound.beep()
   }
 
   private func hold(_ input: Input, at: TimeInterval, in gate: Gate) {
@@ -1620,6 +1803,8 @@ final class FocusHandoff {
   private func replay(_ held: [Held], into destination: NSView, in window: NSWindow) {
     guard !held.isEmpty else { return }
     note("replay \(held.count) into \(type(of: destination))")
+    resending = true
+    defer { resending = false }
     for entry in held { if case .key(let down, _) = entry.input { noteTyped(down, in: window) } }
     for (index, entry) in held.enumerated() {
       guard let responder = window.firstResponder as? NSView, Self.holds(responder, destination) else {

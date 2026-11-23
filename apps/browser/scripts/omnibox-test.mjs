@@ -457,6 +457,47 @@ try {
       assert.equal(restored.typed, surface.newTab ? "" : `${base}/start`);
     });
   }
+  await check("page-focused panel: Cmd-L on a long URL, then on a short one, keeps the field editor's selection inside its text", async () => {
+    const surface = { name: "long then short Cmd-L", variant: "panel", addressBar: "toolbar", newTab: false };
+    current = surface;
+    const results = [];
+    const long = `${base}/start?${"segment=".repeat(40)}end`;
+    const c = await run(`return ac.store.getState().newTab("w1", { url: ${JSON.stringify(long)}, openerId: "a", background: true });`);
+    assert.equal(typeof c, "string", "the long-URL tab opens");
+    try {
+    for (const [tab, url] of [[c, long], ["a", `${base}/start`], [c, long]]) {
+      await activate(tab);
+      await run(`ac.store.getState().updateSettings({ addressBar: "toolbar", commandBarPlacement: "field", newTabOpens: "commandBar" }); return true;`);
+      await nativeWindow(`${tab} begins with the panel closed`, (window) => window?.selectedTabId === tab && window.panelOpen === false);
+      await until(`${tab}: native address anchor ready`, () => run(`return acPerf.findFibers("NativeOmniboxBar", 30).some((f) => {
+        const props = f.memoizedProps;
+        const panel = props.panel && JSON.parse(props.panel);
+        return props.tabId === ${JSON.stringify(tab)} && panel && !panel.open && panel.ready;
+      });`));
+      const pressed = await run(`return ac.shell.devKeyEquivalent("w1", { key: "l", keyCode: 37, modifiers: ["command"], focus: "page", send: true, asKey: true });`);
+      assert.ok(!pressed?.error, JSON.stringify(pressed));
+      await until(`${tab}: Cmd-L opens the Command Bar`, () => run(`return ac.store.getState().windowUi.w1?.panel.open === true;`));
+      await bindNativeBar(surface);
+      const opened = await until(`${tab}: the field shows its URL, all selected`, async () => {
+        const state = await run(`return globalThis.__omniboxNative.driverState().then((json) => JSON.parse(json));`);
+        return state?.tabId === tab && state.focused && state.fieldValue === url
+          && isDeepStrictEqual(state.fieldSelection, { start: 0, end: url.length }) ? state : false;
+      });
+      await sleep(300);
+      const after = await run(`return globalThis.__omniboxNative.driverState().then((json) => JSON.parse(json));`);
+      results.push({ tab, length: url.length, fieldValueLength: (after.fieldValue ?? "").length, fieldSelection: after.fieldSelection, openedSelection: opened.fieldSelection });
+      assert.equal(after.fieldValue, url, `${tab}: the field editor still holds this tab's URL after the forced display`);
+      assert.ok(after.fieldSelection && after.fieldSelection.end <= url.length, `${tab}: selection inside the text ${JSON.stringify(results)}`);
+      await activate(tab === "a" ? c : "a");
+      await nativeWindow(`${tab} closes again`, (window) => window?.panelOpen === false);
+    }
+    } finally {
+      await run(`ac.store.getState().closeTab(${JSON.stringify(c)}); return true;`);
+    }
+    await activate("a");
+    await nativeWindow("fixture start tab selected again", (window) => window?.selectedTabId === "a");
+    rep.log("long then short Cmd-L", results);
+  });
 } catch (error) {
   rep.record("run", { error });
 } finally {

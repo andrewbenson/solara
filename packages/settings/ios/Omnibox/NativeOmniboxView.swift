@@ -121,6 +121,7 @@ final class NativeOmniboxView: ExpoView, FocusHandoffDestination {
       awaitingOpen = true
       open(panel, in: host)
       DispatchQueue.main.async {
+        if let editor = window.firstResponder as? NSTextView, editor.isFieldEditor { FieldText.clamp(editor) }
         window.displayIfNeeded()
         CATransaction.flush()
       }

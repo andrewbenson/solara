@@ -140,13 +140,30 @@ final class HeroFieldCoordinator: NSObject, NSTextFieldDelegate, HeroFieldContro
   }
 
   static func overflowTextInset(_ editor: NSTextView, in clip: NSClipView) -> CGFloat {
-    guard let field = enclosingField(of: clip), let cell = field.cell, let layout = editor.layoutManager, let container = editor.textContainer,
-      layout.numberOfGlyphs > 0 else { return 0 }
+    guard let field = enclosingField(of: clip), let cell = field.cell, let container = editor.textContainer,
+      let firstGlyph = firstGlyphLeft(editor, in: container) else { return 0 }
     let restingLeft = cell.drawingRect(forBounds: field.bounds).minX + container.lineFragmentPadding
-    let glyphLeft = layout.boundingRect(forGlyphRange: NSRange(location: 0, length: 1), in: container).minX + editor.textContainerOrigin.x - editor.textContainerInset.width
+    let glyphLeft = firstGlyph + editor.textContainerOrigin.x - editor.textContainerInset.width
     let leftmost = clip.constrainBoundsRect(NSRect(origin: NSPoint(x: -10_000, y: clip.bounds.origin.y), size: clip.bounds.size)).origin.x
     let editingLeft = field.convert(NSPoint(x: glyphLeft, y: 0), from: editor).x + clip.bounds.origin.x - leftmost
     return max(0, (restingLeft - editingLeft) * 2).rounded() / 2
+  }
+
+  static func firstGlyphLeft(_ editor: NSTextView, in container: NSTextContainer) -> CGFloat? {
+    if let layout = editor.textLayoutManager {
+      guard let content = layout.textContentManager else { return nil }
+      let start = content.documentRange.location
+      guard let end = content.location(start, offsetBy: 1), let first = NSTextRange(location: start, end: end) else { return nil }
+      layout.ensureLayout(for: first)
+      var left: CGFloat?
+      layout.enumerateTextSegments(in: first, type: .standard, options: []) { _, frame, _, _ in
+        left = frame.minX
+        return false
+      }
+      return left
+    }
+    guard let layout = editor.layoutManager, layout.numberOfGlyphs > 0 else { return nil }
+    return layout.boundingRect(forGlyphRange: NSRange(location: 0, length: 1), in: container).minX
   }
 
   private static func enclosingField(of view: NSView) -> NSTextField? {
@@ -178,6 +195,7 @@ final class HeroFieldCoordinator: NSObject, NSTextFieldDelegate, HeroFieldContro
   func focusField() {
     guard let field, let window = field.window else { return }
     if field.currentEditor() == nil || window.firstResponder !== field.currentEditor() {
+      if field.currentEditor() == nil, field.stringValue != model.value { field.stringValue = model.value }
       applying = true
       window.makeFirstResponder(field)
       applying = false

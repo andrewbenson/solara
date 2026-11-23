@@ -1,6 +1,6 @@
 import AppKit
 
-enum FieldText {
+public enum FieldText {
   static func set(_ field: NSTextField, _ value: String) {
     guard let editor = field.currentEditor() as? NSTextView else {
       if field.stringValue != value { field.stringValue = value }
@@ -25,7 +25,7 @@ enum FieldText {
     clamp(editor)
   }
 
-  static func clamp(_ editor: NSTextView) {
+  public static func clamp(_ editor: NSTextView) {
     let length = (editor.string as NSString).length
     let ranges = editor.selectedRanges.map(\.rangeValue)
     let clamped = ranges.map { range -> NSRange in

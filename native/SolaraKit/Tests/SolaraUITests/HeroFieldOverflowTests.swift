@@ -47,6 +47,20 @@ struct HeroFieldOverflowTests {
     return cell.drawingRect(forBounds: field.bounds).minX + container.lineFragmentPadding
   }
 
+  @Test @MainActor func measuringTheInsetKeepsTheFieldEditorOnTextKit2AndItsSelectionInRange() throws {
+    for text in [Self.short, Self.long] {
+      let (window, _, editor, clip) = try editingField(text)
+      defer { window.close() }
+      #expect(editor.textLayoutManager != nil, "scrollToStart must not switch the field editor to TextKit 1")
+      editor.string = "ab"
+      editor.selectedRange = NSRange(location: 0, length: 2)
+      HeroFieldCoordinator.scrollToStart(clip)
+      #expect(editor.textLayoutManager != nil)
+      window.contentView?.layoutSubtreeIfNeeded()
+      #expect(NSMaxRange(editor.selectedRange) <= (editor.string as NSString).length)
+    }
+  }
+
   @Test @MainActor func aShortURLNeedsNoInset() throws {
     let (window, field, editor, _) = try editingField(Self.short)
     defer { window.close() }

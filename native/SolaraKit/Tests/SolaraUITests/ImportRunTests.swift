@@ -292,14 +292,23 @@ struct ImportRunTests {
     ImportRunRequest(runId: runId, browserId: browser, profileIds: profiles, spaceIds: [], kinds: kinds, target: target, withoutKey: false)
   }
 
-  @Test func routeTakesSidebarFreeChromiumOrFirefoxForEveryKindSwiftRuns() {
+  @Test func routeTakesChromiumFirefoxAndArcForEveryKindSwiftRuns() {
     #expect(ImportRoute.of(ImportFixtures.chrome, kinds: [.passwords, .cookies, .autofill]) == .swift)
     #expect(ImportRoute.of(Self.firefox, kinds: [.passwords]) == .swift)
     #expect(ImportRoute.of(ImportFixtures.chrome, kinds: [.passwords, .bookmarks]) == .swift)
     #expect(ImportRoute.of(ImportFixtures.chrome, kinds: [.bookmarks, .history, .tabs, .favorites, .passwords, .cookies, .autofill]) == .swift)
     #expect(ImportRoute.of(Self.firefox, kinds: [.bookmarks, .history]) == .swift)
-    #expect(ImportRoute.of(Self.zen, kinds: [.passwords]) == .js)
-    #expect(ImportRoute.of(ImportFixtures.arc, kinds: [.bookmarks]) == .js)
+    #expect(ImportRoute.of(Self.zen, kinds: [.passwords]) == .swift)
+    #expect(ImportRoute.of(ImportFixtures.arc, kinds: [.bookmarks]) == .swift)
+    #expect(ImportRoute.of(ImportFixtures.arc, kinds: [.bookmarks, .history, .passwords, .cookies, .autofill, .favorites]) == .swift)
+    #expect(ImportRoute.of(ImportFixtures.zen, kinds: [.bookmarks, .history, .favorites, .passwords]) == .swift)
+    #expect(ImportRoute.of(ImportFixtures.zen, kinds: [.bookmarks, .tabs]) == .js)
+    #expect(ImportRoute.of(ImportFixtures.arc, kinds: [.tabs]) == .js)
+    #expect(ImportRoute.of(ImportFixtures.arc, kinds: [.bookmarks, .spaces]) == .js)
+    #expect(ImportRoute.of(ImportFixtures.zen, kinds: [.passwords, .spaces]) == .js)
+    #expect(ImportRoute.of(ImportFixtures.zen, kinds: [.pinnedTabs]) == .js)
+    #expect(ImportRoute.of(ImportFixtures.safari, kinds: [.bookmarks]) == .js)
+    #expect(ImportRoute.of(ImportBrowser(id: "diaTabs", name: "Dia", family: .automation, profiles: []), kinds: [.tabs]) == .js)
     #expect(ImportRoute.of(ImportFixtures.chrome, kinds: [.bookmarks, .spaces]) == .js)
     #expect(ImportRoute.of(ImportFixtures.chrome, kinds: [.pinnedTabs]) == .js)
     #expect(ImportRoute.of(ImportFixtures.chrome, kinds: []) == .js)
@@ -389,7 +398,7 @@ struct ImportRunTests {
   @Test func otherRunsGoToTheScriptPath() async {
     let (runs, engine, script, session) = setup([ImportFixtures.chrome, Self.zen])
     _ = await runs.run(request([.pinnedTabs, .passwords]), session: session, engine: engine, script: script, scriptSession: 4)
-    _ = await runs.run(request([.passwords], browser: "zen", runId: "r2"), session: session, engine: engine, script: script, scriptSession: 4)
+    _ = await runs.run(request([.tabs, .passwords], browser: "zen", runId: "r2"), session: session, engine: engine, script: script, scriptSession: 4)
     #expect(script.calls == ["run:r1:4", "run:r2:4"])
     #expect(engine.calls.isEmpty)
     #expect(engine.logs == ["[import] run r1 route=js family=chromium", "[import] run r2 route=js family=firefox"])
@@ -647,6 +656,41 @@ struct ImportRunTests {
     #expect(windows.last?["pinnedAgainst"]?.string == "tiles")
     #expect(windows.last?["tabs"]?.array?.first?["pinned"] == .bool(true))
     #expect(windows.last?["tabs"]?.array?.first?["customTitle"]?.string == "Fav")
+  }
+
+  @Test func anArcRunWithoutSpacesRunsInSwiftAndListsExtensions() async {
+    let (runs, engine, script, session) = setup([ImportFixtures.arc])
+    engine.reads["Default"] = .success(FakeImportEngine.read(bookmarks: FakeImportEngine.tree, favorites: [ImportTabRow(url: "https://f.test/", title: "F", pinned: false, customTitle: nil)]))
+    let outcome = await runs.run(request([.bookmarks, .passwords, .favorites], browser: "arc"), session: session, engine: engine, script: script, scriptSession: 1)
+    #expect(runs.route(of: "r1") == .swift)
+    #expect(script.calls.isEmpty)
+    #expect(outcome.counts.bookmarks == 4)
+    #expect(outcome.counts.passwords == 3)
+    #expect(outcome.extensions.map(\.id) == ["ext"])
+    let windows = engine.workspaces.first?.1 ?? []
+    #expect(windows.count == 1)
+    #expect(windows.first?["pinnedAgainst"]?.string == "tiles")
+  }
+
+  @Test func aSidebarSourcePicksProfilesThroughTheirSpacesLikeJS() async {
+    let (runs, engine, script, session) = setup([ImportFixtures.zen])
+    let req = ImportRunRequest(runId: "r1", browserId: "zen", profileIds: ["b"], spaceIds: ["z1"], kinds: [.bookmarks], target: "default", withoutKey: false)
+    _ = await runs.run(req, session: session, engine: engine, script: script, scriptSession: 1)
+    #expect(engine.calls.filter { $0.hasPrefix("read:") } == ["read:a", "read:b"])
+    #expect(engine.published.first?.preparing == 1)
+  }
+
+  @Test func aSidebarSourceTakesOnlyTheReadColorForANewProfile() async {
+    let colored = [ImportSourceProfile(id: "a", name: "Default", color: "#5B8DEF", isDefault: true, available: [.bookmarks]), ImportSourceProfile(id: "b", name: "Spare", color: "#5B8DEF", isDefault: false, available: [.bookmarks])]
+    for (sidebar, expected) in [(ImportSidebar.zen, nil as String?), (nil, ImportProfileColor.of("#5B8DEF"))] {
+      let browser = ImportBrowser(id: "zen", name: "Zen", family: .firefox, profiles: colored, sidebar: sidebar)
+      let (runs, engine, script, session) = setup([browser])
+      let req = ImportRunRequest(runId: "r1", browserId: "zen", profileIds: ["a", "b"], spaceIds: [], kinds: [.bookmarks], target: "default", withoutKey: false)
+      _ = await runs.run(req, session: session, engine: engine, script: script, scriptSession: 1)
+      #expect(engine.created.map(\.0) == ["Spare"])
+      #expect(engine.created.first?.1 == expected)
+    }
+    #expect(ImportProfileColor.of("#5B8DEF") != nil)
   }
 
   @Test func tabsFromASpacesSourceAreLeftOut() async {

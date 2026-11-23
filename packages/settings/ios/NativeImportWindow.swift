@@ -49,6 +49,8 @@ enum NativeImportWindow {
       ImportRuns.shared.devTrace = []
     case "profiles":
       model.sourceProfiles = (argument ?? "").split(separator: ",").map(String.init)
+    case "spaces":
+      model.spaces = (argument ?? "").split(separator: ",").map(String.init)
     case "html":
       ImportService.devChosenFile = argument
       await model.importHTML()
@@ -79,6 +81,8 @@ enum NativeImportWindow {
     if let model {
       state["sourceProfiles"] = model.sourceProfiles
       state["profileIds"] = model.source?.profiles.map(\.id) ?? []
+      state["profileSpaces"] = Dictionary((model.source?.profiles ?? []).map { ($0.id, $0.spaces.map(\.id)) }, uniquingKeysWith: { a, _ in a })
+      state["spaces"] = model.spaces
     }
     return state
     #else

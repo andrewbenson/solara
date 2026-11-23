@@ -145,8 +145,9 @@ public enum ImportRoute: String, Sendable {
   static let scriptRouteKey = "ImportRoute"
 
   public static func of(_ source: ImportBrowser?, kinds: [ImportKind]) -> ImportRoute {
-    guard let source, source.sidebar == nil, source.family == .chromium || source.family == .firefox else { return .js }
+    guard let source, [.chromium, .firefox, .arc].contains(source.family) else { return .js }
     guard !kinds.isEmpty, kinds.allSatisfy(swiftKinds.contains) else { return .js }
+    if source.sidebar != nil, kinds.contains(.tabs) { return .js }
     return .swift
   }
 }
@@ -424,7 +425,8 @@ final class ImportRunner {
 
   func run(_ request: ImportRunRequest) async -> ImportRunOutcome {
     guard let source = runs.browsers.first(where: { $0.id == request.browserId }) else { return .cancelledRun }
-    let selected = source.profiles.filter { request.profileIds.contains($0.id) }
+    let bySpaces = source.sidebar != nil
+    let selected = source.profiles.filter { p in request.profileIds.contains(p.id) || (bySpaces && p.spaces.contains { request.spaceIds.contains($0.id) }) }
     let transient: Set<ImportKind> = [.tabs, .spaces, .pinnedTabs, .favorites]
     let refused = engine.safeMode ? request.kinds.filter { selected.count > 1 || transient.contains($0) } : []
     if !refused.isEmpty { engine.transientImportRefused() }
@@ -439,7 +441,7 @@ final class ImportRunner {
     let requested = request.kinds.filter { !refused.contains($0) }.filter { $0 != .tabs || !selected.allSatisfy(tabsLocked) }
     let order = Self.kindOrder.filter(requested.contains)
     runId = request.runId
-    preparing = selected.count
+    preparing = bySpaces ? max(1, request.spaceIds.count) : selected.count
     for kind in order { status[kind] = .pending }
     for kind in refused { status[kind] = .failed }
     publish()
@@ -507,7 +509,7 @@ final class ImportRunner {
       destinationIndex += 1
       let destinationName = read.profileName ?? profile.name
       let destination: String
-      switch await self.destination(request.target, index, destinationName, read.profileColor ?? profile.color, stopped: { control.stopped }) {
+      switch await self.destination(request.target, index, destinationName, bySpaces ? read.profileColor : read.profileColor ?? profile.color, stopped: { control.stopped }) {
       case .profile(let id) where !cancelled():
         destination = id
       case .unavailable where !cancelled() && !control.stopped:

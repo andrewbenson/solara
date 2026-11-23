@@ -1,6 +1,8 @@
 import { nativeSafeMode } from "../store/nativeStore";
+import { persistenceRefused } from "../lib/persistLatch";
 import { onAppEvent, onWindowEvent } from "@solara/shell";
-import { liveCommand, liveStart } from "@solara/settings";
+import { liveStart } from "@solara/settings";
+import { liveCommand } from "./command";
 import { useBrowser } from "../store/browser";
 import { activeTabId, viewTabIds } from "../store/model";
 import { SOURCES } from "./sources";
@@ -77,7 +79,7 @@ export function deleteLiveFolder(folderId: string) {
 let started = false;
 
 export function startLiveEngine() {
-  if (started || nativeSafeMode()) return;
+  if (started || nativeSafeMode() || persistenceRefused()) return;
   started = true;
   const orphans = () => {
     const s = useBrowser.getState();

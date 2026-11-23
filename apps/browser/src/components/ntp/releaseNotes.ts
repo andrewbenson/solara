@@ -44,6 +44,7 @@ function readSaved(): Saved | null {
 }
 
 function save(saved: Omit<Saved, "version">) {
+  if (persistenceRefused()) return;
   try {
     writeDocument(DOC, JSON.stringify({ version: 1, ...saved } satisfies Saved));
   } catch (error) {

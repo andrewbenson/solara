@@ -181,7 +181,7 @@ final class ProbeHost {
         case "storeUnavailable.press":
           guard Set(request.args.keys) == ["button"], let button = request.args["button"] as? String,
             StoreUnavailableView.Choice(rawValue: button) != nil else { throw ProbeFailure.invalidArgument }
-          guard StoreUnavailableWindow.presented else { throw ProbeFailure.notReady }
+          guard StoreUnavailableWindow.shown else { throw ProbeFailure.notReady }
           guard (Self.storeUnavailableState()["buttons"] as? [String] ?? []).contains(button) else { throw ProbeFailure.invalidArgument }
           try checkGate(request)
           let ends = button == "quit" || button == "safeMode"

@@ -31,7 +31,7 @@ function fixture() {
   const state = load("./state.ts", {
     "@solara/settings": settings,
     "@solara/shell": { readDocument: () => null, writeDocument: () => {} },
-    "../../lib/persistLatch": {},
+    "../../lib/persistLatch": { persistenceRefused: () => false },
     zustand: { create: (initialize) => {
       const store = createStore(initialize);
       return Object.assign((select) => select(store.getState()), store);

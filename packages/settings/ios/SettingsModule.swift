@@ -45,6 +45,11 @@ public class SettingsModule: Module {
       return DispatchQueue.main.sync { MainActor.assumeIsolated { NativeWorkspaceCommands.perform(command, arg: arg, windowId: windowId) } }
     }
 
+    Function("presentStoreUnavailable") { (detail: String) -> Bool in
+      if Thread.isMainThread { return MainActor.assumeIsolated { StoreUnavailableWindow.presentForInertJS(detail: detail) } }
+      return DispatchQueue.main.sync { MainActor.assumeIsolated { StoreUnavailableWindow.presentForInertJS(detail: detail) } }
+    }
+
     Function("setPreferredImportSource") { (browserId: String?) in
       ImportPreferredSource.shared.set(browserId)
     }

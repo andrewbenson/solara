@@ -49,7 +49,7 @@ final class NativeAppStartup {
     let safeMode = options["safeMode"] as? Bool ?? true
     let version = AppModule.systemInfo["appVersion"] as? String ?? ""
     let versions = Set(options["releaseNotesVersions"] as? [String] ?? [])
-    let hasSession = !(DocumentStore.read("session.json") ?? "").isEmpty
+    let hasSession = !refused && !(DocumentStore.read("session.json") ?? "").isEmpty
     let hosted = options["hostedOnboarding"] as? Bool ?? false
     if result == nil, !refused, !safeMode, hosted { NativeOnboarding.resumeCommittedJoinAtLaunch() }
     if !hosted { NSLog("[appIntegration] automatic onboarding unavailable: native onboarding host is off") }

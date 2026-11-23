@@ -28,6 +28,9 @@ const testBookmarkWriter = (): TestBookmarkWriter => {
 };
 
 const settingsModule = {
+  get presentStoreUnavailable() {
+    return (globalThis as { acTestPresentStoreUnavailable?: (detail: string) => boolean }).acTestPresentStoreUnavailable;
+  },
   bookmarkWriterAPIVersion: () => 5,
   flushBookmarkJournal: async () => ((globalThis as { acTestBookmarkWriter?: TestBookmarkWriter }).acTestBookmarkWriter?.flushBookmarkJournal?.() ?? true),
   cancelBookmarkQuit: () => (globalThis as { acTestBookmarkWriter?: TestBookmarkWriter }).acTestBookmarkWriter?.cancelBookmarkQuit?.(),

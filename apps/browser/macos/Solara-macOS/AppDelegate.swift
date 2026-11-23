@@ -17,7 +17,13 @@ final class AppDelegate: ExpoAppDelegate {
     #if SOLARA_PROBES
     MainActor.assumeIsolated { ProbeHost.start() }
     #endif
-    if MainActor.assumeIsolated({ StoreUnavailableWindow.presentIfLaunchFailed(handedOff: NativeStore.handedOff) }) { return }
+    #if DEBUG
+    let environment = ProcessInfo.processInfo.environment
+    let startsReactNativeAnyway = environment["SOLARA_TEST_START_RN_WHEN_UNAVAILABLE"] == "1" && environment["SOLARA_DATA_DIR"]?.isEmpty == false
+    #else
+    let startsReactNativeAnyway = false
+    #endif
+    if !startsReactNativeAnyway, MainActor.assumeIsolated({ StoreUnavailableWindow.presentIfLaunchFailed(handedOff: NativeStore.handedOff) }) { return }
     let delegate = ReactNativeDelegate()
     let factory = ExpoReactNativeFactory(delegate: delegate)
     delegate.dependencyProvider = RCTAppDependencyProvider()

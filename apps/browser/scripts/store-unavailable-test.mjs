@@ -7,8 +7,8 @@ import { homedir, tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { commandIsBinary, isAlive, launch, listenerPids, processInfo, realPath, reporter, session, sleep, uiGateWatch } from "../../../scripts/lib/instance.mjs";
 
-const LEGS = ["refused", "openFailed", "earlyWindow", "noFolder", "safeMode", "report", "autoSafeMode", "quit"];
-const HELP = `usage: node apps/browser/scripts/store-unavailable-test.mjs <Debug Solara.app> [leg…] [--list] [--keep-data]
+const LEGS = ["refused", "openFailed", "earlyWindow", "noFolder", "safeMode", "report", "autoSafeMode", "quit", "savesNothingReload", "savesNothingRefused"];
+const HELP = `usage: node apps/browser/scripts/store-unavailable-test.mjs <Debug Solara.app> [leg…] [--list] [--keep-data] [--naive-control]
 
 A store that never opens shows the native store-unavailable window, and nothing else, in hidden instances with no JS
 (js: "none"). Each leg has its own data folder and its own launch-switch defaults suite (SOLARA_LAUNCH_SWITCHES_DEFAULTS),
@@ -31,6 +31,17 @@ SOLARA_TEST_STORE_OPEN_FAIL=openFailed|noFolder|safeOpenFailed.
   autoSafeMode  two failing launches, then a third without the seam opens in automatic safe mode with no window over it;
                 a launch that fails in safe mode does not offer safe mode again and leaves the counter
   quit          Quit exits within 15 s; the store's files are unchanged and the counter is left as it was
+  savesNothingReload
+                a normal launch with the JS bundle, the native store frozen through eval, then a JS reload: JS saves
+                nothing (no "[documents] attempt" line for session.json, downloads.json, launch-look.json, sync*,
+                onboarding.json or release-notes.json from the reload through a graceful quit, after real changes,
+                with no safe-mode backstop in the shell) and the store-unavailable window shows in its inert context
+  savesNothingRefused
+                session.json {"version":99} with SOLARA_TEST_START_RN_WHEN_UNAVAILABLE=1, so React Native starts over a
+                store that never opened: the same checks from launch through quit
+
+--naive-control inverts the two savesNothing legs: run them against a bundle whose persist.ts lacks the
+startPersistence guard, and each must log at least one attempted write, or the run proves nothing.
 
 Run it with SOLARA_NATIVE_WINDOW_LAYOUT unset and =1: there is no browser window, so both must pass.`;
 
@@ -48,6 +59,7 @@ const appPath = resolve(appArg);
 assert.ok(!appPath.startsWith("/Applications/") && !appPath.includes("/build-vista/"), "use an isolated Debug app");
 for (const leg of picked) assert.ok(LEGS.includes(leg), `unknown leg ${leg} (--list)`);
 const legs = picked.length ? picked : LEGS;
+const naiveControl = args.includes("--naive-control");
 const scratch = mkdtempSync(join(tmpdir(), "ac-store-unavailable-"));
 const rep = reporter(join(scratch, "store-unavailable-test.log"), { name: "store-unavailable-test" });
 const q = JSON.stringify;
@@ -117,6 +129,30 @@ const onlyTheWindow = (state) => {
 };
 
 const leg = (name, fn) => legs.includes(name) ? rep.check(name, fn) : null;
+
+const PROTECTED = /\[documents\] attempt (write|remove) (session\.json|downloads\.json|launch-look\.json|sync\S*|onboarding\.json|release-notes\.json)/g;
+const attemptsIn = (text) => [...text.matchAll(PROTECTED)].map((m) => `${m[1]} ${m[2]}`);
+const makeChanges = async (app) => {
+  const made = await app.eval(`const st = ac.store.getState(); const w = Object.keys(st.windows)[0] ?? st.createWindow({});
+    const tabsBefore = Object.keys(ac.store.getState().tabs).length; const appearance = st.settings.appearance === "dark" ? "light" : "dark";
+    st.newTab(w, { url: "data:text/html,<title>lost</title>lost" }); st.updateSettings({ appearance });
+    const after = ac.store.getState();
+    return new Promise((r) => setTimeout(() => r({ tabs: Object.keys(after.tabs).length - tabsBefore, appearance: after.settings.appearance === appearance }), 2500));`, { timeout: 20000 });
+  assert.ok(made.tabs >= 1 && made.appearance, `the session took a new tab and an appearance change: ${q(made)}`);
+  return true;
+};
+const judgeAttempts = (attempts, what) => {
+  rep.log(`${what}: ${attempts.length} protected attempt(s) ${q(attempts)}`);
+  if (naiveControl) assert.ok(attempts.length > 0, `the naive control must attempt a protected write (${what}), or this run proves nothing`);
+  else assert.deepEqual(attempts, [], `no protected write or removal is attempted (${what})`);
+};
+const awaitSavesNothing = async (app, since) => {
+  for (const end = Date.now() + 20000; Date.now() < end; await sleep(200)) {
+    assert.ok(app.alive, "the instance is still running");
+    if (/saves nothing/.test(app.output().slice(since))) return;
+  }
+  if (!naiveControl) throw new Error("JS never logged that it saves nothing");
+};
 
 try {
   await leg("refused", async () => {
@@ -309,6 +345,55 @@ try {
     assert.ok(app.exited, "nothing is left running");
     assert.deepEqual(storeFiles(data), before, "the store's files are unchanged");
     assert.equal(defaultsRead(suite, "SolaraLaunchSwitchFailedLaunches"), "1", "Quit leaves the failed launch counted");
+  });
+  await leg("savesNothingReload", async () => {
+    const data = join(scratch, "savesNothingReload");
+    const app = await start(data, { fresh: true, suite: suiteFor("savesNothingReload"), js: "pinned", ready: "return Object.keys(ac.store.getState().windows).length > 0" });
+    await makeChanges(app);
+    assert.equal(await app.eval("return globalThis.expo.modules.SolaraStoreAdapter.freeze();"), true, "the native store froze");
+    const since = app.output().length;
+    await app.eval("globalThis.__savesNothingMarker = true; ac.reload(); return true;");
+    let reloaded = false;
+    for (const end = Date.now() + 20000; !reloaded && Date.now() < end; await sleep(100)) {
+      assert.ok(app.alive, "the reload exited the instance");
+      reloaded = await app.eval("return globalThis.__savesNothingMarker === undefined && !!globalThis.ac?.store;", { timeout: 1000 }).catch(() => false);
+    }
+    assert.ok(reloaded, "the reload replaced the JavaScript runtime");
+    await awaitSavesNothing(app, since);
+    if (!naiveControl) {
+      const state = await readState(app);
+      rep.log(q(state));
+      assert.equal(state.shown, true, "the store-unavailable window shows over the reloaded session");
+      assert.equal(state.context, "inert");
+      assert.deepEqual(state.buttons, ["report", "showFolder", "quit"], "no Open in Safe Mode in a running session");
+      assert.equal(state.engineSafeMode, false, "no safe-mode backstop in the shell for this leg");
+    }
+    await makeChanges(app);
+    const how = await stop(app);
+    assert.equal(how.how, "quit", `a graceful quit: ${q(how)}`);
+    judgeAttempts(attemptsIn(app.output().slice(since)), "from the reload through quit");
+  });
+
+  await leg("savesNothingRefused", async () => {
+    const data = join(scratch, "savesNothingRefused");
+    const before = '{"version":99}';
+    const app = await start(data, {
+      fresh: true, suite: suiteFor("savesNothingRefused"), files: { "session.json": before },
+      js: "pinned", ready: "return !!globalThis.ac?.store", env: { SOLARA_TEST_START_RN_WHEN_UNAVAILABLE: "1" },
+    });
+    await awaitSavesNothing(app, 0);
+    if (!naiveControl) {
+      const state = await readState(app);
+      rep.log(q(state));
+      assert.equal(state.reactNativeStarted, true, "the seam started React Native");
+      assert.equal(state.storeOpened, false);
+      assert.equal(state.context, "inert");
+    }
+    assert.equal(await makeChanges(app), true, "the session took real changes");
+    const how = await stop(app);
+    assert.equal(how.how, "quit", `a graceful quit: ${q(how)}`);
+    judgeAttempts(attemptsIn(app.output()), "from launch through quit");
+    if (!naiveControl) assert.equal(readFileSync(join(data, "session.json"), "utf8"), before, "session.json is byte-identical");
   });
 } finally {
   for (const app of [...running]) {

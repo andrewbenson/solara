@@ -1,4 +1,5 @@
 import { pairingNativeTransport, SyncNative } from "@solara/sync";
+import { persistenceRefused } from "../lib/persistLatch";
 import { joinFromPairing, resumePairingInitialization, startSync } from "./engine";
 
 let started = false;
@@ -6,7 +7,7 @@ let started = false;
 export function startPairingSync() {
   if (started) return;
   started = true;
-  const host = pairingNativeTransport();
+  const host = persistenceRefused() ? null : pairingNativeTransport();
   if (!host || typeof SyncNative?.invalidatePairing !== "function" || typeof SyncNative?.addListener !== "function") {
     startSync();
     return;

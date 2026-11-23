@@ -14,7 +14,7 @@ import type { ProfileColor } from "../../store/types";
 import { importModule } from "./module";
 import { adoptProfileTheme } from "../../sync/engine";
 import { parseArcTheme } from "./arcTheme";
-import { liveCommand } from "@solara/settings";
+import { liveCommand } from "../../live/command";
 import type { LiveSourceId } from "../../live/types";
 import { nativeOwnsWorkspace, nativeSafeMode, nativeWrite, writeState } from "../../store/nativeStore";
 import { encodeCommand } from "@solara/store";

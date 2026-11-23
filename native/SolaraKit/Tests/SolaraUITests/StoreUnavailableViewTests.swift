@@ -84,6 +84,16 @@ struct StoreUnavailableViewTests {
       failure: Self.launchFailure, context: .settings, safeModeAvailable: true, folderExists: true, reportAvailable: true).contains(.report))
   }
 
+  @Test func aSessionThatSavesNothingOffersNoSafeModeAndSaysChangesAreLost() {
+    let inert = StoreUnavailable(cause: .openFailed, detail: "the native store is frozen", dataFolder: Self.folder, offersSafeMode: true, errorType: "JSSavesNothing")
+    #expect(StoreUnavailableView.choices(
+      failure: inert, context: .inert, safeModeAvailable: true, folderExists: true, reportAvailable: true) == [.report, .showFolder, .quit])
+    let shown = StoreUnavailableView(failure: inert, appName: "Solara", context: .inert, choices: [], reported: nil, actions: .init(quit: {}, showDataFolder: { _ in }, openInSafeMode: {}, reportBug: {}))
+    #expect(shown.title == "Solara can't save changes in this session")
+    #expect(shown.explanation.contains("won't be kept"))
+    #expect(!shown.explanation.contains("Nothing in it was changed"))
+  }
+
   @Test func theReportNoteSaysWhetherTheLinkWasCopied() {
     let shown = launchView(Self.launchFailure)
     #expect(shown.reportNote(.init(link: "https://x", copied: true)).contains("copied"))

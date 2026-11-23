@@ -17,13 +17,12 @@ import { startBookmarks } from "./bookmarks";
 import { startHistory } from "./history";
 import { startProfileDataCleanup } from "./profileData";
 import { flushNativeStore, flushProblem } from "@solara/store";
+import * as nativeSettings from "@solara/settings";
+import { Alert } from "react-native";
 import {
-  adoptRepairs,
   attachReplica,
   dataFolderHandedOff,
   hydrateFromNative,
-  nativeOwnedSnapshot,
-  nativeRefusedSession,
   nativeSafeMode,
   nativeSafeModeAfterFailedLaunches,
   nativeOwnsWorkspace,
@@ -266,16 +265,20 @@ function prepareWebKitBlocker() {
 export function startPersistence() {
   const store = startNativeStore();
   if (dataFolderHandedOff()) {
+    refusePersistence("another instance is using this data folder");
     frozen = true;
     console.warn("Another instance is using this data folder; this one saves nothing.");
     return () => {};
   }
-  const refused = nativeRefusedSession();
-  if (refused && !nativeSafeMode()) return refuseToSave(refused, readDocumentResult("session.json"));
-  if (!store.active && store.modulePresent) return failClosed(store.reason);
-  if (store.active && !nativeOwnsWorkspace()) return failClosed("the native store is frozen");
+  if (store.modulePresent && !nativeOwnsWorkspace()) return savesNothing(store.reason ?? "the native store is frozen");
   if (nativeOwnsWorkspace()) {
-    if (!hydrateFromNative(useBrowser)) return failClosed();
+    let hydrated = false;
+    try {
+      hydrated = hydrateFromNative(useBrowser);
+    } catch (error) {
+      return savesNothing(`its snapshot couldn't be read: ${String(error)}`);
+    }
+    if (!hydrated) return savesNothing("it returned no workspace");
     attachReplica(useBrowser);
     if (!nativeSafeMode()) {
       restoreLaunchLook();
@@ -285,26 +288,15 @@ export function startPersistence() {
     tellSafeModeAfterFailedLaunches();
     return startDerivedServices({ forgetsIncognito: false });
   }
-  const owned = nativeOwnedSnapshot();
   const sessionRead: DocumentRead = nativeSafeMode() ? { missing: true } : readDocumentResult("session.json");
   if ("failure" in sessionRead) return refuseToSave(sessionRead.path, sessionRead);
-  const downloadsRead = owned ? null : readDocumentResult("downloads.json");
+  const downloadsRead = readDocumentResult("downloads.json");
   if (downloadsRead && "failure" in downloadsRead) {
     unreadableDocs.add("downloads.json");
     console.error(`Couldn't read ${downloadsRead.path} (${downloadsRead.failure}), so this launch leaves it as it is.`);
   }
   const data = nativeSafeMode() ? {} : (loadSession(sessionRead, downloadsRead) ?? {});
-  if (owned) {
-    data.settings = owned.settings;
-    data.downloads = owned.downloads;
-    droppedPrivateDownloads = false;
-  }
   withApplier(() => useBrowser.getState().hydrate(data));
-  if (owned) {
-    attachReplica(useBrowser);
-    adoptRepairs(useBrowser.getState(), owned);
-    cleanStaging(useBrowser.getState().downloads);
-  }
   if (!nativeSafeMode()) {
     restoreLaunchLook();
     prepareWebKitBlocker();
@@ -399,15 +391,21 @@ function refuseToSave(sessionPath: string, sessionRead: DocumentRead) {
   return useBrowser.subscribe(tell);
 }
 
-function failClosed(reason?: string) {
+function savesNothing(reason: string) {
+  refusePersistence(`the native store: ${reason}`);
   frozen = true;
   standDown();
-  const message = reason
-    ? `The native store could not open (${reason}), so this window saves nothing. Quit and relaunch; your data is unchanged.`
-    : "The native store opened but returned no workspace, so this window saves nothing. Quit and relaunch; your data is unchanged.";
+  const message = `The native store isn't available (${reason}), so this window saves nothing. Quit and relaunch; your data is unchanged.`;
   console.error(message);
+  let shown: boolean | null = null;
   try {
-    (require("react-native") as typeof import("react-native")).Alert?.alert?.("Your tabs couldn't load", message);
+    shown = nativeSettings.nativePresentStoreUnavailable?.(reason) ?? null;
+  } catch (error) {
+    console.warn("Couldn't show the store-unavailable window", error);
+  }
+  if (shown) return () => {};
+  try {
+    Alert.alert("Your tabs couldn't load", message);
   } catch {}
   return () => {};
 }

@@ -14,6 +14,7 @@ public enum StoreUnavailableWindow {
   private static var failure: StoreUnavailable?
   private static var reported: StoreUnavailableView.ReportedLink?
   private static var choices: [StoreUnavailableView.Choice] = []
+  private static var context: StoreUnavailableView.Context = .launch
   #if DEBUG
   private static var lastReportLink: String?
   private static var revealedFolder: String?
@@ -31,6 +32,31 @@ public enum StoreUnavailableWindow {
       folderExists: StoreUnavailableView.folderExists(failure.dataFolder), reportAvailable: AdvancedAdapter.releaseRepo != nil)
     NSLog("[store] showing the store-unavailable window (%@, %@)", failure.causeName, choices.map(\.rawValue).joined(separator: ","))
     NSApp.mainMenu = makeMainMenu()
+    showWithoutStealingFocus(makeWindow(failure))
+    return true
+  }
+
+  public static func presentForInertJS(detail: String) -> Bool {
+    guard !presented else { return false }
+    if let window, context == .inert {
+      showWithoutStealingFocus(window)
+      return true
+    }
+    let folder = try? DocumentStore.directoryURL()
+    let failure = StoreUnavailable(cause: .openFailed, detail: detail, dataFolder: folder, errorType: "JSSavesNothing")
+    self.failure = failure
+    context = .inert
+    choices = StoreUnavailableView.choices(
+      failure: failure, context: .inert, safeModeAvailable: false,
+      folderExists: StoreUnavailableView.folderExists(folder), reportAvailable: AdvancedAdapter.releaseRepo != nil)
+    NSLog("[store] showing the store-unavailable window for a session that saves nothing (%@)", choices.map(\.rawValue).joined(separator: ","))
+    showWithoutStealingFocus(makeWindow(failure))
+    return true
+  }
+
+  public static var shown: Bool { window != nil }
+
+  private static func makeWindow(_ failure: StoreUnavailable) -> NSWindow {
     let controller = NSHostingController(rootView: makeView(failure))
     controller.sizingOptions = []
     let made = NSWindow(contentViewController: controller)
@@ -41,8 +67,7 @@ public enum StoreUnavailableWindow {
     made.center()
     hosting = controller
     window = made
-    showWithoutStealingFocus(made)
-    return true
+    return made
   }
 
   public static func bringForward() {
@@ -70,7 +95,7 @@ public enum StoreUnavailableWindow {
 
   private static func makeView(_ failure: StoreUnavailable) -> StoreUnavailableView {
     StoreUnavailableView(
-      failure: failure, appName: Bundle.main.productName, context: .launch, choices: choices, reported: reported,
+      failure: failure, appName: Bundle.main.productName, context: context, choices: choices, reported: reported,
       actions: .init(
         quit: { NSApp.terminate(nil) },
         showDataFolder: { showDataFolder($0) },
@@ -171,7 +196,8 @@ public enum StoreUnavailableWindow {
       "errorType": orNull(failure?.errorType),
       "offersSafeMode": failure?.offersSafeMode ?? false,
       "launchWasSafeMode": failure?.launchWasSafeMode ?? false,
-      "buttons": presented ? choices.map(\.rawValue) : [],
+      "buttons": window != nil ? choices.map(\.rawValue) : [],
+      "context": window == nil ? NSNull() : context == .inert ? "inert" : "launch",
       "windowCount": NSApp.windows.filter(\.isVisible).count,
       "otherWindows": others.map { NSStringFromClass(type(of: $0)) },
       "isKey": window?.isKeyWindow ?? false,
@@ -186,7 +212,7 @@ public enum StoreUnavailableWindow {
   private static func orNull(_ value: Any?) -> Any { value ?? NSNull() }
 
   public static func press(_ name: String) -> Bool {
-    guard presented, let choice = StoreUnavailableView.Choice(rawValue: name), choices.contains(choice), let failure else { return false }
+    guard window != nil, let choice = StoreUnavailableView.Choice(rawValue: name), choices.contains(choice), let failure else { return false }
     switch choice {
     case .quit: NSApp.terminate(nil)
     case .safeMode: openInSafeMode()

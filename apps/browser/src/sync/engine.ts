@@ -1332,6 +1332,7 @@ function themeAdopted(profileId: string) {
 }
 
 export function adoptProfileTheme(profileId: string) {
+  if (persistenceRefused()) return;
   if (!metadataLoaded) load();
   const link = doc.profiles[profileId];
   if (!link?.themeAdopting) return;
@@ -1540,6 +1541,7 @@ async function initializePairing(installation: PairingInstallation, host: Pairin
 }
 
 export async function joinFromPairing(request: PairingRequest, host: PairingNative): Promise<{ ok: true } | { error: string }> {
+  if (persistenceRefused()) return { error: SESSION_UNREADABLE };
   if (!metadataLoaded) load();
   if (pairingRecovery) await pairingRecovery;
   if (newerFormat) return { error: NEWER_FORMAT };
@@ -1574,6 +1576,7 @@ export async function joinFromPairing(request: PairingRequest, host: PairingNati
 }
 
 export async function resumePairingInitialization(host: PairingNative): Promise<boolean> {
+  if (persistenceRefused()) return false;
   if (pairingRecovery) await pairingRecovery;
   if (newerFormat || stopping || pairingAdmission || turningOn || doc.v !== 2 || !doc.enabled || !doc.installation) return false;
   if (pairingAdmitted) return true;
@@ -2076,6 +2079,7 @@ function showLocked(error?: unknown) {
 }
 
 export async function stopSync({ deleteData = false } = {}) {
+  if (persistenceRefused()) return publishUi({ status: "unavailable", error: SESSION_UNREADABLE });
   SyncNative?.invalidatePairing?.("stop");
   if (!metadataLoaded) load();
   if (newerFormat) return;
@@ -2125,6 +2129,7 @@ async function turnOff(native: NonNullable<typeof SyncNative>, deleteData: boole
 }
 
 export function setTypeSynced(type: DataType, enabled: boolean) {
+  if (persistenceRefused()) return;
   if (!metadataLoaded) load();
   if (newerFormat) return;
   if (doc.v === 2 || pairingAdmission) typePreferences[type] = enabled;
@@ -2135,6 +2140,7 @@ export function setTypeSynced(type: DataType, enabled: boolean) {
 }
 
 export function setProfileSynced(profileId: string, enabled: boolean) {
+  if (persistenceRefused()) return;
   if (!metadataLoaded) load();
   if (newerFormat) return;
   const link = doc.profiles[profileId];
@@ -2181,6 +2187,7 @@ function sharedDataChain(syncId: string): { adds: string[]; sharesWith: string |
 export const appScopeRecords = () => doc.scopes[APP_SCOPE]?.records ?? {};
 
 export function addRemoteProfile(syncId: string): string | null {
+  if (persistenceRefused()) return null;
   if (!metadataLoaded) load();
   if (newerFormat || pairingPending() || pairingCompleting) return null;
   if (!remoteProfileRecord(syncId) || linkedProfileId(syncId)) return null;

@@ -1,4 +1,5 @@
-import { onLiveAuthRequest, resolveLiveAuth, liveCommand } from "@solara/settings";
+import { onLiveAuthRequest, resolveLiveAuth } from "@solara/settings";
+import { liveCommand } from "./command";
 import { useBrowser } from "../store/browser";
 
 let started = false;

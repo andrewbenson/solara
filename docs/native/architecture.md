@@ -715,9 +715,12 @@ mode included, so there Swift decides against the in-memory workspace), which `W
 returns. The group menu sends the choices it leaves to JS (Change Icon,
 Move to Bookmark Bar, the New Tab bar, and Rename when the inline field can't start) back as `groupMenuChoice`, and the native folder panel's open state is mirrored
 to JS as `folderPanel.state`. Every launch whose store opens owns the workspace (there is no scope switch), and ownership is only lost if the
-store stands down (`failClosed`, which freezes it), so the JS handlers are the fallback for one that stood down. A
-store that never opened no longer reaches JS: the launch stops at the native store-unavailable window (§3), and S7c
-removes the JS paths for it.
+store stands down (`savesNothing`, which freezes it), so the JS handlers are the fallback for one that stood down. A
+store that never opened no longer reaches JS: the launch stops at the native store-unavailable window (§3). If JS
+ever does start without an owned store (a JS reload over a frozen one, a `status()` that throws), `startPersistence`
+returns through `savesNothing` before it reads anything. That sets the persistence latch, which holds sync, onboarding,
+release notes and the quit-time writes, and asks Swift for the same window in its inert context, falling back to an
+Alert.
 
 ### 4.5 Sync during the move
 

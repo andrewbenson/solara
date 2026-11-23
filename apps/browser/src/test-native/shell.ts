@@ -15,6 +15,8 @@ type OptionalModules = { [Name in keyof ShellOptionalNativeModules]: () => Shell
 
 export const docs = new Map<string, string>();
 export const documentWrites: string[] = [];
+export const documentChanges: string[] = [];
+export const documentReads: string[] = [];
 export const unreadableDocs = new Map<string, string>();
 export const heldSaves = { on: false, fail: false, only: null as string | null, queue: [] as (() => void)[] };
 export const bangListServer: { reply: ((etag: string | null) => Promise<BangListReply>) | null } = { reply: null };
@@ -42,18 +44,21 @@ const shell: Modules["SolaraShell"] = {
   claimFocus: () => Promise.resolve(),
   startDictation: () => {},
   pickFiles: () => Promise.resolve([]),
-  readDocument: (name) => docs.get(name) ?? null,
-  readDocumentResult: (name) =>
-    unreadableDocs.has(name) ? { path: `/data/${name}`, failure: unreadableDocs.get(name)! } : docs.has(name) ? { contents: docs.get(name)! } : {},
-  writeDocument: (name, contents) => { documentWrites.push(name); docs.set(name, contents); },
+  readDocument: (name) => (documentReads.push(name), docs.get(name) ?? null),
+  readDocumentResult: (name) => {
+    documentReads.push(name);
+    return unreadableDocs.has(name) ? { path: `/data/${name}`, failure: unreadableDocs.get(name)! } : docs.has(name) ? { contents: docs.get(name)! } : {};
+  },
+  writeDocument: (name, contents) => { documentWrites.push(name); documentChanges.push(`write ${name}`); docs.set(name, contents); },
   saveDocument: (name, contents) =>
     new Promise((resolve, reject) => {
+      documentChanges.push(`save ${name}`);
       if (heldSaves.fail) return reject(new Error("disk full"));
       const land = () => (docs.set(name, contents), resolve());
       if (heldSaves.on && (!heldSaves.only || name.startsWith(heldSaves.only))) heldSaves.queue.push(land);
       else land();
     }),
-  removeDocument: (name) => void docs.delete(name),
+  removeDocument: (name) => (documentChanges.push(`remove ${name}`), void docs.delete(name)),
   listDocuments: (prefix) => [...docs.keys()].filter((name) => name.startsWith(prefix)).sort(),
   get fetchBangList() {
     return bangListServer.reply ?? undefined;

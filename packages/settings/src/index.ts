@@ -7,6 +7,7 @@ type NativeSettingsModule = {
   servicesActive?(): boolean;
   setPreferredImportSource?(browserId: string | null): void;
   workspaceCommand?(command: string, arg: string | null, windowId: string | null): boolean;
+  presentStoreUnavailable?(detail: string): boolean;
   startAppStartup(optionsJSON: string): Promise<string>;
   completeAppStartup(): Promise<void>;
   cancelOnboardingReplay(requestId: string): Promise<void>;
@@ -95,6 +96,11 @@ export function nativeSettingsAvailable(): boolean {
   } catch {
     return false;
   }
+}
+
+export function nativePresentStoreUnavailable(detail: string): boolean | null {
+  if (typeof native?.presentStoreUnavailable !== "function") return null;
+  return native.presentStoreUnavailable(detail);
 }
 
 export function nativeServicesActive(): boolean {

@@ -130,6 +130,7 @@ function bridge({ browsers, importData, importSafariDirect, importSafariExport, 
     "../../sync/engine": { adoptProfileTheme: () => {} },
     "./arcTheme": { parseArcTheme: () => null },
     "@solara/settings": settings,
+    "../../live/command": { liveCommand: (...args) => settings.liveCommand(...args) },
     "../../store/nativeStore": nativeStore,
     "@solara/store": { encodeCommand: (name, args) => ({ name, args }) },
   });

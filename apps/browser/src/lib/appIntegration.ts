@@ -74,6 +74,7 @@ export function startAppIntegrationPresentation() {
 
 export async function offerNativeDefaultBrowserAfterFirstWindow() {
   await startup;
+  if (persistenceRefused()) return;
   await nativeAppIntegrationFirstWindow(useOnboarding.getState().windowId !== null);
 }
 

@@ -8,7 +8,7 @@ shellNativeModules.SolaraShell.readDocumentResult = (name) => { reads.push(name)
 const { startPersistence } = await import("./persist.ts");
 const { persistenceRefused } = await import("./persistLatch.ts");
 
-test("safe startup never reads or refuses a session reported unreadable by the native store", () => {
+test("safe startup never reads a session the native store reported unreadable, and holds everything that saves", () => {
   const error = console.error;
   const errors = [];
   console.error = (message) => errors.push(message);
@@ -18,6 +18,6 @@ test("safe startup never reads or refuses a session reported unreadable by the n
     console.error = error;
   }
   assert.deepEqual(reads, []);
-  assert.equal(persistenceRefused(), false);
+  assert.equal(persistenceRefused(), true, "safe mode is no exception: an unavailable store holds sync and the quit-time writes too");
   assert.ok(errors.some((message) => message.includes("saves nothing")));
 });

@@ -305,6 +305,14 @@ public enum DocumentStore {
     }
   }
 
+  #if DEBUG
+  private static let logsAttempts = ProcessInfo.processInfo.environment["SOLARA_DATA_DIR"]?.isEmpty == false
+  static func logAttemptFromJS(_ change: String, _ name: String) {
+    guard logsAttempts, !name.hasPrefix("dev-"), !name.hasPrefix("js-errors"), name != "layout-watch.json" else { return }
+    NSLog("[documents] attempt %@ %@", change, name)
+  }
+  #endif
+
   public static func write(_ name: String, _ contents: String, done: Done? = nil) throws {
     guard SafeLaunchDocuments.mayWrite(name, safeMode: safeMode) else {
       throw NSError(domain: "SolaraSafeMode", code: 1, userInfo: [NSLocalizedDescriptionKey: "Automatic document writes are disabled in safe mode: \(name)"])
@@ -609,9 +617,19 @@ public class ShellModule: Module {
 
     Function("readDocumentResult") { (name: String) -> [String: String] in DocumentStore.readResult(name) }
 
-    Function("writeDocument") { (name: String, contents: String) in try DocumentStore.write(name, contents) }
+    Function("writeDocument") { (name: String, contents: String) in
+      #if DEBUG
+      DocumentStore.logAttemptFromJS("write", name)
+      #endif
+      try DocumentStore.write(name, contents)
+    }
 
-    Function("removeDocument") { (name: String) in try DocumentStore.remove(name) }
+    Function("removeDocument") { (name: String) in
+      #if DEBUG
+      DocumentStore.logAttemptFromJS("remove", name)
+      #endif
+      try DocumentStore.remove(name)
+    }
 
     Function("listDocuments") { (prefix: String) -> [String] in DocumentStore.list(prefix) }
 
@@ -625,6 +643,9 @@ public class ShellModule: Module {
     }
 
     AsyncFunction("saveDocument") { (name: String, contents: String, promise: Promise) in
+      #if DEBUG
+      DocumentStore.logAttemptFromJS("write", name)
+      #endif
       try DocumentStore.write(name, contents) { error in
         if let error { promise.reject("ERR_SAVE_DOCUMENT", error.localizedDescription) } else { promise.resolve(nil) }
       }

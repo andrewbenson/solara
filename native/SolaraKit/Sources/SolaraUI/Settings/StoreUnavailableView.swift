@@ -6,6 +6,7 @@ public struct StoreUnavailableView: View {
   public enum Context: Equatable, Sendable {
     case settings
     case launch
+    case inert
   }
 
   public enum Choice: String, CaseIterable, Sendable {
@@ -70,7 +71,7 @@ public struct StoreUnavailableView: View {
     failure: StoreUnavailable, context: Context, safeModeAvailable: Bool, folderExists: Bool, reportAvailable: Bool
   ) -> [Choice] {
     var shown: [Choice] = []
-    if context == .launch && reportAvailable { shown.append(.report) }
+    if context != .settings && reportAvailable { shown.append(.report) }
     if failure.dataFolder != nil && folderExists { shown.append(.showFolder) }
     if context == .launch && failure.offersSafeMode && safeModeAvailable && !failure.launchWasSafeMode { shown.append(.safeMode) }
     shown.append(.quit)
@@ -162,10 +163,14 @@ public struct StoreUnavailableView: View {
     switch context {
     case .settings: "\(appName) couldn't open its settings"
     case .launch: "\(appName) couldn't open your windows and tabs"
+    case .inert: "\(appName) can't save changes in this session"
     }
   }
 
   var explanation: String {
+    if context == .inert {
+      return "New tabs and changes from now on won't be kept. What \(appName) saved before is unchanged. Quit and open \(appName) again; if this keeps happening, the details below say what went wrong."
+    }
     let reason = switch failure.cause {
     case .refused:
       "\(appName) couldn't safely read the file that holds your windows, tabs and settings, so it left the file as it was instead of risking your data. If a newer version of \(appName) wrote it, update \(appName) and open it again."

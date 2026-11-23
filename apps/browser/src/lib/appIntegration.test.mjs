@@ -44,7 +44,7 @@ const sources = {
   "../store/browser": `export const useBrowser = { getState: () => globalThis.appIntegrationTest.state, subscribe: (fn) => { globalThis.appIntegrationTest.subscriptions.push(fn); } };`,
   "../store/model": `export const resolveWindowId = () => globalThis.appIntegrationTest.noWindow ? null : "w";`,
   "../store/nativeStore": `export const nativeSafeMode = () => true;`,
-  "./persistLatch": `export const persistenceRefused = () => true;`,
+  "./persistLatch": `export const persistenceRefused = () => false;`,
   "./actions": `export const openUrls = (urls, id) => { globalThis.appIntegrationTest.help.push(["urls", urls, id]); };`,
 };
 const hooks = registerHooks({
@@ -62,7 +62,7 @@ test("native launch guards and presentation finish before the first-window offer
   integration.startAppIntegrationPresentation();
   integration.startAppIntegrationPresentation();
   assert.equal("startAppIntegration" in integration, false);
-  assert.deepEqual(f.options, { development: true, persistenceRefused: true, safeMode: true, hostedOnboarding: true, releaseNotesVersions: ["1.0"] });
+  assert.deepEqual(f.options, { development: true, persistenceRefused: false, safeMode: true, hostedOnboarding: true, releaseNotesVersions: ["1.0"] });
   assert.deepEqual(f.loading, [[]]);
   assert.equal(f.subscriptions.length, 1);
   const offered = integration.offerNativeDefaultBrowserAfterFirstWindow();

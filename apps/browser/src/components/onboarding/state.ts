@@ -307,6 +307,7 @@ function readSaved(): Saved | null {
 }
 
 function save(patch: Partial<Saved>) {
+  if (persistenceRefused()) return;
   try {
     writeDocument(DOC, JSON.stringify({ version: 1, completedAt: null, ...readSaved(), ...patch } satisfies Saved));
   } catch (error) {
@@ -329,6 +330,7 @@ export const saveIntroMusicMuted = (muted: boolean) => save({ introMusicMuted: m
 const FRESH = { preset: "dia", source: null, draft: {}, extras: {}, baseline: {}, picked: {} } satisfies Partial<OnboardingState>;
 
 export function startOnboarding(windowId?: string | null, step: OnboardingStep = "intro", requestId: string | null = null) {
+  if (persistenceRefused()) return;
   const id = resolveWindowId(useBrowser.getState(), windowId);
   if (!id) return;
   endToolTour();
@@ -337,6 +339,7 @@ export function startOnboarding(windowId?: string | null, step: OnboardingStep =
 }
 
 export function resumeOnboarding(saved: Saved) {
+  if (persistenceRefused()) return;
   const id = resolveWindowId(useBrowser.getState(), null);
   if (!id) return;
   const step = saved.step && STEPS.includes(saved.step) && saved.step !== "intro" ? saved.step : "source";

@@ -65,7 +65,7 @@ test("explicit onboarding progress persists into a normal read of the same docum
   const fixture = documents(true);
   const initial = JSON.stringify({ version: 1, completedAt: null, step: "source" });
   fixture.files.set("onboarding.json", initial);
-  const progress = compile(onboarding, ["function readSaved(", "function save("], { ...fixture.globals, DOC: "onboarding.json" });
+  const progress = compile(onboarding, ["function readSaved(", "function save("], { ...fixture.globals, DOC: "onboarding.json", persistenceRefused: () => false });
   progress.save({ step: "look", introMusicMuted: true });
   const resumed = compile(onboarding, ["function readSaved("], { ...fixture.globals, DOC: "onboarding.json", nativeSafeMode: () => false });
   assert.equal(resumed.readSaved().step, "look");

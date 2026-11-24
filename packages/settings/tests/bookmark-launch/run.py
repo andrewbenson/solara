@@ -24,7 +24,7 @@ else:
     subprocess.run(command, env=environment, check=True, timeout=540)
     build = Path(subprocess.check_output(command + ['--show-bin-path'], env=environment, text=True, timeout=120).strip())
 base = ['swiftc', '-swift-version', '6', '-parse-as-library', '-D', 'DEBUG', '-target', platform.machine() + '-apple-macosx26.0', '-I', str(build)]
-objects = [build / (name + '.o') for name in ['SolaraModel', 'SolaraStore', 'SolaraEngine']]
+objects = [build / (name + '.o') for name in ['SolaraModel', 'SolaraOmnibox', 'SolaraStore', 'SolaraEngine']]
 files = [source / 'packages/settings/ios/Bookmarks/NativeBookmarkInstallation.swift', source / 'packages/settings/ios/Bookmarks/NativeBookmarkOwner.swift', here / 'Main.swift']
 binary = output / 'bookmark-launch-tests'
 subprocess.run(base + ['-o', str(binary)] + [str(item) for item in files + objects], env=environment, check=True, timeout=180)

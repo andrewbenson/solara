@@ -18,9 +18,6 @@ type NativeSettingsModule = {
   navigate(pane: string | null, profileId: string | null, detail: string | null): Promise<void>;
   focusSearch(): Promise<void>;
   startHistoryCatalog?(profiles: string[]): Promise<void>;
-  devHistorySnapshot?(profile: string): Promise<{ count: number; ready: boolean; floor: number | "-Infinity"; revision: number }>;
-  devBookmarksSnapshot?(profile: string): Promise<{ count: number; ready: boolean; revision: number }>;
-  devFaviconLookup?(page: string, engineProfile: string): Promise<{ bytes: number; source: string }>;
   liveInitialReplica(): LiveReplica;
   bookmarkWriterAPIVersion?(): number;
   bookmarkWriterState?(): BookmarkWriterState;
@@ -46,7 +43,6 @@ type NativeSettingsModule = {
   liveStart(): Promise<void>;
   liveMeetingBrowser(snapshotJSON: string): Promise<void>;
   resolveLiveAuth(requestId: string, redirectURL: string | null, error: string | null): Promise<void>;
-  devLiveSnapshot?(): Promise<LiveShadowSnapshot>;
   libraryCommand?(kind: string, engineProfile: string, payload: Record<string, unknown>): Promise<unknown>;
   reply(id: number, resultJSON: string | null, error: string | null): Promise<void>;
   publish(topic: string, json: string): Promise<void>;
@@ -417,14 +413,6 @@ export const onLiveReplica = (listener: (replica: LiveReplica) => void): EventSu
 export const onLiveAuthRequest = (listener: (request: LiveAuthRequest) => void): EventSubscription | null => native?.addListener?.("onLiveAuthRequest", listener) ?? null;
 export const resolveLiveAuth = (requestId: string, redirectURL: string | null, error: string | null): Promise<void> =>
   native?.resolveLiveAuth(requestId, redirectURL, error) ?? Promise.reject(new Error("native Live Folders unavailable"));
-
-export const devLiveSnapshot = () => native?.devLiveSnapshot?.();
-
-export const devNativeHistorySnapshot = (profile: string) => native?.devHistorySnapshot?.(profile);
-
-export const devNativeBookmarksSnapshot = (profile: string) => native?.devBookmarksSnapshot?.(profile);
-
-export const devFaviconLookup = (page: string, engineProfile: string) => native?.devFaviconLookup?.(page, engineProfile);
 
 const libraryCommand = <T>(kind: string, engineProfile: string, payload: Record<string, unknown>): Promise<T> =>
   native?.libraryCommand ? native.libraryCommand(kind, engineProfile, payload) as Promise<T> : Promise.reject(new Error("native library commands unavailable"));

@@ -7,12 +7,6 @@ import { test } from "node:test";
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "../../..");
 const flags = ["DEBUG", "SOLARA_PROBES", "SOLARA_PERF_TRACE"];
 const emitter = new Set(["addListener", "removeListeners", "removeAllListeners", "emit"]);
-const allowances = new Map([
-  ["SolaraSettings.devLiveSnapshot", "Unused diagnostic wrapper for external development drivers"],
-  ["SolaraSettings.devHistorySnapshot", "Unused history diagnostic wrapper for external development drivers"],
-  ["SolaraSettings.devBookmarksSnapshot", "Unused bookmark diagnostic wrapper for external development drivers"],
-  ["SolaraSettings.devFaviconLookup", "Unused favicon diagnostic wrapper for external development drivers"],
-]);
 
 function files(dir) {
   return readdirSync(resolve(root, dir), { withFileTypes: true }).flatMap((entry) => {
@@ -198,7 +192,7 @@ function violations(modules, accesses) {
     const entries = modules.get(module)?.members.get(member) ?? [];
     const key = `${module}.${member}`;
     const defined = entries.some((entry) => entry.possible);
-    if (defined && (entries.some((entry) => entry.release) || (file === "packages/settings/src/index.ts" && allowances.has(key)))) return [];
+    if (defined && entries.some((entry) => entry.release)) return [];
     const definitions = entries.length ? entries.map((entry) => `${entry.file}:${entry.line} [${entry.condition}]`).join(", ") : `no Swift definition (module: ${modules.get(module)?.location ?? "missing"})`;
     return [`${file}:${line}: ${key} ${defined ? "is not Release-defined" : "is not defined in any build"}; ${definitions}`];
   });

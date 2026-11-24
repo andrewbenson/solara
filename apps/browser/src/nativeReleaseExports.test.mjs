@@ -287,3 +287,19 @@ test("snapshot failure environment read and helper are Debug-only", () => {
     assert.ok(snapshotSeamTokens(unguarded, false).includes(marker), `${marker} regression detector`);
   }
 });
+
+test("dock recorder, bridge and snapshot are Debug-only", () => {
+  const markers = new Map([
+    ["native/SolaraKit/Sources/SolaraUI/WindowShell/DockAnimator.swift", ["devDockStep", "devDockVelocity"]],
+    ["native/SolaraKit/Sources/SolaraUI/WindowShell/SidebarDock.swift", ["devDockTrace", "devDockPeekEnabled", "devTraceDock", "devRecordDock"]],
+    ["packages/settings/ios/TopStrip/NativeTopStrip.swift", ['"traceDock"', '"dockTrace"', "devDockSnapshot"]],
+  ]);
+  for (const [file, names] of markers) {
+    const source = readFileSync(resolve(root, file), "utf8");
+    for (const name of names) {
+      assert.ok(snapshotSeamTokens(source, true).includes(name), `${file}: ${name}`);
+      assert.ok(!snapshotSeamTokens(source, false).includes(name), `${file}: ${name} leaks to Release`);
+      assert.ok(snapshotSeamTokens(source.replace(/#if DEBUG|#endif/g, ""), false).includes(name), `${name} regression detector`);
+    }
+  }
+});

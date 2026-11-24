@@ -399,7 +399,7 @@ final class ProbeHost {
       guard let flag = value as? NSNumber, CFGetTypeID(flag) == CFBooleanGetTypeID() else { throw ProbeFailure.invalidArgument }
     }
     if let value = request.args["stripTrace"] {
-      guard let trace = value as? String, ["group", "slot", "glow", "peek"].contains(trace),
+      guard let trace = value as? String, ["group", "slot", "glow", "peek", "dock"].contains(trace),
         request.args["topStrip"] as? Bool == true, request.args["windowId"] is String else { throw ProbeFailure.invalidArgument }
     }
     if let value = request.args["topStrip"] {

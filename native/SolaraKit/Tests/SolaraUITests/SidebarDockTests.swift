@@ -288,3 +288,65 @@ struct SidebarDockTests {
     #expect(!rig.dock.peek.live)
   }
 }
+
+#if DEBUG
+@MainActor
+struct DockTraceTests {
+  @Test(arguments: [30.0, 60.0])
+  func samplesFollowAnimatorAndIncludeTheSettleHandoff(fps: Double) {
+    let rig = SidebarDockTests.Rig(SidebarDockState(topTabs: true))
+    defer { rig.dock.stop() }
+    rig.shell.update { $0.topTabs = true }
+    rig.dock.devDockPeekEnabled = { [weak rig] in rig?.dock.stripAway ?? false }
+    #expect(rig.dock.devDockTrace == nil)
+    rig.dock.devTraceDock()
+    rig.set { $0.open = false }
+    var frame = 0
+    while rig.dock.moving && frame < 60 {
+      frame += 1
+      rig.dock.step(by: 1 / fps)
+      let expected = SpringRun(from: 1, to: 0).sample(Double(frame) / fps)
+      let row = rig.dock.devDockTrace!.last!
+      #expect(abs(row[1] - expected.value) < 1e-10)
+      #expect(abs(row[2] - (expected.done ? 0 : expected.velocity)) < 1e-10)
+      #expect(row[3] == 0)
+      #expect(row[4] == (expected.done ? 1 : 0))
+      #expect(row[8] == (expected.done ? 1 : 0))
+    }
+    #expect(frame == (fps == 60 ? 20 : 10))
+    #expect(rig.dock.devDockTrace!.last![5] == -42)
+    #expect(rig.dock.devDockTrace!.last![6] == 6)
+    #expect(rig.dock.devDockTrace!.last![7] == -21.25)
+  }
+
+  @Test func recorderStopsAtItsBoundAndRearmingClearsIt() {
+    let rig = SidebarDockTests.Rig()
+    defer { rig.dock.stop() }
+    rig.dock.devTraceDock()
+    for i in 0..<300 {
+      rig.set { $0.open = i % 2 != 0 }
+      rig.dock.step(by: 1 / 60)
+    }
+    #expect(rig.dock.devDockTrace!.count == 256)
+    rig.dock.devTraceDock()
+    #expect(rig.dock.devDockTrace!.count == 1)
+  }
+
+  @Test func reversalRecordsTheInheritedVelocity() {
+    let rig = SidebarDockTests.Rig()
+    defer { rig.dock.stop() }
+    rig.dock.devTraceDock()
+    rig.set { $0.open = false }
+    for _ in 0..<6 { rig.dock.step(by: 1 / 60) }
+    let turn = rig.dock.devDockTrace!.last!
+    rig.set { $0.open = true }
+    let start = rig.dock.devDockTrace!.last!
+    #expect(start[1] == turn[1])
+    #expect(start[2] == turn[2])
+    #expect(abs(start[2]) > 0.01)
+    rig.dock.step(by: 1 / 60)
+    let expected = SpringRun(from: turn[1], to: 1, initialVelocity: turn[2]).sample(1 / 60)
+    #expect(abs(rig.dock.devDockTrace!.last![1] - expected.value) < 1e-10)
+  }
+}
+#endif

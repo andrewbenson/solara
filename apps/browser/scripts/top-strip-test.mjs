@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { assertDockTrace } from "./top-strip-dock.mjs";
 import { screenMatrix, failedConditions, downloadSamples } from "./top-strip-support.mjs";
 import { sidebarSession, assertSidebarPosition } from "./sidebar-position-test.mjs";
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
@@ -10,11 +11,11 @@ import { launch, reporter, session, sleep } from "../../../scripts/lib/instance.
 
 const args = process.argv.slice(2);
 const appArg = args.find((a) => !a.startsWith("--"));
-if (!appArg) {
+if (!appArg || args.includes("--help")) {
   console.error(
-    "usage: node top-strip-test.mjs <Debug Solara.app> [--keep-data] [--only=rn|native|trailing]\n\nThe top tab strip with pinned tabs, groups (expanded, collapsed, one holding a nested folder) and a split, once on React Native and once with SOLARA_NATIVE_TOP_STRIP=1: every item's span at the strip's middle within 0.5 pt of RN's, the store's strip entries, a click on a tab selects it, a click on a group's chip collapses it, hovering moves nothing, the two strips' pixels compared, every tooltip and VoiceOver name along the strip, the docked profile and downloads controls and the drop glow (pixels, and the glow's fade frame for frame), and the peek over a hidden strip: its slide in and out frame for frame at 30 fps, its downloads button holding it out, and a press in it reaching only what was pressed, not the address field under it. --only=trailing checks the leading profile slot and trailing-control frames with many tabs across window widths, acted Spaces fullscreen, profile switches, one-letter and long names, and the absent slot for a single unnamed profile; SOLARA_NATIVE_WINDOW_LAYOUT defaults to 0 for this regression.",
+    "usage: node top-strip-test.mjs <Debug Solara.app> [--keep-data] [--only=rn|native|trailing|dock]\n\nThe top tab strip with pinned tabs, groups (expanded, collapsed, one holding a nested folder) and a split, once on React Native and once with SOLARA_NATIVE_TOP_STRIP=1: every item's span at the strip's middle within 0.5 pt of RN's, the store's strip entries, a click on a tab selects it, a click on a group's chip collapses it, hovering moves nothing, the two strips' pixels compared, every tooltip and VoiceOver name along the strip, the docked profile and downloads controls and the drop glow (pixels, and the glow's fade frame for frame), and the peek over a hidden strip: its slide in and out frame for frame at 30 fps, its downloads button holding it out, and a press in it reaching only what was pressed, not the address field under it. --only=dock checks command-path hide/show/reversal against the dock spring at the display rate, native per-row geometry, RN projected motion columns, actual strip/card/button endpoints and settle-to-peek admission; run once with SOLARA_NATIVE_WINDOW_LAYOUT=0 and once with =1. --only=trailing checks the leading profile slot and trailing-control frames with many tabs across window widths, acted Spaces fullscreen, profile switches, one-letter and long names, and the absent slot for a single unnamed profile; SOLARA_NATIVE_WINDOW_LAYOUT defaults to 0 for this regression.",
   );
-  process.exit(2);
+  process.exit(args.includes("--help") ? 0 : 2);
 }
 const appPath = resolve(appArg);
 const keep = args.includes("--keep-data");
@@ -1018,6 +1019,84 @@ async function trailingControls() {
     writeFileSync(join(scratch, "trailing-screen-matrix.json"), JSON.stringify({ visibleFrame, height, matrices }, null, 2));
     await app.quit();
   }
+}
+
+async function dockMotion() {
+  const layout = process.env.SOLARA_NATIVE_WINDOW_LAYOUT ?? "0";
+  assert.ok(["0", "1"].includes(layout), "dock leg requires layout 0 or 1");
+  const native = layout === "1";
+  const app = await launch(appPath, {
+    data: join(scratch, "dock", "data"),
+    session: session(sidebarSession({
+      settings: { tabLayout: "top", appearance: "light" },
+      windows: [{ id: "w1", frame: [80, 80, 1000, 800] }],
+      tabs: [{ id: "t1", url: "about:blank", title: "Dock trace" }],
+    })),
+    env: { SOLARA_NATIVE_WINDOW_LAYOUT: layout, SOLARA_NATIVE_TOP_STRIP: native ? "1" : "0" },
+  });
+  const evidence = { layout, legs: {} };
+  const run = (body) => app.eval(body, { timeout: 10000 });
+  try {
+    await sleep(2000);
+    assert.equal(await run(`return globalThis.expo.modules.SolaraWindowShell.nativeLayout("w1");`), native, "actual layout matches requested layout");
+    if (!native) assert.equal(await run(`return !!globalThis.acLayout.dock.w1;`), true, "legacy leg uses the RN Animated dock");
+    const intervals = await run(`return new Promise((resolve) => {
+      const times = [];
+      const tick = (time) => { times.push(time); if (times.length < 16) requestAnimationFrame(tick); else resolve(times.slice(1).map((t, i) => t - times[i])); };
+      requestAnimationFrame(tick);
+    });`);
+    const median = intervals.toSorted((a, b) => a - b)[Math.floor(intervals.length / 2)];
+    const fps = Math.abs(median - 1000 / 60) < Math.abs(median - 1000 / 30) ? 60 : 30;
+    assert.ok(Math.abs(median - 1000 / fps) < 1000 / fps * 0.15, `display cadence ${median} ms is neither 30 nor 60 Hz`);
+    evidence.fps = fps;
+    evidence.intervals = intervals;
+    for (const leg of ["hide", "show", "reversal"]) {
+      const rows = await run(`
+        const module = globalThis.expo.modules.SolaraTopStrip;
+        const handle = globalThis.acLayout?.dock?.w1;
+        const arm = () => ${native ? 'module.traceDock("w1")' : 'handle.trace()'};
+        const read = () => ${native ? 'module.dockTrace("w1")' : 'handle.samples()'};
+        const frames = (n) => new Promise((resolve) => {
+          const tick = () => { if (--n <= 0) resolve(); else requestAnimationFrame(tick); };
+          requestAnimationFrame(tick);
+        });
+        return Promise.resolve(arm()).then(() => {
+          ac.native.command("toggleSidebar", "w1");
+          ${leg === "reversal" ? 'return frames(6).then(() => ac.native.command("toggleSidebar", "w1"));' : ''}
+        }).then(() => new Promise((resolve) => setTimeout(resolve, 800))).then(read);
+      `);
+      evidence.legs[leg] = rows;
+      if (native) {
+        const snapshot = await app.snapshot({ windowId: "w1", topStrip: true, stripTrace: "dock", fields: ["windows.topStrip"] }, { timeout: 2000 });
+        assert.deepEqual(nativeWindow(snapshot).topStrip.dockTrace, rows, "snapshot returns the entire bounded dock trace");
+      }
+      rep.log({ leg, layout, ...assertDockTrace(rows, { fps, native, reversal: leg === "reversal" }) });
+      const endpoint = await run(`return globalThis.expo.modules.SolaraWindowShell.describe("w1").then(JSON.parse);`);
+      evidence.legs[`${leg}Endpoint`] = endpoint;
+      const shown = leg !== "hide";
+      assert.equal(endpoint.card[1], shown ? 42 : 6, "shell card reaches the exact endpoint");
+      assert.ok(endpoint.topStrip[1] === (shown ? 0 : -42), "shell strip reaches the exact endpoint");
+      assert.equal(endpoint.trafficLights.length, 3, "all window buttons have actual frames");
+      const [, , width, height] = endpoint.bounds;
+      for (const { rect } of endpoint.trafficLights) {
+        const [x, y, w, h] = rect;
+        if (shown || native) assert.equal(y + h / 2, shown ? 20.75 : -21.25, "actual window-button centre reaches the exact endpoint");
+        else assert.ok(x + w <= 0 || x >= width || y + h <= 0 || y >= height, `a hidden strip leaves every window button wholly outside the window (${JSON.stringify(rect)})`);
+      }
+    }
+  } finally {
+    writeFileSync(join(scratch, "dock-motion.json"), JSON.stringify(evidence, null, 2));
+    await app.quit();
+  }
+}
+
+if (only === "dock") {
+  await rep.check(process.env.SOLARA_NATIVE_WINDOW_LAYOUT === "1"
+    ? "native command-path dock spring, per-row geometry, endpoints and settle-to-peek admission"
+    : "RN command-path dock spring with projected motion columns, actual endpoint geometry and settle-to-peek admission", dockMotion);
+  if (!keep && rep.disposable) rmSync(join(scratch, "dock"), { recursive: true, force: true });
+  rep.say(`dock-motion evidence: ${scratch}`);
+  process.exit(rep.summary() ? 0 : 1);
 }
 
 if (only === "trailing") {

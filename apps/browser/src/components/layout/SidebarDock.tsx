@@ -21,6 +21,7 @@ import { useShellLayoutPush } from "./shellLayout";
 import { useShellModal } from "./shellModal";
 import {
   ARC_HIDE_MS,
+  devDocks,
   devPeeks,
   dockMoving,
   DOCK_SPRING,
@@ -96,6 +97,7 @@ function useSidebarDock(open: boolean, animate: boolean, arc: boolean, active: b
     }
     if (open) setAway(false);
     setDockMoving(windowId, true);
+    if (__DEV__) devDocks[windowId]?.mark();
     (arc && !open
       ? Animated.timing(dock, { toValue: 0, duration: ARC_HIDE_MS, easing: Easing.out(Easing.cubic), useNativeDriver: false })
       : Animated.spring(dock, {
@@ -194,6 +196,7 @@ export function DockedLayout({
   const stripY = useMemo(() => dock.interpolate({ inputRange: [0, 1], outputRange: [-inset.top, 0] }), [dock, inset.top]);
   const stripShown = topTabs && (open || !away);
   const moving = useDockMotion((m) => !!m.moving[windowId]);
+  useDevDockTrace(windowId, dock, open, away, !nativeDock);
   useTopStripLights(windowId, dock, !nativeDock && topTabs && !fullscreen, inset.top, open);
   return (
     <>
@@ -229,7 +232,7 @@ export function DockedLayout({
             {topStrip.strip}
           </Animated.View>
         )}
-      {topStrip && topTabs && !stripShown && topStrip.peek}
+      {topStrip && topTabs && !stripShown && (__DEV__ ? <DevDockPeek windowId={windowId}>{topStrip.peek}</DevDockPeek> : topStrip.peek)}
       {nativeDock && <NativeDockPublisher open={open} arc={arc} fullscreen={fullscreen} topTabs={topTabs} width={width} lights={lights} />}
       {!topTabs &&
         (nativeDock ? (
@@ -239,6 +242,59 @@ export function DockedLayout({
         ))}
     </>
   );
+}
+
+function useDevDockTrace(windowId: string, dock: Animated.Value, open: boolean, away: boolean, active: boolean) {
+  const latest = useRef({ open, away });
+  latest.current = { open, away };
+  useLayoutEffect(() => {
+    if (!__DEV__ || !active) return;
+    let rows: number[][] | null = null;
+    let frame = 0;
+    let peekMounted = false;
+    const record = () => {
+      if (!rows || rows.length >= 256) return;
+      const value = dock as unknown as { __getValue(): number; _animation?: { _lastVelocity?: number } };
+      const progress = value.__getValue();
+      const moving = dockMoving(windowId);
+      rows.push([performance.now(), progress, moving ? value._animation?._lastVelocity ?? 0 : 0,
+        latest.current.open ? 1 : 0, latest.current.away ? 1 : 0,
+        -42 * (1 - progress), 6 + 36 * progress,
+        TOP_STRIP_LIGHTS_CENTER[1] - Math.round(42 * (1 - progress) * 2) / 2,
+        peekMounted ? 1 : 0, moving ? 1 : 0]);
+    };
+    const tick = () => {
+      if (!dockMoving(windowId)) record();
+      if (rows && rows.length < 256) frame = requestAnimationFrame(tick);
+    };
+    const handle = {
+      trace: () => {
+        cancelAnimationFrame(frame);
+        rows = [];
+        record();
+        frame = requestAnimationFrame(tick);
+      },
+      samples: () => rows ?? [],
+      mark: record,
+      mounted: (value: boolean) => { peekMounted = value; },
+    };
+    devDocks[windowId] = handle;
+    const listener = dock.addListener(record);
+    return () => {
+      cancelAnimationFrame(frame);
+      dock.removeListener(listener);
+      if (devDocks[windowId] === handle) delete devDocks[windowId];
+    };
+  }, [windowId, dock, active]);
+}
+
+function DevDockPeek({ windowId, children }: { windowId: string; children: ReactNode }) {
+  useLayoutEffect(() => {
+    if (!__DEV__) return;
+    devDocks[windowId]?.mounted(true);
+    return () => devDocks[windowId]?.mounted(false);
+  }, [windowId]);
+  return <>{children}</>;
 }
 
 function NativeDockPublisher({

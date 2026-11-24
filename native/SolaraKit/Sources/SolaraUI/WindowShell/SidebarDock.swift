@@ -126,6 +126,9 @@ public final class SidebarDock {
       self?.slideDone = nil
       done?()
     }
+    #if DEBUG
+    dock.devDockStep = { [weak self] in self?.devRecordDock() }
+    #endif
     wire(peek)
     shell.onLightsLayout = { [weak self] in
       self?.placePanel()
@@ -139,6 +142,28 @@ public final class SidebarDock {
       $0.peekSlide = 0
     }
   }
+
+  #if DEBUG
+  public private(set) var devDockTrace: [[Double]]?
+  public var devDockPeekEnabled: () -> Bool = { false }
+
+  public func devTraceDock() {
+    devDockTrace = []
+    devRecordDock()
+  }
+
+  private func devRecordDock() {
+    guard let count = devDockTrace?.count, count < 256 else { return }
+    let frames = shell.frames
+    let button = shell.window?.standardWindowButton(.closeButton)
+    let center = button.map { $0.convert(CGPoint(x: $0.bounds.midX, y: $0.bounds.midY), to: shell).y }
+    devDockTrace?.append([CACurrentMediaTime() * 1000, dock.value, dock.devDockVelocity,
+      state.open ? 1 : 0, shell.input.away ? 1 : 0,
+      Double(frames.topStrip?.minY ?? 0), Double(frames.card.minY),
+      Double(center ?? sentLights.flatMap { $0 }?.y ?? ShellMetrics.lightsCenter.y),
+      devDockPeekEnabled() ? 1 : 0, dock.moving ? 1 : 0])
+  }
+  #endif
 
   public func start() {
     guard !stopped else { return }

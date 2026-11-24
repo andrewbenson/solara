@@ -69,6 +69,21 @@ public class TopStripModule: Module {
       FrameUpdates.readOnMain { TopStripPeekHost.hosts[windowId]?.view.traceSlide() }
     }.runOnQueue(.main)
 
+    #if DEBUG
+    AsyncFunction("traceDock") { (windowId: String) in
+      FrameUpdates.readOnMain {
+        guard let dock = NativeSidebarDock.dock(windowId) else { return }
+        dock.devDockPeekEnabled = { TopStripPeekHost.hosts[windowId]?.view.peek.enabled ?? false }
+        dock.devTraceDock()
+      }
+    }.runOnQueue(.main)
+
+    AsyncFunction("dockTrace") { (windowId: String) -> [[Double]] in
+      FrameUpdates.readOnMain { NativeSidebarDock.dock(windowId)?.devDockTrace ?? [] }
+    }.runOnQueue(.main)
+
+    #endif
+
     AsyncFunction("peekTrace") { (windowId: String) -> [[Double]] in
       FrameUpdates.readOnMain { TopStripPeekHost.hosts[windowId]?.view.slideTrace ?? [] }
     }.runOnQueue(.main)
@@ -485,7 +500,10 @@ public enum TopStripRead {
     var items: Any = NSNull()
     if let json = NativeTopStrip.items(windowId: windowId), let data = json.data(using: .utf8),
       let value = try? JSONSerialization.jsonObject(with: data) { items = value }
-    return ["items": items, "keys": StripQuery(store.state).keys(windowId: windowId, profileId: model.profileId),
+    #if DEBUG
+    let devDockSnapshot = trace == "dock" ? NativeSidebarDock.dock(windowId)?.devDockTrace ?? [] : []
+    #endif
+    var result: [String: Any] = ["items": items, "keys": StripQuery(store.state).keys(windowId: windowId, profileId: model.profileId),
       "controls": controls(windowId: windowId) ?? NSNull(),
       "panelOpen": store.state.windowUi[windowId]?.panelOpen ?? false,
       "downloadsOpen": store.state.windowUi[windowId]?.downloadsOpen ?? false,
@@ -494,6 +512,10 @@ public enum TopStripRead {
       "glowTrace": trace == "glow" ? samples(TopStripGlowHost.hosts[windowId]?.view.trace) : [],
       "peekTrace": trace == "peek" ? samples(TopStripPeekHost.hosts[windowId]?.view.slideTrace) : [],
       "peek": TopStripPeekHost.hosts[windowId]?.describe() ?? [:], "peekMonitors": StripPeekView.monitors]
+    #if DEBUG
+    result["dockTrace"] = devDockSnapshot
+    #endif
+    return result
   }
 
   private static func controls(windowId: String) -> [String: Any]? {

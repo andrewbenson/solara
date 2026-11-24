@@ -27,6 +27,8 @@ public final class DockAnimator {
 
   public var moving: Bool { running }
   #if DEBUG
+  public var devDockStep: (() -> Void)?
+  public var devDockVelocity: Double { velocity }
   public var devLinkActive: Bool { link != nil || stallTimer != nil }
   #endif
 
@@ -65,6 +67,9 @@ public final class DockAnimator {
       made.add(to: .main, forMode: .common)
       link = made
     }
+    #if DEBUG
+    devDockStep?()
+    #endif
     if stallTimer == nil {
       let timer = Timer(timeInterval: DockMotion.stallCheck, repeats: true) { [weak self] timer in
         guard let self else { return timer.invalidate() }
@@ -77,6 +82,9 @@ public final class DockAnimator {
 
   public func step(by seconds: Double) {
     guard running else { return }
+    #if DEBUG
+    defer { devDockStep?() }
+    #endif
     let mine = run
     let done: Bool
     switch curve {

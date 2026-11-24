@@ -837,7 +837,7 @@ final class NativeLayoutChrome {
     peek.apply(state: state, host: strip, controls: stripControls,
       enabled: input.layout.topTabs && dock.stripAway && !input.layout.fullscreen,
       bandLeft: ShellMetrics.topStripLeadingReservation, look: look.panel, renderStrip: peek.view.live)
-    if input.layout.topTabs && effectiveOpen { ShellWindowEdge.setLightsCenter(shell.windowId, ShellMetrics.topStripLightsCenter) }
+    if input.layout.topTabs && effectiveOpen && !dock.moving { ShellWindowEdge.setLightsCenter(shell.windowId, ShellMetrics.topStripLightsCenter) }
   }
 
   func stop() {

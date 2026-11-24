@@ -85,3 +85,5 @@ export function navButtonsFitting(width: number, button = 30, toggle = true): { 
   const buttons: HeaderButton[] = count === 3 ? ["back", "forward", "reload"] : count === 2 ? ["back", "forward"] : count === 1 ? ["back"] : [];
   return { buttons, step: count ? Math.min(pitch, span / count) : pitch };
 }
+
+export const devDocks: Record<string, { trace(): void; samples(): number[][]; mark(): void; mounted(value: boolean): void }> = {};

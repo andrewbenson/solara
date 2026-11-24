@@ -12,6 +12,7 @@ struct SidebarDockTests {
     var lights: [CGPoint?] = []
     var moving: [Bool] = []
     var peeks: [Bool] = []
+    var stripAway: [Bool] = []
     var timers: [() -> Void] = []
 
     init(_ state: SidebarDockState = SidebarDockState()) {
@@ -24,6 +25,7 @@ struct SidebarDockTests {
       dock.onLights = { [unowned self] in self.lights.append($0) }
       dock.onDock = { [unowned self] _, moving in if self.moving.last != moving { self.moving.append(moving) } }
       dock.onPeek = { [unowned self] live, _ in self.peeks.append(live) }
+      dock.onStripAway = { [unowned self] in self.stripAway.append($0) }
       useManualTimers()
       dock.start()
     }
@@ -78,6 +80,82 @@ struct SidebarDockTests {
     #expect(rig.shell.input.away)
     #expect(rig.moving.last == false)
     #expect(rig.watches.last == ShellMetrics.edgeStripWidth)
+  }
+
+  @Test(arguments: [false, true])
+  func topTabsInitialLightsFollowTheStoredOpenState(open: Bool) {
+    let rig = Rig(SidebarDockState(open: open, topTabs: true))
+    defer { rig.dock.stop() }
+    let center = CGPoint(x: ShellMetrics.topStripLightsCenter.x,
+      y: ShellMetrics.topStripLightsCenter.y - (open ? 0 : ShellInset.topTabs.top))
+    #expect(rig.lights.last == .some(center))
+  }
+
+  @Test func topTabsOpenStateMovesTheStripWithoutEnablingSidebarPeek() {
+    let rig = Rig(SidebarDockState(topTabs: true))
+    defer { rig.dock.stop() }
+    rig.shell.update { $0.topTabs = true }
+    rig.set { $0.open = false }
+    rig.dock.step(by: 1.0 / 60)
+    #expect(rig.shell.input.dock > 0 && rig.shell.input.dock < 1)
+    rig.settle()
+    #expect(!rig.dock.state.open)
+    #expect(rig.shell.input.dock == 0)
+    #expect(rig.shell.input.away)
+    #expect(rig.shell.frames.topStrip?.maxY == 0)
+    #expect(!rig.dock.peek.enabled)
+    #expect(rig.dock.watchingHold == nil)
+    rig.set { $0.open = true }
+    rig.settle()
+    #expect(rig.shell.input.dock == 1)
+    #expect(!rig.shell.input.away)
+    #expect(rig.shell.frames.topStrip?.minY == 0)
+  }
+
+  @Test(arguments: [false, true])
+  func topStripAwaySignalStartsWithTheStoredPresentation(open: Bool) {
+    let rig = Rig(SidebarDockState(open: open, topTabs: true))
+    defer { rig.dock.stop() }
+    #expect(rig.stripAway == [!open])
+  }
+
+  @Test func topStripAwaySignalWaitsForHideAndDisablesAtReopenStart() {
+    let rig = Rig(SidebarDockState(topTabs: true))
+    defer { rig.dock.stop() }
+    rig.set { $0.open = false }
+    #expect(rig.stripAway == [false])
+    rig.dock.step(by: 1.0 / 60)
+    #expect(rig.dock.moving)
+    #expect(rig.stripAway == [false])
+    rig.settle()
+    #expect(rig.stripAway == [false, true])
+    #expect(rig.shell.input.away)
+    rig.set { $0.open = true }
+    #expect(rig.dock.moving)
+    #expect(rig.stripAway == [false, true, false])
+    rig.settle()
+    #expect(rig.stripAway == [false, true, false])
+  }
+
+  @Test func topStripAwaySignalDoesNotEnableForAnInterruptedHide() {
+    let rig = Rig(SidebarDockState(topTabs: true))
+    defer { rig.dock.stop() }
+    rig.set { $0.open = false }
+    rig.dock.step(by: 1.0 / 60)
+    rig.set { $0.open = true }
+    rig.settle()
+    #expect(rig.stripAway == [false])
+  }
+
+  @Test func topStripAwaySignalUpdatesForReducedMotion() {
+    let rig = Rig(SidebarDockState(topTabs: true))
+    defer { rig.dock.stop() }
+    rig.dock.reduceMotion = { true }
+    rig.set { $0.open = false }
+    #expect(!rig.dock.moving)
+    #expect(rig.stripAway == [false, true])
+    rig.set { $0.open = true }
+    #expect(rig.stripAway == [false, true, false])
   }
 
   @Test func reduceMotionJumps() {

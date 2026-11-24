@@ -36,6 +36,43 @@ struct WindowLayoutContractTests {
     return state
   }
 
+  @Test func topTabsClosedMovesTheStripAboveTheWindow() throws {
+    var state = try projectionState()
+    state.windows["w"]?.tabLayout = "top"
+    state.windows["w"]?.sidebarOpen = false
+    let input = try #require(WindowLayoutInput(state: state, windowId: "w", bounds: CGRect(x: 0, y: 0, width: 1000, height: 700)))
+    #expect(input.layout.dock == 0)
+    #expect(input.presentation.dock == 0)
+    let snapshot = WindowLayoutSnapshot.of(input, generation: 1)
+    #expect(try #require(snapshot.frames.topStrip).maxY <= 0)
+    #expect(snapshot.frames.card.minY == ShellMetrics.cardTop)
+    #expect(snapshot.toolbars["a"]?.minY == ShellMetrics.cardTop)
+  }
+
+  @Test func topTabsPreservesDockMotionAndResetsOnlySidebarPeekAndRail() throws {
+    var state = try projectionState()
+    state.windows["w"]?.tabLayout = "top"
+    state.windows["w"]?.sidebarOpen = false
+    var presentation = DockedLayoutInput(size: .zero, dock: 0.37, peeking: true, peekSlide: 0.6, away: true)
+    presentation.railProgress = 0.8
+    let input = try #require(WindowLayoutInput(state: state, windowId: "w", bounds: CGRect(x: 0, y: 0, width: 1000, height: 700), presentation: presentation))
+    #expect(input.layout.dock == 0)
+    #expect(input.presentation.dock == 0.37)
+    #expect(input.presentation.away)
+    #expect(!input.presentation.peeking)
+    #expect(input.presentation.peekSlide == 0)
+    #expect(input.presentation.railProgress == nil)
+  }
+
+  @Test func topTabsOpenKeepsTheStripDocked() throws {
+    var state = try projectionState()
+    state.windows["w"]?.tabLayout = "top"
+    let input = try #require(WindowLayoutInput(state: state, windowId: "w", bounds: CGRect(x: 0, y: 0, width: 1000, height: 700)))
+    #expect(input.layout.dock == 1)
+    #expect(input.presentation.dock == 1)
+    #expect(WindowLayoutSnapshot.of(input, generation: 1).frames.topStrip?.minY == 0)
+  }
+
   @Test(arguments: [CGSize.zero, CGSize(width: 1, height: 1), CGSize(width: 6, height: 6),
     CGSize(width: 7, height: 7), CGSize(width: 31, height: 31), CGSize(width: 32, height: 32),
     CGSize(width: 41, height: 41), CGSize(width: 42, height: 42), CGSize(width: 83, height: 47),

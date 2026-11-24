@@ -17,7 +17,7 @@ struct TopStripCardJoinTests {
     let url = normalPage ? "https://example.com/" : ""
     return try BrowserState(stateJSON: JSONValue.parse("""
       {"settings":{"tabLayout":"top","bookmarksBar":"never"},"profileOrder":["personal","test"],"windowOrder":["join"],
-       "windows":{"join":{"id":"join","profileId":"personal","tabIds":["personal-tab","test-tab"],
+       "windows":{"join":{"id":"join","profileId":"personal","sidebarOpen":true,"tabIds":["personal-tab","test-tab"],
          "activeTabIds":{"personal":"personal-tab","test":"test-tab"}}},
        "tabs":{"personal-tab":{"id":"personal-tab","windowId":"join","profileId":"personal","url":"\(url)","title":"Personal"},
                "test-tab":{"id":"test-tab","windowId":"join","profileId":"test","url":"\(url)","title":"Test"}}}

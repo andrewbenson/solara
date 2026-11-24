@@ -565,7 +565,7 @@ final class NativeLayoutChrome {
     let initial = NativeStoreHandle.store?.state
     let window = initial?.windows[windowId]
     let topTabs = (window?.tabLayout ?? initial?.settings.string("tabLayout")) == "top"
-    dock = SidebarDock(shell: shell, state: SidebarDockState(open: topTabs || (window?.sidebarOpen ?? true),
+    dock = SidebarDock(shell: shell, state: SidebarDockState(open: window?.sidebarOpen ?? true,
       arc: !topTabs && initial?.settings.string("addressBar") == "sidebar", topTabs: topTabs,
       width: window.flatMap { window in initial.map { SidebarRail.effectiveWidth(window, $0.settings) } } ?? Double(ShellMetrics.sidebarWidth),
       sidebarPosition: window.flatMap { window in initial.map { window.effectiveSidebarPosition($0.settings) } } ?? "left"))
@@ -609,6 +609,10 @@ final class NativeLayoutChrome {
     dock.onPeekCoverage = { [weak self] live, coverage in
       self?.sendFeature(NativeSidebarDock.topic, "peek", ["live": live, "right": coverage?.maxX ?? 0,
         "rect": coverage.map { [$0.minX, $0.minY, $0.width, $0.height] } ?? NSNull()])
+    }
+    dock.onStripAway = { [weak self] away in
+      guard let self, !self.stopped, Self.owners[windowId] === self else { return }
+      self.peek.view.setEnabled(self.shell.input.topTabs && away && !self.shell.input.fullscreen)
     }
     dock.onSlideOut = { [weak self] in self?.sendFeature(NativeSidebarDock.topic, "slideOut") }
     stripRow.onPageWidth = { [weak strip] width in strip?.pageWidth = Double(width) }
@@ -732,7 +736,7 @@ final class NativeLayoutChrome {
     }
     guard let state, let window = state.windows[shell.windowId],
       let input = nativeInput else { return }
-    let effectiveOpen = input.layout.topTabs || window.sidebarOpen
+    let effectiveOpen = window.sidebarOpen
     let look = NativeLayoutAppearance(state: state, profileId: window.profileId, incognito: window.incognito)
     var sidebar = SidebarHostState(profileId: window.profileId, dark: look.dark)
     sidebar.theme = look.tokens
@@ -831,7 +835,7 @@ final class NativeLayoutChrome {
     strip.floating = true
     peek.view.frame = shell.overlay.bounds
     peek.apply(state: state, host: strip, controls: stripControls,
-      enabled: input.layout.topTabs && !effectiveOpen && !input.layout.fullscreen,
+      enabled: input.layout.topTabs && dock.stripAway && !input.layout.fullscreen,
       bandLeft: ShellMetrics.topStripLeadingReservation, look: look.panel, renderStrip: peek.view.live)
     if input.layout.topTabs && effectiveOpen { ShellWindowEdge.setLightsCenter(shell.windowId, ShellMetrics.topStripLightsCenter) }
   }

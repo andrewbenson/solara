@@ -122,7 +122,7 @@ struct FullScreenLayoutMatrixTests {
                 || input.layout.dock > 0 && !SidebarRail.contains(width: Double(input.layout.sidebarWidth)) && !input.layout.addressBarInSidebar)
               #expect(actualName == layout.named)
               #expect((input.layout.sidebarSide == .right) == layout.rightSidebar)
-              if top { #expect(input.layout.dock == 1) }
+              if top { #expect(input.layout.dock == (mode == 2 ? 0 : 1)) }
               if !top {
                 #expect((input.layout.dock == 0) == layout.hidden)
                 #expect((input.layout.sidebarSide == .right) == layout.rightSidebar)
@@ -147,7 +147,7 @@ struct FullScreenLayoutMatrixTests {
     #expect(input.layout.inset.top == ShellMetrics.cardTop + ShellMetrics.toolbarHeight)
   }
 
-  @Test(arguments: [false, true]) func horizontalTabsDiscardAHiddenSidebarPresentation(_ named: Bool) throws {
+  @Test(arguments: [false, true]) func horizontalTabsPreserveHiddenDockAndDiscardSidebarPeekPresentation(_ named: Bool) throws {
     var state = try makeState(named ? .top : .topN)
     state.windows["matrix"]?.sidebarOpen = false
     state.settings["sidebarIconsOnly"] = .bool(true)
@@ -157,12 +157,13 @@ struct FullScreenLayoutMatrixTests {
     let stale = DockedLayoutInput(size: bounds.size, dock: 0, sidebarWidth: 42, peeking: true,
       peekSlide: 0.5, addressBarInSidebar: true, away: true, railProgress: 1, sidebarSide: .right)
     let input = try #require(WindowLayoutInput(state: state, windowId: "matrix", bounds: bounds, presentation: stale))
-    #expect(input.layout.dock == 1 && input.presentation.dock == 1)
-    #expect(!input.presentation.peeking && !input.presentation.away)
+    #expect(input.layout.dock == 0 && input.presentation.dock == 0)
+    #expect(!input.presentation.peeking && input.presentation.away)
+    #expect(input.presentation.peekSlide == 0 && input.presentation.railProgress == nil)
     #expect(input.presentation.sidebarSide == .left && !input.presentation.addressBarInSidebar)
     let snapshot = WindowLayoutSnapshot.of(input, generation: 1)
-    #expect(snapshot.frames.topStrip == CGRect(x: 0, y: 0, width: 1000, height: 42))
-    #expect(snapshot.frames.card.minY == ShellMetrics.topStripHeight)
+    #expect(snapshot.frames.topStrip == CGRect(x: 0, y: -42, width: 1000, height: 42))
+    #expect(snapshot.frames.card.minY == ShellMetrics.cardTop)
   }
 
   @Test(arguments: cases)

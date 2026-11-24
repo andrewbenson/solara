@@ -100,7 +100,7 @@ public struct WindowLayoutInput: Equatable, Sendable {
     toolbarModes = modes
     shownTops = tops
     layout = DockedLayoutInput(
-      size: self.bounds.size, dock: topTabs || window.sidebarOpen ? 1 : 0,
+      size: self.bounds.size, dock: window.sidebarOpen ? 1 : 0,
       sidebarWidth: rail ? CGFloat(SidebarRail.width) : CGFloat(window.effectiveSidebarWidth(state.settings)),
       topTabs: topTabs, fullscreen: fullscreen, addressBarInSidebar: address,
       sidebarSide: !topTabs && window.sidebarOpen && sidebarPositionAllowed ? SidebarSide(position: window.effectiveSidebarPosition(state.settings)) : .left,
@@ -109,8 +109,6 @@ public struct WindowLayoutInput: Equatable, Sendable {
     sample.size = self.bounds.size
     sample.topTabs = topTabs
     if topTabs {
-      sample.dock = 1
-      sample.away = false
       sample.peeking = false
       sample.peekSlide = 0
       sample.railProgress = nil

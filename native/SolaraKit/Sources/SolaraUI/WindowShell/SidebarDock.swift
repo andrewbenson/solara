@@ -96,6 +96,7 @@ public final class SidebarDock {
   public var onDock: (_ value: Double, _ moving: Bool) -> Void = { _, _ in }
   public var onPeek: (_ live: Bool, _ right: Double) -> Void = { _, _ in }
   public var onPeekCoverage: (_ live: Bool, _ rect: CGRect?) -> Void = { _, _ in }
+  public var onStripAway: (Bool) -> Void = { _ in } { didSet { sentStripAway = nil } }
   public var onSlideOut: () -> Void = {}
   public var revealHeld: () -> Bool = { false }
   public var reduceMotion: () -> Bool = { NSWorkspace.shared.accessibilityDisplayShouldReduceMotion }
@@ -107,6 +108,7 @@ public final class SidebarDock {
   private var edgeOver = false
   private var watching: CGFloat?
   private var sentLights: CGPoint??
+  private var sentStripAway: Bool?
   private var stopped = false
 
   public init(shell: WindowShellView, state: SidebarDockState) {
@@ -147,6 +149,7 @@ public final class SidebarDock {
   public var slideValue: Double { slide.value }
   public var moving: Bool { toggle.moving }
   public var sliding: Bool { slide.moving }
+  public var stripAway: Bool { !stopped && !state.open && !toggle.moving && toggle.away }
   public var watchingHold: CGFloat? { watching }
 
   public func apply(_ next: SidebarDockState) {
@@ -176,6 +179,7 @@ public final class SidebarDock {
   public func stop() {
     guard !stopped else { return }
     stopped = true
+    sendStripAway()
     shell.onLightsLayout = nil
     dock.stop()
     slide.stop()
@@ -226,6 +230,7 @@ public final class SidebarDock {
       dock.jump(to: to)
       dockSettled()
     case .run(let to, let curve):
+      sendStripAway()
       shell.update { $0.away = false }
       onDock(dock.value, true)
       dock.animate(to: to, curve: curve, in: shell)
@@ -304,6 +309,7 @@ public final class SidebarDock {
   }
 
   private func refresh() {
+    sendStripAway()
     peek.setEnabled(!state.open && !toggle.moving && !state.fullscreen && !state.topTabs)
     let watch = !state.open && !state.fullscreen && !toggle.moving && !state.topTabs
     let right = shell.frames.sidebar.map(\.maxX) ?? (ShellMetrics.peekOrigin.x + CGFloat(state.width))
@@ -311,6 +317,13 @@ public final class SidebarDock {
     let hold = peek.live ? edgeDistance + ShellMetrics.holdSlack : ShellMetrics.edgeStripWidth
     setWatch(watch ? hold : nil)
     sendLights()
+  }
+
+  private func sendStripAway() {
+    let away = stripAway
+    guard sentStripAway != away else { return }
+    sentStripAway = away
+    onStripAway(away)
   }
 
   private func setWatch(_ hold: CGFloat?) {
@@ -333,7 +346,7 @@ public final class SidebarDock {
   }
 
   private func sendStripLights() {
-    guard toggle.moving, !state.fullscreen else { return }
+    guard !state.fullscreen else { return }
     let travel = ShellInset.topTabs.top
     let up = DockMotion.jsRound(travel * CGFloat(1 - dock.value) * 2) / 2
     send(CGPoint(x: ShellMetrics.topStripLightsCenter.x, y: ShellMetrics.topStripLightsCenter.y - up))

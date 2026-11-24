@@ -1,3 +1,4 @@
+import { persistenceRefused } from "./persistLatch";
 import { nativeSafeMode } from "../store/nativeStore";
 import { onHistoryChanged, queryHistory, watchHistory, type EngineHistoryEntry, type HistoryChange } from "@solara/solaracore";
 import { readDocument, readDocumentResult, removeDocument, saveDocument } from "@solara/shell";
@@ -272,6 +273,7 @@ async function readRedactedLegacy(): Promise<LegacyRead | null> {
   if (next !== file || legacyRewritePending) {
     legacyRewritePending = true;
     try {
+      if (persistenceRefused()) return { file: next, json, retired };
       await saveDocument(LEGACY_FILE, json);
       legacyRewritePending = false;
       if (legacyRetry) clearTimeout(legacyRetry);
@@ -305,6 +307,7 @@ async function dropImportedLegacyRows(imported: Map<string, string>) {
   const history = current?.file.history;
   const unchanged = (id: string) => imported.has(id) && JSON.stringify(history?.[id]) === imported.get(id);
   if (!history || !Object.keys(history).some(unchanged)) return;
+  if (persistenceRefused()) return;
   await saveDocument(LEGACY_FILE, JSON.stringify({ ...current!.file, history: Object.fromEntries(Object.entries(history).filter(([id]) => !unchanged(id))) }));
 }
 
@@ -392,14 +395,14 @@ async function moveLegacyHistory(now: number, keepMs: number): Promise<"none" | 
     if (nativeSafeMode()) return;
     try {
       const current = await readRedactedLegacy();
-      if (current?.json === migrated && !legacyRewritePending) removeDocument(LEGACY_FILE);
+      if (current?.json === migrated && !legacyRewritePending && !persistenceRefused()) removeDocument(LEGACY_FILE);
     } catch (error) {
       console.warn(`[history] keeping ${LEGACY_FILE} after its migration`, error);
     }
   });
   if (keepMs) setTimeout(() => void removeMoved(), keepMs);
   else {
-    if (readDocument(LEGACY_FILE) === migrated && !legacyRewritePending) removeDocument(LEGACY_FILE);
+    if (readDocument(LEGACY_FILE) === migrated && !legacyRewritePending && !persistenceRefused()) removeDocument(LEGACY_FILE);
   }
   return "moved";
 }

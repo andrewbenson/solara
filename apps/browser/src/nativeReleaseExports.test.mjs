@@ -268,3 +268,22 @@ test("conditional alternatives and missing exports fail closed", () => {
   assert.equal(modules.get("Fixture").members.get("changed")[0].release, true);
   assert.throws(() => swiftExports(new Map([["fixture.swift", source.replace("#if DEBUG", "#if UNKNOWN")]])), /Unsupported Swift condition/);
 });
+
+function snapshotSeamTokens(source, debug) {
+  const stack = [];
+  return tokens(source).filter(({ value }) => {
+    if (value.startsWith("#if ")) { stack.push(value.slice(4).trim() === "DEBUG" ? debug : true); return false; }
+    if (value === "#endif") { stack.pop(); return false; }
+    return stack.every(Boolean);
+  }).map(({ value }) => value);
+}
+
+test("snapshot failure environment read and helper are Debug-only", () => {
+  const source = swiftSources.get("packages/store/ios/StoreModule.swift");
+  for (const marker of ["debugSnapshotFailure", '\"SOLARA_TEST_STORE_SNAPSHOT_FAIL\"']) {
+    assert.ok(snapshotSeamTokens(source, true).includes(marker), marker);
+    assert.ok(!snapshotSeamTokens(source, false).includes(marker), `${marker} leaks to Release`);
+    const unguarded = source.replace(/#if DEBUG|#endif/g, "");
+    assert.ok(snapshotSeamTokens(unguarded, false).includes(marker), `${marker} regression detector`);
+  }
+});

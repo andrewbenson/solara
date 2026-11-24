@@ -98,6 +98,15 @@ export function startDevHarness() {
       return { ownsLive: require("../store/nativeStore").nativeOwnsWorkspace, facts: native.nativePageFacts, report: native.pageReport };
     },
   };
+  if (__DEV__) Object.defineProperty(ac, "persistence", {
+    get() {
+      return { ...require("./persist") as typeof import("./persist"), ...require("./persistLatch") as typeof import("./persistLatch"),
+        ownsWorkspace: require("../store/nativeStore").nativeOwnsWorkspace as typeof import("../store/nativeStore").nativeOwnsWorkspace,
+        onboarding: require("../components/onboarding/state") as typeof import("../components/onboarding/state"),
+        sync: require("../sync/engine") as typeof import("../sync/engine"),
+        quitHandlerCounts: require("./native").devQuitHandlerCounts as typeof import("./native").devQuitHandlerCounts };
+    },
+  });
   (globalThis as { ac?: typeof ac }).ac = ac;
   const scriptId = (source: string | null) => source?.match(/^\/\/ *(\S+)/)?.[1];
   let lastId = scriptId(readDocument("dev-eval.js")) ?? "";

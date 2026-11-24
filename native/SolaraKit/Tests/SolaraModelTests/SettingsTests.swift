@@ -149,4 +149,22 @@ import Testing
     #expect(Download(json: ["id": "p", "profile": "incognito:w@default"]).isPrivate)
     #expect(Download(json: ["id": "p", "offTheRecord": true]).isPrivate)
   }
+  @Test func restoredStagingSurvivesRepeatedLoadsUntilCleanupSucceeds() {
+    let original = Download(json: ["id": "wk-download-retry", "state": "failed", "paused": true,
+      "staging": "/downloads/.solara-download-retry", "destination": "/downloads/file"])
+    let first = original.loaded(at: 0)
+    let retry = first.persisted().loaded(at: 2)
+    #expect(first.id == "saved-0")
+    #expect(retry.id == "saved-2")
+    #expect(retry.json["stagingId"] == "retry")
+    #expect(retry.json["staging"] == original.json["staging"])
+    #expect(retry.json["destination"] == original.json["destination"])
+    #expect(retry.leftStaging?.uuid == "retry")
+    let cleaned = retry.withoutStaging().persisted().loaded(at: 0)
+    #expect(cleaned.leftStaging == nil)
+    #expect(cleaned.json["stagingId"] == nil)
+    #expect(cleaned.json["staging"] == nil)
+    #expect(cleaned.json["destination"] == nil)
+  }
+
 }

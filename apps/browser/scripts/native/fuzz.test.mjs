@@ -8,14 +8,13 @@ globalThis.__DEV__ = false;
 const here = dirname(fileURLToPath(import.meta.url));
 const src = join(here, "../../src");
 const { useBrowser } = await import(join(src, "store/browser.ts"));
-const { loadSession } = await import(join(src, "lib/persist.ts"));
 const { docs } = await import(join(src, "test-native/shell.ts"));
 const S = () => useBrowser.getState();
 
 const runs = Number(process.env.FUZZ_RUNS ?? "24");
 const steps = Number(process.env.FUZZ_STEPS ?? "60");
 const firstSeed = Number(process.env.FUZZ_FROM ?? "1");
-const fixtures = join(here, "../../../../native/SolaraKit/Tests/Fixtures/sessions");
+const fixtures = JSON.parse(readFileSync(join(here, "session-fixtures.json"), "utf8"));
 const starts = process.env.FUZZ_START ? [process.env.FUZZ_START] : ["perf-seed", "nested-groups-folders-rows", "broken-splits", "absent-and-unknown-fields", null];
 
 function prng(seed) {
@@ -30,8 +29,12 @@ function prng(seed) {
 function start(name) {
   docs.clear();
   if (!name) return S().hydrate({});
-  docs.set("session.json", readFileSync(name.startsWith("/") ? name : join(fixtures, name, "session.json"), "utf8"));
-  S().hydrate(loadSession() ?? {});
+  const fixture = fixtures.find((entry) => name.startsWith("/") ? entry.inputs["session.json"] === readFileSync(name, "utf8") : entry.name === name);
+  if (!fixture?.expected) throw new Error(`no fixed session expectation for ${name}`);
+  const data = structuredClone(fixture.expected.session);
+  for (const key of ["windows", "tabs", "groups", "splits"]) data[key] = Object.fromEntries((data[key] ?? []).map((row) => [row.id, row]));
+  data.downloads = structuredClone(fixture.expected.downloads.downloads);
+  S().hydrate(data);
 }
 
 function scenario(seed) {

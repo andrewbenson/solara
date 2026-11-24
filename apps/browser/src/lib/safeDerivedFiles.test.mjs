@@ -10,7 +10,6 @@ const { startNativeStore } = await import("../store/nativeStore.ts");
 const { migrateBookmarksFile, startBookmarks } = await import("./bookmarks.ts");
 const { migrateHistoryFile } = await import("./history.ts");
 const { startFavicons } = await import("./favicons.ts");
-const { startProfileDataCleanup } = await import("./profileData.ts");
 startNativeStore();
 
 const bookmarkFile = JSON.stringify({ bookmarks: { roots: { absent: { bar: "bar", other: "other" } }, nodes: {} } });
@@ -40,15 +39,6 @@ test("safe derived services preserve legacy favicons through stop", async () => 
   stopFavicons();
   assert.equal(docs.get("favicons-default.json"), "legacy favicons");
 
-});
-
-test("safe derived services leave orphaned profile data queued without deletion", async () => {
-  useBrowser.setState({ orphanedProfileData: ["orphan"] });
-  const stop = startProfileDataCleanup();
-  await new Promise((resolve) => setTimeout(resolve, 1600));
-  stop();
-  assert.deepEqual(deletedProfileData, []);
-  assert.deepEqual(useBrowser.getState().orphanedProfileData, ["orphan"]);
 });
 
 for (const safeMode of ["option", "failedLaunches"]) {

@@ -14,8 +14,8 @@ function run(state, message = "present") {
 
 const USER_DATA = /^(write|save|remove) (session\.json|downloads\.json|launch-look\.json|sync|onboarding\.json|release-notes\.json)/;
 
-for (const state of ["inactive", "refused", "safeRefused", "frozen", "nullSnapshot", "snapshotThrows", "statusThrows"]) {
-  test(`with the store module present and the store ${state}, JS saves nothing for the rest of the session`, () => {
+for (const state of ["inactive", "refused", "safeRefused", "frozen", "nullSnapshot", "snapshotThrows", "statusThrows", "noModule"]) {
+  test(`with the store ${state}, JS saves nothing for the rest of the session`, () => {
     const r = run(state);
     assert.equal(r.started, null, "startPersistence doesn't throw");
     assert.deepEqual(r.readsAtStart.filter((name) => name === "session.json" || name === "downloads.json"), [], "the JS session isn't read");
@@ -32,9 +32,9 @@ for (const state of ["inactive", "refused", "safeRefused", "frozen", "nullSnapsh
   });
 }
 
-for (const message of ["missing", "refuses", "throws"]) {
-  test(`when the native window ${message === "missing" ? "isn't in this build" : message === "refuses" ? "declines" : "throws"}, the Alert shows instead and nothing is saved`, () => {
-    const r = run("inactive", message);
+for (const state of ["inactive", "noModule"]) for (const message of ["missing", "refuses", "throws"]) {
+  test(`${state}: when the native window ${message === "missing" ? "isn't in this build" : message === "refuses" ? "declines" : "throws"}, the Alert shows instead and nothing is saved`, () => {
+    const r = run(state, message);
     assert.equal(r.alerts, 1);
     assert.equal(r.latch, true);
     assert.deepEqual(r.changes.filter((change) => USER_DATA.test(change)), []);
@@ -49,13 +49,6 @@ test("control: an owned store hydrates from native, sets no latch and writes lau
   assert.equal(r.launchLook, true);
   assert.doesNotMatch(r.live, /paused/, "Live Folders commands aren't held");
   assert.deepEqual(r.changes.filter((change) => /^(write|save) (session|downloads)\.json/.test(change)), [], "the native store owns the session files");
-});
-
-test("control: with no store module, the JS session path still loads and saves session.json", () => {
-  const r = run("noModule");
-  assert.equal(r.latch, false);
-  assert.ok(r.readsAtStart.includes("session.json"));
-  assert.ok(r.changes.includes("write session.json"));
 });
 
 test("a handed-off launch saves nothing, even after a resumed quit, and asks for no window", () => {

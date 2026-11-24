@@ -103,7 +103,10 @@ public class StoreModule: Module {
     #endif
 
     Function("snapshot") { () -> String? in
-      NativeStore.shared?.bridge.snapshotJSON()
+      #if DEBUG
+      if let failure = debugSnapshotFailure() { return failure == "null" ? nil : "{invalid" }
+      #endif
+      return NativeStore.shared?.bridge.snapshotJSON()
     }
 
     Function("dispatch") { (commandJSON: String, sinceRev: Int) -> String? in
@@ -239,3 +242,12 @@ private func pageFactsJSON(_ tabId: String, _ facts: PageFacts) -> JSONValue {
   }
   return .object(value)
 }
+
+#if DEBUG
+private func debugSnapshotFailure() -> String? {
+  let environment = ProcessInfo.processInfo.environment
+  guard let folder = environment["SOLARA_DATA_DIR"], !folder.isEmpty else { return nil }
+  let failure = environment["SOLARA_TEST_STORE_SNAPSHOT_FAIL"]
+  return failure == "null" || failure == "invalid" ? failure : nil
+}
+#endif

@@ -88,21 +88,17 @@ test("a matching bundle reaches main through the same entry gate", () => {
   assert.deepEqual(result.events, ["main", "legacy-js-cleanup"]);
 });
 
-test("derived services start JS profile cleanup only in the fallback lane", () => {
+test("derived services start and stop the shared services", () => {
   const source = read("./lib/persist.ts");
-  const derived = source.slice(source.indexOf("function startDerivedServices("), source.indexOf("function forgetClosedIncognito("));
-  for (const owns of [true, false]) {
-    let starts = 0;
-    let stops = 0;
-    const stop = runInNewContext(compile(derived + "\nstartDerivedServices({ forgetsIncognito: false });"), {
-      nativeOwnsWorkspace: () => owns,
-      startProfileDataCleanup: () => { starts++; return () => { stops++; }; },
-      startFavicons: () => () => {},
-      startHistory: () => () => {},
-      startBookmarks: () => () => {},
-    });
-    assert.equal(starts, owns ? 0 : 1);
-    stop();
-    assert.equal(stops, owns ? 0 : 1);
-  }
+  const derived = source.slice(source.indexOf("function startDerivedServices("));
+  const events = [];
+  const service = (name) => () => { events.push(name); return () => events.push(`stop ${name}`); };
+  const stop = runInNewContext(compile(derived + "\nstartDerivedServices();"), {
+    startFavicons: service("favicons"),
+    startHistory: service("history"),
+    startBookmarks: service("bookmarks"),
+  });
+  assert.deepEqual(events, ["favicons", "bookmarks", "history"]);
+  stop();
+  assert.deepEqual(events.slice(3), ["stop favicons", "stop history", "stop bookmarks"]);
 });

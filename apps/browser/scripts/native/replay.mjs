@@ -114,12 +114,7 @@ const INSTRUMENT = [
     ["function receive(tx: TabStripTransaction) {", "function __replayReceiveImpl(tx: TabStripTransaction) {"],
     ["function project(s: BrowserState) {", "function __replayProjectImpl(s: BrowserState) {"],
   ]],
-  ["/src/lib/privateCleanup.ts", "", [
-    ["export function startPrivateCleanup() {", "export function startPrivateCleanup() {\n  globalThis.__replayPersistStarted = true;"],
-  ]],
-  ["/src/lib/persist.ts", "", [
-    ["export function startPersistence() {", "export function startPersistence() {\n  globalThis.__replayPersistStarted = true;"],
-  ]],
+
 ];
 
 const RECORDED_ADAPTERS = new Map([
@@ -208,7 +203,6 @@ function tileFolderMemory() {
 function readConfig() {
   const listeners = ["forgetClosedPrivateWindows", "settleNesting", "livePinTable", "settlePeeks", "mirror"];
   if (globalThis.__replayNotesOrderChoices) listeners.push("noteOrderChoices");
-  if (globalThis.__replayPersistStarted) listeners.push("forgetClosedIncognito");
   return { handOffPinsImmediately: globalThis.__replayTabs?.immediateHandoff() ?? true, listeners };
 }
 

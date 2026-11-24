@@ -60,6 +60,8 @@ import { canToggleDeveloperModeFor, tabInDeveloperMode } from "../components/sit
 
 let quitting = false;
 let quitAttempt = 0;
+const quitHandlerCounts = __DEV__ ? { willQuit: 0, quitCancelled: 0 } : null;
+export const devQuitHandlerCounts = () => __DEV__ ? { ...quitHandlerCounts! } : null;
 export const isQuitting = () => quitting;
 
 export const shellWindowPort: WindowPort = {
@@ -103,6 +105,7 @@ export function startNativeSync() {
     if (e.type === "quitWarningSuppressed") s.updateSettings({ warnBeforeQuitting: false });
     if (e.type === "willQuit") {
       if (quitting) return;
+      if (__DEV__ && quitHandlerCounts) quitHandlerCounts.willQuit++;
       quitting = true;
       const attempt = ++quitAttempt;
       finishAnimatedCloses();
@@ -120,6 +123,7 @@ export function startNativeSync() {
       })();
     }
     if (e.type === "quitCancelled") {
+      if (__DEV__ && quitHandlerCounts) quitHandlerCounts.quitCancelled++;
       quitAttempt++;
       quitting = false;
       cancelBookmarkQuit();

@@ -1,22 +1,12 @@
-import { leftDownloadStaging, prepareWebKitContentBlocker, removeLeftDownloadStaging, type Download } from "@solara/solaracore";
-import { readDocumentResult, writeDocument, type DocumentRead } from "@solara/shell";
-import { showNotice, showToast } from "../components/layout/toasts";
+import { prepareWebKitContentBlocker, removeLeftDownloadStaging, type Download } from "@solara/solaracore";
+import { showToast } from "../components/layout/toasts";
 import { persistenceRefused, refusePersistence } from "./persistLatch";
-import { useBrowser, type BrowserState, type HydrateData } from "../store/browser";
-import { activeTabIdsWithoutPlaceholders, closedWindowPresentation, inPinnedContainer, isIncognitoProfile, newId, snapshotTab } from "../store/model";
-import { earlyLaunchTabOn, launchTab, linkProfile, type LaunchTab } from "../store/launchTab";
-import { launchBackdrop, type LaunchBackdrop } from "./launchBackdrop";
+import { useBrowser, type BrowserState } from "../store/browser";
 import { restoreLaunchLook, saveLaunchLook } from "./launchLook";
-import { parkWindowPins } from "../store/parkedPins";
-import { isPeekTab } from "../store/peek";
 import { tabEngine } from "../store/engines";
-import type { BrowserWindow, ClosedTab, Tab } from "../store/types";
-import { downloadSession } from "../store/ui";
 import { startFavicons } from "./favicons";
 import { startBookmarks } from "./bookmarks";
 import { startHistory } from "./history";
-import { forgetClosedIncognito } from "./privateCleanup";
-import { startProfileDataCleanup } from "./profileData";
 import { flushNativeStore, flushProblem } from "@solara/store";
 import * as nativeSettings from "@solara/settings";
 import { Alert } from "react-native";
@@ -27,136 +17,9 @@ import {
   nativeSafeMode,
   nativeSafeModeAfterFailedLaunches,
   nativeOwnsWorkspace,
-  nativeStoreActive,
   standDown,
   startNativeStore,
-  withApplier,
 } from "../store/nativeStore";
-import { journalAnchor, journalVersion, onJournalChange } from "../sync/journalHost";
-
-const SAVE_DELAY_MS = 800;
-const VERSION = 2;
-
-type Doc = { name: string; sources: (s: BrowserState) => unknown[]; json: (s: BrowserState) => string };
-
-const serialized =
-  (serialize: (s: BrowserState) => unknown) =>
-  (s: BrowserState): string =>
-    JSON.stringify(serialize(s));
-
-const persistedTab = ({ navigation: _n, adoptId: _a, wakeAdoptId, pageIn, newTabPlaceholder: _p, ...tab }: Tab) => {
-  const t = pageIn ? { ...tab, unloaded: true as const } : tab;
-  return wakeAdoptId?.startsWith("restore:") && !isIncognitoProfile(t.profileId) ? { ...t, wakeAdoptId } : t;
-};
-const publicTab = (t: { profileId: string }) => !isIncognitoProfile(t.profileId);
-
-const DOCS: Doc[] = [
-  {
-    name: "downloads.json",
-    sources: (s) => [s.downloads],
-    json: serialized((s) => ({
-      version: VERSION,
-      downloads: s.downloads
-        .filter((d) => downloadSession(d) === null)
-        .map((d) => (d.state === "downloading" ? { ...d, state: "failed" } : d)),
-    })),
-  },
-  {
-    name: "session.json",
-    sources: (s) => [journalVersion(), s.profiles, s.profileOrder, s.orphanedProfileData, s.windows, s.windowOrder, s.tabs, s.groups, s.splits, s.closedTabs, s.closedWindows, s.parkedPins, s.pinChoices, s.pinSync, s.settings, s.ui.focusedWindowId, s.ui.lastProfileId, s.ui.appDark, s.closedGroups, s.deletedGroups, s.cleanedTabs],
-    json: serialized((s) => sessionDocument(s)),
-  },
-];
-
-const sessionDocument = (s: BrowserState) => {
-  const retained = (id: string) => !!s.tabs[id] && !s.tabs[id]!.newTabPlaceholder && !isPeekTab(s, id);
-  const windows = Object.values(s.windows).filter((w) => !w.incognito && w.kind !== "small").map(({ chromeWindow: _c, ...w }) => ({
-    ...w,
-    tabIds: w.tabIds.filter(retained),
-    activeTabIds: activeTabIdsWithoutPlaceholders(s, w, w.tabIds.filter(retained)),
-  }));
-  const kept = new Set(windows.map((w) => w.id));
-  const focusedWindowId = s.ui.focusOrder.find((id) => windows.some((w) => w.id === id && (w.tabIds.length > 0 || !s.windows[id]?.tabIds.length))) ?? null;
-  return {
-    version: VERSION,
-    profiles: s.profiles,
-    profileOrder: s.profileOrder,
-    orphanedProfileData: s.orphanedProfileData,
-    settings: s.settings,
-    windows,
-    windowOrder: s.windowOrder.filter((id) => kept.has(id)),
-    focusedWindowId,
-    lastProfileId: s.ui.lastProfileId,
-    launchTab: earlyLaunchTabOn() ? launchTab(s, focusedWindowId) : null,
-    launchBackdrop: earlyLaunchTabOn() ? launchBackdrop(s, focusedWindowId) : null,
-    linkProfile: earlyLaunchTabOn() ? linkProfile(s) : null,
-    tabs: Object.values(s.tabs).filter((t) => kept.has(t.windowId) && retained(t.id)).map(persistedTab),
-    groups: Object.values(s.groups).filter((g) => kept.has(g.windowId)).map((g) => ({ ...g, tabIds: g.tabIds.filter(retained) })),
-    splits: Object.values(s.splits).filter((v) => kept.has(v.windowId)).map((v) => ({ ...v, tabIds: v.tabIds.filter(retained) })).filter((v) => v.tabIds.length >= 2),
-    closedTabs: s.closedTabs.filter((c) => publicTab(c.tab)),
-    closedWindows: s.closedWindows.filter((c) => c.tabs.every(publicTab)),
-    parkedPins: Object.fromEntries(Object.entries(s.parkedPins).filter(([profileId]) => publicTab({ profileId }))),
-    pinChoices: Object.fromEntries(Object.entries(s.pinChoices).filter(([profileId]) => publicTab({ profileId }))),
-    pinSync: Object.fromEntries(Object.entries(s.pinSync).filter(([profileId]) => publicTab({ profileId }))),
-    closedGroups: s.closedGroups.filter((c) => c.tabs.every(publicTab)),
-    deletedGroups: s.deletedGroups.filter((c) => c.tabs.every(publicTab)),
-    cleanedTabs: s.cleanedTabs.filter((c) => publicTab(c.tab)),
-    ...journalAnchor(),
-  };
-};
-
-const unreadableDocs = new Set<string>();
-const docsToWrite = () =>
-  (nativeStoreActive() ? [] : DOCS)
-    .filter((d) => !unreadableDocs.has(d.name) && !(nativeSafeMode() && d.name === "session.json"));
-
-function parsed<T>(name: string, read: DocumentRead | null): T | null {
-  if (!read || !("contents" in read) || !read.contents) return null;
-  try {
-    return JSON.parse(read.contents) as T;
-  } catch (error) {
-    console.warn(`Couldn't read ${name}`, error);
-    return null;
-  }
-}
-
-function write(name: string, json: string) {
-  try {
-    writeDocument(name, json);
-  } catch (error) {
-    console.warn(`Couldn't save ${name}`, error);
-  }
-}
-
-const byId = <T extends { id: string }>(list: T[] | undefined) => Object.fromEntries((list ?? []).map((x) => [x.id, x]));
-
-type SessionV2 = {
-  version: 2;
-  profiles: HydrateData["profiles"];
-  profileOrder: string[];
-  orphanedProfileData?: string[];
-  settings: HydrateData["settings"];
-  windows: BrowserWindow[];
-  windowOrder: string[];
-  focusedWindowId: string | null;
-  lastProfileId?: string | null;
-  tabs: Tab[];
-  groups: BrowserState["groups"][string][];
-  splits: BrowserState["splits"][string][];
-  closedTabs: ClosedTab[];
-  closedWindows: BrowserState["closedWindows"];
-  parkedPins?: BrowserState["parkedPins"];
-  pinChoices?: BrowserState["pinChoices"];
-  pinSync?: BrowserState["pinSync"];
-  closedGroups?: BrowserState["closedGroups"];
-  deletedGroups?: BrowserState["deletedGroups"];
-  cleanedTabs?: BrowserState["cleanedTabs"];
-  launchTab?: LaunchTab | null;
-  launchBackdrop?: LaunchBackdrop | null;
-  linkProfile?: string | null;
-};
-
-let droppedPrivateDownloads = false;
 
 function forgetStaging(id: string) {
   const s = useBrowser.getState();
@@ -170,80 +33,9 @@ function cleanStaging(downloads: Download[]) {
   for (const d of downloads) if (d.stagingId) void removeLeftDownloadStaging(d).then((removed) => removed && forgetStaging(d.id));
 }
 
-export function loadSession(
-  sessionRead: DocumentRead = readDocumentResult("session.json"),
-  downloadsRead: DocumentRead | null = readDocumentResult("downloads.json"),
-): HydrateData | null {
-  const session = parsed<SessionV2>("session.json", sessionRead);
-  if (session?.version !== 2) return null;
-  const downloads = parsed<{ downloads: Download[] }>("downloads.json", downloadsRead);
-  droppedPrivateDownloads = (downloads?.downloads ?? []).some((d) => downloadSession(d) !== null);
-  const data: HydrateData = {
-    profiles: session.profiles,
-    profileOrder: session.profileOrder,
-    orphanedProfileData: session.orphanedProfileData ?? [],
-    settings: session.settings,
-    windows: byId(session.windows),
-    windowOrder: session.windowOrder,
-    focusedWindowId: session.focusedWindowId,
-    lastProfileId: session.lastProfileId ?? null,
-    tabs: byId(session.tabs),
-    groups: byId(session.groups),
-    splits: byId(session.splits),
-    closedTabs: session.closedTabs,
-    closedWindows: session.closedWindows,
-    parkedPins: session.parkedPins ?? {},
-    pinChoices: session.pinChoices ?? {},
-    pinSync: session.pinSync ?? {},
-    closedGroups: session.closedGroups ?? [],
-    deletedGroups: session.deletedGroups ?? [],
-    cleanedTabs: session.cleanedTabs ?? [],
-    downloads: (downloads?.downloads ?? []).filter((d) => downloadSession(d) === null).map((d, i) => {
-      const id = `saved-${i}`;
-      const left = leftDownloadStaging(d);
-      const { staging: _, stagingId: _id, destination: _to, ...kept } = d;
-      if (!left) return { ...kept, id };
-      void removeLeftDownloadStaging(d).then((removed) => removed && forgetStaging(id));
-      return { ...d, id, stagingId: left.uuid };
-    }),
-  };
-  if (session.settings && session.settings.restoreSession === false) {
-    const now = Date.now();
-    const kept = session.windows.filter((w) => w.keptOnClose && !w.incognito && w.kind !== "small");
-    const keptIds = new Set(kept.map((w) => w.id));
-    const closing = session.windows.filter((w) => !keptIds.has(w.id));
-    const pinSource = { windows: Object.fromEntries(kept.map((w) => [w.id, w])), tabs: data.tabs ?? {}, groups: data.groups ?? {}, splits: data.splits ?? {}, history: {} };
-    for (const w of closing) data.parkedPins = parkWindowPins(data.parkedPins ?? {}, w, pinSource);
-    data.closedWindows = [
-      ...(data.closedWindows ?? []),
-      ...closing.map((w) => ({
-        kind: "window" as const,
-        id: newId("cw"),
-        window: closedWindowPresentation(w),
-        tabs: w.tabIds
-          .map((id) => data.tabs?.[id])
-          .filter((t): t is Tab => !!t && !t.newTabPlaceholder && !inPinnedContainer(pinSource, t.id))
-          .map((t) => ({ ...snapshotTab(t), active: Object.values(w.activeTabIds).includes(t.id) })),
-        groups: [],
-        closedAt: now,
-      })).filter((c) => c.tabs.some((t) => t.url)),
-    ].slice(-10);
-    data.windows = Object.fromEntries(kept.map((w) => [w.id, w]));
-    data.windowOrder = (data.windowOrder ?? []).filter((id) => keptIds.has(id));
-    data.tabs = Object.fromEntries(Object.entries(data.tabs ?? {}).filter(([, t]) => keptIds.has(t.windowId)));
-    data.groups = Object.fromEntries(Object.entries(data.groups ?? {}).filter(([, g]) => keptIds.has(g.windowId)));
-    data.splits = Object.fromEntries(Object.entries(data.splits ?? {}).filter(([, v]) => keptIds.has(v.windowId)));
-  }
-  data.windows = Object.fromEntries(Object.entries(data.windows ?? {}).map(([id, { keptOnClose: _, ...w }]) => [id, w]));
-  return data;
-}
-
-let flush: () => void = () => {};
-let resume: () => void = () => {};
 let frozen = false;
 
 export function flushPersistence({ final = false } = {}) {
-  flush();
   if (final || nativeOwnsWorkspace()) {
     const result = flushNativeStore();
     if (final && flushProblem(result)) console.warn("Native store quit flush:", result);
@@ -255,7 +47,6 @@ export function flushPersistence({ final = false } = {}) {
 export function resumePersistence() {
   if (persistenceRefused()) return;
   frozen = false;
-  resume();
 }
 
 function prepareWebKitBlocker() {
@@ -271,7 +62,7 @@ export function startPersistence() {
     console.warn("Another instance is using this data folder; this one saves nothing.");
     return () => {};
   }
-  if (store.modulePresent && !nativeOwnsWorkspace()) return savesNothing(store.reason ?? "the native store is frozen");
+  if (!nativeOwnsWorkspace()) return savesNothing(store.modulePresent ? (store.reason ?? "the native store is frozen") : "the native store module is missing");
   if (nativeOwnsWorkspace()) {
     let hydrated = false;
     try {
@@ -287,73 +78,8 @@ export function startPersistence() {
     }
     cleanStaging(useBrowser.getState().downloads);
     tellSafeModeAfterFailedLaunches();
-    return startDerivedServices({ forgetsIncognito: false });
+    return startDerivedServices();
   }
-  const sessionRead: DocumentRead = nativeSafeMode() ? { missing: true } : readDocumentResult("session.json");
-  if ("failure" in sessionRead) return refuseToSave(sessionRead.path, sessionRead);
-  const downloadsRead = readDocumentResult("downloads.json");
-  if (downloadsRead && "failure" in downloadsRead) {
-    unreadableDocs.add("downloads.json");
-    console.error(`Couldn't read ${downloadsRead.path} (${downloadsRead.failure}), so this launch leaves it as it is.`);
-  }
-  const data = nativeSafeMode() ? {} : (loadSession(sessionRead, downloadsRead) ?? {});
-  withApplier(() => useBrowser.getState().hydrate(data));
-  if (!nativeSafeMode()) {
-    restoreLaunchLook();
-    prepareWebKitBlocker();
-  }
-  tellSafeModeAfterFailedLaunches();
-
-  const lastSources = new Map<string, unknown[]>();
-  const lastJson = new Map<string, string>();
-  const dirty = new Set<Doc>();
-  let timer: ReturnType<typeof setTimeout> | undefined;
-
-  const save = () => {
-    clearTimeout(timer);
-    timer = undefined;
-    if (frozen) return;
-    const s = useBrowser.getState();
-    for (const doc of docsToWrite().filter((d) => dirty.has(d))) {
-      const json = doc.json(s);
-      if (lastJson.get(doc.name) !== json) {
-        lastJson.set(doc.name, json);
-        write(doc.name, json);
-      }
-    }
-    dirty.clear();
-  };
-  flush = save;
-
-  const check = (s: BrowserState, initial = false) => {
-    if (frozen) return;
-    for (const doc of DOCS) {
-      const sources = doc.sources(s);
-      const prev = lastSources.get(doc.name);
-      if (prev && sources.every((v, i) => v === prev[i])) continue;
-      lastSources.set(doc.name, sources);
-      if (!initial) dirty.add(doc);
-    }
-    if (dirty.size && !timer) timer = setTimeout(save, SAVE_DELAY_MS);
-  };
-  check(useBrowser.getState(), true);
-  if (droppedPrivateDownloads) {
-    droppedPrivateDownloads = false;
-    dirty.add(DOCS.find((d) => d.name === "downloads.json")!);
-    timer ??= setTimeout(save, SAVE_DELAY_MS);
-  }
-  resume = () => {
-    check(useBrowser.getState());
-    save();
-  };
-  const stopServices = startDerivedServices({ forgetsIncognito: true });
-  const stopSession = useBrowser.subscribe((s) => check(s));
-  const stopJournal = onJournalChange(() => check(useBrowser.getState()));
-  return () => {
-    stopServices();
-    stopSession();
-    stopJournal();
-  };
 }
 
 function tellSafeModeAfterFailedLaunches() {
@@ -371,25 +97,6 @@ function tellSafeModeAfterFailedLaunches() {
   const stop = useBrowser.subscribe((s) => {
     if (tell(s)) stop();
   });
-}
-
-function refuseToSave(sessionPath: string, sessionRead: DocumentRead) {
-  refusePersistence(sessionPath);
-  frozen = true;
-  withApplier(() => useBrowser.getState().hydrate(nativeSafeMode() ? {} : (loadSession(sessionRead, null) ?? {})));
-  const title = "Solara couldn't read its saved session";
-  const message = `Changes in this window won't be saved. The saved session is at ${sessionPath}.`;
-  console.error(`${title}. ${message}`);
-  const told = new Set<string>();
-  const tell = (s: BrowserState) => {
-    for (const windowId of s.windowOrder) {
-      if (told.has(windowId)) continue;
-      told.add(windowId);
-      showNotice(windowId, title, message, "exclamationmark.triangle");
-    }
-  };
-  tell(useBrowser.getState());
-  return useBrowser.subscribe(tell);
 }
 
 function savesNothing(reason: string) {
@@ -411,21 +118,13 @@ function savesNothing(reason: string) {
   return () => {};
 }
 
-function startDerivedServices({ forgetsIncognito }: { forgetsIncognito: boolean }) {
+function startDerivedServices() {
   const stopFavicons = startFavicons();
   const stopBookmarks = startBookmarks();
   const stopHistory = startHistory();
-  const stopProfileData = nativeOwnsWorkspace() ? () => {} : startProfileDataCleanup();
-  const stopIncognito = forgetsIncognito
-    ? useBrowser.subscribe((s, prev) => {
-        if (s.windows !== prev.windows) forgetClosedIncognito(s, prev);
-      })
-    : () => {};
   return () => {
     stopFavicons();
     stopHistory();
     stopBookmarks();
-    stopProfileData();
-    stopIncognito();
   };
 }

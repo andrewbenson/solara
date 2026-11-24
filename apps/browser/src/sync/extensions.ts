@@ -1,3 +1,4 @@
+import { persistenceRefused } from "../lib/persistLatch";
 import { engineCall, onEngineEvent } from "@solara/solaracore";
 import { readDocument, writeDocument } from "@solara/shell";
 import { extensionsAdapter, type ExtensionChange, type ExtensionIntent, type ExtensionsAdapter, type LocalExtensions } from "@solara/sync";
@@ -21,7 +22,9 @@ function stored(): Intents {
   return intents;
 }
 
-const save = () => writeDocument(DOC, JSON.stringify(stored()));
+const save = () => {
+  if (!persistenceRefused()) writeDocument(DOC, JSON.stringify(stored()));
+};
 
 function note(profile: string, id: string, kind: ExtensionIntent["kind"]) {
   const all = stored();

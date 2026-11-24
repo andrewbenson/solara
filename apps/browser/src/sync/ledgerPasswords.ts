@@ -1,3 +1,4 @@
+import { persistenceRefused } from "../lib/persistLatch";
 import { deletePassword, engineCall } from "@solara/solaracore";
 import { readDocument, readDocumentResult, writeDocument } from "@solara/shell";
 import { DOWNLOAD_HOLD_MS, type Adapter, type MarkedLogins, type SealedValue } from "@solara/sync";
@@ -49,6 +50,7 @@ function writeLedgers(doc: LedgerDoc, profile: string): boolean {
     return false;
   }
   unwritable.delete(profile);
+  if (persistenceRefused()) return false;
   writeDocument(LEDGER_DOC, text);
   return true;
 }
@@ -63,7 +65,7 @@ export async function migrateLedger(migrate: (text: string) => Promise<string | 
   if (!text || readLedgerDoc(text) !== "older") return;
   migrationTried = true;
   const migrated = await migrate(text);
-  if (migrated && typeof readLedgerDoc(migrated) !== "string" && readDocument(LEDGER_DOC) === text) writeDocument(LEDGER_DOC, migrated);
+  if (migrated && typeof readLedgerDoc(migrated) !== "string" && readDocument(LEDGER_DOC) === text && !persistenceRefused()) writeDocument(LEDGER_DOC, migrated);
 }
 
 export type SealedPasswordCalls = {

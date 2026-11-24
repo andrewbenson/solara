@@ -6,15 +6,12 @@ const { useBrowser } = await import("./browser.ts");
 await startProfileConfirmation();
 const model = await import("./model.ts");
 const { cleanedTabsFor } = await import("./organize.ts");
-const { startPrivateCleanup } = await import("../lib/privateCleanup.ts");
 const drop = await import("../components/layout/windowDrop.ts");
 const stub = await import("../test-native/index.ts");
 
 const S = () => useBrowser.getState();
 const HOUR = 3_600_000;
 const OLD = () => Date.now() - 13 * HOUR;
-const { startProfileDataCleanup } = await import("../lib/profileData.ts");
-const settle = () => new Promise((resolve) => setTimeout(resolve, 1700));
 
 function privateWindowWith(...urls) {
   const w = S().createWindow({ incognito: true, url: urls[0] });
@@ -101,38 +98,6 @@ test("cleaned tabs leave Recently Cleaned a week after their clean-up", () => {
   assert.ok(S().cleanedTabs.some((c) => c.tab.url === "https://idle.example/"));
 });
 
-const download = (id, profile, state = "finished") => ({
-  id,
-  url: `https://files.example/${id}`,
-  filename: `${id}.zip`,
-  path: `/tmp/${id}.zip`,
-  state,
-  paused: false,
-  received: 1,
-  total: 1,
-  speed: 0,
-  mimeType: "application/zip",
-  profile,
-});
-
-test("incognito downloads leave with their window and reject late events", () => {
-  stub.docs.clear();
-  const stop = startPrivateCleanup();
-  S().hydrate({});
-  const normal = S().createWindow();
-  const incognito = S().createWindow({ incognito: true });
-  const privateProfile = S().windows[incognito].profileId;
-  S().upsertDownload(download("1", ""));
-  S().upsertDownload(download("2", privateProfile, "downloading"));
-
-  S().closeWindow(incognito);
-  assert.deepEqual(S().downloads.map((d) => d.id), ["1"]);
-  assert.ok(S().windows[normal]);
-  S().upsertDownload(download("2", privateProfile, "cancelled"));
-  assert.deepEqual(S().downloads.map((d) => d.id), ["1"]);
-  stop();
-});
-
 test("favicons: incognito icons stay in memory and in their own profile", async () => {
   const { noteFavicon, resolveFavicon, useFavicons, startFavicons } = await import("../lib/favicons.ts");
   const { webviews } = await import("../lib/webviews.ts");
@@ -214,27 +179,6 @@ test("a profile sharing another's data leaves nothing to delete until the last o
   S().createProfile({ name: "New" });
   S().deleteProfile(other);
   assert.deepEqual(S().orphanedProfileData, ["", other]);
-});
-
-test("queued profile data stays queued until deletion succeeds", async () => {
-  stub.deletedProfileData.length = 0;
-  stub.profileDataLeft.set("", ["passwords"]);
-  S().hydrate({});
-  const stop = startProfileDataCleanup();
-  const work = S().createProfile({ name: "Work" });
-  S().createWindow({ profileId: work, url: "https://work.example/" });
-  S().deleteProfile("default");
-  await settle();
-  assert.deepEqual(stub.deletedProfileData, [""]);
-  assert.deepEqual(S().orphanedProfileData, [""], "a failed deletion stays queued");
-
-  stop();
-  stub.profileDataLeft.clear();
-  const again = startProfileDataCleanup();
-  await settle();
-  assert.deepEqual(stub.deletedProfileData, ["", ""]);
-  assert.deepEqual(S().orphanedProfileData, []);
-  again();
 });
 
 test("imported history of any age is shown and written, untitled rows included", () => {

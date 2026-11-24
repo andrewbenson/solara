@@ -92,6 +92,7 @@ function bridge({ browsers, importData, importSafariDirect, importSafariExport, 
     writeState: () => {},
   };
   const favicons = load(new URL("../../../lib/favicons.ts", import.meta.url), {
+    "./persistLatch": { persistenceRefused: () => false },
     "../store/nativeStore": nativeStore,
     "@solara/solaracore": {},
     "@solara/settings": { nativeStoreFavicon: (...args) => { faviconWrites.push(args); return faviconWrite?.(...args) ?? Promise.resolve(); } },

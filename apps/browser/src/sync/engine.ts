@@ -197,9 +197,18 @@ const PAIRING_RECOVERY = "Sync needs recovery in a version of Solara that suppor
 const pairingPending = () => doc.v === 2 && (!pairingReadyAcknowledged || (doc.bootstrap?.phase !== "ready" && doc.bootstrap?.phase !== "onboarding-completed"));
 const localName = (name: string) => doc.v === 2 && doc.joinTransaction && (name === STATE || name === JOURNAL || name.startsWith(DELTA_PREFIX) || name.startsWith(BATCH_PREFIX)) ? `sync-pairing-${doc.joinTransaction}-${name}` : name;
 const readDocument = (name: string) => readStoredDocument(localName(name));
-const writeDocument = (name: string, text: string) => writeStoredDocument(localName(name), text);
-const saveDocument = (name: string, text: string) => saveStoredDocument(localName(name), text);
-const removeDocument = (name: string) => removeStoredDocument(localName(name));
+const writeDocument = (name: string, text: string) => {
+  if (persistenceRefused()) return;
+  writeStoredDocument(localName(name), text);
+};
+const saveDocument = (name: string, text: string) => {
+  if (persistenceRefused()) return Promise.resolve(false as const);
+  return saveStoredDocument(localName(name), text);
+};
+const removeDocument = (name: string) => {
+  if (persistenceRefused()) return;
+  removeStoredDocument(localName(name));
+};
 const listDocuments = (prefix: string) => {
   const mapped = localName(prefix);
   const names = listStoredDocuments(mapped);
@@ -242,6 +251,9 @@ let recordsKnown = false;
 let journalRefused = false;
 const SESSION_UNREADABLE = "Sync is paused because Solara couldn't read its saved session. Nothing from this window is sent to your other Macs.";
 const SAFE_MODE = "Sync is paused because Solara opened in safe mode. Nothing from this window is sent to your other Macs.";
+const publishStalled = (error: unknown) => {
+  if (!persistenceRefused()) publishUi({ status: "stalled", error: errorText(error) });
+};
 const syncHeld = () => (persistenceRefused() ? SESSION_UNREADABLE : nativeSafeMode() ? SAFE_MODE : null);
 let stopping = false;
 let turningOn = false;
@@ -465,7 +477,7 @@ const persistJournal = (scope: string) => async (batches: LogFile[]) => {
     list.push(file);
     try {
       const sealed = await sealLocal(JSON.stringify({ journal: { [scope]: [file] } }), "journal", batchPart(scope, file.seq));
-      await saveDocument(batchName(scope, file.seq), sealed);
+      if (await saveDocument(batchName(scope, file.seq), sealed) === false) return;
     } catch (error) {
       const current = journal[scope];
       const at = current?.findIndex((f) => f.device === file.device && f.seq === file.seq) ?? -1;
@@ -544,7 +556,7 @@ function save() {
   if (doc.v === 2 && (pairingAdmission || pairingRecovery)) return;
   if (doc.v === 2 && pairingPending()) {
     if (!pairingAdmitted && doc.bootstrap?.phase !== "stopped") return;
-    void writePairingDoc({ ...doc }, generation, false).catch((error) => publishUi({ status: "stalled", error: errorText(error) }));
+    void writePairingDoc({ ...doc }, generation, false).catch(publishStalled);
     return;
   }
   if (doc.v === 2 && !pairingAdmitted) return;
@@ -552,7 +564,7 @@ function save() {
   const json = JSON.stringify(loaded ? { ...meta, seqs: Object.fromEntries(Object.entries(scopes).map(([k, s]) => [k, writtenSeq(s)])) } : meta);
   if (json !== savedJson) {
     if (doc.v === 2) {
-      void writePairingDoc({ ...doc }, generation, false).catch((error) => publishUi({ status: "stalled", error: errorText(error) }));
+      void writePairingDoc({ ...doc }, generation, false).catch(publishStalled);
     } else {
       savedJson = json;
       writeDocument(DOC, json);
@@ -582,7 +594,7 @@ function save() {
     try {
       const sealed = await sealLocal(text, "state", change.whole ? undefined : deltaPart(next));
       if (sealed) {
-        await saveDocument(name, sealed);
+        if (await saveDocument(name, sealed) === false) return;
         landed = true;
         stateCleared = false;
         if (era === stateEra) {
@@ -1470,7 +1482,7 @@ async function writePairingDoc(next: SyncDoc, expected: number, phaseChange = tr
       candidate = withPairingPreferences(candidate);
       const { scopes, ...meta } = candidate;
       const json = JSON.stringify(meta);
-      await saveDocument(DOC, json);
+      if (await saveDocument(DOC, json) === false) throw new Error(PAIRING_RECOVERY);
       if (readDocument(DOC) !== json || expected !== generation) throw new Error(PAIRING_RECOVERY);
       const latest = withPairingPreferences(candidate);
       const { scopes: _scopes, ...latestMeta } = latest;
@@ -1492,7 +1504,7 @@ async function checkpointPairing(phase: Bootstrap["phase"], replica: BootstrapRe
   const name = `sync-bootstrap-${replica.transaction}-${replica.revision}.nns`;
   const sealed = await deadline(sealLocal(text, "state"));
   if (!sealed || expected !== generation) throw new Error(PAIRING_RECOVERY);
-  await saveDocument(name, sealed);
+  if (await saveDocument(name, sealed) === false) throw new Error(PAIRING_RECOVERY);
   if (readDocument(name) !== sealed || expected !== generation) throw new Error(PAIRING_RECOVERY);
   const next = { ...doc, ...(links ? { profiles: links } : {}), joining: phase !== "ready" && phase !== "onboarding-completed" && phase !== "stopped", bootstrap: { phase, transaction: replica.transaction, generation: replica.generation, checkpoint: { name, digest: digest(text) } } };
   await writePairingDoc(next, expected);
@@ -1567,7 +1579,7 @@ export async function joinFromPairing(request: PairingRequest, host: PairingNati
     await initializePairing(installed, host, expected);
     return { ok: true };
   } catch (error) {
-    if (expected === generation) publishUi({ status: "stalled", error: errorText(error) });
+    if (expected === generation) publishStalled(error);
     return { error: errorText(error) };
   } finally {
     if (pairingAdmission === admission) pairingAdmission = null;
@@ -1922,10 +1934,10 @@ async function runBootstrapCycle() {
     recordsKnown = true;
     publishUi({ status: "starting", error: null });
   } catch (error) {
-    if (expected === generation) publishUi({ status: "stalled", error: errorText(error) });
+    if (expected === generation) publishStalled(error);
   } finally {
     running = false;
-    if (expected === generation && doc.enabled) scheduleSync(CYCLE_MS);
+    if (expected === generation && doc.enabled && !persistenceRefused()) scheduleSync(CYCLE_MS);
   }
 }
 
@@ -1950,7 +1962,7 @@ async function stopPairing() {
     loaded = true;
     publishUi({ status: "off", error: null });
   } catch (error) {
-    publishUi({ status: "stalled", error: errorText(error) });
+    publishStalled(error);
   } finally {
     stopping = false;
   }

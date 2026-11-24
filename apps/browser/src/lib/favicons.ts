@@ -1,3 +1,4 @@
+import { persistenceRefused } from "./persistLatch";
 import { nativeSafeMode } from "../store/nativeStore";
 import { ensureProfile, faviconsFor, fetchFavicon, onHistoryChanged } from "@solara/solaracore";
 import { nativeStoreFavicon } from "@solara/settings";
@@ -457,7 +458,7 @@ function removeLegacyFiles(s: Pick<BrowserState, "profiles">) {
     const doc = `favicons-${id}.json`;
     try {
       if (readDocument(doc) === null) continue;
-      removeDocument(doc);
+      if (!persistenceRefused()) removeDocument(doc);
     } catch (error) {
       console.warn(`[favicons] couldn't remove ${doc}`, error);
     }

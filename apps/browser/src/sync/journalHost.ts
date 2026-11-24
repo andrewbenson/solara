@@ -1,3 +1,4 @@
+import { persistenceRefused } from "../lib/persistLatch";
 import { readDocument, writeDocument } from "@solara/shell";
 import type { ScopeState } from "@solara/sync";
 import { GEN_DOC, openJournal, type EditJournal } from "./editJournal";
@@ -8,20 +9,8 @@ import { syncRedesign } from "./redesignSwitch";
 const SESSION_DOC = "session.json";
 
 let journal: EditJournal | null = null;
-let version = 0;
-const listeners = new Set<() => void>();
-
-export const journalVersion = () => version;
-
-export function onJournalChange(listener: () => void) {
-  listeners.add(listener);
-  return () => void listeners.delete(listener);
-}
-
 function changed() {
-  version++;
   writeNativeAnchor();
-  for (const listener of listeners) listener();
 }
 
 const NATIVE_SETTINGS_KEYS = ["set:", "devmode:"];
@@ -51,6 +40,7 @@ function anchorFields(j: EditJournal | null, seen: SavedSeen): Anchor {
 }
 
 function writeJournalDocument(name: string, text: string) {
+  if (persistenceRefused()) return;
   writeDocument(name, text);
   if (journal && name === GEN_DOC) writeNativeAnchor();
 }

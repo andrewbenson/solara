@@ -9,8 +9,6 @@ const { lastActiveProfile, privateWindowProfile } = await import("./small.ts");
 const { extensionProfile } = await import("../components/extensions/store.ts");
 const stub = await import("../test-native/index.ts");
 
-const { startPrivateCleanup } = await import("../lib/privateCleanup.ts");
-
 const S = () => useBrowser.getState();
 const PERSONAL = { id: "default", name: "Personal", color: "plum", icon: null, createdAt: 0 };
 
@@ -81,9 +79,8 @@ test("Little Solara from a profile-2 private window opens in profile 2, never pr
   assert.ok(!S().windows[small].incognito);
 });
 
-test("a private session's downloads show in its windows only and go with its last window", async () => {
+test("a private session's downloads show in its windows only", () => {
   stub.docs.clear();
-  const stop = startPrivateCleanup();
   stub.cancelledDownloads.length = 0;
   const { work, a, b } = twoProfiles();
   const p2 = S().createWindow({ incognito: true });
@@ -102,24 +99,7 @@ test("a private session's downloads show in its windows only and go with its las
   assert.deepEqual(ids(a), ["old"]);
   S().switchProfile(a, work);
   assert.deepEqual(ids(a), ["regular2"]);
-
-  S().closeWindow(p2);
-  await new Promise((r) => setTimeout(r, 0));
-  assert.deepEqual(ids(p2b), ["private2"]);
-  assert.deepEqual(stub.cancelledDownloads, []);
-  S().closeWindow(p2b);
-  await new Promise((r) => setTimeout(r, 0));
-  assert.deepEqual(stub.cancelledDownloads, ["private2"]);
-  assert.ok(!S().downloads.some((d) => d.id === "private2"));
-  assert.deepEqual(ids(p1), ["private1"]);
-  S().upsertDownload({ ...download("private2", work, true), state: "cancelled" });
-  S().upsertDownload(download("unseen", work, true));
-  const next = S().createWindow({ incognito: true, profileId: work });
-  S().upsertDownload({ ...download("private2", work, true), state: "cancelled" });
-  S().upsertDownload(download("unseen", work, true));
-  assert.deepEqual(ids(next), []);
   assert.ok(!downloadVisibleIn(download("x", work, true), S().windows[a]));
-  stop();
 });
 
 test("a private window lists its own profile's extensions (incognito-allowed ones), off the record", () => {

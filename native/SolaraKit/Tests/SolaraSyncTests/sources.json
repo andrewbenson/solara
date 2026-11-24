@@ -2,7 +2,7 @@
   "Adapters": {
     "native/SolaraKit/Scripts/legacy-bookmarks/apps/browser/src/sync/adapters.ts": "7fe505384b197126911357f2059ec18fe62b958bbaa001768779a7a20e69c218",
     "apps/browser/src/sync/pinned.ts": "2d2979d89fbc5bf46a8b7ccadaf38f8b989f15f953862d5c2878326fbec8498c",
-    "apps/browser/src/sync/extensions.ts": "cacdd4a017e4abd5ada02e0b9e26a4fd7ccc11aff4c61dcd88231f8e48fbf688"
+    "apps/browser/src/sync/extensions.ts": "3493bb5f6e788829ee3293319e0cd41ee3c15f1234032757e7e4bce663ff1263"
   },
   "Cases/SyncPinsApply": {
     "apps/browser/src/sync/pinned.ts": "49ede6b7fadea6337f623ae478e786401a87e7c18c29ba6e1ba27484096529a0",

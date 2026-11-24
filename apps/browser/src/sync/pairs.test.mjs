@@ -4,7 +4,6 @@ const { useBrowser } = await import("../store/browser.ts");
 const { Clock, compact, emptyScope, syncScope } = await import("@solara/sync");
 const pinnedArea = await import("./pinned.ts");
 const stub = await import("../test-native/index.ts");
-const { flushPersistence, loadSession, startPersistence } = await import("../lib/persist.ts");
 const shipped = await import("../../../../packages/sync/src/fixtures/scope-v0.2.38.ts");
 const { pinnedAdapter: shippedPinnedAdapter } = await import("./fixtures/pinned-v0.2.38.ts");
 
@@ -88,15 +87,30 @@ class Mac {
   fork(folder) {
     return new Mac(this.id, folder, this.browser, structuredClone(this.scopes), this.legacy);
   }
-  relaunch() {
+  simulateReload() {
     this.with(() => {
-      const saved = S();
-      stub.docs.clear();
-      const stop = startPersistence();
-      useBrowser.setState(saved, true);
-      flushPersistence();
-      stop();
-      S().hydrate(loadSession());
+      const s = S();
+      const publicProfile = (id) => !id.startsWith("incognito:");
+      const windows = Object.fromEntries(Object.values(s.windows).filter((w) => !w.incognito && w.kind !== "small").map(({ chromeWindow, ...w }) => [w.id, w]));
+      const tabs = Object.fromEntries(Object.values(s.tabs).filter((t) => windows[t.windowId] && publicProfile(t.profileId) && !t.newTabPlaceholder && s.peeks[t.windowId]?.tabId !== t.id).map(({ navigation, adoptId, wakeAdoptId, pageIn, newTabPlaceholder, ...t }) => [t.id, { ...t, ...(pageIn ? { unloaded: true } : {}) }]));
+      for (const w of Object.values(windows)) {
+        w.tabIds = w.tabIds.filter((id) => tabs[id]);
+        w.activeTabIds = Object.fromEntries(Object.entries(w.activeTabIds).filter(([, id]) => tabs[id]));
+      }
+      const groups = Object.fromEntries(Object.values(s.groups).filter((g) => windows[g.windowId]).map((g) => [g.id, { ...g, tabIds: g.tabIds.filter((id) => tabs[id]) }]));
+      const splits = Object.fromEntries(Object.values(s.splits).filter((v) => windows[v.windowId]).map((v) => [v.id, { ...v, tabIds: v.tabIds.filter((id) => tabs[id]) }]).filter(([, v]) => v.tabIds.length >= 2));
+      const publicMap = (value) => Object.fromEntries(Object.entries(value).filter(([id]) => publicProfile(id)));
+      const publicClosed = (value) => value.filter((c) => (c.tabs ?? [c.tab]).every((t) => publicProfile(t.profileId)));
+      const data = JSON.parse(JSON.stringify({
+        profiles: s.profiles, profileOrder: s.profileOrder, settings: s.settings,
+        windows, windowOrder: s.windowOrder.filter((id) => windows[id]), tabs, groups, splits,
+        focusedWindowId: s.ui.focusedWindowId, lastProfileId: s.ui.lastProfileId,
+        parkedPins: publicMap(s.parkedPins), pinChoices: publicMap(s.pinChoices), pinSync: publicMap(s.pinSync),
+        closedTabs: publicClosed(s.closedTabs), closedWindows: publicClosed(s.closedWindows),
+        closedGroups: publicClosed(s.closedGroups), deletedGroups: publicClosed(s.deletedGroups), cleanedTabs: publicClosed(s.cleanedTabs),
+      }));
+      S().hydrate({});
+      S().hydrate(data);
     });
     this.scopes = JSON.parse(JSON.stringify(this.scopes));
     this.clock = new Clock(this.id, null, now);
@@ -250,7 +264,7 @@ const OPS = [
   { name: "loadXThenMirror", steps: [loadX, mirrorWindow], touches: [] },
   { name: "park", steps: [parkAndReopen], touches: [] },
   { name: "mirror", steps: [mirrorWindow], touches: [] },
-  { name: "relaunch", steps: [{ lifecycle: (k, mac) => mac.relaunch() }], touches: [] },
+  { name: "simulateReload", steps: [{ lifecycle: (k, mac) => mac.simulateReload() }], touches: [] },
   {
     name: "unpinGThenCompact",
     steps: [(k) => { const g = groupFor(k.G); if (g?.pinned) (S().moveGroup(g.id, { pinned: false }), done(k, "unpinGThenCompact")); }, { lifecycle: (k, mac) => mac.compact() }],

@@ -16,7 +16,7 @@ function fixture() {
   let barrier = deferred();
   const events = [];
   const state = {};
-  const setup = new Function("onAppEvent", "store", "nativeOwnsWorkspace", "createWindow", "finishAnimatedCloses", "flushPersistence", "replyToTerminate", "resumePersistence", "flushBookmarkJournal", "cancelBookmarkQuit", `let quitting = false; let quitAttempt = 0; ${wiring}; return () => quitting;`);
+  const setup = new Function("onAppEvent", "store", "nativeOwnsWorkspace", "createWindow", "finishAnimatedCloses", "flushPersistence", "replyToTerminate", "resumePersistence", "flushBookmarkJournal", "cancelBookmarkQuit", `const __DEV__ = false; const quitHandlerCounts = null; let quitting = false; let quitAttempt = 0; ${wiring}; return () => quitting;`);
   const isQuitting = setup((next) => { listener = next; }, { getState: () => state }, () => true, () => {}, () => events.push("closes"), () => events.push("workspace"), async (allow) => { events.push(allow); }, () => events.push("resume"), () => { events.push("bookmark"); return barrier.promise; }, () => events.push("cancel"));
   return { events, isQuitting, emit: (type) => listener({ type }), barrier: () => barrier, next: () => { barrier = deferred(); return barrier; } };
 }

@@ -2,12 +2,12 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { existsSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdtempSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { homedir, tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { binaryOf, binaryPids, commandIsBinary, isAlive, launch, listenerPids, processInfo, realPath, reporter, session, sleep, uiGateWatch } from "../../../scripts/lib/instance.mjs";
 
-const LEGS = ["refused", "openFailed", "earlyWindow", "noFolder", "safeMode", "report", "autoSafeMode", "quit", "savesNothingReload", "savesNothingRefused", "visibleRepeat"];
+const LEGS = ["refused", "openFailed", "earlyWindow", "noFolder", "safeMode", "report", "autoSafeMode", "quit", "savesNothingReload", "savesNothingRefused", "visibleRepeat", "snapshotNull", "snapshotInvalid"];
 const HELP = `usage: node apps/browser/scripts/store-unavailable-test.mjs <Debug Solara.app> [leg…] [--list] [--keep-data] [--naive-control]
 
 A store that never opens shows the native store-unavailable window, and nothing else, in hidden instances with no JS
@@ -39,6 +39,11 @@ SOLARA_TEST_STORE_OPEN_FAIL=openFailed|noFolder|safeOpenFailed.
   savesNothingRefused
                 session.json {"version":99} with SOLARA_TEST_START_RN_WHEN_UNAVAILABLE=1, so React Native starts over a
                 store that never opened: the same checks from launch through quit
+
+  snapshotNull / snapshotInvalid
+                an active native store returns nil / malformed JSON through SOLARA_TEST_STORE_SNAPSHOT_FAIL; JS freezes
+                it, latches refusal and shows the inert window; mutations, cancelled-quit resume and final quit
+                attempt no protected document writes and preserve the settled documents and SQLite state
 
   visibleRepeat the refused launch STORE_UNAVAILABLE_REPEAT times (12 by default), each fresh: the window is visible
                 within 20 s every time, whichever way the app delegate arrived ("set before AppKit finished launching" or
@@ -151,7 +156,7 @@ const leg = (name, fn) => legs.includes(name) ? rep.check(name, async () => {
   }
 }) : null;
 
-const PROTECTED = /\[documents\] attempt (write|remove) (session\.json|downloads\.json|launch-look\.json|sync\S*|onboarding\.json|release-notes\.json)/g;
+const PROTECTED = /\[documents\] attempt (write|remove) (session\.json|downloads\.json|launch-look\.json|history\.json|favicons-\S*\.json|sync\S*|onboarding\.json|release-notes\.json)/g;
 const attemptsIn = (text) => [...text.matchAll(PROTECTED)].map((m) => `${m[1]} ${m[2]}`);
 const makeChanges = async (app) => {
   const made = await app.eval(`const st = ac.store.getState(); const w = Object.keys(st.windows)[0] ?? st.createWindow({});
@@ -175,7 +180,91 @@ const awaitSavesNothing = async (app, since) => {
   if (!naiveControl) throw new Error("JS never logged that it saves nothing");
 };
 
+const SNAPSHOT_DOCUMENTS = ["session.json", "downloads.json", "launch-look.json", "history.json", "favicons-default.json",
+  "sync.json", "sync-pairs.json", "sync-state.json", "sync-journal.json", "sync-batch.json", "sync-edits.json", "sync-edits.gen",
+  "sync-extensions.json", "sync-pw-ledger.json", "onboarding.json", "release-notes.json"];
+const snapshotFiles = (data) => Object.fromEntries([...new Set([...SNAPSHOT_DOCUMENTS, ...readdirSync(data).filter((n) => /^(sync|favicons-)/.test(n))]), "solara.sqlite", "solara.sqlite-wal"].map((name) => {
+  const path = join(data, name);
+  return [name, existsSync(path) ? createHash("sha256").update(readFileSync(path)).digest("hex") : null];
+}));
+const databaseState = (data) => {
+  const result = spawnSync("/usr/bin/sqlite3", ["-readonly", join(data, "solara.sqlite"), ".dump"], { encoding: "utf8", timeout: 5000 });
+  assert.equal(result.status, 0, result.stderr);
+  assert.ok(result.stdout.includes("CREATE TABLE"), "the fixture opened a real database");
+  return createHash("sha256").update(result.stdout).digest("hex");
+};
+const settledSnapshotFiles = async (app, data) => {
+  let previous = null, stable = 0;
+  for (const end = Date.now() + 10000; Date.now() < end; await sleep(250)) {
+    assert.ok(app.alive, "the instance died while the writer settled");
+    const files = snapshotFiles(data);
+    stable = q(files) === q(previous) ? stable + 1 : 0;
+    if (stable >= 8) return files;
+    previous = files;
+  }
+  throw new Error("the frozen writer did not settle within 10 seconds");
+};
+const snapshotFailure = async (name, failure) => {
+  const data = join(scratch, name);
+  const fixture = readFileSync(new URL("../../../native/SolaraKit/Tests/Fixtures/sessions/nested-groups-folders-rows/session.json", import.meta.url), "utf8");
+  const app = await start(data, { fresh: true, suite: suiteFor(name), files: { "session.json": fixture }, js: "pinned",
+    ready: "return !!globalThis.ac?.store", env: { SOLARA_TEST_STORE_SNAPSHOT_FAIL: failure } });
+  await awaitSavesNothing(app, 0);
+  assert.match(app.output(), /\[store\] showing the store-unavailable window for a session that saves nothing/, "JS handed the refusal to the native window");
+  const state = await settled(app, 20000);
+  assert.equal(state.shown, true);
+  assert.equal(state.context, "inert");
+  const refused = () => app.eval(`return { status: expo.modules.SolaraStoreAdapter.status(), latch: ac.persistence.persistenceRefused(), owns: ac.persistence.ownsWorkspace() };`);
+  const assertRefused = async () => {
+    const r = await refused();
+    assert.equal(r.status.active, true, "the real store exists");
+    assert.equal(r.status.frozen, true, "JS caused the native writer to freeze");
+    assert.equal(r.latch, true);
+    assert.equal(r.owns, false);
+  };
+  await assertRefused();
+  const before = await settledSnapshotFiles(app, data);
+  const logicalBefore = databaseState(data);
+  await makeChanges(app);
+  const changed = await app.eval(`const p = ac.persistence, s = ac.store.getState();
+    s.upsertDownload({ id: "snapshot-refusal", url: "https://refusal.invalid/", state: "complete", profile: "" });
+    s.forgetDownloads("");
+    p.sync.setTypeSynced("tabs", false); p.sync.setTypeSynced("tabs", true);
+    p.onboarding.startOnboarding(Object.keys(s.windows)[0]); p.onboarding.saveIntroMusicMuted(true);
+    const quitBefore = p.quitHandlerCounts(), shell = expo.modules.SolaraShell;
+    shell.emit("onAppEvent", { type: "willQuit" }); shell.emit("onAppEvent", { type: "quitCancelled" });
+    const quitAfter = p.quitHandlerCounts();
+    s.createWindow({ url: "data:text/html,after-cancel" }); s.updateSettings({ appearance: "light" });
+    p.flushPersistence();
+    return Promise.all([p.sync.stopSync(), p.sync.turnOnSync(${q(join(data, "sync"))})]).then(() => ({
+      quitBefore, quitAfter, latch: p.persistenceRefused(), onboarding: p.onboarding.useOnboarding.getState().windowId,
+      sync: p.sync.useSync.getState().status }));`);
+  for (const event of ["willQuit", "quitCancelled"]) assert.equal(changed.quitAfter[event], changed.quitBefore[event] + 1, `${event} application handler ran`);
+  assert.equal(changed.latch, true, "cancelled-quit resume cannot clear the latch");
+  assert.equal(changed.sync, "unavailable", "sync stays held");
+  assert.equal(changed.onboarding, null, "onboarding stays held");
+  await assertRefused();
+  assert.deepEqual(await settledSnapshotFiles(app, data), before, "mutations and resume preserve every settled file hash");
+  assert.equal(databaseState(data), logicalBefore);
+  const how = await stop(app);
+  assert.equal(how.how, "quit", q(how));
+  judgeAttempts(attemptsIn(app.output()), `${name}: launch through quit`);
+  const after = snapshotFiles(data);
+  rep.log(`${name} hashes before ${q(before)} after ${q(after)}`);
+  for (const name of new Set([...Object.keys(before), ...Object.keys(after)])) {
+    if (name === "solara.sqlite" || name === "solara.sqlite-wal") continue;
+    assert.equal(after[name] ?? null, before[name] ?? null, `${name} is byte-identical through quit`);
+  }
+  assert.equal(databaseState(data), logicalBefore, "SQLite logical state is unchanged through checkpoint/sidecar teardown");
+  if (after["solara.sqlite-wal"] !== null) {
+    assert.equal(after["solara.sqlite"], before["solara.sqlite"]);
+    assert.equal(after["solara.sqlite-wal"], before["solara.sqlite-wal"]);
+  }
+};
+
 try {
+  await leg("snapshotNull", () => snapshotFailure("snapshotNull", "null"));
+  await leg("snapshotInvalid", () => snapshotFailure("snapshotInvalid", "invalid"));
   await leg("refused", async () => {
     const data = join(scratch, "refused");
     const before = '{"version":99}';

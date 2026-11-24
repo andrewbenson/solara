@@ -22,9 +22,16 @@ import Testing
     #expect(writer.flush(timeout: 2) == .saved)
     #expect(store.queuedFromSyncCount == 1)
     #expect(try launch.database.load().sessionJSON()?["pinChoices"]?["default"]?[tab] == 10)
-    try store.dispatch(Command("closeTransactions"))
-    #expect(store.queuedFromSyncCount == 0)
-    #expect(writer.flush(timeout: 2) == .saved)
-    #expect(try launch.database.load().sessionJSON()?["pinChoices"]?["default"]?[tab] == nil)
+    writer.freeze()
+    try launch.database.close()
+    let next = try open(folder)
+    let restored = SolaraStore.Store(state: next.state, memory: next.memory, checksInvariants: true)
+    let nextWriter = PersistenceWriter(store: restored, database: next.database, folder: folder, persisted: next.persisted)
+    defer { nextWriter.freeze(); try? next.database.close() }
+    #expect(restored.state.pinChoices["default"]?[tab] == 10)
+    #expect(restored.state.tabs[tab]?.pinned == true)
+    try restored.dispatch(Command("settlePinChoices", ["default", [tab: 10]]))
+    #expect(nextWriter.flush(timeout: 2) == .saved)
+    #expect(try next.database.load().sessionJSON()?["pinChoices"]?["default"]?[tab] == nil)
   }
 }

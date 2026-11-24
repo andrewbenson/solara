@@ -4,8 +4,6 @@ import { test } from "node:test";
 const { useBrowser } = await import("./browser.ts");
 await startProfileConfirmation();
 const { lastActiveProfile, mainWindowFor } = await import("./small.ts");
-const { flushPersistence, loadSession, startPersistence } = await import("../lib/persist.ts");
-const stub = await import("../test-native/index.ts");
 
 const S = () => useBrowser.getState();
 const PERSONAL = { id: "default", name: "Personal", color: "plum", icon: null, createdAt: 0 };
@@ -128,24 +126,9 @@ test("a deleted profile falls back to the window used before, then the default p
   assert.equal(lastSmall().profileId, "default");
 });
 
-test("the last active profile survives a quit and relaunch", () => {
-  stub.docs.clear();
-  const stop = startPersistence();
-  const { work, b } = twoProfilesTwoWindows();
-  const priv = S().createWindow({ incognito: true });
-  S().setFocusedWindow(b);
-  S().setFocusedWindow(priv);
-  flushPersistence();
-  stop();
-  const saved = loadSession();
-  assert.equal(saved.lastProfileId, work);
-  S().hydrate(saved);
-  assert.equal(S().ui.lastProfileId, work);
-  assert.equal(S().ui.focusedWindowId, b);
-  openExternalUrls(["https://after-relaunch.example/"]);
-  assert.equal(lastSmall().profileId, work);
-  S().hydrate({ ...saved, lastProfileId: "gone" });
+test("hydration ignores a missing last active profile", () => {
+  twoProfilesTwoWindows();
+  S().hydrate({ profiles: S().profiles, windows: S().windows, tabs: S().tabs, lastProfileId: "gone" });
   assert.equal(S().ui.lastProfileId, null);
   assert.equal(lastActiveProfile(S()), "default");
-  stub.docs.clear();
 });

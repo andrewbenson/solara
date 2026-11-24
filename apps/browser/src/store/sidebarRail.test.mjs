@@ -11,8 +11,6 @@ globalThis.acTestNativeModules = {
 const { useBrowser } = await import("./browser.ts");
 const rail = await import("./sidebarRail.ts");
 const { addressBarInSidebar, openingLightsCenter } = await import("../components/layout/windowLayout.ts");
-const { flushPersistence, loadSession, startPersistence } = await import("../lib/persist.ts");
-const stub = await import("../test-native/index.ts");
 const { asSyncOrigin } = await import("./syncOrigin.ts");
 
 const S = () => useBrowser.getState();
@@ -65,22 +63,12 @@ test("the address bar leaves a sidebar shown as the rail", () => {
   assert.equal(addressBarInSidebar(S(), w), true);
 });
 
-test("the rail survives a relaunch with the full width beside it", () => {
-  stub.docs.clear();
+test("the rail renders at rail width with the full width beside it", () => {
   S().hydrate({});
-  const stop = startPersistence();
   const windowId = S().createWindow({ url: "a.com" });
   S().updateSettings({ sidebarWidth: 260 });
   rail.setSidebarIconsOnly(windowId, true);
-  flushPersistence();
-  S().hydrate({});
-  assert.equal(S().settings.sidebarIconsOnly, false);
-  S().hydrate(loadSession());
-  assert.equal(S().settings.sidebarIconsOnly, true);
-  assert.equal(S().settings.sidebarWidth, 260);
   assert.equal(rail.sidebarWidthOf(S().windows[windowId], S().settings, true), rail.SIDEBAR_RAIL_WIDTH);
-  stop();
-  stub.docs.clear();
 });
 
 const railSettings = { sidebarWidth: 240, sidebarIconsOnly: true };

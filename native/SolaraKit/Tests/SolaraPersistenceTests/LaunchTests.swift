@@ -8,7 +8,8 @@ import Synchronization
 import Testing
 
 func scratchFolder() throws -> DataFolder {
-  let url = FileManager.default.temporaryDirectory.appending(path: "solarakit-\(UUID().uuidString)")
+  let root = ProcessInfo.processInfo.environment["SOLARA_PERSISTENCE_TEST_ROOT"].map { URL(fileURLWithPath: $0) } ?? FileManager.default.temporaryDirectory
+  let url = root.appending(path: "solarakit-\(UUID().uuidString)")
   try FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
   return DataFolder(url: url)
 }

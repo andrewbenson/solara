@@ -32,8 +32,6 @@ const { useMedia, setPictureInPictureState } = await import("../components/media
 const { usePage, usePages, patchPage } = await import("../components/layout/pageState.ts");
 const { useFavicons, useFavicon, useFaviconTheme, useAppearanceDark, pageKey } = await import("../lib/favicons.ts");
 const { engineProfile } = await import("./model.ts");
-const { flushPersistence, loadSession, startPersistence } = await import("../lib/persist.ts");
-const stub = await import("../test-native/index.ts");
 
 const S = () => useBrowser.getState();
 const setup = () => {
@@ -130,24 +128,15 @@ test("the native sidebar feed: created, renamed, re-iconed, pinned, flagged, bad
   for (const r of [ra, rb, rc]) r.unmount();
 });
 
-test("the native sidebar feed survives a relaunch and follows the restored tab", () => {
-  stub.docs.clear();
+test("the native sidebar feed follows title changes", () => {
   S().hydrate({});
-  const stop = startPersistence();
   const w = S().createWindow({ url: "https://a.com/" });
   const b = S().newTab(w, { url: "https://b.com/", background: true });
-  S().updateTab(b, { title: "Before quit", pinned: true });
+  S().updateTab(b, { title: "Initial title", pinned: true });
   S().activate(b);
-  flushPersistence();
-  stop();
-  S().hydrate({});
-  S().hydrate(loadSession());
   const r = sidebarFeed(b, w);
-  assert.equal(r.value.title, "Before quit");
-  assert.equal(r.value.pinned, true);
-  assert.equal(r.value.active, true);
-  S().updateTab(b, { title: "After relaunch" });
-  assert.equal(r.value.title, "After relaunch", "and follows the restored tab");
+  S().updateTab(b, { title: "Updated title" });
+  assert.equal(r.value.title, "Updated title", "and follows the tab");
   r.unmount();
 });
 

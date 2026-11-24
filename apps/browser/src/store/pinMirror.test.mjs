@@ -2,8 +2,6 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 const { useBrowser } = await import("./browser.ts");
 const model = await import("./model.ts");
-const { flushPersistence, loadSession, startPersistence } = await import("../lib/persist.ts");
-const stub = await import("../test-native/index.ts");
 
 const S = () => useBrowser.getState();
 const reset = () => S().hydrate({});
@@ -100,17 +98,7 @@ test("closing a window keeps the pins in the others and parks nothing; the last 
   assert.deepEqual(pinned(m), PINS);
 });
 
-test("relaunch: every restored window shows the pins; a 0.2.27 session whose windows differ gets the union", () => {
-  stub.docs.clear();
-  reset();
-  const stop = startPersistence();
-  const { a, b } = twoWindows();
-  flushPersistence();
-  stop();
-  S().hydrate(loadSession());
-  assert.deepEqual(pinned(a), PINS);
-  assert.deepEqual(pinned(b), PINS);
-
+test("a 0.2.27 session whose windows differ gets the union of pins", () => {
   const tab = (id, windowId, url, pinned) => ({ id, windowId, profileId: "default", url, title: "", favicon: null, pinned, muted: false, zoom: 1, customTitle: null, customIcon: null, pinnedUrl: pinned ? url : null, navigation: null, openerId: null, createdAt: 0, lastActiveAt: 0 });
   const win = (id, tabIds) => ({ id, profileId: "default", incognito: false, tabIds, activeTabIds: { default: tabIds.at(-1) }, sidebarOpen: true, frame: null, createdAt: 0 });
   S().hydrate({

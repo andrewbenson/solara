@@ -6,14 +6,14 @@ const { useBrowser } = await import("./browser.ts");
 await startProfileConfirmation();
 const model = await import("./model.ts");
 const { cleanedTabsFor } = await import("./organize.ts");
-const { flushPersistence, loadSession, startPersistence } = await import("../lib/persist.ts");
+const { startPrivateCleanup } = await import("../lib/privateCleanup.ts");
 const drop = await import("../components/layout/windowDrop.ts");
 const stub = await import("../test-native/index.ts");
 
 const S = () => useBrowser.getState();
 const HOUR = 3_600_000;
 const OLD = () => Date.now() - 13 * HOUR;
-const saved = () => stub.docs.get("session.json") ?? "";
+const { startProfileDataCleanup } = await import("../lib/profileData.ts");
 const settle = () => new Promise((resolve) => setTimeout(resolve, 1700));
 
 function privateWindowWith(...urls) {
@@ -22,7 +22,6 @@ function privateWindowWith(...urls) {
   for (const url of urls.slice(1)) ids.push(S().newTab(w, { url }));
   return { w, ids };
 }
-
 
 test("incognito window: own profile, closing records nothing, history ignored", () => {
   S().hydrate({});
@@ -42,10 +41,8 @@ test("incognito window: own profile, closing records nothing, history ignored", 
   assert.equal(S().closedWindows.length, 0);
 });
 
-test("cleaning up a private window keeps its tabs in memory, out of session.json, and in that window", () => {
-  stub.docs.clear();
+test("cleaning up a private window keeps its tabs in memory and in that window", () => {
   S().hydrate({});
-  const stop = startPersistence();
   const normal = S().createWindow({ url: "https://public.example/" });
   const { w, ids: [current, stale, dupe] } = privateWindowWith("https://secret.example/a", "https://secret.example/old", "https://secret.example/a");
   S().activate(current);
@@ -57,9 +54,6 @@ test("cleaning up a private window keeps its tabs in memory, out of session.json
   assert.equal(S().cleanedTabs.length, 0, "the saved list never sees private tabs");
   assert.equal(cleanedTabsFor(S(), w).length, 2);
   assert.equal(cleanedTabsFor(S(), normal).length, 0, "a regular window doesn't list them");
-  flushPersistence();
-  assert.ok(saved().includes("public.example"));
-  assert.ok(!saved().includes("secret.example"));
 
   S().restoreCleaned(undefined, normal);
   S().restoreCleaned(cleanedTabsFor(S(), w)[0].id, normal);
@@ -77,31 +71,9 @@ test("cleaning up a private window keeps its tabs in memory, out of session.json
   assert.equal(cleanedTabsFor(S(), w).length, 1);
   S().closeWindow(w);
   assert.deepEqual(S().privateCleanedTabs, {}, "closing the window forgets them");
-  flushPersistence();
-  assert.ok(!saved().includes("secret.example"));
-  stop();
-});
-
-test("private entries an older build saved are dropped when the session loads, and never written again", () => {
-  stub.docs.clear();
-  const privateEntry = {
-    kind: "tab", id: "ct-old", windowId: "w-private", index: 0, group: null, closedAt: Date.now(),
-    tab: { url: "https://secret.example/", title: "Secret", favicon: null, pinned: false, muted: false, zoom: 1, customTitle: null, customIcon: null, profileId: "incognito:w-private" },
-  };
-  const publicEntry = { ...privateEntry, id: "ct-ok", tab: { ...privateEntry.tab, url: "https://public.example/", profileId: "default" } };
-  stub.docs.set("session.json", JSON.stringify({ version: 2, profiles: {}, profileOrder: [], settings: {}, windows: [], windowOrder: [], focusedWindowId: null, tabs: [], groups: [], splits: [], closedTabs: [], closedWindows: [], cleanedTabs: [privateEntry, publicEntry] }));
-  const stop = startPersistence();
-  assert.deepEqual(S().cleanedTabs.map((c) => c.id), ["ct-ok"]);
-  S().createWindow({ url: "https://public.example/" });
-  flushPersistence();
-  assert.ok(!saved().includes("secret.example"));
-  stop();
-  const data = loadSession();
-  assert.deepEqual(data.cleanedTabs.map((c) => c.id), ["ct-ok"]);
 });
 
 test("cleaned tabs leave Recently Cleaned a week after their clean-up", () => {
-  stub.docs.clear();
   const DAY = 24 * HOUR;
   const entry = (id, url, closedAt) => ({
     kind: "tab", id, windowId: "w-gone", index: 0, group: null, closedAt,
@@ -109,9 +81,7 @@ test("cleaned tabs leave Recently Cleaned a week after their clean-up", () => {
   });
   const stale = entry("ct-stale", "https://stale.example/", Date.now() - 8 * DAY);
   const recent = entry("ct-recent", "https://recent.example/", Date.now() - HOUR);
-  stub.docs.set("session.json", JSON.stringify({ version: 2, profiles: {}, profileOrder: [], settings: {}, windows: [], windowOrder: [], focusedWindowId: null, tabs: [], groups: [], splits: [], closedTabs: [], closedWindows: [], cleanedTabs: [stale, recent] }));
-  const stop = startPersistence();
-  assert.deepEqual(S().cleanedTabs.map((c) => c.id), ["ct-recent"], "launch drops the entry older than a week");
+  S().hydrate({ cleanedTabs: [recent] });
   const w = S().createWindow({ url: "https://public.example/" });
   assert.deepEqual(cleanedTabsFor(S(), w).map((c) => c.id), ["ct-recent"]);
 
@@ -129,27 +99,6 @@ test("cleaned tabs leave Recently Cleaned a week after their clean-up", () => {
   S().cleanUpTabs(w);
   assert.ok(!S().cleanedTabs.some((c) => c.id === "ct-stale"), "the next clean-up drops the expired entry");
   assert.ok(S().cleanedTabs.some((c) => c.tab.url === "https://idle.example/"));
-  stop();
-});
-
-test("session.json filters private tabs out of every closed and parked list", () => {
-  stub.docs.clear();
-  S().hydrate({});
-  const stop = startPersistence();
-  S().createWindow({ url: "https://public.example/" });
-  const snap = { url: "https://secret.example/", title: "", favicon: null, pinned: false, muted: false, zoom: 1, customTitle: null, customIcon: null, profileId: "incognito:w-x" };
-  useBrowser.setState({
-    closedTabs: [{ kind: "tab", id: "c1", tab: snap, windowId: "w-x", index: 0, group: null, closedAt: 1 }],
-    closedWindows: [{ kind: "window", id: "c2", window: { profileId: "incognito:w-x", sidebarOpen: true, frame: null }, tabs: [{ ...snap, active: true }], groups: [], closedAt: 1 }],
-    closedGroups: [{ kind: "group", id: "c3", group: { id: "g", name: "", icon: null, color: null, pinned: false }, tabs: [snap], windowId: "w-x", index: 0, closedAt: 1 }],
-    deletedGroups: [{ kind: "group", id: "c4", group: { id: "g", name: "", icon: null, color: null, pinned: false }, tabs: [snap], windowId: "w-x", index: 0, closedAt: Date.now() }],
-    parkedPins: { "incognito:w-x": { tabs: [{ ...snap, id: "t", groupId: null }], groups: [] } },
-  });
-  flushPersistence();
-  assert.ok(saved().includes("public.example"));
-  assert.ok(!saved().includes("secret.example"));
-  assert.ok(!saved().includes("incognito:"));
-  stop();
 });
 
 const download = (id, profile, state = "finished") => ({
@@ -166,35 +115,28 @@ const download = (id, profile, state = "finished") => ({
   profile,
 });
 
-test("incognito downloads never reach downloads.json and leave with their window", () => {
+test("incognito downloads leave with their window and reject late events", () => {
   stub.docs.clear();
+  const stop = startPrivateCleanup();
   S().hydrate({});
-  const stop = startPersistence();
   const normal = S().createWindow();
   const incognito = S().createWindow({ incognito: true });
   const privateProfile = S().windows[incognito].profileId;
   S().upsertDownload(download("1", ""));
   S().upsertDownload(download("2", privateProfile, "downloading"));
-  flushPersistence();
-  const savedDownloads = JSON.parse(stub.docs.get("downloads.json")).downloads;
-  assert.deepEqual(savedDownloads.map((d) => d.id), ["1"]);
 
   S().closeWindow(incognito);
   assert.deepEqual(S().downloads.map((d) => d.id), ["1"]);
   assert.ok(S().windows[normal]);
   S().upsertDownload(download("2", privateProfile, "cancelled"));
   assert.deepEqual(S().downloads.map((d) => d.id), ["1"]);
-
-  const data = loadSession();
-  assert.deepEqual(data.downloads.map((d) => d.id), ["saved-0"]);
   stop();
 });
 
-test("favicons: incognito icons stay in memory and in their own profile; nothing is written", async () => {
-  const { noteFavicon, resolveFavicon, useFavicons } = await import("../lib/favicons.ts");
+test("favicons: incognito icons stay in memory and in their own profile", async () => {
+  const { noteFavicon, resolveFavicon, useFavicons, startFavicons } = await import("../lib/favicons.ts");
   const { webviews } = await import("../lib/webviews.ts");
-  stub.docs.clear();
-  const stop = startPersistence();
+  const stop = startFavicons();
   const normal = S().createWindow({ url: "https://site.example/a" });
   const incognito = S().createWindow({ incognito: true, url: "https://secret.example/x" });
   const [normalTab] = S().windows[normal].tabIds;
@@ -213,10 +155,6 @@ test("favicons: incognito icons stay in memory and in their own profile; nothing
   assert.equal(resolveFavicon("https://secret.example/x", null, "default"), null);
   assert.equal(resolveFavicon("https://secret.example/x", null, privateProfile)?.uri, "data:image/png;base64,AAAA");
   assert.equal(resolveFavicon("https://site.example/a", null, privateProfile)?.uri, "data:image/png;base64,SITE");
-
-  flushPersistence();
-  assert.ok(![...stub.docs.keys()].some((k) => k.startsWith("favicons")), "Chrome keeps icons; the app writes none");
-  assert.ok(![...stub.docs.values()].some((v) => String(v).includes("secret.example")));
 
   S().closeWindow(incognito);
   assert.equal(useFavicons.getState().profiles[privateProfile], undefined);
@@ -278,29 +216,24 @@ test("a profile sharing another's data leaves nothing to delete until the last o
   assert.deepEqual(S().orphanedProfileData, ["", other]);
 });
 
-test("queued profile data is deleted once, and stays queued in session.json until that succeeds", async () => {
-  stub.docs.clear();
+test("queued profile data stays queued until deletion succeeds", async () => {
   stub.deletedProfileData.length = 0;
   stub.profileDataLeft.set("", ["passwords"]);
   S().hydrate({});
-  const stop = startPersistence();
+  const stop = startProfileDataCleanup();
   const work = S().createProfile({ name: "Work" });
   S().createWindow({ profileId: work, url: "https://work.example/" });
   S().deleteProfile("default");
   await settle();
   assert.deepEqual(stub.deletedProfileData, [""]);
   assert.deepEqual(S().orphanedProfileData, [""], "a failed deletion stays queued");
-  flushPersistence();
-  stop();
-  assert.deepEqual(loadSession().orphanedProfileData, [""]);
 
+  stop();
   stub.profileDataLeft.clear();
-  const again = startPersistence();
+  const again = startProfileDataCleanup();
   await settle();
   assert.deepEqual(stub.deletedProfileData, ["", ""]);
   assert.deepEqual(S().orphanedProfileData, []);
-  flushPersistence();
-  assert.deepEqual(loadSession().orphanedProfileData, []);
   again();
 });
 

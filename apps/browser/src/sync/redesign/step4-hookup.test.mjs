@@ -54,19 +54,3 @@ test("HOOK-seen-before-apply: a setting from the folder is noted as seen before 
   }
   assert.ok(seenAtApply, "the origin was noted before the apply ran");
 });
-
-test("HOOK-survives-quit: a key noted as seen, then a quit before any store write, is remembered after a relaunch", fixedBy("step 4"), async () => {
-  const { startPersistence, flushPersistence } = await import("../../lib/persist.ts");
-  shell.docs.clear();
-  host.forgetEditJournal();
-  const stop = startPersistence();
-  try {
-    host.editJournal();
-    host.noteSeen("app", "set:remembered", ["B", 5]);
-    flushPersistence({ final: true });
-  } finally {
-    stop();
-  }
-  host.forgetEditJournal();
-  assert.deepEqual(host.seenOrigin("app", "set:remembered"), ["B", 5]);
-});

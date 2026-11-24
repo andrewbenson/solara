@@ -1,9 +1,9 @@
-import { cancelDownload, endWebKitPrivateSession, leftDownloadStaging, prepareWebKitContentBlocker, removeLeftDownloadStaging, type Download } from "@solara/solaracore";
+import { leftDownloadStaging, prepareWebKitContentBlocker, removeLeftDownloadStaging, type Download } from "@solara/solaracore";
 import { readDocumentResult, writeDocument, type DocumentRead } from "@solara/shell";
 import { showNotice, showToast } from "../components/layout/toasts";
 import { persistenceRefused, refusePersistence } from "./persistLatch";
 import { useBrowser, type BrowserState, type HydrateData } from "../store/browser";
-import { activeTabIdsWithoutPlaceholders, closedWindowPresentation, inPinnedContainer, isIncognitoProfile, newId, privateSession, snapshotTab } from "../store/model";
+import { activeTabIdsWithoutPlaceholders, closedWindowPresentation, inPinnedContainer, isIncognitoProfile, newId, snapshotTab } from "../store/model";
 import { earlyLaunchTabOn, launchTab, linkProfile, type LaunchTab } from "../store/launchTab";
 import { launchBackdrop, type LaunchBackdrop } from "./launchBackdrop";
 import { restoreLaunchLook, saveLaunchLook } from "./launchLook";
@@ -15,6 +15,7 @@ import { downloadSession } from "../store/ui";
 import { startFavicons } from "./favicons";
 import { startBookmarks } from "./bookmarks";
 import { startHistory } from "./history";
+import { forgetClosedIncognito } from "./privateCleanup";
 import { startProfileDataCleanup } from "./profileData";
 import { flushNativeStore, flushProblem } from "@solara/store";
 import * as nativeSettings from "@solara/settings";
@@ -427,15 +428,4 @@ function startDerivedServices({ forgetsIncognito }: { forgetsIncognito: boolean 
     stopProfileData();
     stopIncognito();
   };
-}
-
-function forgetClosedIncognito(s: BrowserState, prev: BrowserState) {
-  for (const w of Object.values(prev.windows)) {
-    if (!w.incognito || s.windows[w.id]) continue;
-    const session = privateSession(w.profileId);
-    if (Object.values(s.windows).some((o) => o.incognito && privateSession(o.profileId) === session)) continue;
-    for (const d of s.downloads) if (downloadSession(d) === session && d.state === "downloading") void cancelDownload(d.id);
-    s.forgetDownloads(w.profileId);
-    if (session !== null) void endWebKitPrivateSession(session);
-  }
 }

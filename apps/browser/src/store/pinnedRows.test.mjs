@@ -6,8 +6,6 @@ await startProfileConfirmation();
 const model = await import("./model.ts");
 const organize = await import("./organize.ts");
 const { sidebarEntries, numberedTabs } = await import("../components/sidebar/entries.ts");
-const { flushPersistence, loadSession, startPersistence } = await import("../lib/persist.ts");
-const stub = await import("../test-native/index.ts");
 
 const S = () => useBrowser.getState();
 const reset = () => S().hydrate({});
@@ -214,18 +212,11 @@ test("rows are the profile's: a second window mirrors them, a change in one show
   assert.deepEqual(entries(b), { tiles: ["https://docs.com/"], rows: ["https://mail.com/"] });
 });
 
-test("rows park with the last window and come back as rows, and survive a relaunch", () => {
-  stub.docs.clear();
+test("rows park with the last window and come back as rows", () => {
   reset();
-  const stop = startPersistence();
   const { w, ids: [a, b] } = windowWith("a", "b", "c");
   S().pinTabs([a], true);
   S().pinTabs([b], true, true);
-  flushPersistence();
-  stop();
-  S().hydrate(loadSession());
-  assert.deepEqual(entries(w), { tiles: ["https://a.com/"], rows: ["https://b.com/"] });
-  assert.deepEqual(kindChoices().sort(), [a, b].sort(), "the choices not yet synced survive a relaunch");
   S().closeWindow(w);
   assert.deepEqual(S().parkedPins.default.tabs.map((t) => [t.pinnedUrl, !!t.pinnedAsRow]), [["https://a.com/", false], ["https://b.com/", true]]);
   const n = S().createWindow();

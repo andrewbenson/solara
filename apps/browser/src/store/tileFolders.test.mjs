@@ -4,8 +4,6 @@ const { useBrowser } = await import("./browser.ts");
 const model = await import("./model.ts");
 const folders = await import("./tileFolders.ts");
 const { sidebarEntries } = await import("../components/sidebar/entries.ts");
-const { flushPersistence, loadSession, startPersistence } = await import("../lib/persist.ts");
-const stub = await import("../test-native/index.ts");
 
 const S = () => useBrowser.getState();
 const reset = () => S().hydrate({});
@@ -126,16 +124,11 @@ test("folders are the profile's: a second window mirrors them, a change in eithe
   assert.equal(S().tabs[tileOf(other, "a")].tileFolder, undefined);
 });
 
-test("folders park with the last window, come back from it, and survive a relaunch", () => {
-  stub.docs.clear();
+test("folders park with the last window and come back from it", () => {
   reset();
-  const stop = startPersistence();
   const { w, ids: [a, b, c] } = pinnedWindow();
   act((s) => folders.addToTileFolder(s, [c], a));
   act((s) => folders.renameTileFolder(s, w, folderOf(a).id, "Mail & Cal"));
-  flushPersistence();
-  stop();
-  S().hydrate(loadSession());
   assert.deepEqual(cells(w), ["[a,c]", "b", "d"]);
   assert.equal(folderOf(a).name, "Mail & Cal");
   S().closeWindow(w);

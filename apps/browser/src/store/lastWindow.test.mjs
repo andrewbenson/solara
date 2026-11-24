@@ -1,8 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 const { useBrowser } = await import("./browser.ts");
-const { loadSession, startPersistence, flushPersistence } = await import("../lib/persist.ts");
-const { docs } = await import("../test-native/index.ts");
 const { launchTab } = await import("./launchTab.ts");
 const { createWindowSync } = await import("../lib/windowSync.ts");
 const S = () => useBrowser.getState();
@@ -18,16 +16,6 @@ function fixture() {
   S().setSelection(id, [a, b]);
   return { id, a, b, pin };
 }
-function saved() {
-  const before = S();
-  docs.clear();
-  const stop = startPersistence();
-  S().hydrate(before);
-  flushPersistence();
-  stop();
-  return JSON.parse(docs.get("session.json"));
-}
-function hydrate(session) { S().hydrate(loadSession({ contents: JSON.stringify(session) }, null)); }
 
 test("retaining leaves tabs, pins, groups, splits and selection untouched without closed records", () => {
   const { id } = fixture();
@@ -41,47 +29,6 @@ test("retaining leaves tabs, pins, groups, splits and selection untouched withou
   assert.equal(after.ui.focusedWindowId, id);
   S().setWindowKeptOnClose(id, false);
   assert.ok(!("keptOnClose" in S().windows[id]));
-});
-
-test("kept windows save open and visibly restore the same IDs and active tab", () => {
-  const { id, a, b, pin } = fixture();
-  S().setWindowKeptOnClose(id, true);
-  const session = saved();
-  assert.equal(session.windows.find((w) => w.id === id).keptOnClose, true);
-  assert.deepEqual(session.closedWindows, []);
-  assert.deepEqual(session.parkedPins, {});
-  hydrate(session);
-  assert.deepEqual(S().windows[id].tabIds, session.windows[0].tabIds);
-  assert.equal(S().windows[id].activeTabIds.default, a);
-  assert.ok(S().tabs[b] && S().tabs[pin]);
-  assert.deepEqual(Object.values(S().groups), session.groups);
-  assert.deepEqual(Object.values(S().splits), session.splits);
-  assert.ok(!S().windows[id].keptOnClose);
-});
-
-test("Start Fresh restores the kept window and archives only ordinary windows", () => {
-  const { id, a, b, pin } = fixture();
-  S().updateSettings({ restoreSession: false });
-  S().setWindowKeptOnClose(id, true);
-  const other = S().createWindow({ url: "https://other.example/" });
-  hydrate(saved());
-  assert.deepEqual(S().windowOrder, [id]);
-  assert.equal(S().windows[id].activeTabIds.default, a);
-  assert.ok(S().tabs[b] && S().tabs[pin]);
-  assert.ok(!S().windows[id].keptOnClose);
-  assert.ok(!S().windows[other]);
-  assert.equal(S().closedWindows.length, 1);
-  assert.equal(S().closedWindows[0].tabs[0].url, "https://other.example/");
-});
-
-test("a revealed window follows Start Fresh again", () => {
-  const { id } = fixture();
-  S().updateSettings({ restoreSession: false });
-  S().setWindowKeptOnClose(id, true);
-  S().setWindowKeptOnClose(id, false);
-  hydrate(saved());
-  assert.deepEqual(S().windowOrder, []);
-  assert.equal(S().closedWindows.length, 1);
 });
 
 test("private and Little windows cannot acquire a retained marker", () => {

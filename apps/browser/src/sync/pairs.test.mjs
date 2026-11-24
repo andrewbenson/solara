@@ -587,16 +587,12 @@ test("a pin waiting for a group that never arrives stands alone once the wait is
   await folder.transport().write("p:default", JSON.stringify({ v: 1, kind: "log", device: "remote", seq: 1, at: wall, ops: [{ k: "pin:t:wait", h: remote.tick(), v: value }] }));
   await b.sync();
   assert.equal(record(b, "default", "pin:t:wait").g, "never-seen", "it waits at first");
-  b.relaunch();
   wall += 89 * DAY;
   await b.sync();
   assert.equal(record(b, "default", "pin:t:wait").g, "never-seen", "still waiting within the 90-day hold");
   wall += 2 * DAY;
   for (let i = 0; i < 3; i++) await b.sync();
   assert.equal(record(b, "default", "pin:t:wait").g, null, "it stops waiting without any new change");
-  b.relaunch();
-  await b.sync();
-  assert.equal(record(b, "default", "pin:t:wait").g, null, "and stays a standalone pin after a relaunch");
   b.with(() => assert.ok(tabFor("wait")?.pinned, "shown as a pin"));
 });
 

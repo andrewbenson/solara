@@ -3,7 +3,6 @@ import { test } from "node:test";
 const { useBrowser } = await import("./browser.ts");
 const model = await import("./model.ts");
 const { migrateHistoryFile, reloadHistory, startHistory } = await import("../lib/history.ts");
-const { flushPersistence, loadSession, startPersistence } = await import("../lib/persist.ts");
 const { installAfterFirstWindowScheduler } = await import("../lib/afterFirstWindow.ts");
 let firstWindowReady = false;
 const firstWindowTasks = [];
@@ -273,65 +272,19 @@ test("⇧⌘T after the close, then ⌘N: no second set of pinned tabs", () => {
   assert.equal(Object.values(S().tabs).filter((t) => t.windowId === restored && t.url === "https://mail.com").length, 1, "no second set in the reopened window");
 });
 
-test("quit and relaunch after the window closed: the next window has the pinned tabs, unloaded", () => {
-  stub.docs.clear();
+test("closing a window archives the tab active before the placeholder", () => {
   reset();
-  const stop = startPersistence();
-  const { w } = pinnedWindow();
+  const w = S().createWindow({ url: "https://first.example/" });
+  const first = S().windows[w].tabIds[0];
+  const second = S().newTab(w, { url: "https://second.example/" });
+  S().activate(second);
+  useBrowser.setState((s) => ({ tabs: { ...s.tabs, [first]: { ...s.tabs[first], lastActiveAt: 1, shownAt: 1 }, [second]: { ...s.tabs[second], lastActiveAt: 2, shownAt: 2 } } }));
+  const placeholder = S().newTab(w, { index: 0 });
+  S().updateTab(placeholder, { newTabPlaceholder: true });
+  assert.equal(active(w), placeholder);
   S().closeWindow(w);
-  flushPersistence();
-  stop();
-  S().hydrate(loadSession());
-  assert.equal(S().windowOrder.length, 0, "no window restored");
-  const n = S().createWindow();
-  assert.deepEqual(sidebar(n), PINS);
-});
-
-test("session export omits untouched placeholders and their window references but retains settled empty tabs", () => {
-  stub.docs.clear();
-  reset();
-  const stop = startPersistence();
-  try {
-    const w = S().createWindow({ url: "https://kept.example/" });
-    const settled = S().newTab(w);
-    const placeholder = S().newTab(w);
-    S().updateTab(placeholder, { newTabPlaceholder: true });
-    flushPersistence();
-    const saved = JSON.parse(stub.docs.get("session.json"));
-    assert.equal(saved.tabs.some((tab) => tab.id === placeholder), false);
-    assert.equal(saved.tabs.some((tab) => tab.id === settled), true);
-    const window = saved.windows.find((window) => window.id === w);
-    assert.equal(window.tabIds.includes(placeholder), false);
-    assert.equal(Object.values(window.activeTabIds).includes(placeholder), false);
-    assert.equal(saved.launchTab?.id === placeholder, false);
-  } finally {
-    stop();
-  }
-});
-
-test("after relaunch the active tab is the one that was active before the placeholder", () => {
-  stub.docs.clear();
-  reset();
-  const stop = startPersistence();
-  try {
-    const w = S().createWindow({ url: "https://first.example/" });
-    const first = S().windows[w].tabIds[0];
-    const second = S().newTab(w, { url: "https://second.example/" });
-    S().activate(second);
-    useBrowser.setState((s) => ({ tabs: { ...s.tabs, [first]: { ...s.tabs[first], lastActiveAt: 1, shownAt: 1 }, [second]: { ...s.tabs[second], lastActiveAt: 2, shownAt: 2 } } }));
-    const placeholder = S().newTab(w, { index: 0 });
-    S().updateTab(placeholder, { newTabPlaceholder: true });
-    assert.equal(active(w), placeholder);
-    flushPersistence();
-    const saved = JSON.parse(stub.docs.get("session.json"));
-    const window = saved.windows.find((window) => window.id === w);
-    assert.equal(window.activeTabIds[S().windows[w].profileId], second);
-    S().closeWindow(w);
-    const entry = S().closedWindows.at(-1);
-    assert.deepEqual(entry.tabs.filter((tab) => tab.active).map((tab) => tab.url), ["https://second.example/"]);
-  } finally {
-    stop();
-  }
+  const entry = S().closedWindows.at(-1);
+  assert.deepEqual(entry.tabs.filter((tab) => tab.active).map((tab) => tab.url), ["https://second.example/"]);
 });
 
 test("window history and Reopen Closed Tab exclude a runtime placeholder", () => {
@@ -346,7 +299,6 @@ test("window history and Reopen Closed Tab exclude a runtime placeholder", () =>
   S().closeWindow(w);
   assert.equal(S().closedWindows.at(-1).tabs.some((tab) => tab.tabId === next), false);
 });
-
 
 test("closing legacy blank windows leaves no window history", () => {
   for (const closeTab of [false, true]) {

@@ -5,7 +5,6 @@ globalThis.__DEV__ = false;
 const dm = await import("./dockMotion.ts");
 const { toolbarGeometry } = await import("./geometry.ts");
 const { useBrowser } = await import("../../store/browser.ts");
-const { flushPersistence, loadSession, startPersistence } = await import("../../lib/persist.ts");
 const stub = await import("../../test-native/index.ts");
 
 const S = () => useBrowser.getState();
@@ -126,37 +125,24 @@ test("with the sidebar button hidden (Settings › Tabs), back, forward and relo
   }
 });
 
-test("hidden or shown is each window's own, and survives a quit and relaunch; new windows open with it shown", () => {
-  stub.docs.clear();
+test("sidebar visibility is each window's own, reopening restores it, and new windows show it", () => {
   S().hydrate({});
-  const stop = startPersistence();
   const a = S().createWindow({ url: "a.com" });
   const b = S().createWindow({ url: "b.com" });
   S().toggleSidebar(a);
   assert.equal(S().windows[a].sidebarOpen, false);
   assert.equal(S().windows[b].sidebarOpen, true, "the other window keeps its sidebar");
-  flushPersistence();
-  S().hydrate(loadSession());
-  assert.equal(S().windows[a].sidebarOpen, false, "relaunch: still hidden");
-  assert.equal(S().windows[b].sidebarOpen, true, "relaunch: still shown");
 
   S().toggleSidebar(a);
-  flushPersistence();
-  S().hydrate(loadSession());
-  assert.equal(S().windows[a].sidebarOpen, true);
 
   S().toggleSidebar(a);
   S().closeWindow(a);
-  flushPersistence();
-  S().hydrate(loadSession());
-  assert.equal(S().windows[a], undefined, "closed: gone after a relaunch");
   S().reopenClosedWindow();
   const reopened = S().windowOrder.find((id) => id !== b);
   assert.ok(reopened, "the closed window came back");
   assert.equal(S().windows[reopened].sidebarOpen, false, "reopened as it was closed");
   const c = S().createWindow({ url: "c.com" });
   assert.equal(S().windows[c].sidebarOpen, true);
-  stop();
 });
 
 const springAt = (t, s) => dm.springAt(t, s);

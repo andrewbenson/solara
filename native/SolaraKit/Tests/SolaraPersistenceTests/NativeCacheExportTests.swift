@@ -37,7 +37,20 @@ import Testing
         #expect(after["launchTab"] == store.sessionDocument().launchTab)
         let refreshedRows = try launch.database.load().workspace
         #expect(refreshedRows?.document()["launchTab"] == after["launchTab"])
+        writer.freeze()
         try launch.database.close()
+        let next = try open(folder)
+        defer { try? next.database.close() }
+        #expect(try next.database.load().workspace?.document()["launchTab"] == after["launchTab"])
+        let restored = SolaraStore.Store(state: next.state, memory: next.memory, config: config, checksInvariants: false)
+        let restoredProvider = EarlyLaunchTabProvider(store: restored, environment: environment, readCache: { try? Data(contentsOf: cache) })
+        try restoredProvider.refresh()
+        #expect(restored.sessionDocument().launchTab == after["launchTab"])
+        #expect(restored.state.windowOrder == store.state.windowOrder)
+        for id in store.state.windowOrder {
+          #expect(restored.state.windows[id]?.tabIds == store.state.windows[id]?.tabIds)
+          #expect(restored.state.activeTabId(id) == store.state.activeTabId(id))
+        }
       }
     }
   }

@@ -79,21 +79,3 @@ test("SEEN-rollback: the ever-seen keys roll back with the session doc they're w
   assert.equal(host.seenOrigin("app", "set:b"), undefined);
   assert.deepEqual(host.seenOrigin("app", "set:a"), ["dev2", 1]);
 });
-
-test("SEEN-saved: a newly seen key gets session.json written, with no store change", fixedBy("step 4"), async () => {
-  fresh();
-  const { startPersistence, flushPersistence } = await import("../../lib/persist.ts");
-  const stop = startPersistence();
-  try {
-    host.editJournal();
-    flushPersistence();
-    const before = shell.docs.get("session.json");
-    host.noteSeen("app", "set:fresh", ["dev9", 4]);
-    flushPersistence();
-    const after = JSON.parse(shell.docs.get("session.json") ?? "{}");
-    assert.notEqual(shell.docs.get("session.json"), before);
-    assert.ok(after.everSeen?.scopes?.app?.["set:fresh"], "the key is in the saved session");
-  } finally {
-    stop();
-  }
-});

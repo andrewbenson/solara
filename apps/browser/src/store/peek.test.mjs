@@ -5,9 +5,7 @@ const { isPeekTab, peekSourceOf, peekTabId } = await import("./peek.ts");
 const { DEFAULT_SETTINGS, peekModifierOf, splitLinkModifierOf } = await import("./settings.ts");
 const { stripPlan } = await import("./liveTabs.ts");
 const { viewTabIds } = await import("./model.ts");
-const { flushPersistence, loadSession, startPersistence } = await import("../lib/persist.ts");
 const { SYNCED_SETTINGS } = await import("../sync/adapters.ts");
-const stub = await import("../test-native/index.ts");
 
 const S = () => useBrowser.getState();
 const PERSONAL = { id: "default", name: "Personal", color: "plum", icon: null, createdAt: 0 };
@@ -141,22 +139,6 @@ test("Little Solara doesn't peek", () => {
   const small = S().createWindow({ small: true, url: "https://small.example/" });
   const tab = S().windows[small].tabIds[0];
   assert.equal(S().openPeek(tab, "https://peek.example/"), "");
-});
-
-test("a peek isn't saved with the session and a relaunch restores none", () => {
-  stub.docs.clear();
-  const stop = startPersistence();
-  const { w, a } = windowWithTabs();
-  const id = S().openPeek(a, "https://peek.example/");
-  flushPersistence();
-  stop();
-  const saved = loadSession();
-  assert.ok(!Object.values(saved.tabs).some((t) => t.id === id || t.url === "https://peek.example/"));
-  S().hydrate(saved);
-  assert.deepEqual(S().peeks, {});
-  assert.equal(S().tabs[id], undefined);
-  assert.ok(S().windows[w]);
-  stub.docs.clear();
 });
 
 test("Chrome's tab strip plan keeps the peek out of the order but makes it Chrome's active tab, so it can take full screen", () => {

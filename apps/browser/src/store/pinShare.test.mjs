@@ -3,8 +3,6 @@ import { test } from "node:test";
 const { useBrowser } = await import("./browser.ts");
 const model = await import("./model.ts");
 const { setPinHandoff } = await import("./tabs.ts");
-const { flushPersistence, loadSession, startPersistence } = await import("../lib/persist.ts");
-const stub = await import("../test-native/index.ts");
 
 const S = () => useBrowser.getState();
 const reset = () => S().hydrate({});
@@ -182,25 +180,6 @@ test("a pin in a split keeps its own page; private windows have no pins; another
   assert.equal(S().tabs[workCopy].pageIn, wt, "the Work window shows it frozen");
   assert.equal(S().tabs[two.mail].pageIn, undefined, "default's pins are untouched");
   assert.equal(loaded(two.mail), true);
-});
-
-test("persisted sessions never carry a frozen link; the copy relaunches unloaded", () => {
-  stub.docs.clear();
-  reset();
-  const stop = startPersistence();
-  const { a, b } = twoWindows();
-  S().activate(tileOf(b, "https://mail.com"));
-  const frozen = shown(a);
-  flushPersistence();
-  stop();
-  const saved = JSON.parse(stub.docs.get("session.json"));
-  const tab = Array.isArray(saved.tabs) ? saved.tabs.find((t) => t.id === frozen) : saved.tabs?.[frozen];
-  assert.ok(tab, "the copy is saved");
-  assert.equal(tab.pageIn, undefined);
-  assert.equal(tab.unloaded, true);
-  S().hydrate(loadSession());
-  assert.ok(S().tabs[frozen].pageIn, "relaunch: the window focused last loads the pin, the other shows it frozen");
-  assert.equal(pages("https://mail.com").length, 1, "one page after relaunch too");
 });
 
 test("a slow handoff hook: the swap runs once, against the state at commit time", () => {

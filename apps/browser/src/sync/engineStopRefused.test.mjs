@@ -10,6 +10,15 @@ const folder = new Map();
 const calls = { unlock: 0, write: 0, read: 0, deleteChain: 0, forget: 0 };
 let ids = 0;
 globalThis.acTestNativeModules = {
+  SolaraStoreAdapter: {
+    status: () => ({ active: false, reason: "the native store refused to import: session.json could not be parsed", refusedSession: "/data/session.json" }),
+    snapshot: () => null,
+    dispatch: () => null,
+    catchUp: () => null,
+    flush: () => false,
+    freeze: () => true,
+    addListener: () => ({ remove() {} }),
+  },
   SolaraSyncAdapter: {
     async createSync(folder) {
       const account = this.newDeviceId();
@@ -56,9 +65,10 @@ test("turning sync off or changing what it syncs does nothing while persistence 
   await before.syncNow();
   assert.match(shell.docs.get("sync.json") ?? "", /"enabled":true/);
 
-  shell.unreadableDocs.set("session.json", "Permission denied");
   const { startPersistence } = await import("../lib/persist.ts");
+  const readsBefore = shell.documentReads.filter((name) => name === "session.json" || name === "downloads.json");
   startPersistence();
+  assert.deepEqual(shell.documentReads.filter((name) => name === "session.json" || name === "downloads.json"), readsBefore);
   const docsBefore = new Map(shell.docs);
   const seen = { ...calls };
   const changesBefore = shell.documentChanges.length;

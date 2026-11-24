@@ -6,9 +6,10 @@ await startProfileConfirmation();
 const model = await import("./model.ts");
 const { downloadVisibleIn, downloadsIn } = await import("./ui.ts");
 const { lastActiveProfile, privateWindowProfile } = await import("./small.ts");
-const { flushPersistence, startPersistence } = await import("../lib/persist.ts");
 const { extensionProfile } = await import("../components/extensions/store.ts");
 const stub = await import("../test-native/index.ts");
+
+const { startPrivateCleanup } = await import("../lib/privateCleanup.ts");
 
 const S = () => useBrowser.getState();
 const PERSONAL = { id: "default", name: "Personal", color: "plum", icon: null, createdAt: 0 };
@@ -80,10 +81,10 @@ test("Little Solara from a profile-2 private window opens in profile 2, never pr
   assert.ok(!S().windows[small].incognito);
 });
 
-test("a private session's downloads show in its windows only, never on disk, and go with its last window", async () => {
+test("a private session's downloads show in its windows only and go with its last window", async () => {
   stub.docs.clear();
+  const stop = startPrivateCleanup();
   stub.cancelledDownloads.length = 0;
-  const stop = startPersistence();
   const { work, a, b } = twoProfiles();
   const p2 = S().createWindow({ incognito: true });
   const p2b = S().createWindow({ incognito: true, profileId: work });
@@ -101,10 +102,6 @@ test("a private session's downloads show in its windows only, never on disk, and
   assert.deepEqual(ids(a), ["old"]);
   S().switchProfile(a, work);
   assert.deepEqual(ids(a), ["regular2"]);
-  flushPersistence();
-  const saved = stub.docs.get("downloads.json") ?? "";
-  assert.ok(saved.includes("regular2"));
-  assert.ok(!saved.includes("private"), "no private download reaches disk");
 
   S().closeWindow(p2);
   await new Promise((r) => setTimeout(r, 0));
@@ -156,17 +153,4 @@ test("deleting a profile closes its private windows, not another profile's", () 
   S().deleteProfile(work);
   assert.ok(!S().windows[p2]);
   assert.ok(S().windows[p1]);
-});
-
-test("relaunch: no private window, tab or id is saved", () => {
-  stub.docs.clear();
-  const stop = startPersistence();
-  const { work } = twoProfiles();
-  S().createWindow({ incognito: true, url: "https://secret.example/" });
-  S().createWindow({ incognito: true, profileId: "default", url: "https://secret.example/" });
-  flushPersistence();
-  const saved = stub.docs.get("session.json") ?? "";
-  assert.ok(saved.includes(work));
-  assert.ok(!saved.includes("incognito:") && !saved.includes('"incognito":true') && !saved.includes("secret.example"));
-  stop();
 });

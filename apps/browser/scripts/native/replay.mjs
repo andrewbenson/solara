@@ -2,7 +2,7 @@
 import "../../../../native/SolaraKit/Scripts/legacy-bookmark-harness.mjs";
 import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { existsSync, mkdirSync, readdirSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { deflateRawSync } from "node:zlib";
 import { registerHooks } from "node:module";
 import { dirname, join, relative, resolve } from "node:path";
@@ -23,7 +23,12 @@ extract and apply call with the state before, the adapter's arguments, every loo
 answers ignore and republish gave the merge, what apply was given, the store commands it issued,
 its result (the keys an apply wrote as {written: [...]}), redesign: true when the syncRedesign
 switch was on, and the state after. Default out for it: native/SolaraKit/Tests/SolaraSyncTests/Adapters.
-SolaraSyncTests replays each call through the Swift adapter.`;
+SolaraSyncTests replays each call through the Swift adapter.
+
+--harvest <dir> copies the fixed session.json/downloads.json inputs from
+session-fixtures.json beside this script and their oracle.json exception declarations
+into named subfolders, replacing any previous input/declaration files. It does not
+capture serializer writes or derive fixtures from the tests being replayed.`;
 
 const here = dirname(fileURLToPath(import.meta.url));
 const app = resolve(here, "../..");
@@ -51,6 +56,16 @@ const harvest = option("--harvest", null);
 
 
 function orchestrate() {
+  if (harvest) {
+    const fixtures = JSON.parse(readFileSync(new URL("./session-fixtures.json", import.meta.url), "utf8"));
+    for (const fixture of fixtures) {
+      const dir = join(resolve(harvest), fixture.name);
+      mkdirSync(dir, { recursive: true });
+      for (const name of ["session.json", "downloads.json", "oracle.json"]) rmSync(join(dir, name), { force: true });
+      if (fixture.oracle) writeFileSync(join(dir, "oracle.json"), JSON.stringify(fixture.oracle));
+      for (const [name, contents] of Object.entries(fixture.inputs)) writeFileSync(join(dir, name), contents);
+    }
+  }
   const files = args.length
     ? args.map((f) => resolve(f))
     : (phase === "adapters" ? ["src/sync", "src/sync/redesign"] : ["src/store", "src/lib", "src/sync"]).flatMap((dir) =>
@@ -60,7 +75,7 @@ function orchestrate() {
   let cases = 0;
   let failed = 0;
   for (const file of files.sort()) {
-    const run = spawnSync(process.execPath, ["--no-warnings", "--max-old-space-size=8192", fileURLToPath(import.meta.url), "--child", file, "--phase", phase, "--out", out, "--cap", String(cap), ...(plainOutput ? ["--plain"] : []), ...(harvest ? ["--harvest", resolve(harvest)] : [])], {
+    const run = spawnSync(process.execPath, ["--no-warnings", "--max-old-space-size=8192", fileURLToPath(import.meta.url), "--child", file, "--phase", phase, "--out", out, "--cap", String(cap), ...(plainOutput ? ["--plain"] : [])], {
       cwd: app,
       encoding: "utf8",
       maxBuffer: 1 << 28,
@@ -99,9 +114,11 @@ const INSTRUMENT = [
     ["function receive(tx: TabStripTransaction) {", "function __replayReceiveImpl(tx: TabStripTransaction) {"],
     ["function project(s: BrowserState) {", "function __replayProjectImpl(s: BrowserState) {"],
   ]],
+  ["/src/lib/privateCleanup.ts", "", [
+    ["export function startPrivateCleanup() {", "export function startPrivateCleanup() {\n  globalThis.__replayPersistStarted = true;"],
+  ]],
   ["/src/lib/persist.ts", "", [
     ["export function startPersistence() {", "export function startPersistence() {\n  globalThis.__replayPersistStarted = true;"],
-    ["    writeDocument(name, json);", "    writeDocument(name, json);\n    globalThis.__replayHarvest?.(name, json);"],
   ]],
 ];
 
@@ -348,18 +365,6 @@ async function record(file) {
   await import(pathToFileURL(file).href);
 
   const spec = await phases(phase);
-  if (harvest) {
-    const written = new Map();
-    let serial = 0;
-    globalThis.__replayHarvest = (name, json) => {
-      written.set(name, json);
-      if (name !== "session.json") return;
-      const dir = join(harvest, `${relative(join(app, "src"), file).replace(/\.test\.mjs$/, "").replaceAll("/", "__")}__${String(++serial).padStart(3, "0")}`);
-      mkdirSync(dir, { recursive: true });
-      writeFileSync(join(dir, "session.json"), json);
-      if (written.has("downloads.json")) writeFileSync(join(dir, "downloads.json"), written.get("downloads.json"));
-    };
-  }
   const RealURL = globalThis.URL;
   globalThis.URL = class extends RealURL {
     constructor(input, base) {

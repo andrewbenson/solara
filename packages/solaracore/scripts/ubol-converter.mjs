@@ -4,8 +4,8 @@ import { readFile, writeFile, mkdir, readdir, copyFile } from 'node:fs/promises'
 import { resolve, relative, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-export const version = '2026.1110.1816';
-export const archiveSHA256 = '85fe5909366e8ada66c5b331bbdbf69cf5100245ed6161b1e4e2f1f848ec7d03';
+export const version = '2026.1122.1948';
+export const archiveSHA256 = '7cd72ae78fe6fa007193de633d2dec085a0da50f53283e821918a77978d105fb';
 export const maxRules = 140000;
 const resourceUniverse = ['main_frame', 'sub_frame', 'stylesheet', 'script', 'image', 'font', 'object', 'xmlhttprequest', 'ping', 'csp_report', 'media', 'websocket', 'other'];
 const resourceMap = { stylesheet: 'style-sheet', script: 'script', image: 'image', font: 'font', media: 'media' };

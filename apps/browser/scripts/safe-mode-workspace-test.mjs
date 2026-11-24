@@ -6,7 +6,7 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { launch, reporter } from "../../../scripts/lib/instance.mjs";
 
-const HELP = "usage: node apps/browser/scripts/safe-mode-workspace-test.mjs <Debug Solara.app> [--keep-data]\n\nSafe mode, entered through an isolated launch-switch defaults suite on data a normal launch made first, in hidden windows: a sidebar group header collapses and expands, its close button asks first and Cancel keeps it while Close Group closes it, the group menu collapses and ungroups, and a link dropped on the sidebar opens a tab. Swift's Debug counters must rise by one per action, so the native store decides these in safe mode. A normal relaunch on the same data shows none of it, because safe mode never saves the workspace.";
+const HELP = "usage: node apps/browser/scripts/safe-mode-workspace-test.mjs <Debug Solara.app> [--keep-data]\n\nReads ac.native.state() on every query; null means an unavailable native workspace and readiness cannot pass.\n\nSafe mode, entered through an isolated launch-switch defaults suite on data a normal launch made first, in hidden windows: a sidebar group header collapses and expands, its close button asks first and Cancel keeps it while Close Group closes it, the group menu collapses and ungroups, and a link dropped on the sidebar opens a tab. Swift's Debug counters must rise by one per action, so the native store decides these in safe mode. A normal relaunch on the same data shows none of it, because safe mode never saves the workspace.";
 const args = process.argv.slice(2);
 if (args.includes("--help") || !args.find((a) => !a.startsWith("--"))) {
   console.log(HELP);
@@ -26,7 +26,7 @@ const HELPERS = `
 const C = globalThis.expo.modules.SolaraCEF;
 const D = globalThis.expo.modules.SolaraSidebarDrag;
 const M = globalThis.expo.modules.SolaraShell;
-const st = () => ac.store.getState();
+const st = () => ac.native.state();
 const settle = (ms) => new Promise((r) => setTimeout(r, ms));
 const win = (id) => C.chromeWindows().then((ws) => { const f = st().windows[id].frame; const w = ws.filter((w) => w.hasRoot).find((w) => { const r = w.frame.match(/[-\\d.]+/g).map(Number); return Math.abs(r[0] - f[0]) < 2 && Math.abs(r[2] - f[2]) < 2; }); return w && w.window; });
 const point = (id, x, y) => ac.shell.devSetPointer(id, { x, y });
@@ -107,19 +107,19 @@ const menuChoice = async (groupId, choice) => {
   await run(`return settle(600);`);
 };
 
-const group = (ids, name) => run(`const id = st().createGroup(${q(ids)}, { name: ${q(name)} }); return settle(1300).then(() => id);`);
+const group = (ids, name) => run(`const id = ac.native.command("createGroup", ${q(ids)}, { name: ${q(name)} }); return settle(1300).then(() => id);`);
 const groupNamed = (name) => run(`return Object.values(st().groups).find((g) => g.name === ${q(name)})?.id ?? null;`);
 
 const env = { SOLARA_NATIVE_SHELL: "1", SOLARA_NATIVE_TOP_STRIP: "1", SOLARA_DRAW_WINDOWS: "1" };
 try {
-  app = await launch(appPath, { data, fresh: true, onboarded: true, env, ready: "return Object.keys(ac.store.getState().windows).length > 0" });
-  await run(`st().updateSettings({ warnBeforeClosingTabGroup: true, warnBeforeClosingLastTab: false, warnBeforeClosingWindow: false }); return settle(1500);`);
+  app = await launch(appPath, { data, fresh: true, onboarded: true, env, ready: "return Object.keys(ac.native.state()?.windows ?? {}).length > 0" });
+  await run(`ac.native.command("updateSettings", { warnBeforeClosingTabGroup: true, warnBeforeClosingLastTab: false, warnBeforeClosingWindow: false }); return settle(1500);`);
   await app.quit();
-  app = await launch(appPath, { data, onboarded: true, env: { ...env, SOLARA_LAUNCH_SWITCHES_DEFAULTS: suite, SOLARA_LAUNCH_SWITCHES_OPTION: "1" }, ready: "return Object.keys(ac.store.getState().windows).length > 0" });
+  app = await launch(appPath, { data, onboarded: true, env: { ...env, SOLARA_LAUNCH_SWITCHES_DEFAULTS: suite, SOLARA_LAUNCH_SWITCHES_OPTION: "1" }, ready: "return Object.keys(ac.native.state()?.windows ?? {}).length > 0" });
   rep.log(`instance: pid ${app.pid}, data ${data}, defaults suite ${suite}`);
 
   await rep.check("the instance is in safe mode and the native store owns the workspace", async () => {
-    const status = await run(`return globalThis.expo.modules.SolaraStoreAdapter.status();`);
+    const status = await run(`return ac.native.status();`);
     assert.equal(status.active, true, q(status));
     assert.equal(status.safeMode, "option", q(status));
     assert.equal(await run(`return st().settings.warnBeforeClosingTabGroup;`), true, "safe mode read the saved settings");
@@ -128,7 +128,7 @@ try {
     assert.equal(await run(`return win(${q(W)}).then((n) => C.devWindow(n, "alertSheets:1"));`), "1", "real sheets in this test instance");
   });
 
-  const tabs = await run(`const ids = ${q(["a", "b", "c", "d"].map(page))}.map((url) => st().newTab(${q(W)}, { url, background: true }));
+  const tabs = await run(`const ids = ${q(["a", "b", "c", "d"].map(page))}.map((url) => ac.native.command("newTab", ${q(W)}, { url, background: true }));
     return settle(1200).then(() => ids);`);
   const work = await group(tabs.slice(0, 2), "Work");
 
@@ -187,9 +187,9 @@ try {
 
   await rep.check("a normal relaunch on the same data shows none of safe mode's workspace edits", async () => {
     await app.quit();
-    app = await launch(appPath, { data, onboarded: true, env, ready: "return Object.keys(ac.store.getState().windows).length > 0" });
+    app = await launch(appPath, { data, onboarded: true, env, ready: "return Object.keys(ac.native.state()?.windows ?? {}).length > 0" });
     rep.log(`relaunched normally: pid ${app.pid}`);
-    const status = await run(`return globalThis.expo.modules.SolaraStoreAdapter.status();`);
+    const status = await run(`return ac.native.status();`);
     assert.ok(status.active && !status.safeMode, q(status));
     assert.equal(await groupNamed("Menu"), null, "no group from safe mode");
     assert.equal(await run(`return Object.values(st().tabs).some((t) => t.url === ${q(DROPPED)});`), false, "no tab from safe mode's drop");

@@ -10,6 +10,8 @@ import { launch, reporter, screenLocked, sleep } from "../../../scripts/lib/inst
 const LEGS = ["H1-quit", "H1-uptime", "H2-early-window", "M1-token"];
 const HELP = `usage: node apps/browser/scripts/s7b-repro.mjs <Debug Solara.app> [leg…] [--list] [--keep-data]
 
+Native queries use ac.native.state(); null means no readable native workspace, so readiness cannot pass.
+
 Reproduces two store-unavailable bugs with only what main already has, in hidden instances. Each leg has its own data
 folder and its own launch-switch defaults suite (SOLARA_LAUNCH_SWITCHES_DEFAULTS), deleted with \`defaults delete\` at the
 end. Exit 0 only when every leg passes; a leg prints PASS, FAIL or INCONCLUSIVE with its evidence.
@@ -190,7 +192,7 @@ const refusal = (app) => /\[store\] unavailable: ([^\n]*)/.exec(app.output())?.[
 
 const prepare = async (data, extra = async () => {}) => {
   const app = await start(data, { fresh: true });
-  await app.ready({ test: "return Object.keys(ac.store.getState().windows).length > 0", timeout: 90000 });
+  await app.ready({ test: "return Object.keys(ac.native.state()?.windows ?? {}).length > 0", timeout: 90000 });
   await extra(app);
   await app.eval("return new Promise((r) => setTimeout(r, 2000));", { timeout: 10000 });
   const how = await stop(app);
@@ -310,8 +312,8 @@ try {
     const data = join(scratch, "H2-early-window");
     const suite = suiteFor("H2-early-window");
     const file = join(data, "session.json");
-    await prepare(data, (app) => app.eval(`const st = ac.store.getState(); const w = Object.keys(st.windows)[0];
-      st.newTab(w, { url: "data:text/html,<title>early</title>early" }); return new Promise((r) => setTimeout(r, 2500));`, { timeout: 15000 }));
+    await prepare(data, (app) => app.eval(`const st = ac.native.state(); const w = Object.keys(st.windows)[0];
+      ac.native.command("newTab", w, { url: "data:text/html,<title>early</title>early" }); return new Promise((r) => setTimeout(r, 2500));`, { timeout: 15000 }));
     const rows = (table) => Array.isArray(table) ? table : Object.values(table ?? {});
     const ensureLaunchTab = (why) => {
       const saved = JSON.parse(readFileSync(file, "utf8"));
@@ -374,7 +376,7 @@ try {
     const positive = await heldLaunch({}, "control, early window on");
     if (refusal(positive.app)) throw new Error(`the good session was refused: ${refusal(positive.app)}`);
     try {
-      await positive.app.ready({ test: "return Object.keys(ac.store.getState().windows).length > 0", timeout: 90000 });
+      await positive.app.ready({ test: "return Object.keys(ac.native.state()?.windows ?? {}).length > 0", timeout: 90000 });
       await positive.app.eval("return new Promise((r) => setTimeout(r, 2000));", { timeout: 10000 });
     } catch (e) {
       say(`  control: JS never came up after the gate opened: ${e.message}`);
@@ -384,7 +386,7 @@ try {
 
     const negative = await heldLaunch({ SOLARA_EARLY_WINDOW: "off" }, "control, SOLARA_EARLY_WINDOW=off");
     try {
-      await negative.app.ready({ test: "return Object.keys(ac.store.getState().windows).length > 0", timeout: 90000 });
+      await negative.app.ready({ test: "return Object.keys(ac.native.state()?.windows ?? {}).length > 0", timeout: 90000 });
     } catch (e) {
       say(`  off control: JS never came up after the gate opened: ${e.message}`);
     }

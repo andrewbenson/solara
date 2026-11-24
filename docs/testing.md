@@ -270,6 +270,8 @@ A Release or RC build starts the dev harness (`dev-eval.js`) only when `$SOLARA_
 test instance (`src/lib/perfProbe.ts`): `: > "$SOLARA_DATA_DIR/perf-probe"` before launch, as
 `.claude/skills/release/scripts/smoke.sh` does.
 
+Debug drivers use `ac.native.state()` for fresh native JSON (null when unavailable), `ac.native.status()` for adapter status and `ac.native.command(name, ...args)` for workspace commands. A command is dispatched natively, but the JS effects it returns (such as a pin handoff) still run against the JS replica until the replica goes.
+
 Input and capture hooks on `ac.shell` (Debug builds only; a Release build answers nothing or `null`), for driving
 the app as a person would rather than writing a new helper:
 

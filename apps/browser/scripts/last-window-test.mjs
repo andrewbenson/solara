@@ -13,6 +13,10 @@ if (args.includes("--list")) {
   process.exit(0);
 }
 const appPath = args.find((arg) => !arg.startsWith("--"));
+if (args.includes("--help")) {
+  console.log("usage: node apps/browser/scripts/last-window-test.mjs <Debug Solara.app> [--keep-data] | --list\nReads ac.native.state() on every query; null means the native workspace is unavailable and the leg cannot proceed.");
+  process.exit(0);
+}
 if (!appPath || args.some((arg) => arg.startsWith("--") && arg !== "--keep-data")) {
   console.error("usage: node apps/browser/scripts/last-window-test.mjs <Debug Solara.app> [--keep-data] | --list");
   process.exit(2);
@@ -28,7 +32,7 @@ let app;
 let passed = false;
 const run = (body) => app.eval(body, { timeout: 8000 });
 const lifecycle = (action = "inventory", foreground = false) => run(`return expo.modules.SolaraApp.devWindowLifecycle(${JSON.stringify(action)},${foreground});`);
-const state = () => run(`const s=ac.store.getState(); const w=s.windows.w1; return {window:w&&{id:w.id,profileId:w.profileId,tabIds:w.tabIds,activeTabIds:w.activeTabIds,sidebarOpen:w.sidebarOpen,keptOnClose:w.keptOnClose},tabs:Object.fromEntries(Object.entries(s.tabs).filter(([,t])=>t.windowId==="w1").map(([id,t])=>[id,{id:t.id,windowId:t.windowId,profileId:t.profileId,url:t.url,pinned:t.pinned}])),groups:Object.fromEntries(Object.entries(s.groups).filter(([,g])=>g.windowId==="w1")),splits:Object.fromEntries(Object.entries(s.splits).filter(([,g])=>g.windowId==="w1")),selection:s.selection.w1,closedWindows:s.closedWindows,parkedPins:s.parkedPins};`);
+const state = () => run(`const s=ac.native.state(); const w=s.windows.w1; return {window:w&&{id:w.id,profileId:w.profileId,tabIds:w.tabIds,activeTabIds:w.activeTabIds,sidebarOpen:w.sidebarOpen,keptOnClose:w.keptOnClose},tabs:Object.fromEntries(Object.entries(s.tabs).filter(([,t])=>t.windowId==="w1").map(([id,t])=>[id,{id:t.id,windowId:t.windowId,profileId:t.profileId,url:t.url,pinned:t.pinned}])),groups:Object.fromEntries(Object.entries(s.groups).filter(([,g])=>g.windowId==="w1")),splits:Object.fromEntries(Object.entries(s.splits).filter(([,g])=>g.windowId==="w1")),selection:s.selection.w1,closedWindows:s.closedWindows,parkedPins:s.parkedPins};`);
 const withoutMarker = (value) => {
   const copy = structuredClone(value);
   delete copy.window.keptOnClose;
@@ -47,10 +51,10 @@ async function until(label, accept, timeout = 10000) {
 const nativeWindow = (id) => lifecycle().then((inventory) => inventory.windows.find((w) => w.id === id));
 const waitVisible = (id, visible) => until(`${id} visible=${visible}`, async () => (await nativeWindow(id))?.visible === visible);
 const newWindow = async (privateWindow = false) => {
-  const before = await run("return ac.store.getState().windowOrder;");
+  const before = await run("return ac.native.state().windowOrder;");
   if (privateWindow) await run('return expo.modules.SolaraApp.devMenuCommand("newIncognitoWindow",null);');
   else assert.equal(await run('return expo.modules.SolaraApp.devPostKey("w1","menu:n",45,["command"]);'), true);
-  const id = await until("new store window", () => run(`return ac.store.getState().windowOrder.find(id=>!${JSON.stringify(before)}.includes(id));`));
+  const id = await until("new store window", () => run(`return ac.native.state().windowOrder.find(id=>!${JSON.stringify(before)}.includes(id));`));
   await waitVisible(id, true);
   return id;
 };
@@ -59,7 +63,7 @@ const closeNative = async (id, action = "close-button") => {
   assert.ok(window, `missing ${id}`);
   await run(`return expo.modules.SolaraCEF.devWindow(${window.number},${JSON.stringify(action)});`);
 };
-const closed = async (id) => until(`${id} physically closed`, async () => !await nativeWindow(id) && await run(`return !ac.store.getState().windows[${JSON.stringify(id)}];`));
+const closed = async (id) => until(`${id} physically closed`, async () => !await nativeWindow(id) && await run(`return !ac.native.state().windows[${JSON.stringify(id)}];`));
 const pass = (name) => console.log(`PASS ${name}`);
 const monitorExit = async (pid) => {
   const source = `import json,os,select,sys
@@ -106,13 +110,13 @@ try {
       splits: [{ id: "sp", windowId: "w1", tabIds: ["a", "b"], orientation: "horizontal", sizes: [0.5, 0.5] }],
       settings: { restoreSession: true, sleepInactiveTabs: false, warnBeforeClosingWindow: true, warnBeforeQuitting: false },
     });
-    app = await launch(resolve(appPath), { data, fresh: true, session: fixture, onboarded: true, probe: true, keepData: true, ready: "return !!ac.store.getState().windows.w1" });
+    app = await launch(resolve(appPath), { data, fresh: true, session: fixture, onboarded: true, probe: true, keepData: true, ready: "return !!ac.native.state()?.windows.w1" });
     const page = await app.page(pageURL("a"));
     await until("fixture document ready", () => page.eval('!!document.querySelector("#draft") && typeof window.nonce==="string"').catch(() => false));
-    await until("loaded split pages", () => run('return ["a","b"].every(id=>!ac.store.getState().live[id]?.isLoading);'));
+    await until("loaded split pages", () => run('return ["a","b"].every(id=>!ac.native.state().live[id]?.isLoading);'));
     const targetId = (await app.pageTarget(pageURL("a"))).id;
     const nonce = await page.eval('document.querySelector("#draft").value="unsent draft";document.querySelector("#draft").focus();document.querySelector("#draft").setSelectionRange(2,7);window.nonce');
-    await run('ac.store.getState().setSelection("w1",["a","b"]);globalThis.__lastWindowWarnings=[];globalThis.__lastWindowRequests=[];expo.modules.SolaraShell.confirm=(options)=>{__lastWindowWarnings.push(options);return Promise.resolve({confirmed:false,suppressed:false});};ac.shell.onWindowEvent(e=>{if(e.type==="closeRequest")__lastWindowRequests.push(e.id);});return true;');
+    await run('ac.native.command("setSelection","w1",["a","b"]);globalThis.__lastWindowWarnings=[];globalThis.__lastWindowRequests=[];expo.modules.SolaraShell.confirm=(options)=>{__lastWindowWarnings.push(options);return Promise.resolve({confirmed:false,suppressed:false});};ac.shell.onWindowEvent(e=>{if(e.type==="closeRequest")__lastWindowRequests.push(e.id);});return true;');
     const original = await nativeWindow("w1");
     if (!original.excluded) assert.equal((await lifecycle()).windowsMenu.includes(original.number), true, "visible window must appear in the Window menu before hiding");
     assert.equal((await lifecycle()).scriptingCount, 1);
@@ -157,7 +161,7 @@ try {
       await lifecycle("activation");
       await lifecycle("dock");
       await waitVisible("w1", false);
-      assert.equal(await run("return ac.store.getState().windowOrder.length;"), 1);
+      assert.equal(await run("return ac.native.state().windowOrder.length;"), 1);
       if (index % 2 === 0) {
         await lifecycle("activation", true);
         await lifecycle("dock", true);
@@ -167,10 +171,10 @@ try {
       }
       await lifecycle("dock", true);
       await verifyShown(before);
-      assert.equal(await run("return ac.store.getState().windowOrder.length;"), 1);
+      assert.equal(await run("return ac.native.state().windowOrder.length;"), 1);
       pass(`${trigger}; same page/workspace; guarded background and scoped native callbacks, restoreSession=${restoreSession}`);
     }
-    await run('ac.store.getState().updateSettings({warnBeforeClosingWindow:false});return true;');
+    await run('ac.native.command("updateSettings",{warnBeforeClosingWindow:false});return true;');
     const beforeNew = await state();
     await closeNative("w1");
     await verifyHidden(beforeNew);
@@ -184,7 +188,7 @@ try {
     pass(`Command N creates a distinct window and closing it leaves retained w1 hidden, restoreSession=${restoreSession}`);
     await lifecycle("dock", true);
     const privateId = await newWindow(true);
-    assert.equal(await run(`return ac.store.getState().windows[${JSON.stringify(privateId)}].incognito;`), true);
+    assert.equal(await run(`return ac.native.state().windows[${JSON.stringify(privateId)}].incognito;`), true);
     await closeNative(privateId);
     await closed(privateId);
     assert.equal((await lifecycle()).retained, null);
@@ -217,7 +221,7 @@ try {
       dialogs.push(dialog.type);
       void page.send("Page.handleJavaScriptDialog", { accept: acceptDialog }).catch(() => {});
     });
-    await run('globalThis.__lastWindowQuitPhase="idle";globalThis.__lastWindowActivationTrace=[];globalThis.__lastWindowTraceSubscriptions=[ac.shell.onAppEvent(e=>{if(e.type==="willQuit"||e.type==="quitCancelled"){__lastWindowQuitPhase=e.type;__lastWindowActivationTrace.push({event:e.type,kept:!!ac.store.getState().windows.w1?.keptOnClose});}}),expo.modules.SolaraTabPool.addListener("onPageEvent",e=>{if(e.name==="onActivateRequest")__lastWindowActivationTrace.push({event:e.name,payload:e.payload,quitPhase:__lastWindowQuitPhase,kept:!!ac.store.getState().windows.w1?.keptOnClose});})];return true;');
+    await run('globalThis.__lastWindowQuitPhase="idle";globalThis.__lastWindowActivationTrace=[];globalThis.__lastWindowTraceSubscriptions=[ac.shell.onAppEvent(e=>{if(e.type==="willQuit"||e.type==="quitCancelled"){__lastWindowQuitPhase=e.type;__lastWindowActivationTrace.push({event:e.type,kept:!!ac.native.state().windows.w1?.keptOnClose});}}),expo.modules.SolaraTabPool.addListener("onPageEvent",e=>{if(e.name==="onActivateRequest")__lastWindowActivationTrace.push({event:e.name,payload:e.payload,quitPhase:__lastWindowQuitPhase,kept:!!ac.native.state().windows.w1?.keptOnClose});})];return true;');
     try {
       await page.eval('window.lastWindowBeforeUnload=(event)=>{event.preventDefault();event.returnValue="";};addEventListener("beforeunload",window.lastWindowBeforeUnload);true', { userGesture: true });
       assert.equal(await run('return expo.modules.SolaraApp.devPostKey("w1","menu:q",12,["command"]);'), true);
@@ -230,14 +234,14 @@ try {
       assert.equal((await nativeWindow("w1")).visible, false);
       assert.equal((await app.pageTarget(pageURL("a")))?.id, targetId);
       assert.deepEqual(await page.eval('[window.nonce,document.querySelector("#draft").value]'), [nonce, "unsent draft"]);
-      assert.equal(await run("return ac.store.getState().windowOrder.length;"), 1);
+      assert.equal(await run("return ac.native.state().windowOrder.length;"), 1);
       const backgroundURL = pageURL("chrome-background");
       const link = await page.eval(`const link=document.createElement("a");link.href=${JSON.stringify(backgroundURL)};link.textContent="Background tab";document.body.append(link);const box=link.getBoundingClientRect();({x:box.x+box.width/2,y:box.y+box.height/2});`);
       for (const type of ["mousePressed", "mouseReleased"]) await page.send("Input.dispatchMouseEvent", { type, x: link.x, y: link.y, button: "left", clickCount: 1, modifiers: 4 });
-      const backgroundId = await until("Chrome-origin background tab", () => run(`return Object.values(ac.store.getState().tabs).find(tab=>tab.url===${JSON.stringify(backgroundURL)})?.id;`));
+      const backgroundId = await until("Chrome-origin background tab", () => run(`return Object.values(ac.native.state().tabs).find(tab=>tab.url===${JSON.stringify(backgroundURL)})?.id;`));
       await sleep(500);
-      assert.equal(await run(`return ac.store.getState().tabs[${JSON.stringify(backgroundId)}].windowId;`), "w1");
-      assert.deepEqual(await run("return ac.store.getState().windowOrder;"), ["w1"]);
+      assert.equal(await run(`return ac.native.state().tabs[${JSON.stringify(backgroundId)}].windowId;`), "w1");
+      assert.deepEqual(await run("return ac.native.state().windowOrder;"), ["w1"]);
       assert.deepEqual((await lifecycle()).windows.map((window) => [window.id, window.number, window.visible]), [["w1", original.number, false]]);
       assert.equal((await lifecycle()).retained, "w1");
       assert.deepEqual((await state()).window.activeTabIds, cancelledBefore.window.activeTabIds);
@@ -250,7 +254,7 @@ try {
       stopDialogs();
       if (app.alive) await run("__lastWindowTraceSubscriptions.forEach(subscription=>subscription.remove());return true;").catch(() => {});
     }
-    await run(`ac.store.getState().updateSettings({restoreSession:${restoreSession}});return true;`);
+    await run(`ac.native.command("updateSettings",{restoreSession:${restoreSession}});return true;`);
     const expected = await state();
     const observedExit = await monitorExit(app.pid);
     const quitStart = Date.now();
@@ -263,7 +267,7 @@ try {
     const document = JSON.parse(readFileSync(join(data, "session.json"), "utf8"));
     assert.equal(document.windows.find((w) => w.id === "w1")?.keptOnClose, true);
     assert.equal(document.closedWindows.some((w) => w.id === "w1"), false);
-    app = await launch(resolve(appPath), { data, onboarded: true, probe: true, keepData: true, ready: "return !!ac.store.getState().windows.w1" });
+    app = await launch(resolve(appPath), { data, onboarded: true, probe: true, keepData: true, ready: "return !!ac.native.state()?.windows.w1" });
     const restored = await state();
     assert.deepEqual(restored.window.tabIds, expected.window.tabIds);
     assert.deepEqual(restored.window.activeTabIds, expected.window.activeTabIds);
@@ -287,7 +291,7 @@ try {
     app = null;
     const updateDocument = JSON.parse(readFileSync(join(data, "session.json"), "utf8"));
     assert.equal(updateDocument.windows.find((window) => window.id === "w1")?.keptOnClose, true);
-    app = await launch(resolve(appPath), { data, onboarded: true, probe: true, keepData: true, ready: "return !!ac.store.getState().windows.w1" });
+    app = await launch(resolve(appPath), { data, onboarded: true, probe: true, keepData: true, ready: "return !!ac.native.state()?.windows.w1" });
     const afterUpdate = await state();
     assert.deepEqual(afterUpdate.window.tabIds, beforeUpdate.window.tabIds);
     assert.deepEqual(afterUpdate.window.activeTabIds, beforeUpdate.window.activeTabIds);
@@ -305,7 +309,7 @@ try {
     windows: [{ id: "w1" }, { id: "w2" }],
     tabs: [{ id: "first", windowId: "w1", url: pageURL("rapid-first") }, { id: "last", windowId: "w2", url: pageURL("rapid-last") }],
     settings: { restoreSession: true, sleepInactiveTabs: false, warnBeforeClosingWindow: false, warnBeforeQuitting: false },
-  }), ready: "return !!ac.store.getState().windows.w2" });
+  }), ready: "return !!ac.native.state()?.windows.w2" });
   await waitVisible("w1", true);
   await waitVisible("w2", true);
   const reversePage = await app.page(pageURL("rapid-last"));
@@ -319,7 +323,7 @@ try {
   await waitVisible("w2", false);
   assert.equal((await lifecycle()).retained, "w2");
   assert.equal((await nativeWindow("w2")).number, reverseWindow.number);
-  assert.deepEqual(await run(`const s=ac.store.getState();return {order:s.windowOrder,tabs:s.windows.w2.tabIds,kept:s.windows.w2.keptOnClose,closed:s.closedWindows.some(window=>window.id==="w2")};`), { order: ["w2"], tabs: ["last"], kept: true, closed: false });
+  assert.deepEqual(await run(`const s=ac.native.state();return {order:s.windowOrder,tabs:s.windows.w2.tabIds,kept:s.windows.w2.keptOnClose,closed:s.closedWindows.some(window=>window.id==="w2")};`), { order: ["w2"], tabs: ["last"], kept: true, closed: false });
   assert.equal((await app.pageTarget(pageURL("rapid-last"))).id, reverseTarget);
   assert.deepEqual(await reversePage.eval("[window.nonce,window.unloads]"), [reverseNonce, 0]);
   await app.quit();

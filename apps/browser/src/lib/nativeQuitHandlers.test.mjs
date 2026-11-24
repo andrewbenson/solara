@@ -41,6 +41,6 @@ for (const dev of [false, true]) test(`quit handler counters and lazy persistenc
   assert.equal(Object.hasOwn(ac, "persistence"), dev);
   if (dev) {
     void ac.persistence;
-    assert.deepEqual(required, ["./persist", "./persistLatch", "../store/nativeStore", "../components/onboarding/state", "../sync/engine", "./native"]);
+    assert.deepEqual(required, ["./persist", "./persistLatch", "./devRefusalChecks", "../store/nativeStore", "../components/onboarding/state", "../sync/engine", "./native"]);
   }
 });

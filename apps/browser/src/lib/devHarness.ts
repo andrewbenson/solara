@@ -98,9 +98,11 @@ export function startDevHarness() {
       return { ownsLive: require("../store/nativeStore").nativeOwnsWorkspace, facts: native.nativePageFacts, report: native.pageReport };
     },
   };
+  if (__DEV__) require("./devNative").installDevNative(ac);
   if (__DEV__) Object.defineProperty(ac, "persistence", {
     get() {
       return { ...require("./persist") as typeof import("./persist"), ...require("./persistLatch") as typeof import("./persistLatch"),
+        refusalChecks: require("./devRefusalChecks") as typeof import("./devRefusalChecks"),
         ownsWorkspace: require("../store/nativeStore").nativeOwnsWorkspace as typeof import("../store/nativeStore").nativeOwnsWorkspace,
         onboarding: require("../components/onboarding/state") as typeof import("../components/onboarding/state"),
         sync: require("../sync/engine") as typeof import("../sync/engine"),

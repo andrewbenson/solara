@@ -52,6 +52,9 @@ SOLARA_TEST_STORE_OPEN_FAIL=openFailed|noFolder|safeOpenFailed.
 --naive-control inverts the two savesNothing legs: run them against a bundle whose persist.ts lacks the
 startPersistence guard, and each must log at least one attempted write, or the run proves nothing.
 
+ac.native.state() returns null for frozen, failed or absent native snapshots. Refusal legs use the named dev-only
+ac.persistence.refusalChecks to exercise real fallback mutations; they still require zero writes and unchanged files.
+
 Run it with SOLARA_NATIVE_WINDOW_LAYOUT unset and =1: there is no browser window, so both must pass.`;
 
 const args = process.argv.slice(2);
@@ -159,11 +162,19 @@ const leg = (name, fn) => legs.includes(name) ? rep.check(name, async () => {
 const PROTECTED = /\[documents\] attempt (write|remove) (session\.json|downloads\.json|launch-look\.json|history\.json|favicons-\S*\.json|sync\S*|onboarding\.json|release-notes\.json)/g;
 const attemptsIn = (text) => [...text.matchAll(PROTECTED)].map((m) => `${m[1]} ${m[2]}`);
 const makeChanges = async (app) => {
-  const made = await app.eval(`const st = ac.store.getState(); const w = Object.keys(st.windows)[0] ?? st.createWindow({});
-    const tabsBefore = Object.keys(ac.store.getState().tabs).length; const appearance = st.settings.appearance === "dark" ? "light" : "dark";
-    st.newTab(w, { url: "data:text/html,<title>lost</title>lost" }); st.updateSettings({ appearance });
-    const after = ac.store.getState();
-    return new Promise((r) => setTimeout(() => r({ tabs: Object.keys(after.tabs).length - tabsBefore, appearance: after.settings.appearance === appearance }), 2500));`, { timeout: 20000 });
+  const made = await app.eval(`const st = ac.native.state();
+    let changed;
+    if (st === null) changed = ac.persistence.refusalChecks.exerciseWorkspace();
+    else {
+      const w = Object.keys(st.windows)[0] ?? ac.native.command("createWindow", {});
+      const tabsBefore = Object.keys(ac.native.state().tabs).length;
+      const appearance = st.settings.appearance === "dark" ? "light" : "dark";
+      ac.native.command("newTab", w, { url: "data:text/html,<title>lost</title>lost" });
+      ac.native.command("updateSettings", { appearance });
+      const after = ac.native.state();
+      changed = { tabs: Object.keys(after.tabs).length - tabsBefore, appearance: after.settings.appearance === appearance };
+    }
+    return new Promise((r) => setTimeout(() => r(changed), 2500));`, { timeout: 20000 });
   assert.ok(made.tabs >= 1 && made.appearance, `the session took a new tab and an appearance change: ${q(made)}`);
   return true;
 };
@@ -208,33 +219,33 @@ const snapshotFailure = async (name, failure) => {
   const data = join(scratch, name);
   const fixture = readFileSync(new URL("../../../native/SolaraKit/Tests/Fixtures/sessions/nested-groups-folders-rows/session.json", import.meta.url), "utf8");
   const app = await start(data, { fresh: true, suite: suiteFor(name), files: { "session.json": fixture }, js: "pinned",
-    ready: "return !!globalThis.ac?.store", env: { SOLARA_TEST_STORE_SNAPSHOT_FAIL: failure } });
+    ready: "return !!globalThis.ac?.native", env: { SOLARA_TEST_STORE_SNAPSHOT_FAIL: failure } });
   await awaitSavesNothing(app, 0);
   assert.match(app.output(), /\[store\] showing the store-unavailable window for a session that saves nothing/, "JS handed the refusal to the native window");
   const state = await settled(app, 20000);
   assert.equal(state.shown, true);
   assert.equal(state.context, "inert");
-  const refused = () => app.eval(`return { status: expo.modules.SolaraStoreAdapter.status(), latch: ac.persistence.persistenceRefused(), owns: ac.persistence.ownsWorkspace() };`);
+  const refused = () => app.eval(`return { status: ac.native.status(), snapshot: ac.native.state(), latch: ac.persistence.persistenceRefused(), owns: ac.persistence.ownsWorkspace() };`);
   const assertRefused = async () => {
     const r = await refused();
     assert.equal(r.status.active, true, "the real store exists");
     assert.equal(r.status.frozen, true, "JS caused the native writer to freeze");
     assert.equal(r.latch, true);
     assert.equal(r.owns, false);
+    assert.equal(r.snapshot, null, "no readable native snapshot after refusal");
   };
   await assertRefused();
   const before = await settledSnapshotFiles(app, data);
   const logicalBefore = databaseState(data);
   await makeChanges(app);
-  const changed = await app.eval(`const p = ac.persistence, s = ac.store.getState();
-    s.upsertDownload({ id: "snapshot-refusal", url: "https://refusal.invalid/", state: "complete", profile: "" });
-    s.forgetDownloads("");
+  const changed = await app.eval(`const p = ac.persistence;
+    const refusalWindow = p.refusalChecks.exerciseDownloads();
     p.sync.setTypeSynced("tabs", false); p.sync.setTypeSynced("tabs", true);
-    p.onboarding.startOnboarding(Object.keys(s.windows)[0]); p.onboarding.saveIntroMusicMuted(true);
+    p.onboarding.startOnboarding(refusalWindow); p.onboarding.saveIntroMusicMuted(true);
     const quitBefore = p.quitHandlerCounts(), shell = expo.modules.SolaraShell;
     shell.emit("onAppEvent", { type: "willQuit" }); shell.emit("onAppEvent", { type: "quitCancelled" });
     const quitAfter = p.quitHandlerCounts();
-    s.createWindow({ url: "data:text/html,after-cancel" }); s.updateSettings({ appearance: "light" });
+    p.refusalChecks.exerciseWindowAfterCancel();
     p.flushPersistence();
     return Promise.all([p.sync.stopSync(), p.sync.turnOnSync(${q(join(data, "sync"))})]).then(() => ({
       quitBefore, quitAfter, latch: p.persistenceRefused(), onboarding: p.onboarding.useOnboarding.getState().windowId,
@@ -298,9 +309,9 @@ try {
 
   await leg("earlyWindow", async () => {
     const data = join(scratch, "earlyWindow");
-    const first = await start(data, { fresh: true, js: "pinned", ready: "return Object.keys(ac.store.getState().windows).length > 0" });
-    await first.eval(`const st = ac.store.getState(); const w = Object.keys(st.windows)[0];
-      st.newTab(w, { url: "data:text/html,<title>early</title>early" }); return new Promise((r) => setTimeout(r, 2500));`, { timeout: 15000 });
+    const first = await start(data, { fresh: true, js: "pinned", ready: "return Object.keys(ac.native.state()?.windows ?? {}).length > 0" });
+    await first.eval(`const st = ac.native.state(); const w = Object.keys(st.windows)[0];
+      ac.native.command("newTab", w, { url: "data:text/html,<title>early</title>early" }); return new Promise((r) => setTimeout(r, 2500));`, { timeout: 15000 });
     await stop(first);
     const saved = JSON.parse(readFileSync(join(data, "session.json"), "utf8"));
     rep.log(`saved session: launchTab ${q(saved.launchTab ?? null)}, focusedWindowId ${q(saved.focusedWindowId ?? null)}, launchBackdrop ${q(saved.launchBackdrop ?? null)}`);
@@ -482,7 +493,7 @@ try {
 
   await leg("savesNothingReload", async () => {
     const data = join(scratch, "savesNothingReload");
-    const app = await start(data, { fresh: true, suite: suiteFor("savesNothingReload"), js: "pinned", ready: "return Object.keys(ac.store.getState().windows).length > 0" });
+    const app = await start(data, { fresh: true, suite: suiteFor("savesNothingReload"), js: "pinned", ready: "return Object.keys(ac.native.state()?.windows ?? {}).length > 0" });
     await makeChanges(app);
     assert.equal(await app.eval("return globalThis.expo.modules.SolaraStoreAdapter.freeze();"), true, "the native store froze");
     const since = app.output().length;
@@ -490,7 +501,7 @@ try {
     let reloaded = false;
     for (const end = Date.now() + 20000; !reloaded && Date.now() < end; await sleep(100)) {
       assert.ok(app.alive, "the reload exited the instance");
-      reloaded = await app.eval("return globalThis.__savesNothingMarker === undefined && !!globalThis.ac?.store;", { timeout: 1000 }).catch(() => false);
+      reloaded = await app.eval("return globalThis.__savesNothingMarker === undefined && !!globalThis.ac?.native;", { timeout: 1000 }).catch(() => false);
     }
     assert.ok(reloaded, "the reload replaced the JavaScript runtime");
     await awaitSavesNothing(app, since);
@@ -513,7 +524,7 @@ try {
     const before = '{"version":99}';
     const app = await start(data, {
       fresh: true, suite: suiteFor("savesNothingRefused"), files: { "session.json": before },
-      js: "pinned", ready: "return !!globalThis.ac?.store", env: { SOLARA_TEST_START_RN_WHEN_UNAVAILABLE: "1" },
+      js: "pinned", ready: "return !!globalThis.ac?.native", env: { SOLARA_TEST_START_RN_WHEN_UNAVAILABLE: "1" },
     });
     await awaitSavesNothing(app, 0);
     if (!naiveControl) {

@@ -54,6 +54,10 @@ public enum FindMenuCommand {
     }
   }
 
+  public static func nextFocusRequest(after last: Int, nowMilliseconds: Int) -> Int {
+    min(-max(nowMilliseconds, 1), last - 1)
+  }
+
   public static func focusAllowed(expired: Bool, pendingGateLive: Bool?) -> Bool {
     guard !expired else { return false }
     return pendingGateLive ?? true

@@ -82,7 +82,7 @@ enum NativeWorkspaceCommands {
   }
 
   private static func nextFindRequest() -> Int {
-    lastFindRequest = max(Int(Date().timeIntervalSince1970 * 1000), lastFindRequest + 1)
+    lastFindRequest = FindMenuCommand.nextFocusRequest(after: lastFindRequest, nowMilliseconds: Int(Date().timeIntervalSince1970 * 1000))
     return lastFindRequest
   }
 

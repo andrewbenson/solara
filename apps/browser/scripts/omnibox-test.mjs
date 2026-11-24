@@ -328,6 +328,36 @@ try {
       await nativeWindow(`${surface.name} closes again`, (window) => window?.panelOpen === false);
     });
   }
+  await check("page-focused Cmd-F then Cmd-L then typing at once: the letters land in the Command Bar, none dropped", async () => {
+    const surface = { name: "Cmd-F then Cmd-L", variant: "panel", addressBar: "toolbar", newTab: false };
+    current = surface;
+    await activate("a");
+    await run(`ac.store.getState().updateSettings({ addressBar: "toolbar", commandBarPlacement: "field", newTabOpens: "commandBar" }); return true;`);
+    await nativeWindow("Cmd-F then Cmd-L begins with the panel closed", (window) => window?.selectedTabId === "a" && window.panelOpen === false);
+    await until("Cmd-F then Cmd-L: native address anchor ready", () => run(`return acPerf.findFibers("NativeOmniboxBar", 30).some((f) => {
+      const props = f.memoizedProps;
+      const panel = props.panel && JSON.parse(props.panel);
+      return props.tabId === "a" && panel && !panel.open && panel.ready;
+    });`));
+    const focused = await run(`return ac.shell.devKeyEquivalent("w1", { key: "\\u0000", keyCode: 0, modifiers: [], focus: "page", dry: true, wait: 50 });`);
+    assert.equal(focused.firstResponder, "RenderWidgetHostViewCocoa", "the page has focus before the shortcuts");
+    const before = (await run(`return expo.modules.SolaraApp.devFocusHandoffTrace();`)).length;
+    const letters = { n: 45, e: 14, d: 2, l: 37 };
+    const presses = [{ key: "f", keyCode: 3, modifiers: ["command"], after: 0 }, { key: "l", keyCode: 37, modifiers: ["command"], after: 0 },
+      ...[..."needle"].map((ch) => ({ key: ch, keyCode: letters[ch], modifiers: [], after: 0 }))];
+    await run(`return expo.modules.SolaraApp.devPostKeys("w1", ${JSON.stringify(presses)});`);
+    await until("Cmd-F then Cmd-L opens the Command Bar", () => run(`return ac.store.getState().windowUi.w1?.panel.open === true;`));
+    await bindNativeBar(surface);
+    await sleep(600);
+    const state = await run(`return globalThis.__omniboxNative.driverState().then((json) => JSON.parse(json));`);
+    const trace = (await run(`return expo.modules.SolaraApp.devFocusHandoffTrace();`)).slice(before).filter((line) => /hold|adopt|release|begin|claim|replay|drop/.test(line));
+    rep.log("Cmd-F then Cmd-L focus trace", { typed: state.typed, trace });
+    assert.ok(!trace.some((line) => /drop/.test(line)), `no letter typed after Cmd-L is dropped: ${JSON.stringify({ typed: state.typed, trace })}`);
+    assert.equal(state.typed, "needle", `the Command Bar gets every letter: ${JSON.stringify({ typed: state.typed, trace })}`);
+    await activate("a");
+    await nativeWindow("Cmd-F then Cmd-L closes again", (window) => window?.panelOpen === false);
+    await run(`ac.store.getState().setFind("a", { open: false, count: null, active: 0 }); return true;`);
+  });
   for (const surface of [
     { name: "panel Cmd-L", variant: "panel", addressBar: "toolbar", newTab: false },
     { name: "sidebar Cmd-L", variant: "sidebar", addressBar: "sidebar", newTab: false },

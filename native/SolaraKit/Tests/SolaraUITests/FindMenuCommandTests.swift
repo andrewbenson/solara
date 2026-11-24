@@ -74,6 +74,22 @@ import Testing
     #expect(FindMenuCommand.focusAllowed(expired: false, pendingGateLive: nil))
   }
 
+  @Test func nativeFindRequestsNeverMatchAJavaScriptTimestamp() {
+    let now = 1_795_457_605_512
+    var last = 0
+    var issued: [Int] = []
+    for _ in 0..<20 {
+      last = FindMenuCommand.nextFocusRequest(after: last, nowMilliseconds: now)
+      issued.append(last)
+    }
+    #expect(Set(issued).count == issued.count, "every native request is unique, even within one millisecond")
+    #expect(!issued.contains(now), "a JavaScript request made with Date.now() in the same millisecond can't match")
+    #expect(issued.allSatisfy { $0 != 0 && !(now...now + 20).contains($0) })
+    #expect(zip(issued, issued.dropFirst()).allSatisfy { $0 != $1 })
+    let later = FindMenuCommand.nextFocusRequest(after: last, nowMilliseconds: now + 5_000)
+    #expect(!issued.contains(later) && later != now + 5_000)
+  }
+
   @Test func theSelectionBecomesTheQueryOnlyWhenThereIsOne() {
     #expect(FindMenuCommand.selectionQuery(.string("\"word\"")) == "word")
     #expect(FindMenuCommand.selectionQuery(.string("\"\"")) == "")
@@ -133,5 +149,12 @@ import Testing
     try store.dispatch(try plan("findInPage", store.state, request: 9).commands, origin: .native)
     #expect(store.state.find["a"]?.json["open"]?.truthy == true)
     #expect(store.state.find["a"]?.json["focusRequest"] == .number(9))
+  }
+
+  @Test func theFindSliceKeepsANativeRequestId() throws {
+    let store = makeUIStore(fixture())
+    let request = FindMenuCommand.nextFocusRequest(after: 0, nowMilliseconds: 1_795_457_605_512)
+    try store.dispatch(try plan("findInPage", store.state, request: request).commands, origin: .native)
+    #expect(store.state.find["a"]?.json["focusRequest"] == .number(Double(request)))
   }
 }

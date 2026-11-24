@@ -1302,8 +1302,6 @@ final class FocusHandoff {
     init(_ window: NSWindow) { self.window = window }
   }
 
-  private static let lifetime: CFTimeInterval = 0.4
-  private static let capacity = 64
   private var gates: [ObjectIdentifier: Gate] = [:]
   private var pendings: [ObjectIdentifier: Pending] = [:]
   private var resending = false
@@ -1342,7 +1340,9 @@ final class FocusHandoff {
       window.makeFirstResponder(nil)
     }
     generations += 1
-    drop(in: gate) { _ in true }
+    let pressed = Self.origin(of: acknowledged ?? NSApp.currentEvent)
+    drop(in: gate) { !FocusGateRules.keepsAfterBegin(heldAt: $0.at, commandPressedAt: pressed) }
+    for index in gate.held.indices { gate.held[index].generation = generations }
     gate.generations.append(Generation(generations))
     begun = generations
     note("begin \(generations)")
@@ -1356,38 +1356,47 @@ final class FocusHandoff {
   }
 
   func defers(_ action: Selector) -> Bool {
-    if let window = NSApp.keyWindow, let committed = barCommittedAt[window.windowNumber], let pressed = Self.origin(of: acknowledged ?? NSApp.currentEvent), pressed < committed {
+    let window = NSApp.keyWindow
+    let pressed = Self.origin(of: acknowledged ?? NSApp.currentEvent)
+    if FocusGateRules.pressedBeforeBarCommitted(pressedAt: pressed, barCommittedAt: window.flatMap { barCommittedAt[$0.windowNumber] }) {
       note("drop \(action): pressed before the bar committed")
       NSSound.beep()
       return true
     }
-    guard let window = NSApp.keyWindow, let gate = gates[ObjectIdentifier(window)], live(gate) else {
-      return dropsLateAcknowledgement(action, in: NSApp.keyWindow)
-    }
-    note("defer \(action)")
-    guard !gate.generations.isEmpty else {
-      settle(gate)
+    let gate = window.flatMap { gates[ObjectIdentifier($0)] }
+    let deferral = FocusGateRules.deferral(pressedAt: pressed, gateLive: gate.map(live) ?? false,
+      hasGeneration: !(gate?.generations.isEmpty ?? true), heldEmpty: gate?.held.isEmpty ?? true)
+    switch deferral {
+    case .notGated:
+      return dropsLateAcknowledgement(action, in: window)
+    case .settle:
+      note("defer \(action)")
+      if let gate { settle(gate) }
       return false
-    }
-    if let at = Self.origin(of: acknowledged ?? NSApp.currentEvent) {
-      hold(.action(action), at: at, in: gate)
-    } else if gate.held.isEmpty {
-      hold(.action(action), at: ProcessInfo.processInfo.systemUptime, in: gate)
-    } else {
+    case .hold(let at):
+      note("defer \(action)")
+      if let gate { hold(.action(action), at: at, in: gate) }
+      return true
+    case .holdNow:
+      note("defer \(action)")
+      if let gate { hold(.action(action), at: ProcessInfo.processInfo.systemUptime, in: gate) }
+      return true
+    case .dropWithoutOrigin:
+      note("defer \(action)")
       note("drop \(action): no origin")
       NSSound.beep()
+      return true
     }
-    return true
   }
 
   private func noteTyped(_ down: NSEvent, in window: NSWindow) {
-    guard let closed = closedAt[window.windowNumber], ProcessInfo.processInfo.systemUptime - closed < 1 else { return }
+    guard FocusGateRules.notesTyping(now: ProcessInfo.processInfo.systemUptime, gateClosedAt: closedAt[window.windowNumber]) else { return }
     typedAfterGate[window.windowNumber] = max(typedAfterGate[window.windowNumber] ?? 0, down.timestamp)
   }
 
   private func dropsLateAcknowledgement(_ action: Selector, in window: NSWindow?) -> Bool {
-    guard let window, let event = acknowledged, let closed = closedAt[window.windowNumber], event.timestamp < closed,
-      let typed = typedAfterGate[window.windowNumber], typed > event.timestamp else { return false }
+    guard let window, FocusGateRules.dropsLateAcknowledgement(acknowledgedAt: acknowledged?.timestamp,
+      gateClosedAt: closedAt[window.windowNumber], typedAfterAt: typedAfterGate[window.windowNumber]) else { return false }
     note("drop \(action): acknowledged after later keys were replayed")
     NSSound.beep()
     return true
@@ -1395,11 +1404,14 @@ final class FocusHandoff {
 
   private static func origin(of event: NSEvent?) -> TimeInterval? {
     guard let event else { return nil }
+    let kind: FocusGateRules.EventKind
     switch event.type {
-    case .keyDown where event.modifierFlags.contains(.command): return event.timestamp
-    case .leftMouseDown, .leftMouseUp: return event.timestamp
-    default: return nil
+    case .keyDown where event.modifierFlags.contains(.command): kind = .commandKeyDown
+    case .leftMouseDown, .leftMouseUp: kind = .mouseButton
+    case .applicationDefined: kind = .focusMarker(subtype: event.subtype.rawValue)
+    default: kind = .other
     }
+    return FocusGateRules.origin(of: kind, at: event.timestamp)
   }
 
   func claim(_ id: Int, destination: NSView) {
@@ -1435,15 +1447,18 @@ final class FocusHandoff {
   }
 
   func refusesUnhandledKey(_ event: NSEvent, in window: NSWindow) -> Bool {
-    guard let tag = editKeys.object(forKey: event) as? [Int], tag.count == 2 else { return false }
     let current = [window.windowNumber, epochs[window.windowNumber] ?? 0]
-    guard tag != current || NSApp.keyWindow !== window else {
+    switch FocusGateRules.unhandledKey(tag: editKeys.object(forKey: event) as? [Int], current: current, windowIsKey: NSApp.keyWindow === window) {
+    case .untagged:
+      return false
+    case .acknowledge:
       acknowledged = event
       DispatchQueue.main.async { [weak self] in if self?.acknowledged === event { self?.acknowledged = nil } }
       return false
+    case .refuse:
+      NSSound.beep()
+      return true
     }
-    NSSound.beep()
-    return true
   }
 
   func install() {
@@ -1670,8 +1685,8 @@ final class FocusHandoff {
   }
 
   private func hold(_ input: Input, at: TimeInterval, in gate: Gate) {
-    guard gate.held.count < Self.capacity else { return NSSound.beep() }
-    let index = gate.held.lastIndex { $0.at <= at }.map { $0 + 1 } ?? 0
+    guard gate.held.count < FocusGateRules.capacity else { return NSSound.beep() }
+    let index = FocusGateRules.insertionIndex(of: at, among: gate.held.map(\.at))
     gate.held.insert(Held(input: input, generation: gate.generations.last?.id, at: at), at: index)
   }
 
@@ -1679,8 +1694,8 @@ final class FocusHandoff {
     let gate = Gate(window)
     let key = ObjectIdentifier(window)
     gates[key] = gate
-    gate.deadline = CACurrentMediaTime() + Self.lifetime
-    DispatchQueue.main.asyncAfter(deadline: .now() + Self.lifetime) { [weak self, weak gate] in
+    gate.deadline = CACurrentMediaTime() + FocusGateRules.lifetime
+    DispatchQueue.main.asyncAfter(deadline: .now() + FocusGateRules.lifetime) { [weak self, weak gate] in
       guard let self, let gate, self.gates[key] === gate else { return }
       self.note("deadline")
       self.end(gate, restoring: true)
@@ -1702,14 +1717,14 @@ final class FocusHandoff {
   }
 
   private func live(_ gate: Gate) -> Bool {
-    if CACurrentMediaTime() < gate.deadline { return true }
+    if FocusGateRules.live(now: CACurrentMediaTime(), deadline: gate.deadline) { return true }
     note("expired")
     end(gate, restoring: true)
     return false
   }
 
   private func settle(_ gate: Gate) {
-    if gate.generations.isEmpty || CACurrentMediaTime() >= gate.deadline { end(gate, restoring: true) }
+    if gate.generations.isEmpty || !FocusGateRules.live(now: CACurrentMediaTime(), deadline: gate.deadline) { end(gate, restoring: true) }
   }
 
   private func deliverIfReady(_ gate: Gate) {
@@ -1758,17 +1773,17 @@ final class FocusHandoff {
 
   func isLive(_ id: Int) -> Bool {
     guard let gate = gate(of: id) else { return false }
-    return CACurrentMediaTime() < gate.deadline
+    return FocusGateRules.live(now: CACurrentMediaTime(), deadline: gate.deadline)
   }
 
   func claimedElsewhere(in window: NSWindow, than view: NSView) -> Bool {
-    guard let gate = gates[ObjectIdentifier(window)], CACurrentMediaTime() < gate.deadline, let newest = gate.generations.last else { return false }
+    guard let gate = gates[ObjectIdentifier(window)], FocusGateRules.live(now: CACurrentMediaTime(), deadline: gate.deadline), let newest = gate.generations.last else { return false }
     guard newest.claimed, let claimed = newest.destination else { return true }
     return !Self.holds(view, claimed)
   }
 
   private func focusClaimedPage(_ gate: Gate) {
-    guard let window = gate.window, gates[ObjectIdentifier(window)] === gate, CACurrentMediaTime() < gate.deadline, Self.unfocused(window),
+    guard let window = gate.window, gates[ObjectIdentifier(window)] === gate, FocusGateRules.live(now: CACurrentMediaTime(), deadline: gate.deadline), Self.unfocused(window),
       let newest = gate.generations.last, newest.claimed, let claimed = newest.destination, let page = newest.page,
       Self.webView(in: claimed) === page,
       page.window === window, !page.isHiddenOrHasHiddenAncestor
@@ -1776,7 +1791,7 @@ final class FocusHandoff {
     note("focus claimed page \(newest.id)")
     let current: @MainActor () -> Bool = { [weak self, weak gate, weak newest, weak claimed, weak page, weak window] in
       guard let self, let gate, let newest, let claimed, let page, let window else { return false }
-      return self.gates[ObjectIdentifier(window)] === gate && gate.window === window && CACurrentMediaTime() < gate.deadline &&
+      return self.gates[ObjectIdentifier(window)] === gate && gate.window === window && FocusGateRules.live(now: CACurrentMediaTime(), deadline: gate.deadline) &&
         gate.generations.last === newest && newest.claimed && newest.destination === claimed && newest.page === page &&
         Self.unfocused(window) && Self.webView(in: claimed) === page && page.window === window && !page.isHiddenOrHasHiddenAncestor
     }
@@ -1850,8 +1865,8 @@ final class FocusHandoff {
   }
 
   private static func isEditKey(_ event: NSEvent) -> Bool {
-    guard event.modifierFlags.contains(.command), !event.modifierFlags.contains(.control) else { return false }
-    return ["x", "c", "v", "a"].contains(event.charactersIgnoringModifiers?.lowercased() ?? "")
+    FocusGateRules.isEditKey(command: event.modifierFlags.contains(.command), control: event.modifierFlags.contains(.control),
+      key: event.charactersIgnoringModifiers)
   }
 
   static func isPage(_ responder: NSResponder?) -> Bool {

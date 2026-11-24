@@ -41,7 +41,7 @@ async function check(name, fn) {
 async function tabMenu(windowId, tabId, choice = null) {
   const armed = await run(`return expo.modules.SolaraShell.devContextMenu("arm", ${JSON.stringify(choice)});`);
   assert.equal(armed.error, undefined, JSON.stringify(armed));
-  await run(`expo.modules.SolaraSettings.emit("onSettingsCall", { id: 2147483000, name: "sidebar.action", args: ${JSON.stringify(JSON.stringify([windowId, "tabMenu", tabId, {}]))} }); return true;`);
+  assert.equal(await run(`return expo.modules.SolaraSidebarDrag.devTabMenu(${JSON.stringify(windowId)}, ${JSON.stringify(tabId)});`), true, "native store opens the menu");
   return until("native menu model", async () => {
     const model = await run('return expo.modules.SolaraShell.devContextMenu("read", null);');
     return Array.isArray(model.items) ? model : null;
@@ -66,7 +66,7 @@ try {
       tabs: [{ id: "a", url: "about:blank#a", title: "A" }, { id: "b", url: "about:blank#b", title: "B" }],
       settings: { warnBeforeMovingTabsToProfile: false, warnBeforeClosingWindow: false },
     }),
-    ready: "return !!ac.store && !!expo.modules.SolaraShell.devContextMenu && !!expo.modules.SolaraSettings.emit;",
+    ready: "return !!ac.store && !!expo.modules.SolaraShell.devContextMenu && !!expo.modules.SolaraSidebarDrag.devTabMenu;",
   });
   const state = await run("const s = ac.store.getState(); return { order: s.profileOrder, names: s.profileOrder.map((id) => s.profiles[id].name), own: s.tabs.b.profileId };");
 

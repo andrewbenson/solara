@@ -1,9 +1,7 @@
 import { hostedSidebarShell, nativeOmniboxAvailable, publishSettingsTopic, sidebarAddressBarAvailable, SolaraHostedView } from "@solara/settings";
-import type { DroppedItem } from "@solara/shell";
 import { memo, useEffect, useMemo, useState } from "react";
 import { Image, StyleSheet } from "react-native";
 import { useShallow } from "zustand/react/shallow";
-import { closeTab, toggleMute } from "../../lib/actions";
 import { shortcutHint } from "../../lib/commandShortcuts";
 import { PRODUCT } from "../../lib/productName";
 import { nativeOwnsWorkspace } from "../../store/nativeStore";
@@ -14,7 +12,7 @@ import { useBrowser } from "../../store/browser";
 import { commitSidebarWidth, setSidebarIconsOnly, sidebarWidthOf, sidebarUsesIconRail } from "../../store/sidebarRail";
 import { engineMark, ENGINE_SYMBOLS } from "../../store/engines";
 import { useSettings } from "../../store/hooks";
-import { activeTabId, isIncognitoProfile } from "../../store/model";
+import { isIncognitoProfile } from "../../store/model";
 import { cleanedTabsFor } from "../../store/organize";
 import { canTidyPins } from "../../store/tidyPins";
 import { cleanUpUpsellChoice, useCleanUpUpsellCount } from "./cleanUpUpsell";
@@ -25,19 +23,14 @@ import { developerModeFor } from "../site/developerMode";
 import { toggleNewTabBar } from "../omnibox/newTabBar";
 import { addNativeSettingsHandlers } from "../settings/nativeSettings";
 import { openSettings } from "../settings/windows";
-import { clickTab, commitRename, endRename, startRename } from "./actions";
-import { pressGroupClose, pressTabClose } from "./closeControl";
 import { dismissHover, nativeRowHover } from "./hover";
-import { closeAllTabs, middleClickTab, openGroupMenu, openOverflowMenu, openSidebarMenu, openTabMenu, runGroupMenuChoice, runTabMenuChoice, runTabMenuSelectionChoice, showUndoToast } from "./menus";
+import { closeAllTabs, openOverflowMenu, openSidebarMenu, openTabMenu, runGroupMenuChoice, runTabMenuChoice, runTabMenuSelectionChoice, showUndoToast } from "./menus";
 import { applyNativeRenameState, resetNativeRenames } from "./renameMirror";
 import { setSidebarUi, sidebarUi, useSidebarUi } from "./state";
 import { useSidebarTokens } from "./tokens";
 import "../media/SidebarPlayer";
 import { useMedia } from "../media/state";
 import { usePages } from "../layout/pageState";
-import { openDroppedItems } from "../layout/fileDrop";
-import { pagerFor } from "../layout/profilePager";
-import type { TabPlacement } from "../../store/organize";
 import { publishNativeLive, runNativeLive } from "./nativeLive";
 import { tidyPins } from "./tidyPinsUi";
 import { downloadsIn } from "../../store/ui";
@@ -48,7 +41,6 @@ import { useTabDrag } from "../layout/tabDrag";
 import { followPeekHold } from "../layout/peekHold";
 import { nativeLayoutFeed, useNativeLayoutFeed } from "../layout/nativeLayoutFeed";
 import { SidebarAddressBarState } from "./AddressBar";
-import { closeFolderPanelIn, openTileFolderMenu, toggleFolderPanel } from "./tileFolderUi";
 import { installNativeDragProbe } from "./nativeDrag";
 import { nativeSidebarShell } from "./sidebarShell";
 import { UPDATE_PILL_TEXT, updatePillTooltip, usePendingUpdate } from "../../lib/pendingUpdate";
@@ -70,16 +62,12 @@ function publishShellColumn(windowId: string, column: object | null) {
   publishSettingsTopic(SHELL_TOPIC, { windows: shellColumns });
 }
 
-type ShellEvent = { items?: DroppedItem[]; placement?: string | null; width?: number | null; on?: boolean };
+type ShellEvent = { width?: number | null; on?: boolean };
 
 addNativeSettingsHandlers({
   [SHELL_TOPIC]: (windowId: string, event: string, extra: ShellEvent) => {
     const s = useBrowser.getState();
     switch (event) {
-      case "drop": {
-        const placement = extra.placement ? (JSON.parse(extra.placement) as TabPlacement) : null;
-        return void openDroppedItems(windowId, extra.items ?? [], placement);
-      }
       case "profileMenu":
         return void openProfileMenu(windowId);
       case "manageProfiles":
@@ -222,41 +210,18 @@ addNativeSettingsHandlers({
         if (s.selectionAnchors[windowId] !== id) s.setSelectionAnchor(windowId, id);
         if (s.selection[windowId]?.length) s.setSelection(windowId, []);
         return;
-      case "click":
-        return clickTab(windowId, id, { metaKey: !!extra.meta, shiftKey: !!extra.shift, altKey: !!extra.alt });
-      case "close":
-        return pressTabClose(id);
       case "removedPin":
         return extra.cleared ? showUndoToast(JSON.parse(extra.cleared), "Removed Pinned Tab", "pin.slash") : undefined;
-      case "middleClick":
-        return s.tabs[id]?.pinned && !s.tabs[id]?.pinnedAsRow ? void closeTab(id) : middleClickTab(id);
-      case "rename":
-        return void startRename(windowId, { kind: extra.kind === "group" ? "group" : "tab", id });
-      case "backToPinned":
-        return s.returnToPinnedUrl(id);
-      case "tileDoubleClick":
-        if (activeTabId(s, windowId) === id) s.returnToPinnedUrl(id);
-        return;
-      case "toggleMute":
-        return toggleMute(id);
+      case "tabMenuSelectionChoice":
+        return runTabMenuSelectionChoice(windowId, extra.ids ?? [], extra.choice ?? "");
       case "tabMenu": {
         const tab = s.tabs[id];
         return tab ? void openTabMenu(windowId, tab) : undefined;
       }
-      case "groupMenu":
-        return void openGroupMenu(windowId, id);
-      case "tabMenuSelectionChoice":
-        return runTabMenuSelectionChoice(windowId, extra.ids ?? [], extra.choice ?? "");
       case "tabMenuChoice":
         return runTabMenuChoice(windowId, id, extra.choice ?? "");
       case "groupMenuChoice":
         return runGroupMenuChoice(windowId, id, extra.choice ?? "");
-      case "toggleGroup": {
-        const group = s.groups[id];
-        return group ? s.updateGroup(id, { collapsed: !group.collapsed }) : undefined;
-      }
-      case "closeGroup":
-        return pressGroupClose(id);
       case "sidebarMenu":
         return void openSidebarMenu(windowId);
       case "overflowMenu":
@@ -264,12 +229,6 @@ addNativeSettingsHandlers({
       case "newTab":
         if (extra.split) return openNewTabInSplit(windowId);
         return void (toggleNewTabBar(windowId) || s.newTab(windowId, { newTabCommand: true }));
-      case "folder":
-        return void toggleFolderPanel(windowId, id);
-      case "folderMenu":
-        return void openTileFolderMenu(windowId, id);
-      case "scrolled":
-        return void closeFolderPanelIn(windowId);
       case "tidy":
         return tidyPins(windowId, id || undefined);
       case "clear":
@@ -278,10 +237,6 @@ addNativeSettingsHandlers({
         return cleanUpUpsellChoice(windowId, id);
       case "live":
         return runNativeLive(windowId, id, extra.action ?? "", extra.item ?? null, !!extra.meta);
-      case "renamed": {
-        const target = { kind: extra.kind === "group" ? ("group" as const) : ("tab" as const), id };
-        return typeof extra.text === "string" ? commitRename(target, extra.text) : endRename(target);
-      }
     }
   },
 });

@@ -1,13 +1,9 @@
 import { endTopStripIncoming, hostedKinds, SolaraHostedView, topStripIncoming, topStripPeek } from "@solara/settings";
 import { memo, useEffect, useMemo, useRef } from "react";
-import type { DroppedItem } from "@solara/shell";
-import type { TabPlacement } from "../../store/organize";
-import { openDroppedItems } from "./fileDrop";
 import { registerDownloadsAnchor } from "../Downloads";
 import { openProfileMenu } from "../ProfileIndicator";
 import { Image, StyleSheet, type ViewStyle } from "react-native";
 import { useShallow } from "zustand/react/shallow";
-import { toggleMute } from "../../lib/actions";
 import { shortcutHint, useShortcutHint, withShortcut } from "../../lib/commandShortcuts";
 import { nativeOwnsWorkspace } from "../../store/nativeStore";
 import { chromeLiveIds, chromeSleeping, stripHostProps } from "../nativeHostProps";
@@ -17,18 +13,13 @@ import { useBrowser } from "../../store/browser";
 import { useIsIncognito, useProfiles, useWindowProfile } from "../../store/hooks";
 import { engineMark, ENGINE_SYMBOLS } from "../../store/engines";
 import { addNativeSettingsHandlers } from "../settings/nativeSettings";
-import { clickTab } from "../sidebar/actions";
-import { pressGroupClose, pressTabClose } from "../sidebar/closeControl";
-import { openGroupMenu, openTabMenu, runGroupMenuChoice, runTabMenuChoice, runTabMenuSelectionChoice, showUndoToast } from "../sidebar/menus";
-import { openTileFolderMenu } from "../sidebar/tileFolderUi";
+import { openTabMenu, runGroupMenuChoice, runTabMenuChoice, runTabMenuSelectionChoice, showUndoToast } from "../sidebar/menus";
 import { toggleNewTabBar } from "../omnibox/newTabBar";
 import { developerModeFor } from "../site/developerMode";
 import { isDeveloperMode } from "../../lib/developerMode";
 import { usePages } from "./pageState";
 import { usePagerPages } from "./profilePager";
 import { openNewTabInSplit } from "./splitActions";
-import { openFolderMenu, openTileFolderStripMenu } from "./stripFolderMenu";
-import { tuckTarget } from "./stripGroups";
 import { EXTERNAL_DRAG, setInsert, setInsertResolver, useTabDrag } from "./tabDrag";
 import "./nativeTabDrag";
 import { nativeLayoutFeed, useNativeLayoutFeed } from "./nativeLayoutFeed";
@@ -48,11 +39,9 @@ export function nativeStripPeekEnabled(): boolean {
 const peekLive = new Map<string, (live: boolean, pageWidth: number) => void>();
 
 addNativeSettingsHandlers({
-  "topStrip.peek.action": (windowId: string, name: string, extra?: { live?: boolean; pageWidth?: number; items?: DroppedItem[]; placement?: string | null }) => {
+  "topStrip.peek.action": (windowId: string, name: string, extra?: { live?: boolean; pageWidth?: number }) => {
     const s = useBrowser.getState();
     switch (name) {
-      case "drop":
-        return void openDroppedItems(windowId, extra?.items ?? [], extra?.placement ? JSON.parse(extra.placement) as TabPlacement : null);
       case "profileMenu":
         return void openProfileMenu(windowId);
       case "toggleDownloads":
@@ -88,43 +77,18 @@ addNativeSettingsHandlers({
   "topStrip.action": (windowId: string, name: string, id: string, extra: { meta?: boolean; shift?: boolean; alt?: boolean; collapse?: boolean; split?: boolean; cleared?: string; ids?: string[]; choice?: string }) => {
     const s = useBrowser.getState();
     switch (name) {
-      case "click":
-        return clickTab(windowId, id, { metaKey: !!extra.meta, shiftKey: !!extra.shift, altKey: !!extra.alt });
-      case "activate":
-        return s.activate(id);
-      case "close":
-        return pressTabClose(id);
       case "removedPin":
         return extra.cleared ? showUndoToast(JSON.parse(extra.cleared), "Removed Pinned Tab", "pin.slash") : undefined;
-      case "toggleMute":
-        return toggleMute(id);
       case "tabMenu": {
         const tab = s.tabs[id];
         return tab ? void openTabMenu(windowId, tab) : undefined;
       }
-      case "groupMenu":
-        return void openGroupMenu(windowId, id);
       case "tabMenuSelectionChoice":
         return runTabMenuSelectionChoice(windowId, extra.ids ?? [], extra.choice ?? "");
       case "tabMenuChoice":
         return runTabMenuChoice(windowId, id, extra.choice ?? "");
       case "groupMenuChoice":
         return runGroupMenuChoice(windowId, id, extra.choice ?? "");
-      case "toggleGroup":
-        return s.groups[id] ? s.updateGroup(id, { collapsed: !!extra.collapse }) : undefined;
-      case "closeGroup":
-        return pressGroupClose(id);
-      case "tuck": {
-        const group = s.groups[id];
-        const target = group && tuckTarget(s, windowId, group.profileId, id);
-        return target ? s.activate(target) : undefined;
-      }
-      case "folderMenu":
-        return void openFolderMenu(windowId, id);
-      case "tileFolder":
-        return void openTileFolderStripMenu(windowId, id);
-      case "tileFolderMenu":
-        return void openTileFolderMenu(windowId, id);
       case "newTab":
         if (extra.split) return openNewTabInSplit(windowId);
         return void (toggleNewTabBar(windowId) || s.newTab(windowId, { newTabCommand: true }));

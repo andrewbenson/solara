@@ -132,6 +132,7 @@ final class NativeTabDrag {
     let screen = session?.pointer
     let owned = self.owned
     clearDrag()
+    let generation = NativeStoreHandle.ownershipGeneration
     let reply = EndReply()
     let finish: @MainActor (_ end: [String: Any]?) -> Void = { [weak self] end in
       guard let self else { return done(false) }
@@ -152,6 +153,11 @@ final class NativeTabDrag {
       ]
       guard outside || (onPage && !unanswered), let screen else {
         self.endPreview(preview, cancel: unanswered)
+        return done(false)
+      }
+      guard WorkspaceWrites.store != nil, NativeStoreHandle.ownershipGeneration == generation else {
+        NSLog("[sidebar] dropOutside refused: ownership changed")
+        self.endPreview(preview)
         return done(false)
       }
       let before: String?? = end?["insert"] as? Bool == true ? .some(end?["before"] as? String) : .none
@@ -297,36 +303,42 @@ final class NativeTabDrag {
   }
 
   private func dropOutside(_ tabIds: [String], from source: String, at screen: CGPoint, over: String?, before: String??, preview: Int?) {
-    guard let store = NativeStoreHandle.store, let from = store.state.windows[source], !from.incognito, !tabIds.isEmpty else {
+    guard let store = WorkspaceWrites.store, let from = store.state.windows[source], !from.incognito, !tabIds.isEmpty else {
+      NSLog("[sidebar] dropOutside refused: native store unavailable or target stale")
       return endPreview(preview)
     }
-    if let over {
-      let moved = (try? store.dispatch(Command("moveTabsToWindow", [JSONValue(tabIds), JSONValue(over)]), origin: .native))?.result?.string
-      FrameUpdates.flush()
-      endPreview(preview)
-      guard moved == over, open(over) else { return }
-      if let before {
-        _ = try? store.dispatch(Command("placeTabs", [JSONValue(tabIds), ["pinned": false, "beforeId": JSONValue(before)]]), origin: .native)
+    do {
+      if let over {
+        let moved = (try store.dispatch(Command("moveTabsToWindow", [JSONValue(tabIds), JSONValue(over)]), origin: .native)).result?.string
         FrameUpdates.flush()
+        endPreview(preview)
+        guard moved == over, open(over) else { return }
+        if let before {
+          _ = try store.dispatch(Command("placeTabs", [JSONValue(tabIds), ["pinned": false, "beforeId": JSONValue(before)]]), origin: .native)
+          FrameUpdates.flush()
+        }
+        return focus(over)
       }
-      return focus(over)
+      guard !from.tabIds.allSatisfy(tabIds.contains) else { return endPreview(preview) }
+      let size = from.frame.flatMap { $0.count == 4 ? CGSize(width: $0[2], height: $0[3]) : nil } ?? CGSize(width: 1200, height: 800)
+      let frame = NSRect(x: (screen.x - 90 + 0.5).rounded(.down), y: (screen.y - size.height + 70 + 0.5).rounded(.down), width: size.width, height: size.height)
+      let options: JSONValue = [
+        "profileId": JSONValue(store.state.tabs[tabIds[0]]?.profileId),
+        "tabIds": JSONValue(tabIds),
+        "frame": [JSONValue(frame.minX), JSONValue(frame.minY), JSONValue(frame.width), JSONValue(frame.height)],
+      ]
+      let created = (try store.dispatch(Command("createWindow", [options]), origin: .native)).result?.string
+      FrameUpdates.flush()
+      endPreview(preview, windowId: created, fallback: frame)
+      if let created, store.state.windows[created] != nil { focus(created) }
+    } catch {
+      NSLog("[sidebar] dropOutside refused: %@", String(describing: error))
+      endPreview(preview)
     }
-    guard !from.tabIds.allSatisfy(tabIds.contains) else { return endPreview(preview) }
-    let size = from.frame.flatMap { $0.count == 4 ? CGSize(width: $0[2], height: $0[3]) : nil } ?? CGSize(width: 1200, height: 800)
-    let frame = NSRect(x: (screen.x - 90 + 0.5).rounded(.down), y: (screen.y - size.height + 70 + 0.5).rounded(.down), width: size.width, height: size.height)
-    let options: JSONValue = [
-      "profileId": JSONValue(store.state.tabs[tabIds[0]]?.profileId),
-      "tabIds": JSONValue(tabIds),
-      "frame": [JSONValue(frame.minX), JSONValue(frame.minY), JSONValue(frame.width), JSONValue(frame.height)],
-    ]
-    let created = (try? store.dispatch(Command("createWindow", [options]), origin: .native))?.result?.string
-    FrameUpdates.flush()
-    endPreview(preview, windowId: created, fallback: frame)
-    if let created, store.state.windows[created] != nil { focus(created) }
   }
 
   private func focus(_ windowId: String) {
-    _ = try? NativeStoreHandle.store?.dispatch(Command("setFocusedWindow", [JSONValue(windowId)]), origin: .native)
+    _ = try? WorkspaceWrites.store?.dispatch(Command("setFocusedWindow", [JSONValue(windowId)]), origin: .native)
     ShellDrag.focus(windowId)
   }
 }

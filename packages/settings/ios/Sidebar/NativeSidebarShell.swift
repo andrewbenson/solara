@@ -81,7 +81,7 @@ enum NativeSidebarShell {
   @discardableResult
   static func dropped(_ windowId: String, items: [[String: String]], placement: String?) -> Bool {
     if openDropped(windowId, items: items, placement: placement) { return true }
-    send(windowId, "drop", ["items": items, "placement": placement ?? NSNull()])
+    NSLog("[sidebar] drop refused: native store unavailable")
     return false
   }
 
@@ -96,11 +96,12 @@ enum NativeSidebarShell {
         return true
       }
     }
+    let generation = NativeStoreHandle.ownershipGeneration
     let landing = parsed
     DispatchQueue.main.async { [weak owner = store] in
       MainActor.assumeIsolated {
-        guard let store = WorkspaceWrites.store, store === owner else {
-          return NSLog("[drop] %@: the store stood down before the drop opened", windowId)
+        guard let store = WorkspaceWrites.store, store === owner, NativeStoreHandle.ownershipGeneration == generation else {
+          return NSLog("[sidebar] drop refused: ownership changed for %@", windowId)
         }
         DroppedTabs.open(store, windowId: windowId, items: items, placement: landing) { error in
           NSLog("[drop] %@: the store refused part of a drop: %@", windowId, String(describing: error))
@@ -903,7 +904,7 @@ final class NativeLayoutChrome {
         #endif
         return
       }
-      self.sendFeature("topStrip.peek.action", "drop", ["items": items, "placement": placement ?? NSNull()])
+      NSLog("[strip] drop refused: native store unavailable")
     }
     target.onActive = { [weak self] active in
       guard let self, !self.stopped, Self.owners[self.shell.windowId] === self else { return }
@@ -1530,7 +1531,7 @@ enum NativeGroupMenu {
   ) {
     switch choice {
     case .rename:
-      if !rename(groupId, windowId: windowId) { js(groupId, "rename") }
+      if !rename(groupId, windowId: windowId) { NSLog("[sidebar] rename refused: native store unavailable or target stale") }
     case .icon, .bookmarkBar:
       js(groupId, raw)
     case .close:
@@ -1546,7 +1547,7 @@ enum NativeGroupMenu {
     case .nest:
       let child = dispatch(store, Command("newNestedGroup", [.string(groupId)])) ?? ""
       if let tab = store.state.groups[child]?.tabIds.first { _ = dispatch(store, Command("activate", [.string(tab)])) }
-      if !child.isEmpty, !rename(child, windowId: windowId) { js(child, "rename") }
+      if !child.isEmpty, !rename(child, windowId: windowId) { NSLog("[sidebar] rename refused: native store unavailable or target stale") }
     case .color, .pin, .duplicate, .collapse, .ungroup, .delete:
       if let command = GroupMenu.command(choice, groupId: groupId, state: store.state) { _ = dispatch(store, command) }
     }

@@ -43,11 +43,6 @@ function openDropped({ windowId, profileId, placement }: LandedDrop, urls: strin
   return ids;
 }
 
-export function openDroppedItems(windowId: string, items: DroppedItem[], placement: TabPlacement | null): string[] {
-  const profileId = useBrowser.getState().windows[windowId]?.profileId;
-  return profileId ? openDropped({ windowId, profileId, placement }, droppedUrls(items)) : [];
-}
-
 let tokens = 0;
 
 const originOf = (view: View | null): Promise<DropPoint> =>

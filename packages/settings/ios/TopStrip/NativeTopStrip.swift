@@ -339,55 +339,63 @@ final class TopStripHost {
       if WorkspaceActionRouter.ownedClick(windowId: windowId, tabId: tabId, mods: mods) {
         FrameUpdates.flush()
       } else {
-        call("click", tabId, ["meta": mods.meta, "shift": mods.shift, "alt": mods.alt])
+        NSLog("[strip] click refused: native store unavailable, dispatch failed or target stale")
       }
     case .activate(let tabId):
-      if !dispatch("activate", tabId) { call("activate", tabId) }
+      _ = dispatch("activate", tabId)
     case .close(let tabId):
       if let owned = WorkspaceActionRouter.ownedClose(tabId: tabId, middle: false) {
         NativeWorkspaceCommands.runCloseRoute(owned.route, tabId: tabId, store: owned.store) { [weak self] cleared in
           self?.call("removedPin", tabId, ["cleared": cleared])
         }
       } else {
-        call("close", tabId)
+        NSLog("[strip] close refused: native store unavailable, dispatch failed or target stale")
       }
     case .toggleMute(let tabId):
-      if !NativeTabMenu.sidebarAction("toggleMute", tabId: tabId, windowId: windowId) { call("toggleMute", tabId) }
+      if !NativeTabMenu.sidebarAction("toggleMute", tabId: tabId, windowId: windowId) { NSLog("[strip] toggleMute refused: native store unavailable, dispatch failed or target stale") }
     case .tabMenu(let tabId):
       let opened = NativeTabMenu.open(tabId, windowId: windowId) { [weak self] id, choice, ids in
         guard let self, !self.stopped else { return NSLog("[tabs] %@: its menu's %@ arrived after the host closed", id, choice) }
         self.call(ids == nil ? "tabMenuChoice" : "tabMenuSelectionChoice", id, ["choice": choice, "ids": ids ?? []])
       }
-      if !opened { call("tabMenu", tabId) }
+      if !opened, NativeTabMenu.calendarMenuInJS(tabId, windowId: windowId) {
+        call("tabMenu", tabId)
+      } else if !opened {
+        NSLog("[strip] tabMenu refused: native store unavailable, dispatch failed or target stale")
+      }
     case .groupMenu(let groupId):
       let opened = NativeGroupMenu.open(groupId, windowId: windowId) { [weak self] id, choice in
         guard let self, !self.stopped else { return NSLog("[groups] %@: the %@ closed before its menu's %@ reached JS", id, "strip", choice) }
         self.call("groupMenuChoice", id, ["choice": choice])
       }
-      if !opened { call("groupMenu", groupId) }
+      if !opened { NSLog("[strip] groupMenu refused: native store unavailable, dispatch failed or target stale") }
     case .toggleGroup(let groupId, let collapse):
-      if !NativeGroupActions.toggle(groupId, collapsed: { _ in collapse }) { call("toggleGroup", groupId, ["collapse": collapse]) }
+      if !NativeGroupActions.toggle(groupId, collapsed: { _ in collapse }) { NSLog("[strip] toggleGroup refused: native store unavailable, dispatch failed or target stale") }
     case .closeGroup(let groupId):
-      if !NativeGroupActions.close(groupId) { call("closeGroup", groupId) }
+      if !NativeGroupActions.close(groupId) { NSLog("[strip] closeGroup refused: native store unavailable, dispatch failed or target stale") }
     case .tuck(let groupId):
-      if !NativeGroupActions.tuck(groupId, windowId: windowId) { call("tuck", groupId) }
+      if !NativeGroupActions.tuck(groupId, windowId: windowId) { NSLog("[strip] tuck refused: native store unavailable, dispatch failed or target stale") }
     case .folderMenu(let groupId):
-      if !NativeTileFolders.stripGroupMenu(windowId: windowId, groupId: groupId) { call("folderMenu", groupId) }
+      if !NativeTileFolders.stripGroupMenu(windowId: windowId, groupId: groupId) { NSLog("[strip] folderMenu refused: native store unavailable, dispatch failed or target stale") }
     case .tileFolder(let folderId):
-      if !NativeTileFolders.stripTileMenu(windowId: windowId, folderId: folderId) { call("tileFolder", folderId) }
+      if !NativeTileFolders.stripTileMenu(windowId: windowId, folderId: folderId) { NSLog("[strip] tileFolder refused: native store unavailable, dispatch failed or target stale") }
     case .tileFolderMenu(let folderId):
-      if !NativeTileFolders.folderMenu(windowId: windowId, folderId: folderId) { call("tileFolderMenu", folderId) }
+      if !NativeTileFolders.folderMenu(windowId: windowId, folderId: folderId) { NSLog("[strip] tileFolderMenu refused: native store unavailable, dispatch failed or target stale") }
     case .newTab(let split): call("newTab", "", ["split": split])
     }
   }
 
   private func dispatch(_ name: String, _ tabId: String) -> Bool {
-    guard let store = NativeStoreHandle.store else { return false }
+    guard let store = WorkspaceWrites.store else {
+      NSLog("[strip] %@ refused: native store unavailable", name)
+      return false
+    }
     do {
       _ = try store.dispatch(Command(name, [.string(tabId)]), origin: .native)
       FrameUpdates.flush()
       return true
     } catch {
+      NSLog("[strip] %@ refused: %@", name, String(describing: error))
       return false
     }
   }
@@ -427,17 +435,36 @@ final class TopStripDrag: StripDragBridge {
   }
 
   func land(ids: [String], from source: String, in windowId: String, beforeId: String?) -> Bool {
-    guard let store = NativeStoreHandle.store, !ids.isEmpty else { return false }
-    if source != windowId {
-      guard (try? store.dispatch(Command("moveTabsToWindow", [JSONValue(ids), JSONValue(windowId)]), origin: .native)) != nil else { return false }
+    guard let store = WorkspaceWrites.store, !ids.isEmpty else {
+      NSLog("[strip] land refused: native store unavailable or no tabs")
+      return false
     }
-    let placed = (try? store.dispatch(Command("placeTabs", [JSONValue(ids), ["pinned": false, "beforeId": JSONValue(beforeId)]]), origin: .native)) != nil
-    FrameUpdates.flush()
-    return placed
+    do {
+      if source != windowId {
+        _ = try store.dispatch(Command("moveTabsToWindow", [JSONValue(ids), JSONValue(windowId)]), origin: .native)
+      }
+      _ = try store.dispatch(Command("placeTabs", [JSONValue(ids), ["pinned": false, "beforeId": JSONValue(beforeId)]]), origin: .native)
+      FrameUpdates.flush()
+      return true
+    } catch {
+      FrameUpdates.flush()
+      NSLog("[strip] land refused: %@", String(describing: error))
+      return false
+    }
   }
 
   func drop(ids: [String], drop: JSONValue) -> Bool {
-    guard let store = NativeStoreHandle.store, let commit = try? store.dispatch(Command("dropTabs", [JSONValue(ids), drop]), origin: .native) else { return false }
+    guard let store = WorkspaceWrites.store else {
+      NSLog("[strip] drop refused: native store unavailable")
+      return false
+    }
+    let commit: Commit
+    do {
+      commit = try store.dispatch(Command("dropTabs", [JSONValue(ids), drop]), origin: .native)
+    } catch {
+      NSLog("[strip] drop refused: %@", String(describing: error))
+      return false
+    }
     FrameUpdates.flush()
     return !commit.changes.isEmpty
   }

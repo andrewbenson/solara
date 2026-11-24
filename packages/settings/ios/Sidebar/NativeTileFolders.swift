@@ -206,8 +206,10 @@ enum NativeTileFolders {
       let opened = NativeTabMenu.open(tabId, windowId: windowId) { id, choice, ids in
         Task { @MainActor in _ = await SettingsAdapters.js("sidebar.action", windowId, ids == nil ? "tabMenuChoice" : "tabMenuSelectionChoice", id, ["choice": choice, "ids": ids ?? []]) }
       }
-      if !opened {
+      if !opened, NativeTabMenu.calendarMenuInJS(tabId, windowId: windowId) {
         Task { @MainActor in _ = await SettingsAdapters.js("sidebar.action", windowId, "tabMenu", tabId, [String: Any]()) }
+      } else if !opened {
+        NSLog("[sidebar] tabMenu refused: native store unavailable, dispatch failed or target stale")
       }
     case .folderMenu:
       folderMenu(windowId: windowId, folderId: folderId)

@@ -58,20 +58,6 @@ async function renameGroupInSheet(windowId: string, groupId: string) {
   if (name !== null && store().groups[groupId]) store().updateGroup(groupId, { name: name.trim() });
 }
 
-export function commitRename(target: Target, text: string) {
-  const name = text.trim();
-  if (target.kind === "tab") {
-    const tab = store().tabs[target.id];
-    if (tab) store().updateTab(tab.id, { customTitle: name && name !== tab.title ? name : null });
-  } else store().updateGroup(target.id, { name });
-  endRename(target);
-}
-
-export function endRename(target: Target) {
-  const r = sidebarUi().renaming;
-  if (r && r.id === target.id) setSidebarUi({ renaming: null });
-}
-
 export async function openIconPicker(windowId: string, target: Target) {
   const anchor = await measureRow(windowId, target.id);
   setSidebarUi({ iconPicker: { windowId, ...target, anchor }, hover: null });

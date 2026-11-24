@@ -64,6 +64,10 @@ enum NativeWorkspaceRename {
     notify(windowId, nil, sequence)
   }
 
+  static func reset(windowId: String) {
+    publish(windowId, nil)
+  }
+
   static func windowGone(_ windowId: String) {
     guard registry.key(windowId) != nil else { return }
     publish(windowId, nil)

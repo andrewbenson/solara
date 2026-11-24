@@ -248,7 +248,7 @@ final class SidebarHost {
       } else if mods.none, hostState?.selection.isEmpty == true, activate(tabId) {
         call("clicked", tabId)
       } else {
-        call("click", tabId, ["meta": mods.meta, "shift": mods.shift, "alt": mods.alt])
+        NSLog("[sidebar] click refused: native store unavailable, dispatch failed or target stale")
       }
     case .close(let tabId):
       if let owned = WorkspaceActionRouter.ownedClose(tabId: tabId, middle: false) {
@@ -257,7 +257,7 @@ final class SidebarHost {
           self?.call("removedPin", tabId, ["cleared": cleared])
         }
       } else {
-        call("close", tabId)
+        NSLog("[sidebar] close refused: native store unavailable, dispatch failed or target stale")
       }
     case .middleClick(let tabId):
       if let owned = WorkspaceActionRouter.ownedClose(tabId: tabId, middle: true) {
@@ -266,41 +266,45 @@ final class SidebarHost {
           self?.call("removedPin", tabId, ["cleared": cleared])
         }
       } else {
-        call("middleClick", tabId)
+        NSLog("[sidebar] middleClick refused: native store unavailable, dispatch failed or target stale")
       }
     case .rename(let kind, let id):
-      if !NativeWorkspaceRename.begin(windowId: windowId, kind: kind == "group" ? .group : .tab, id: id) { call("rename", id, ["kind": kind]) }
+      if !NativeWorkspaceRename.begin(windowId: windowId, kind: kind == "group" ? .group : .tab, id: id) { NSLog("[sidebar] rename refused: native store unavailable, dispatch failed or target stale") }
     case .backToPinned(let tabId):
-      if NativeTabMenu.sidebarAction("backToPinned", tabId: tabId, windowId: windowId) { call("handled", tabId) } else { call("backToPinned", tabId) }
+      if NativeTabMenu.sidebarAction("backToPinned", tabId: tabId, windowId: windowId) { call("handled", tabId) } else { NSLog("[sidebar] backToPinned refused: native store unavailable, dispatch failed or target stale") }
     case .tileDoubleClick(let tabId):
-      if NativeTabMenu.sidebarAction("tileDoubleClick", tabId: tabId, windowId: windowId) { call("handled", tabId) } else { call("tileDoubleClick", tabId) }
+      if NativeTabMenu.sidebarAction("tileDoubleClick", tabId: tabId, windowId: windowId) { call("handled", tabId) } else { NSLog("[sidebar] tileDoubleClick refused: native store unavailable, dispatch failed or target stale") }
     case .toggleMute(let tabId):
-      if NativeTabMenu.sidebarAction("toggleMute", tabId: tabId, windowId: windowId) { call("handled", tabId) } else { call("toggleMute", tabId) }
+      if NativeTabMenu.sidebarAction("toggleMute", tabId: tabId, windowId: windowId) { call("handled", tabId) } else { NSLog("[sidebar] toggleMute refused: native store unavailable, dispatch failed or target stale") }
     case .tabMenu(let tabId):
       if WorkspaceWrites.store != nil { call("handled", tabId) }
       let opened = NativeTabMenu.open(tabId, windowId: windowId) { [weak self] id, choice, ids in
         guard let self, !self.stopped else { return NSLog("[tabs] %@: its menu's %@ arrived after the host closed", id, choice) }
         self.call(ids == nil ? "tabMenuChoice" : "tabMenuSelectionChoice", id, ["choice": choice, "ids": ids ?? []])
       }
-      if !opened { call("tabMenu", tabId) }
+      if !opened, NativeTabMenu.calendarMenuInJS(tabId, windowId: windowId) {
+        call("tabMenu", tabId)
+      } else if !opened {
+        NSLog("[sidebar] tabMenu refused: native store unavailable, dispatch failed or target stale")
+      }
     case .groupMenu(let groupId):
       let opened = NativeGroupMenu.open(groupId, windowId: windowId) { [weak self] id, choice in
         guard let self, !self.stopped else { return NSLog("[groups] %@: the %@ closed before its menu's %@ reached JS", id, "sidebar", choice) }
         self.call("groupMenuChoice", id, ["choice": choice])
       }
-      if !opened { call("groupMenu", groupId) }
+      if !opened { NSLog("[sidebar] groupMenu refused: native store unavailable, dispatch failed or target stale") }
     case .toggleGroup(let groupId):
-      if !NativeGroupActions.toggle(groupId, collapsed: { !$0.collapsed }) { call("toggleGroup", groupId) }
+      if !NativeGroupActions.toggle(groupId, collapsed: { !$0.collapsed }) { NSLog("[sidebar] toggleGroup refused: native store unavailable, dispatch failed or target stale") }
     case .closeGroup(let groupId):
-      if !NativeGroupActions.close(groupId) { call("closeGroup", groupId) }
+      if !NativeGroupActions.close(groupId) { NSLog("[sidebar] closeGroup refused: native store unavailable, dispatch failed or target stale") }
     case .sidebarMenu: call("sidebarMenu", "")
     case .overflowMenu: call("overflowMenu", "")
     case .newTab(let split): call("newTab", "", ["split": split])
     case .newTabDoubleClick: call("newTab", "", ["split": false])
     case .folder(let folderId):
-      if NativeTileFolders.toggle(windowId: windowId, folderId: folderId) { call("handled", folderId) } else { call("folder", folderId) }
+      if NativeTileFolders.toggle(windowId: windowId, folderId: folderId) { call("handled", folderId) } else { NSLog("[sidebar] folder refused: native store unavailable, dispatch failed or target stale") }
     case .folderMenu(let folderId):
-      if !NativeTileFolders.folderMenu(windowId: windowId, folderId: folderId) { call("folderMenu", folderId) }
+      if !NativeTileFolders.folderMenu(windowId: windowId, folderId: folderId) { NSLog("[sidebar] folderMenu refused: native store unavailable, dispatch failed or target stale") }
     case .tidy: call("tidy", hostState?.profileId ?? "")
     case .clear: call("clear", "")
     case .cleanUp(let choice): call("cleanUp", choice.rawValue)
@@ -310,11 +314,12 @@ final class SidebarHost {
         NativeTileFolders.close(in: windowId)
         call("handled", "")
       } else {
-        call("scrolled", "")
+        NSLog("[sidebar] scrolled refused: native store unavailable, dispatch failed or target stale")
       }
     case .renamed(let kind, let id, let text):
       if WorkspaceActionRouter.ownedStore == nil {
-        call("renamed", id, ["kind": kind, "text": text ?? NSNull()])
+        NativeWorkspaceRename.reset(windowId: windowId)
+        NSLog("[sidebar] renamed refused: native store unavailable, dispatch failed or target stale")
       } else if let text {
         NativeWorkspaceRename.commit(windowId: windowId, kind: kind == "group" ? .group : .tab, id: id, text: text)
       } else {
@@ -326,12 +331,13 @@ final class SidebarHost {
   }
 
   private func activate(_ tabId: String) -> Bool {
-    guard let store = NativeStoreHandle.store else { return false }
+    guard let store = WorkspaceWrites.store else { return false }
     do {
       _ = try store.dispatch(Command("activate", [.string(tabId)]), origin: .native)
       FrameUpdates.flush()
       return true
     } catch {
+      NSLog("[sidebar] activate refused: %@", String(describing: error))
       return false
     }
   }

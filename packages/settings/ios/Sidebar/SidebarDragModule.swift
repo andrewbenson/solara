@@ -178,7 +178,7 @@ final class NativeSidebarDrag: SidebarDragBridge {
     if NativeTileFolders.owned {
       DispatchQueue.main.async { MainActor.assumeIsolated { _ = NativeTileFolders.close() } }
     } else {
-      send("sidebar.drag.closePanel", [windowId])
+      NSLog("[sidebar] closePanel refused: native store unavailable")
     }
   }
 

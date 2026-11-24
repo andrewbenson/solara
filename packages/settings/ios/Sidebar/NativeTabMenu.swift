@@ -1,5 +1,6 @@
 import AppKit
 import SolaraEngine
+import SolaraLive
 import SolaraModel
 import SolaraShell
 import SolaraStore
@@ -10,6 +11,11 @@ enum NativeTabMenu {
   #if DEBUG
   private(set) static var handled = 0
   #endif
+
+  static func calendarMenuInJS(_ tabId: String, windowId: String) -> Bool {
+    guard let store = WorkspaceWrites.store, let tab = store.state.tabs[tabId], tab.windowId == windowId, tab.pinned else { return false }
+    return Meetings.isCalendarUrl(tab.pinnedUrl ?? tab.url)
+  }
 
   static func open(_ tabId: String, windowId: String, js: @escaping @MainActor (String, String, [String]?) -> Void) -> Bool {
     guard let store = WorkspaceWrites.store, store.state.tabs[tabId]?.windowId == windowId else { return false }
@@ -87,7 +93,7 @@ enum NativeTabMenu {
     if choice == "newGroup", let id = result.string, !id.isEmpty,
       WorkspaceActionRouter.sidebarShows(store.state, windowId: windowId) {
       if !NativeWorkspaceRename.begin(windowId: windowId, kind: .group, id: id) {
-        Task { @MainActor in _ = await SettingsAdapters.js("sidebar.action", windowId, "groupMenuChoice", id, ["choice": "rename"]) }
+        NSLog("[sidebar] rename refused: native store unavailable or target stale")
       }
     }
     if choice.hasPrefix("window:"), let id = result.string, !id.isEmpty { ShellScripting.showWindow(id) }

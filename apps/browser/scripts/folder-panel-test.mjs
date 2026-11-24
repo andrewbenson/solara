@@ -171,22 +171,9 @@ async function run() {
       assert.ok(tile, `folder ${folderId} is laid out`);
       await press(tile.x + tile.width / 2, tile.y + tile.height / 2);
     };
-    const jsOpen = async () => JSON.parse(await evaluate(`return JSON.stringify(ac.pages.tileFolders.panel.getState().open)`));
     const storeOwns = async () => (await evaluate(`const status = globalThis.expo.modules.SolaraStoreAdapter.status(); return status.active === true && status.frozen === false`)) === true;
     const storeFrozen = async () => (await evaluate(`const status = globalThis.expo.modules.SolaraStoreAdapter.status(); return status.active === true && status.frozen === true`)) === true;
     const jsOwns = () => evaluate(`return ac.nativePages.ownsLive()`);
-    const onePanel = async (what, folderId, native) => {
-      out.flip = out.flip ?? {};
-      await untilSnapshot(what, async (state) => {
-        const shown = state.windows.filter((window) => window.folderPanel?.visible);
-        const extra = JSON.parse(await evaluate(`return globalThis.expo.modules.SolaraPages.devViewFrame(${win}, "SidebarFolderPanelView#1")`));
-        const open = await jsOpen();
-        out.flip[what] = { shown: shown.map((window) => window.folderPanel.folderId), extra: extra.found, open };
-        return shown.length === 1 && shown[0].id === setup.w && shown[0].folderPanel.folderId === folderId && shown[0].folderPanel.rows.length === 3
-          && !extra.found && open?.windowId === setup.w && open.folderId === folderId && !!open.native === native;
-      });
-      return true;
-    };
 
     await clickFolder(setup.folder);
     await sleep(700);
@@ -198,10 +185,9 @@ async function run() {
     out.jsStillOwns = (await jsOwns()) === true;
     await clickFolder(second.folder);
     await sleep(700);
-    out.flipOpensJs = await onePanel("after the flip the next folder opens one JS panel", second.folder, false);
-    await clickFolder(setup.folder);
-    await sleep(700);
-    out.flipSwitchesJs = await onePanel("the JS panel switches to the first folder", setup.folder, false);
+    await nativeClosed("after freeze the next folder opens no native or JS panel");
+    assert.match(app.output(), /\[sidebar\] folder refused:/, "the folder click logs a refusal");
+    out.flipRefuses = true;
     rep.say(`native: ${JSON.stringify(out)}`);
     return out;
   } finally {
@@ -211,7 +197,7 @@ async function run() {
   }
 }
 
-await rep.check("a native folder tile opens the panel; a row selects its tab; the page, tile and Escape close it; after the store stands down, one JS panel opens per folder", async () => {
+await rep.check("a native folder tile opens the panel; a row selects its tab; the page, tile and Escape close it; after the store stands down, folder clicks are refused", async () => {
   const panel = await run();
   assert.ok(panel.native, "a SidebarFolderPanelView");
   assert.ok(panel.opened, "opened");
@@ -226,6 +212,6 @@ await rep.check("a native folder tile opens the panel; a row selects its tab; th
   }
   for (const key of ["rowShows", "rowCloses", "openedAgain", "pageCloses", "tileCloses", "escCloses"]) assert.equal(panel[key], true, key);
   assert.match(String(panel.rowFirstMouse), /^1 (SolaraUI\.)?FolderPanelRow\b/, "a panel row takes a click in a background window");
-  for (const key of ["ownedBefore", "flipCloses", "flipOpensJs", "flipSwitchesJs"]) assert.equal(panel[key], true, key);
+  for (const key of ["ownedBefore", "flipCloses", "flipRefuses"]) assert.equal(panel[key], true, key);
 });
 process.exit(rep.summary() ? 0 : 1);

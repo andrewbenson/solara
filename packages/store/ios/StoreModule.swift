@@ -137,12 +137,10 @@ public class StoreModule: Module {
       return true
     }
 
-    #if DEBUG
     Function("freeze") { () -> Bool in
       NativeStore.shared?.freeze()
       return NativeStore.shared != nil
     }
-    #endif
 
     Function("flush") { (timeout: Double) -> String in
       NativeStore.shared?.host.flush(timeout: timeout).description ?? "failed: the native store is unavailable"

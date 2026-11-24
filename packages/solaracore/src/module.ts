@@ -176,10 +176,6 @@ export const loadedProfiles = (): Promise<string[]> => Cef.loadedProfiles();
 export const ensureProfile = (profile: string): Promise<boolean> => Cef.ensureProfile(profile);
 export const onProfileLoaded = (listener: (event: { profile: string }) => void) => Cef.addListener("onProfileLoaded", listener);
 export const releaseProfile = (profile: string) => Cef.releaseProfile(profile);
-export const deleteProfileData = async (profile: string): Promise<string[]> => {
-  const [chromium, webkit] = await Promise.all([Cef.deleteProfileData(profile), WebKit?.deleteProfileData(profile).catch(() => false) ?? true]);
-  return [...(chromium?.remaining ?? ["data"]), ...(webkit ? [] : ["WebKit data"])];
-};
 
 export type PinnedLinkEvent = {
   phase: "decide" | "intercepted";

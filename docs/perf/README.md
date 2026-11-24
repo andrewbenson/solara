@@ -685,3 +685,9 @@ be added. Native visibility application is separate from renderer FCP or the
 switch fixture's shown frame. Pool `firstDraw` is a delayed callback wall wait,
 not first paint. Buffer resets can split pending callbacks; unmatched spans are
 reported instead of paired across actions. Keep raw traces beside the table.
+
+Workspace, settings and downloads are persisted by the native `PersistenceWriter`; no TypeScript session save
+loop remains. `perfProbe` document write counts and bytes still measure other JS document users and feed the
+release ratchet, including its existing `session.json` ceiling keys. Keep those inputs. The `persistence` scenario
+in `bench-app.js` measures synthetic JSON serialization rather than a production save; `js-bench` reports its
+`persist.*` rows, and the ratchet/native-work collectors still include that scenario in stall coverage.

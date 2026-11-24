@@ -139,8 +139,8 @@ modules before using them — this is a summary from the agent that built it.
   in memory, and only back into that window; read either with `cleanedTabsFor(s, windowId)`), `closeAbandonedNewTabs`. `newTab` with `openerId` + `background` (⌘-click)
   joins the opener's group (`settings.cmdClickCreatesTabGroup`). Sidebar UI lives in components/sidebar/.
 - Profiles: `createProfile` (`shareWith`: share another profile's data), `updateProfile`, `deleteProfile`, `reorderProfiles`, `setDefaultProfile`.
-  `deleteProfile` queues engine data no profile uses any more in `orphanedProfileData` (saved); lib/profileData.ts deletes it
-  (`deleteProfileData`, which erases the original profile's data through Chrome's own stores) and retries at launch until it's gone.
+  `deleteProfile` queues engine data no profile uses any more in `orphanedProfileData` (persisted by the native writer).
+  Native `ProfileDataCleanup` and `NativeProfileDataCleanup` delete it through the engine stores and retry at launch until it is gone.
   Shared data: `profile.dataId` names the data a profile uses; `engineProfile(id)` resolves it, bookmark roots are the same
   folders, and store/profiles keeps history lists identical (`dataGroups`, `sharingProfiles`). The Create Profile dialog is
   components/profiles/CreateProfile.tsx (`lib/actions.createProfile`).
@@ -361,6 +361,11 @@ for owned producers. Native facts are already ordered before Expo; applyHeldRepo
 JS UI work, not authoritative native fact admission. No input or page UI event is intentionally reordered or dropped.
 
 ## Replica retention, persistence and quit
+
+The native `PersistenceWriter` alone persists workspace, settings and downloads. `lib/persist.ts` starts the native
+store, hydrates the JS replica and starts derived services; it has no TypeScript session loader or save loop.
+A missing, unowned or unreadable native workspace latches JS persistence refusal and presents the store-unavailable
+window. Final quit still flushes the native writer and saves launch look from the replica when permitted.
 
 One revision/cursor and one 65,536-patch ring carries workspace and live-only changes, including foreign commits.
 Catch-up copies the requested suffix or a full snapshot and its exact revision together under ingress/core, then

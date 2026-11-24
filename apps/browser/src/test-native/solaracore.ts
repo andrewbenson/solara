@@ -244,11 +244,6 @@ function engineCall(name: string, profile: string, json: string | null): Promise
 }
 
 export const cancelledDownloads: string[] = [];
-export const endedWebKitSessions: string[] = [];
-export const removedStagings: string[] = [];
-export const stagingRemovals = { ok: true };
-export const deletedProfileData: string[] = [];
-export const profileDataLeft = new Map<string, string[]>();
 export const revealedTabs: string[] = [];
 export const linkRoute: { next: LinkRoute } = { next: {} };
 export const extensionAnswers = {
@@ -314,7 +309,7 @@ const cef: Modules["SolaraCEF"] = {
   fetchFavicon: () => Promise.resolve(null),
   engineCall,
   releaseProfile: () => Promise.resolve(),
-  deleteProfileData: (profile) => (deletedProfileData.push(profile), Promise.resolve({ remaining: profileDataLeft.get(profile) ?? [] })),
+  deleteProfileData: () => Promise.resolve({ remaining: [] }),
   getWebKitContentBlocker: () => unfaked("SolaraCEF", "getWebKitContentBlocker"),
   getContentBlocker: () => unfaked("SolaraCEF", "getContentBlocker"),
   setContentBlockerEnabled: () => Promise.resolve(),
@@ -418,8 +413,8 @@ const webKit: SolaraCoreOptionalNativeModules["SolaraWebKit"] = {
   downloadCommand: (action, id) => (action === "cancel" && cancelledDownloads.push(id), Promise.resolve()),
   externalAppAllowances: () => Promise.resolve([]),
   removeExternalAppAllowance: () => Promise.resolve(),
-  endPrivateSession: (session) => (endedWebKitSessions.push(session), Promise.resolve()),
-  removeDownloadStaging: (path) => (removedStagings.push(path), Promise.resolve(stagingRemovals.ok)),
+  endPrivateSession: () => Promise.resolve(),
+  removeDownloadStaging: () => Promise.resolve(true),
   sitePermissions: () => Promise.resolve({}),
   setSitePermission: () => Promise.resolve(),
   resolveExternalApp: () => Promise.resolve(),

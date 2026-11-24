@@ -4,7 +4,7 @@ import { test } from "node:test";
 
 let nativeStatus = { active: false, safeMode: "option", reason: "settings-only fallback" };
 globalThis.acTestNativeModules = { SolaraStoreAdapter: { status: () => nativeStatus } };
-const { docs, documentWrites, deletedProfileData, bookmarkOpsSent } = await import("../test-native/index.ts");
+const { docs, documentWrites, bookmarkOpsSent } = await import("../test-native/index.ts");
 const { useBrowser } = await import("../store/browser.ts");
 const { startNativeStore } = await import("../store/nativeStore.ts");
 const { migrateBookmarksFile, startBookmarks } = await import("./bookmarks.ts");

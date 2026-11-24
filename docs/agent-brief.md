@@ -217,6 +217,9 @@ still have JS callers.
   subdirectory, never with globs in the shared root (other agents' files live there).
   A scratch copy of `native/SolaraKit` needs `packages/sync/ios/Core` beside it: `SolaraSyncCore`'s sources are
   symlinks into it, so `git archive HEAD native/SolaraKit` alone leaves them dangling and SwiftPM calls the target empty.
+- Workspace, settings and downloads are persisted by the native `PersistenceWriter`. `lib/persist.ts` only starts
+  native ownership, hydrates the JS replica and starts derived services; no TypeScript session save path remains.
+  A missing or unowned native store refuses JS persistence. Sync keeps its native anchor and legacy-session upgrade read.
 - The store API is documented in `docs/store-api.md` (read it before touching app state).
 - Tests, test-instance variables and what background mode changes: `docs/testing.md`. Benchmarks and the perf gate:
   `docs/perf/README.md`.

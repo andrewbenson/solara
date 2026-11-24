@@ -70,7 +70,9 @@ public struct WindowLayoutSnapshot: Equatable, Sendable {
       anchors["toolbar:\(id)"] = bar
     }
     let sidebar = frames.sidebar.map { $0.offsetBy(dx: frames.sidebarShift, dy: 0) }
-    let header = sidebar.map { CGRect(x: $0.minX, y: $0.minY, width: $0.width, height: min($0.height, input.sidebarHeaderHeight)) }
+    let railHeaderTop: CGFloat = SidebarRail.contains(width: Double(input.layout.sidebarWidth))
+      ? (input.windowFullscreen ? ShellMetrics.cardTop + ShellMetrics.toolbarHeight : ShellMetrics.railToolbarTop + ShellMetrics.railToolbarHeight) : 0
+    let header = sidebar.map { CGRect(x: $0.minX, y: $0.minY + railHeaderTop, width: $0.width, height: min($0.height, input.sidebarHeaderHeight)) }
     let footer = sidebar.map { CGRect(x: $0.minX, y: max($0.minY, $0.maxY - input.sidebarFooterHeight), width: $0.width, height: min($0.height, input.sidebarFooterHeight)) }
     if let sidebar { anchors["sidebar"] = sidebar }
     if input.presentation.peeking, let coverage = frames.sidebarCoverage(in: input.bounds) { anchors["sidebarPeekCoverage"] = coverage }

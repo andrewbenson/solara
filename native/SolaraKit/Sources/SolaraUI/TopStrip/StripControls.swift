@@ -42,6 +42,16 @@ public enum StripControlsLayout {
   public static let trailingReservation: CGFloat = 84
   public static let rowTop: CGFloat = StripMetrics.mid - 17
 
+  public static func pixelAligned(_ value: CGFloat, backingScale: CGFloat) -> CGFloat {
+    let scale = backingScale.isFinite && backingScale > 0 ? backingScale : 1
+    let scaled = value * scale
+    let base = floor(scaled)
+    let fraction = scaled - base
+    if fraction < 0.0001 { return base / scale }
+    if abs(fraction - 1) < 0.0001 { return (base + 1) / scale }
+    return (base + (fraction > 0.5 || abs(fraction - 0.5) < 0.0001 ? 1 : 0)) / scale
+  }
+
   public static func indicator(textWidth: CGFloat, room: CGFloat = profileRoom, incognito: Bool, profiles: Int) -> StripIndicatorLayout {
     let shown = (incognito || profiles >= 2) && room >= iconWidth
     let nameRoom = room - 2 * pad
@@ -72,18 +82,21 @@ public enum StripControlsLayout {
 }
 
 public struct TopStripLeadingLayout: Equatable {
+  public let controls: CGRect
   public let profile: CGRect
   public let downloads: CGRect
   public let strip: CGRect
   public let leading: CGFloat
   public let pageWidth: CGFloat
 
-  public init(width: CGFloat, profileWidth: CGFloat, windowFullscreen: Bool) {
+  public init(width: CGFloat, profileWidth: CGFloat, windowFullscreen: Bool, backingScale: CGFloat = 2) {
     let profileX: CGFloat = windowFullscreen ? 8 : ShellMetrics.topStripLeadingReservation
-    profile = CGRect(x: profileX, y: ShellMetrics.topStripLightsCenter.y - StripControlsLayout.height / 2,
+    let top = StripControlsLayout.pixelAligned(ShellMetrics.topStripLightsCenter.y - StripControlsLayout.height / 2, backingScale: backingScale)
+    controls = CGRect(x: 0, y: top, width: max(0, width - 8), height: StripControlsLayout.height + 0.5)
+    profile = CGRect(x: profileX, y: top,
       width: profileWidth, height: StripControlsLayout.height)
     downloads = CGRect(x: max(0, width - 8 - StripControlsLayout.downloadsBox),
-      y: ShellMetrics.topStripLightsCenter.y - StripControlsLayout.downloadsBox / 2,
+      y: top,
       width: StripControlsLayout.downloadsBox, height: StripControlsLayout.downloadsBox)
     leading = profileX + StripControlsLayout.profileSlot(indicator: profileWidth, coveredByIsland: windowFullscreen)
     pageWidth = max(0, width - leading - StripControlsLayout.trailingReservation)
@@ -106,7 +119,8 @@ public final class StripControlsView: NSView {
   public var profileCoveredByIsland = false { didSet { place() } }
   public private(set) var profileWidth: CGFloat = 0
   public var dockedLayout: TopStripLeadingLayout {
-    TopStripLeadingLayout(width: bounds.width, profileWidth: profileWidth, windowFullscreen: windowFullscreen)
+    TopStripLeadingLayout(width: bounds.width, profileWidth: profileWidth, windowFullscreen: windowFullscreen,
+      backingScale: window?.backingScaleFactor ?? 2)
   }
   let indicator = StripProfileIndicator()
   let downloads = StripIconButton()
@@ -141,6 +155,16 @@ public final class StripControlsView: NSView {
 
   public override func setFrameSize(_ newSize: NSSize) {
     super.setFrameSize(newSize)
+    place()
+  }
+
+  public override func viewDidMoveToWindow() {
+    super.viewDidMoveToWindow()
+    place()
+  }
+
+  public override func viewDidChangeBackingProperties() {
+    super.viewDidChangeBackingProperties()
     place()
   }
 

@@ -21,6 +21,29 @@ import Testing
     }
   }
 
+  @Test(arguments: [CGFloat(1), 2], [false, true])
+  func captionControlsDownloadsUseTheYogaRoundedBackingOrigin(scale: CGFloat, fullscreen: Bool) {
+    let geometry = TopStripLeadingLayout(width: 1600, profileWidth: 0, windowFullscreen: fullscreen, backingScale: scale)
+    let row = StripControlsView(frame: geometry.controls)
+    row.captionAligned = true
+    row.update(StripControlsState(title: "Personal", incognito: false, profiles: 1,
+      nameColor: "#FF0000", downloadsOpen: false, downloadsTooltip: nil), theme: [:])
+    let downloads = row.downloads.frame.offsetBy(dx: row.frame.minX, dy: row.frame.minY)
+    #expect(downloads == CGRect(x: 1558, y: 4, width: 34, height: 34))
+    #expect(downloads == geometry.downloads)
+  }
+
+  @Test func backingGridRoundingUsesYogaHalfUpIncludingNegativeAndNearlyHalfPixels() {
+    let cases: [(CGFloat, CGFloat, CGFloat)] = [
+      (3.25, 1, 3), (3.25, 2, 3.5), (-3.25, 1, -3), (-3.25, 2, -3),
+      (-3.75, 1, -4), (-3.75, 2, -3.5), (3.49996, 1, 4), (3.4998, 1, 3),
+      (3.99996, 1, 4), (4.00004, 1, 4), (4.25, 1, 4), (4.25, 2, 4.5),
+    ]
+    for (value, scale, expected) in cases {
+      #expect(StripControlsLayout.pixelAligned(value, backingScale: scale) == expected)
+    }
+  }
+
   @Test func theIndicatorShowsWithTwoProfilesOrIncognito() {
     #expect(!StripControlsLayout.indicator(textWidth: 60, incognito: false, profiles: 1).shown)
     #expect(StripControlsLayout.indicator(textWidth: 60, incognito: true, profiles: 1).shown)
@@ -130,8 +153,8 @@ import Testing
         #expect(geometry.strip.minX == leading + slot - StripMetrics.flare)
         #expect(geometry.strip.maxX == 931)
         #expect(geometry.downloads.maxX == 992)
-        #expect(geometry.profile.midY == ShellMetrics.topStripLightsCenter.y)
-        #expect(geometry.downloads.midY == ShellMetrics.topStripLightsCenter.y)
+        #expect(geometry.profile.midY == 21)
+        #expect(geometry.downloads.midY == 21)
       }
     }
   }
@@ -163,14 +186,16 @@ import Testing
     #expect(row.pageWidth == 824)
   }
 
-  @Test func captionAlignedRowsCentreBothControlsOnTheLightsWithoutChangingInsets() {
-    let view = StripControlsView(frame: CGRect(x: 0, y: 3.75, width: 992, height: 34.5))
+  @Test(arguments: [CGFloat(1), 2])
+  func captionAlignedRowsUseTheRoundedOriginWithoutChangingInsets(scale: CGFloat) {
+    let geometry = TopStripLeadingLayout(width: 1000, profileWidth: 0, windowFullscreen: false, backingScale: scale)
+    let view = StripControlsView(frame: geometry.controls)
     view.leadingInset = 86
     view.captionAligned = true
     for count in [1, 2] {
       view.update(StripControlsState(title: "A", incognito: false, profiles: count, nameColor: "#FF0000", downloadsOpen: false, downloadsTooltip: nil), theme: [:])
-      #expect(view.indicator.frame.midY + view.frame.minY == ShellMetrics.topStripLightsCenter.y)
-      #expect(view.downloads.frame.midY + view.frame.minY == ShellMetrics.topStripLightsCenter.y)
+      #expect(view.indicator.frame.midY + view.frame.minY == 21)
+      #expect(view.downloads.frame.midY + view.frame.minY == 21)
       #expect(view.downloads.frame.maxX == 992)
       #expect(view.profileSlotWidth == (count == 2 ? view.profileWidth + 8 : 0))
     }

@@ -1140,9 +1140,20 @@ private final class NativeLayoutStripRow: NSView {
 
   required init?(coder: NSCoder) { fatalError() }
 
+  override func viewDidMoveToWindow() {
+    super.viewDidMoveToWindow()
+    needsLayout = true
+  }
+
+  override func viewDidChangeBackingProperties() {
+    super.viewDidChangeBackingProperties()
+    needsLayout = true
+  }
+
   override func layout() {
     super.layout()
-    controls.frame = CGRect(x: 0, y: ShellMetrics.topStripLightsCenter.y - StripControlsLayout.height / 2, width: max(0, bounds.width - 8), height: 34.5)
+    controls.frame = TopStripLeadingLayout(width: bounds.width, profileWidth: controls.profileWidth,
+      windowFullscreen: controls.windowFullscreen, backingScale: window?.backingScaleFactor ?? 2).controls
     let left = leadingInset + controls.profileSlotWidth
     let right = StripControlsLayout.trailingReservation
     let width = max(0, bounds.width - left - right)

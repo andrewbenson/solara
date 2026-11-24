@@ -135,6 +135,7 @@ struct WindowLayoutContractTests {
     let bounds = CGRect(x: 0, y: 0, width: 1000, height: 700)
     let address = WindowLayoutSnapshot.of(try #require(WindowLayoutInput(state: state, windowId: "w", bounds: bounds)), generation: 1)
     #expect(address.sidebarHeader?.height == 80 && address.sidebarFooter?.height == 40)
+    #expect(address.sidebarHeader == CGRect(x: 0, y: 0, width: 190, height: 80))
     #expect(address.pages["a"]?.minY == address.panes["a"]?.minY)
     state.windows["w"]?.sidebarIconsOnly = true
     let rail = WindowLayoutSnapshot.of(try #require(WindowLayoutInput(state: state, windowId: "w", bounds: bounds)), generation: 2)
@@ -145,6 +146,23 @@ struct WindowLayoutContractTests {
     let top = WindowLayoutSnapshot.of(try #require(WindowLayoutInput(state: state, windowId: "w", bounds: bounds)), generation: 3)
     #expect(top.sidebarHeader == nil && top.frames.topStrip?.height == 42)
     #expect(top.stripAvailableWidth == 1000 - 86 - top.input.stripProfileSlotWidth - 84)
+  }
+
+  @Test(arguments: [false, true], [false, true])
+  func railHeaderStartsBelowTheToolbarBand(fullscreen: Bool, incognito: Bool) throws {
+    var state = try projectionState()
+    state.windows["w"]?.sidebarIconsOnly = true
+    state.windows["w"]?.incognito = incognito
+    let input = try #require(WindowLayoutInput(state: state, windowId: "w",
+      bounds: CGRect(x: 0, y: 0, width: 1000, height: 700), windowFullscreen: fullscreen))
+    let snapshot = WindowLayoutSnapshot.of(input, generation: 1)
+    let sidebar = try #require(snapshot.frames.sidebar)
+    let top: CGFloat = fullscreen ? 47 : 32
+    #expect(snapshot.sidebarHeader == CGRect(x: sidebar.minX, y: sidebar.minY + top,
+      width: sidebar.width, height: incognito ? SidebarChromeMetrics.railHeader : 0))
+    if !fullscreen && !incognito {
+      #expect(snapshot.sidebarHeader == CGRect(x: 0, y: 32, width: 42, height: 0))
+    }
   }
 
   @Test func savedWidthsUseTheRailThatTheSidebarDraws() throws {

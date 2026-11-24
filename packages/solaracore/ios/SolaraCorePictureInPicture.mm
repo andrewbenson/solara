@@ -1113,10 +1113,22 @@ static NSView *ZoomEventRoot(NSWindow *window) {
 }
 
 + (BOOL)zooms:(NSWindow *)window {
-  if (!window.visible || !(window.styleMask & NSWindowStyleMaskResizable)) return NO;
+  return [self zoomRefusal:window] == nil;
+}
+
++ (NSString *)zoomRefusal:(NSWindow *)window {
+  if (!window) return @"no window";
+  if (!window.visible) return @"not visible";
+  if (!(window.styleMask & NSWindowStyleMaskResizable)) return @"not resizable";
   ACPiPController *controller = [ACPiPController forWindow:window];
-  if (controller) return controller.stashedEdge == ACPiPEdgeNone;
-  return IsChromeVideoPictureInPicture(window) || (IsChromeDocumentPictureInPicture(window) && IsChromeFloatingWindow(window));
+  if (controller) return controller.stashedEdge == ACPiPEdgeNone ? nil : @"stashed";
+  if (IsChromeVideoPictureInPicture(window) || (IsChromeDocumentPictureInPicture(window) && IsChromeFloatingWindow(window))) return nil;
+  return @"not a PiP window";
+}
+
++ (BOOL)traces {
+  static BOOL trace = getenv("SOLARA_PIP_ZOOM_TRACE") != nullptr;
+  return trace;
 }
 
 + (instancetype)forWindow:(NSWindow *)window {
@@ -1166,6 +1178,14 @@ static NSView *ZoomEventRoot(NSWindow *window) {
   const BOOL ownsHit = event.type == NSEventTypeDirectTouch || [ACPiPZoom hitFor:event point:point] == _window.windowNumber;
   const BOOL allowed = solaracore_pip_zoom::RoutesToPiP(solaracore_pip_zoom::InputSource::View, [ACPiPZoom enabled],
                                                       [ACPiPZoom zooms:_window], event.window == _window && ownsHit, false);
+  if ([ACPiPZoom traces]) {
+    const NSInteger hit = event.type == NSEventTypeDirectTouch ? _window.windowNumber : [ACPiPZoom hitFor:event point:point];
+    NSWindow *hitWindow = hit > 0 ? [NSApp windowWithWindowNumber:hit] : nil;
+    NSLog(@"[pip-zoom] recognizer type %lu phase %lu window %ld hit %ld (%@) enabled %d -> %@%@", (unsigned long)event.type,
+          (unsigned long)(event.type == NSEventTypeMagnify || event.type == NSEventTypeScrollWheel ? event.phase : 0), (long)event.windowNumber,
+          (long)hit, hitWindow ? hitWindow.className : @"another app's window", [ACPiPZoom enabled], allowed ? @"allowed" : @"refused",
+          allowed ? @"" : [@": " stringByAppendingString:![ACPiPZoom enabled] ? @"zoom is off" : [ACPiPZoom zoomRefusal:_window] ?: (event.window != _window ? @"another window's event" : @"the hit is another window")]);
+  }
 #if DEBUG
   if (_testAttempts) {
     const NSEventPhase phase = event.type == NSEventTypeMagnify || event.type == NSEventTypeScrollWheel ? event.phase : NSEventPhaseNone;
@@ -1194,8 +1214,7 @@ static NSView *ZoomEventRoot(NSWindow *window) {
 
 + (BOOL)handle:(NSEvent *)event {
   BOOL handled = [self route:event];
-  static BOOL trace = getenv("SOLARA_PIP_ZOOM_TRACE") != nullptr;
-  if (trace)
+  if ([self traces])
     NSLog(@"[pip-zoom] type %lu window %ld (%@) cmd %d phase %lu/%lu dy %.2f precise %d mag %.3f -> %@ %@", (unsigned long)event.type,
           (long)event.windowNumber, event.window.className, (event.modifierFlags & NSEventModifierFlagCommand) != 0,
           (unsigned long)(event.type == NSEventTypeScrollWheel ? event.phase : 0),

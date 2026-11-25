@@ -578,3 +578,12 @@ one window to the other by frame. Hero focus deadlines retain the complete hero 
 The native-actions driver requests all windows from `state.snapshot`: a `windowId` filter also filters the returned tabs. Its ⇧Return checks require a newly created window selecting the destination tab, unchanged source selection and a closed source panel. Keep the ordinary deadline; a snapshot restricted to the source window cannot observe the destination.
 
 `store-unavailable-test.mjs <Debug app> snapshotNull snapshotInvalid` exercises hydration failure with an active native store. The Debug-only `SOLARA_TEST_STORE_SNAPSHOT_FAIL=null|invalid` seam requires nonempty `SOLARA_DATA_DIR`; it changes snapshot output only. The driver checks native freeze, JS refusal and ownership, protected document attempts, settled file hashes, emitted willQuit/quitCancelled events and resume, and SQLite logical state through quit (allowing WAL checkpoint/teardown).
+
+## Jump to Selection command ownership
+
+`native-find-commands-test.mjs <Debug app> <fresh output directory>` also checks Jump to Selection through
+⌘J, the real menu and the direct command bridge with JS command handlers disabled, preserved selection, no-selection scroll neutrality,
+Peek isolation, Little Solara and a second window. It honors `SOLARA_NATIVE_WINDOW_LAYOUT=0` and `1`.
+Use `--baseline` against the matching pre-change app and JS; omit it for native acceptance.
+Swift coverage is in `PageMenuCommandTests` (the `jump` cases), including field selection, textarea scrolling,
+shadow/frame focus, editable carets, empty targets and page routing. Swift/driver execution is pending.

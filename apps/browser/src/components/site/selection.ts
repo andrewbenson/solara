@@ -118,38 +118,6 @@ const FOCUSED = `const focused = () => {
 const isTextField = (el) => !!el && !el.readOnly && !el.disabled &&
   (el.tagName === "TEXTAREA" || (el.tagName === "INPUT" && /^(text|search|url|email|tel|)$/i.test(el.getAttribute("type") || "")));`;
 
-const JUMP_TO_SELECTION = `(() => {
-  ${FOCUSED}
-  const el = focused();
-  if (isTextField(el)) {
-    const [start, end] = [el.selectionStart, el.selectionEnd];
-    el.scrollIntoView({ block: "center", inline: "nearest" });
-    // Re-applying the selection scrolls a focused field to it; a textarea gets there by its line.
-    el.setSelectionRange(end, end);
-    el.setSelectionRange(start, end);
-    if (el.tagName === "TEXTAREA") {
-      const style = getComputedStyle(el);
-      const lineHeight = parseFloat(style.lineHeight) || parseFloat(style.fontSize) * 1.2;
-      const line = el.value.slice(0, start).split("\\n").length - 1;
-      el.scrollTop = Math.max(0, line * lineHeight - el.clientHeight / 2);
-    }
-    return post("result", "true");
-  }
-  const win = el ? el.ownerDocument.defaultView : window;
-  const sel = win.getSelection();
-  if (!sel || !sel.rangeCount || (sel.isCollapsed && !(el && el.isContentEditable))) return post("result", "false");
-  const range = sel.getRangeAt(0);
-  const node = range.startContainer.nodeType === 1 ? range.startContainer : range.startContainer.parentElement;
-  node.scrollIntoView({ block: "center", inline: "nearest" });
-  const r = range.getBoundingClientRect();
-  if (r.height && (r.top < 0 || r.bottom > win.innerHeight)) win.scrollBy(0, r.top + r.height / 2 - win.innerHeight / 2);
-  post("result", "true");
-})()`;
-
-export function jumpToSelection(tabId: string): Promise<boolean | { error: string } | null> {
-  return webviews.get(tabId)?.evaluate<boolean>(JUMP_TO_SELECTION) ?? Promise.resolve(null);
-}
-
 type ReplaceResult = { field: boolean; count: number };
 
 const REPLACE = `(query, replacement, all) => {
@@ -245,5 +213,5 @@ export async function replaceInField(tabId: string, query: string, replacement: 
 }
 
 if (__DEV__) {
-  (globalThis as { acSelection?: unknown }).acSelection = { usePageSelection, searchSelection, linkToSelection, copyPageUrl, replaceInField, jumpToSelection };
+  (globalThis as { acSelection?: unknown }).acSelection = { usePageSelection, searchSelection, linkToSelection, copyPageUrl, replaceInField };
 }

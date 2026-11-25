@@ -80,7 +80,7 @@ Native window lifetime must not depend on `lib/windowSync.ts`: it currently open
 | `findInPage`, `findAndReplace` | `s.setFind` and focus claim | Store `setFind`, native FindBar focus | R |
 | `findNext`, `findPrevious` | Open find if no query, else webview `find` | Store `setFind`; page `.find` | R |
 | `useSelectionForFind` | page evaluate selection then `s.setFind` | Native page selection query + Store `setFind` | R |
-| `jumpToSelection` | `site/selection.jumpToSelection` | Native selection/page command | R/N routing |
+| `jumpToSelection` | Direct native workspace-command bridge; no JS handler | `PageMenuCommand` resolves the page; `PageIssuer` evaluates the selection scroll operation | Swift source present; VM Swift/driver verification pending |
 
 ## View, settings and app services
 

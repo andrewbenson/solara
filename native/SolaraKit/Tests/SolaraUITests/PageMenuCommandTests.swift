@@ -1,4 +1,5 @@
 import Foundation
+import JavaScriptCore
 import SolaraModel
 import SolaraStore
 import Testing
@@ -152,6 +153,128 @@ import Testing
     var empty = BrowserState(settings: Settings.hydrated(from: nil))
     empty.ui.focusedWindowId = nil
     #expect(try plan("reload", windowId: nil, empty) == PageMenuPlan())
+  }
+
+  @Test func jumpUsesTheRequestedWindowsPageWithoutStoreEffects() throws {
+    let result = try plan("jumpToSelection", fixture())
+    #expect(result.tabId == "a")
+    #expect(result.commands.isEmpty)
+    #expect(result.external == nil)
+    guard case .evaluate = result.page else { Issue.record("Jump needs a page evaluation"); return }
+    let small = try plan("jumpToSelection", windowId: "s", withSmall(fixture()))
+    #expect(small.tabId == "c")
+    #expect(small.page == result.page)
+  }
+
+  @Test func jumpKeepsPrivateWindowsIsolated() throws {
+    var state = fixture()
+    var window = BrowserWindow(id: "p", profileId: "incognito-1", incognito: true, frame: nil, createdAt: 5)
+    window.tabIds = ["i"]
+    window.activeTabIds["incognito-1"] = "i"
+    state.windows["p"] = window
+    state.windowOrder.append("p")
+    state.tabs["i"] = Tab(id: "i", windowId: "p", profileId: "incognito-1", url: "https://private.example/", now: 6)
+    #expect(try plan("jumpToSelection", windowId: "p", state).tabId == "i")
+    #expect(try plan("jumpToSelection", windowId: "w", state).tabId == "a")
+  }
+
+  @Test func jumpUsesThePeekAndNeverTheUnderlyingPage() throws {
+    let store = makeUIStore(fixture())
+    try store.dispatch(Command("openPeek", ["a", "https://peek.example/"]), origin: .native)
+    let peek = try #require(store.state.peeks["w"]?.tabId)
+    #expect(try plan("jumpToSelection", store.state).tabId == peek)
+  }
+
+  @Test func jumpConsumesBlankAndMissingTargetsWithoutEvaluating() throws {
+    #expect(try plan("jumpToSelection", activating("n", fixture())) == PageMenuPlan())
+    var state = fixture()
+    state.tabs["a"] = nil
+    #expect(try plan("jumpToSelection", state) == PageMenuPlan())
+    #expect(try plan("jumpToSelection", windowId: nil, BrowserState(settings: Settings.hydrated(from: nil))) == PageMenuPlan())
+  }
+
+  @Test(arguments: ["INPUT", "TEXTAREA", "shadow", "frame"])
+  func jumpPreservesTheFocusedFieldsSelection(kind: String) throws {
+    let context = try jumpContext()
+    context.evaluateScript("""
+      field.tagName = \(kind == "TEXTAREA" ? "'TEXTAREA'" : "'INPUT'");
+      field.value = "one\\ntwo\\nthree";
+      field.selectionStart = 8; field.selectionEnd = 10;
+      document.activeElement = field;
+      """)
+    if kind == "shadow" { context.evaluateScript("document.activeElement = { shadowRoot: { activeElement: field } };") }
+    if kind == "frame" { context.evaluateScript("document.activeElement = { tagName: 'IFRAME', contentDocument: { activeElement: field } };") }
+    try runJump(context)
+    #expect(context.objectForKeyedSubscript("result")?.toString() == "true")
+    #expect(context.evaluateScript("JSON.stringify(ranges)")?.toString() == "[[10,10],[8,10]]")
+    #expect(context.evaluateScript("field.scrolled")?.toBool() == true)
+    if kind == "TEXTAREA" { #expect(context.evaluateScript("field.scrollTop")?.toDouble() == 30) }
+  }
+
+  @Test(arguments: [false, true])
+  func jumpScrollsDocumentSelectionOrEditableCaret(editable: Bool) throws {
+    let context = try jumpContext()
+    context.evaluateScript("""
+      field.tagName = 'DIV'; field.isContentEditable = \(editable);
+      document.activeElement = field;
+      selection.rangeCount = 1; selection.isCollapsed = \(editable);
+      """)
+    try runJump(context)
+    #expect(context.objectForKeyedSubscript("result")?.toString() == "true")
+    #expect(context.evaluateScript("node.scrolled")?.toBool() == true)
+    #expect(context.evaluateScript("JSON.stringify(scrolls)")?.toString() == "[[0,710]]")
+    #expect(context.evaluateScript("ranges.length")?.toInt32() == 0)
+  }
+
+  @Test(arguments: ["readOnly", "disabled", "crossOrigin"])
+  func jumpWithoutAnAccessibleSelectionDoesNothing(kind: String) throws {
+    let context = try jumpContext()
+    context.evaluateScript("field.tagName = 'INPUT'; document.activeElement = field;")
+    if kind == "crossOrigin" {
+      context.evaluateScript("field.tagName = 'IFRAME'; Object.defineProperty(field, 'contentDocument', { get() { throw new Error('cross origin'); } });")
+    } else {
+      context.evaluateScript("field[\(kind.debugDescription)] = true;")
+    }
+    try runJump(context)
+    #expect(context.objectForKeyedSubscript("result")?.toString() == "false")
+    #expect(context.evaluateScript("scrolls.length + ranges.length")?.toInt32() == 0)
+  }
+
+  @Test func jumpWithoutASelectionDoesNothing() throws {
+    let context = try jumpContext()
+    try runJump(context)
+    #expect(context.objectForKeyedSubscript("result")?.toString() == "false")
+    #expect(context.evaluateScript("scrolls.length + ranges.length")?.toInt32() == 0)
+    #expect(context.evaluateScript("node.scrolled")?.toBool() == false)
+  }
+
+  private func jumpContext() throws -> JSContext {
+    let context = try #require(JSContext())
+    context.evaluateScript("""
+      var result, ranges = [], scrolls = [];
+      var post = (kind, value) => { result = value; };
+      var window = { innerHeight: 600, scrollBy: (x, y) => scrolls.push([x, y]) };
+      var node = { nodeType: 1, scrolled: false, scrollIntoView() { this.scrolled = true; } };
+      var selection = { rangeCount: 0, isCollapsed: true, getRangeAt: () => ({
+        startContainer: node, getBoundingClientRect: () => ({ height: 20, top: 1000, bottom: 1020 })
+      }) };
+      window.getSelection = () => selection;
+      var document = { activeElement: null };
+      var field = { ownerDocument: { defaultView: window }, scrolled: false, clientHeight: 20,
+        getAttribute: () => 'text', scrollIntoView() { this.scrolled = true; },
+        setSelectionRange: (start, end) => ranges.push([start, end]) };
+      var getComputedStyle = () => ({ lineHeight: '20', fontSize: '16' });
+      """)
+    #expect(context.exception == nil)
+    return context
+  }
+
+  private func runJump(_ context: JSContext) throws {
+    let result = try plan("jumpToSelection", fixture())
+    let action = try #require(result.page)
+    guard case .evaluate(let script) = action else { Issue.record("Jump needs a page evaluation"); return }
+    context.evaluateScript(script)
+    #expect(context.exception == nil)
   }
 
   @Test func otherCommandsAreNotPageCommands() {

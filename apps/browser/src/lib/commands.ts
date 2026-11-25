@@ -51,7 +51,7 @@ import { openExtensionFromMenu } from "../components/extensions/bridge";
 import { toggleCastPicker } from "../components/media/cast";
 import { openManageExtensions, openPinDialog, openWebStore } from "../components/extensions/state";
 import { requestAutofill } from "../components/site/Autofill";
-import { copyPageUrl, jumpToSelection } from "../components/site/selection";
+import { copyPageUrl } from "../components/site/selection";
 import { shareTab } from "../components/site/share";
 import { openProfileMenu } from "../components/ProfileIndicator";
 import { groupOf, multiSelection } from "../store/organize";
@@ -81,6 +81,7 @@ export const commandHandlers = {
 };
 
 export function runCommand({ command, arg, windowId: requested }: CommandEvent) {
+  if (command === "jumpToSelection") return void nativeWorkspaceCommand(command, arg, requested);
   if (nativeOwnsWorkspace() && nativeWorkspaceCommand(command, arg, requested)) return;
   if (__DEV__ && !commandHandlersEnabled) { commandHandlerBlocked++; return; }
   if (__DEV__) commandHandlerCalls++;
@@ -197,8 +198,6 @@ export function runCommand({ command, arg, windowId: requested }: CommandEvent) 
       return page ? s.setFind(page.id, { open: true, replace: false, focusRequest: Date.now() }) : undefined;
     case "findAndReplace":
       return page ? s.setFind(page.id, { open: true, replace: true, focusRequest: Date.now() }) : undefined;
-    case "jumpToSelection":
-      return page ? void jumpToSelection(page.id) : undefined;
     case "useSelectionForFind":
       if (!page || !web) return;
       return void web.evaluate<string>("post('result', JSON.stringify(String(getSelection() || '').trim().slice(0, 500)))").then((query) => {

@@ -40,6 +40,7 @@ const keys = {
   g: { key: "g", keyCode: 5, modifiers: ["command"] },
   G: { key: "G", keyCode: 5, modifiers: ["command", "shift"] },
   e: { key: "e", keyCode: 14, modifiers: ["command"] },
+  j: { key: "j", keyCode: 38, modifiers: ["command"] },
   l: { key: "l", keyCode: 37, modifiers: ["command"] },
   escape: { key: "\u001b", keyCode: 53, modifiers: [] },
 };
@@ -124,13 +125,39 @@ async function closeFind(windowId, tabId, viaEscape = true) {
   return until(`${tabId}'s find closes`, (s) => !find(s, tabId).open);
 }
 
+async function jumpSelection(windowId, tabId, via = "menu") {
+  await closeFind(windowId, tabId, false);
+  await pageEval(tabId, `(() => {
+    const target = document.getElementById("jump-target") ?? document.body.appendChild(document.createElement("p"));
+    target.id = "jump-target"; target.textContent = "jump needle";
+    target.style.cssText = "margin-top:2400px;margin-bottom:2400px";
+    document.activeElement?.blur();
+    const range = document.createRange(); range.selectNodeContents(target);
+    getSelection().removeAllRanges(); getSelection().addRange(range);
+    scrollTo(0, 0); return true;
+  })()`);
+  const selected = await pageEval(tabId, "String(getSelection())");
+  const visible = () => pageEval(tabId, `(() => {
+    const rect = getSelection().getRangeAt(0).getBoundingClientRect();
+    return rect.top >= 0 && rect.bottom <= innerHeight;
+  })()`);
+  assert.equal(await visible(), false, "the selection starts offscreen");
+  if (via === "⌘J") await press(windowId, keys.j, { focus: "page" });
+  else if (via === "bridge") await run(`ac.runCommand({ command: "jumpToSelection", windowId: ${JSON.stringify(windowId)}, arg: null }); return true;`);
+  else await menu(windowId, "jumpToSelection");
+  await until("Jump reveals the selection", async () => await visible() === true, 4000);
+  assert.equal(await pageEval(tabId, "String(getSelection())"), selected, "Jump preserves the selection");
+  await handledNatively("Jump to Selection");
+  pass(`Jump to Selection in ${windowId}: ${via}`, { tabId });
+}
+
 try {
   await new Promise((done, reject) => { server.once("error", reject); server.listen(0, "127.0.0.1", done); });
   const base = `http://127.0.0.1:${server.address().port}`;
   const other = `http://localhost:${server.address().port}`;
   app = await launch(appPath, {
     data: join(output, "data"), fresh: true, onboarded: true, probe: true, keepData: true,
-    env: { SOLARA_NATIVE_WINDOW_LAYOUT: "1" },
+    env: { SOLARA_NATIVE_WINDOW_LAYOUT: process.env.SOLARA_NATIVE_WINDOW_LAYOUT ?? "1" },
     session: session({
       windows: [
         { id: "w1", frame: [80, 80, 1100, 800], activeTabIds: { default: "a" } },
@@ -292,6 +319,16 @@ try {
   await handledNatively("⌘E empty");
   pass("⌘E without a selection changes nothing");
 
+  await jumpSelection("w1", "a", "⌘J");
+  await jumpSelection("w1", "a");
+  await jumpSelection("w1", "a", "bridge");
+  await pageEval("a", `(() => { getSelection().removeAllRanges(); scrollTo(0, 0); return true; })()`);
+  await menu("w1", "jumpToSelection");
+  assert.equal(await pageEval("a", "scrollY"), 0, "Jump without a selection keeps the scroll position");
+  await handledNatively("Jump without a selection");
+  pass("Jump without a selection does nothing");
+  await pageEval("a", `(() => { document.getElementById("jump-target").remove(); return true; })()`);
+
   await menu("w1", "findAndReplace");
   await until("findAndReplace opens the replace row", (s) => find(s, "a").open && find(s, "a").replace === true);
   await handledNatively("findAndReplace");
@@ -381,6 +418,12 @@ try {
   await until("the Peek takes the find", (s) => find(s, peekTab).open === true && !find(s, "a").open);
   await handledNatively("Peek");
   pass("a Peek takes the window's find");
+
+  const sourceScroll = await pageEval("a", "scrollY");
+  await jumpSelection("w1", peekTab);
+  assert.equal(await pageEval("a", "scrollY"), sourceScroll, "a Peek Jump leaves the underlying page alone");
+  await jumpSelection(small, smallTab(await nativeState()));
+  await jumpSelection("w2", "d");
 
   writeFileSync(join(output, "result.json"), JSON.stringify({ passed: true, baseline, checks: evidence.map((e) => e.label), observed }, null, 2));
   console.log(`${evidence.length}/${evidence.length} passed${baseline ? " (baseline)" : ""}`);

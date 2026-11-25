@@ -214,7 +214,7 @@ public final class HookCommandRunner: @unchecked Sendable {
       collect(output, rule: job.rule, child: child)
       let source = DispatchSource.makeProcessSource(identifier: pid, eventMask: .exit, queue: queue)
       child.source = source
-      source.setEventHandler { [weak self] in self?.reap(child, job: job) }
+      source.setEventHandler { [weak self] in self?.reap(child, job: job, exiting: true) }
       source.resume()
       reap(child, job: job)
       queue.asyncAfter(deadline: .now() + job.timeout) { [weak self] in
@@ -237,12 +237,20 @@ public final class HookCommandRunner: @unchecked Sendable {
     return .allowed(program: resolved, dev: UInt64(UInt32(bitPattern: info.st_dev)), ino: UInt64(info.st_ino))
   }
 
-  private func reap(_ child: Child, job: Job) {
+  private func reap(_ child: Child, job: Job, exiting: Bool = false) {
     guard !child.reaped else { return }
     var info = siginfo_t()
     var waited: Int32
     repeat { waited = waitid(P_PID, id_t(child.pid), &info, WEXITED | WNOHANG | WNOWAIT) } while waited < 0 && errno == EINTR
-    guard waited == 0, info.si_pid == child.pid else { return }
+    guard waited == 0 else { return }
+    guard info.si_pid == child.pid else {
+      if exiting {
+        queue.asyncAfter(deadline: .now() + .milliseconds(10)) { [weak self] in
+          self?.reap(child, job: job, exiting: true)
+        }
+      }
+      return
+    }
     killpg(child.pid, SIGKILL)
     var status: Int32 = 0
     var result: pid_t

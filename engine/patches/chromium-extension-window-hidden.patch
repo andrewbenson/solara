@@ -103,7 +103,7 @@
  
  // Constructs an onBeforeNavigate event.
  std::unique_ptr<Event> CreateOnBeforeNavigateEvent(
-@@ -171,7 +171,7 @@
+@@ -170,7 +185,7 @@
        navigation_handle->GetWebContents()->GetBrowserContext();
    auto event = std::make_unique<Event>(histogram_value, event_name,
                                         std::move(args), browser_context);
@@ -112,19 +112,19 @@
  }
  
  // Constructs and dispatches an onDOMContentLoaded event.
-@@ -205,7 +205,7 @@
-       std::make_unique<Event>(events::WEB_NAVIGATION_ON_DOM_CONTENT_LOADED,
-                               web_navigation::OnDOMContentLoaded::kEventName,
-                               std::move(event_args), browser_context);
+@@ -202,7 +217,7 @@
+       events::WEB_NAVIGATION_ON_DOM_CONTENT_LOADED,
+       web_navigation::OnDOMContentLoaded::kEventName,
+       web_navigation::OnDOMContentLoaded::Create(details), browser_context);
 -  DispatchEvent(browser_context, std::move(event), url);
 +  DispatchEvent(web_contents, browser_context, std::move(event), url);
  }
  
  // Constructs and dispatches an onCompleted event.
-@@ -238,7 +238,7 @@
-   auto event = std::make_unique<Event>(events::WEB_NAVIGATION_ON_COMPLETED,
-                                        web_navigation::OnCompleted::kEventName,
-                                        std::move(event_args), browser_context);
+@@ -234,7 +249,7 @@
+       events::WEB_NAVIGATION_ON_COMPLETED,
+       web_navigation::OnCompleted::kEventName,
+       web_navigation::OnCompleted::Create(details), browser_context);
 -  DispatchEvent(browser_context, std::move(event), url);
 +  DispatchEvent(web_contents, browser_context, std::move(event), url);
  }
@@ -140,28 +140,28 @@
    // Check that the tab is already inserted into a tab strip model. This code
    // path is exercised by ExtensionApiTest.WebNavigationRequestOpenTab.
    // TODO(crbug.com/575114966): CHECK-exclusion: Convert to a CHECK once we are
-@@ -272,7 +272,7 @@
-       events::WEB_NAVIGATION_ON_CREATED_NAVIGATION_TARGET,
+@@ -267,7 +285,7 @@
        web_navigation::OnCreatedNavigationTarget::kEventName,
-       std::move(event_args), browser_context);
+       web_navigation::OnCreatedNavigationTarget::Create(details),
+       browser_context);
 -  DispatchEvent(browser_context, std::move(event), target_url);
 +  DispatchEvent(target_web_contents, browser_context, std::move(event), target_url);
  
    // If the target WebContents already received the onBeforeNavigate event,
    // send it immediately after the onCreatedNavigationTarget above.
-@@ -314,7 +314,7 @@
-       events::WEB_NAVIGATION_ON_ERROR_OCCURRED,
-       web_navigation::OnErrorOccurred::kEventName, std::move(event_args),
-       web_contents->GetBrowserContext());
+@@ -308,7 +326,7 @@
+                               web_navigation::OnErrorOccurred::kEventName,
+                               web_navigation::OnErrorOccurred::Create(details),
+                               web_contents->GetBrowserContext());
 -  DispatchEvent(browser_context, std::move(event), url);
 +  DispatchEvent(web_contents, browser_context, std::move(event), url);
  }
  
  void DispatchOnErrorOccurred(content::NavigationHandle* navigation_handle) {
-@@ -350,7 +350,7 @@
-       std::make_unique<Event>(events::WEB_NAVIGATION_ON_ERROR_OCCURRED,
-                               web_navigation::OnErrorOccurred::kEventName,
-                               std::move(event_args), browser_context);
+@@ -342,7 +360,7 @@
+       events::WEB_NAVIGATION_ON_ERROR_OCCURRED,
+       web_navigation::OnErrorOccurred::kEventName,
+       web_navigation::OnErrorOccurred::Create(details), browser_context);
 -  DispatchEvent(browser_context, std::move(event), navigation_handle->GetURL());
 +  DispatchEvent(navigation_handle->GetWebContents(), browser_context, std::move(event), navigation_handle->GetURL());
  }
@@ -177,10 +177,10 @@
    web_navigation::OnTabReplaced::Details details;
    details.replaced_tab_id = ExtensionTabUtil::GetTabId(old_web_contents);
    details.tab_id = ExtensionTabUtil::GetTabId(new_web_contents);
-@@ -369,7 +369,7 @@
-       std::make_unique<Event>(events::WEB_NAVIGATION_ON_TAB_REPLACED,
-                               web_navigation::OnTabReplaced::kEventName,
-                               std::move(event_args), browser_context);
+@@ -359,7 +380,7 @@
+       events::WEB_NAVIGATION_ON_TAB_REPLACED,
+       web_navigation::OnTabReplaced::kEventName,
+       web_navigation::OnTabReplaced::Create(details), browser_context);
 -  DispatchEvent(browser_context, std::move(event), GURL());
 +  DispatchEvent(new_web_contents, browser_context, std::move(event), GURL());
  }

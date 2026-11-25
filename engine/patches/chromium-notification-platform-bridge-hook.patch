@@ -107,26 +107,26 @@ diff --git a/chrome/browser/browser_process_impl.cc b/chrome/browser/browser_pro
 index 5f5e54c..fcd4267 100644
 --- a/chrome/browser/browser_process_impl.cc
 +++ b/chrome/browser/browser_process_impl.cc
-@@ -300,6 +300,7 @@
+@@ -290,6 +290,7 @@ void OnLocalStatePrefsLoaded();
+ #include "chrome/browser/ui/simple_message_box.h"
  #include "chrome/grit/generated_resources.h"
- #include "components/os_crypt/async/browser/key_provider.h"
  #include "components/os_crypt/async/browser/keychain_key_provider.h"
 +#include "solara/core/ac_hooks.h"  // nogncheck
  #endif
  
  #if BUILDFLAG(SAFE_BROWSING_AVAILABLE)
-@@ -354,6 +355,10 @@
- 
+@@ -318,6 +319,10 @@ static constexpr base::TimeDelta kEndSessionTimeout = base::Seconds(10);
  using content::BrowserThread;
  using content::ChildProcessSecurityPolicy;
-+
+ 
 +#if BUILDFLAG(IS_MAC)
 +void (*g_solara_notification_quit)(base::OnceClosure) = nullptr;
 +#endif
- 
++
  #if BUILDFLAG(IS_MAC)
  namespace {
-@@ -2033,16 +2038,25 @@
+ 
+@@ -1974,16 +1979,25 @@ void BrowserProcessImpl::Unpin() {
    CHECK(base::RunLoop::IsRunningOnCurrentThread());
  
  #if BUILDFLAG(IS_MAC)
@@ -206,15 +206,15 @@ diff --git a/chrome/browser/notifications/mac/notification_dispatcher_mojo.cc b/
 index ff6d2d0..5011b21 100644
 --- a/chrome/browser/notifications/mac/notification_dispatcher_mojo.cc
 +++ b/chrome/browser/notifications/mac/notification_dispatcher_mojo.cc
-@@ -22,6 +22,7 @@
+@@ -20,6 +20,7 @@
  #include "chrome/browser/notifications/mac/notification_utils.h"
  #include "content/public/browser/browser_task_traits.h"
  #include "content/public/browser/browser_thread.h"
 +#include "solara/core/ac_hooks.h"  // nogncheck
- #include "mojo/public/cpp/bindings/callback_helpers.h"
  
  namespace {
-@@ -323,6 +324,9 @@
+ 
+@@ -249,6 +250,9 @@ NotificationDispatcherMojo::GetOrCreateService() {
      provider_.set_disconnect_handler(base::BindOnce(
          &NotificationDispatcherMojo::OnServiceDisconnectedGracefully,
          base::Unretained(this), ShutdownType::kUnexpected));
@@ -223,7 +223,7 @@ index ff6d2d0..5011b21 100644
 +    }
      provider_->BindNotificationService(service_.BindNewPipeAndPassReceiver(),
                                         handler_.BindNewPipeAndPassRemote());
-     service_.set_disconnect_handler(base::BindOnce(
+   }
 diff --git a/chrome/browser/notifications/mac/notification_platform_bridge_mac.cc b/chrome/browser/notifications/mac/notification_platform_bridge_mac.cc
 index ec0919a..f49151d 100644
 --- a/chrome/browser/notifications/mac/notification_platform_bridge_mac.cc
@@ -245,9 +245,9 @@ index ec0919a..f49151d 100644
 +std::unique_ptr<NotificationPlatformBridge> (
 +    *g_solara_notification_bridge_factory)() = nullptr;
  
- namespace {
- 
-@@ -81,6 +86,11 @@
+ NotificationPlatformBridgeMac::NotificationPlatformBridgeMac(
+     std::unique_ptr<NotificationDispatcherMac> banner_dispatcher,
+@@ -45,6 +50,11 @@ NotificationPlatformBridgeMac::~NotificationPlatformBridgeMac() {
  // static
  std::unique_ptr<NotificationPlatformBridge>
  NotificationPlatformBridge::Create() {
@@ -259,7 +259,7 @@ index ec0919a..f49151d 100644
    auto banner_dispatcher = std::make_unique<NotificationDispatcherMojo>(
        std::make_unique<MacNotificationProviderFactory>(
            mac_notifications::NotificationStyle::kBanner));
-@@ -103,7 +113,8 @@
+@@ -67,7 +77,8 @@ NotificationPlatformBridge::Create() {
  // static
  bool NotificationPlatformBridge::CanHandleType(
      NotificationHandler::Type notification_type) {

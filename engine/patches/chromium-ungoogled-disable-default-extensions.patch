@@ -5,14 +5,11 @@ installs). No Chrome Web Store hosted app and no in-app payments app among the d
 
 --- a/chrome/browser/extensions/component_extensions_allowlist/allowlist.cc
 +++ b/chrome/browser/extensions/component_extensions_allowlist/allowlist.cc
-@@ -46,10 +46,9 @@
+@@ -41,7 +41,6 @@
        extension_misc::kAimEligibilityExtensionId,
        extension_misc::kContextualTasksExtensionId,
        extension_misc::kGlicExtensionId,
 -      extension_misc::kInAppPaymentsSupportAppId,
- #if BUILDFLAG(ENABLE_WEBUI_NTP)
-       extension_misc::kNewTabPageExtensionId,
- #endif  // BUILDFLAG(ENABLE_WEBUI_NTP)
        extension_misc::kPdfExtensionId,
        helium::kUBlockOriginComponentId,
        helium::kExtstoreFixupsExtensionId,

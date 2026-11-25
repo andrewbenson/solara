@@ -52,8 +52,8 @@ diff --git a/components/sessions/core/tab_restore_service_helper.cc b/components
 +    tab->tabstrip_index = kept;
      tab->browser_id = context->GetSessionID().id();
  
-     if (tab->is_group_ephemeral) {
-@@ -360,6 +389,11 @@
+     if (tab->group.has_value() &&
+@@ -353,6 +382,11 @@
      return std::nullopt;
    }
  
@@ -65,7 +65,7 @@ diff --git a/components/sessions/core/tab_restore_service_helper.cc b/components
    window->selected_tab_index = std::min(
        static_cast<int>(window->tabs.size() - 1), window->selected_tab_index);
    const SessionID id = window->id;
-@@ -1533,7 +1567,10 @@
+@@ -1526,7 +1560,10 @@
                                            LiveTabContext* context,
                                            LiveTab* live_tab) {
    tab->current_navigation_index = 0;

@@ -406,7 +406,7 @@ class ACContextMenu : public RenderViewContextMenuMacCocoa {
   void ExecuteCommand(int command_id, int event_flags) override {
     if (command_id == IDC_CONTENT_CONTEXT_OPENLINKSPLITVIEW && TabOf(source_web_contents_)) {
       OpenURLWithExtraHeaders(params_.link_url, params_.frame_url, params_.frame_origin,
-                              WindowOpenDisposition::kNewSplitView, ui::PAGE_TRANSITION_LINK,
+                              WindowOpenDisposition::NEW_SPLIT_VIEW, ui::PAGE_TRANSITION_LINK,
                               std::string(), true, base::DoNothing());
       return;
     }

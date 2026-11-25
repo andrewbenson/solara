@@ -6,23 +6,23 @@
  #include "chrome/browser/ui/dialogs/browser_dialogs.h"
 +#include "solara/core/ac_hooks.h"  // nogncheck
  #include "chrome/browser/ui/exclusive_access/exclusive_access_manager.h"
- #include "chrome/browser/ui/exclusive_access/fullscreen_controller.h"
  #include "chrome/browser/ui/views/bubble_anchor_util_views.h"
-@@ -256,6 +257,13 @@
+ #include "chrome/browser/ui/views/chrome_widget_sublevel.h"
+@@ -222,6 +223,13 @@
+ 
  BEGIN_METADATA(ChooserBubbleUiViewDelegate)
  END_METADATA
- 
++
 +// Solara: SolaraCore (engine/solaracore) shows its own chooser for the tabs it hosts.
 +bool (*g_solara_device_chooser)(
 +    content::WebContents* contents,
 +    std::unique_ptr<permissions::ChooserController>* controller,
 +    base::ScopedClosureRunner* fullscreen_blocker,
 +    base::OnceClosure* close_closure) = nullptr;
-+
+ 
  namespace chrome {
  
- namespace {
-@@ -313,6 +321,15 @@
+@@ -280,6 +288,15 @@
    return ChooserDialogHost{browser, contents, std::move(*fullscreen_blocker)};
  }
  
@@ -38,7 +38,7 @@
  #if BUILDFLAG(ENABLE_EXTENSIONS_CORE)
  base::OnceClosure ShowDeviceChooserDialogForExtension(
      content::RenderFrameHost* owner,
-@@ -325,6 +342,10 @@
+@@ -292,6 +309,10 @@
    if (!host) {
      return base::DoNothing();
    }
@@ -49,14 +49,14 @@
  
    auto* browser_view = BrowserView::GetBrowserViewForBrowser(host->browser);
    if (!browser_view) {
-@@ -385,6 +406,10 @@
-       DropFullscreenForChooserDialog(contents, weak_document);
+@@ -353,6 +374,10 @@
    if (!host) {
      return base::DoNothing();
-+  }
+   }
 +  base::OnceClosure solara_close_closure;
 +  if (ShowSolaraDeviceChooser(*host, controller, &solara_close_closure)) {
 +    return solara_close_closure;
-   }
++  }
    BrowserWindowInterface* browser = host->browser;
  
+   auto bubble = std::make_unique<ChooserBubbleUiViewDelegate>(

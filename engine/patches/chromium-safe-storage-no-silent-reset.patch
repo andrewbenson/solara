@@ -1,7 +1,7 @@
 diff --git a/crypto/apple/keychain_v2.h b/crypto/apple/keychain_v2.h
 --- a/crypto/apple/keychain_v2.h
 +++ b/crypto/apple/keychain_v2.h
-@@ -73,6 +73,10 @@
+@@ -73,6 +73,10 @@ class CRYPTO_EXPORT KeychainV2 {
    virtual base::expected<std::vector<uint8_t>, OSStatus> FindGenericPassword(
        std::string_view service_name,
        std::string_view account_name);
@@ -26,7 +26,7 @@ diff --git a/crypto/apple/keychain_v2.mm b/crypto/apple/keychain_v2.mm
 +  base::apple::ScopedCFTypeRef<CFDictionaryRef> keychain_data =
 +      MakeKeychainData(service_name, account_name, password,
 +                       kKeychainActionCreate);
-+  return ItemAdd(keychain_data.get(), nullptr);
++  return ItemAdd(keychain_data.get(), /*result=*/nullptr);
 +}
 +
  base::expected<std::vector<uint8_t>, OSStatus> KeychainV2::FindGenericPassword(
@@ -35,7 +35,7 @@ diff --git a/crypto/apple/keychain_v2.mm b/crypto/apple/keychain_v2.mm
 diff --git a/crypto/apple/fake_keychain_v2.h b/crypto/apple/fake_keychain_v2.h
 --- a/crypto/apple/fake_keychain_v2.h
 +++ b/crypto/apple/fake_keychain_v2.h
-@@ -65,6 +65,10 @@
+@@ -58,6 +58,10 @@ class CRYPTO_EXPORT FakeKeychainV2 : public KeychainV2 {
    base::expected<std::vector<uint8_t>, OSStatus> FindGenericPassword(
        std::string_view service_name,
        std::string_view account_name) override;
@@ -49,7 +49,7 @@ diff --git a/crypto/apple/fake_keychain_v2.h b/crypto/apple/fake_keychain_v2.h
 diff --git a/crypto/apple/fake_keychain_v2.mm b/crypto/apple/fake_keychain_v2.mm
 --- a/crypto/apple/fake_keychain_v2.mm
 +++ b/crypto/apple/fake_keychain_v2.mm
-@@ -402,6 +402,20 @@
+@@ -392,6 +392,19 @@ void IncrementKeychainAccessHistogram() {
    return noErr;
  }
  
@@ -58,7 +58,6 @@ diff --git a/crypto/apple/fake_keychain_v2.mm b/crypto/apple/fake_keychain_v2.mm
 +    std::string_view account_name,
 +    base::span<const uint8_t> password) {
 +  IncrementKeychainAccessHistogram();
-+  base::AutoLock auto_lock(lock_);
 +  called_add_generic_ = true;
 +  DCHECK(!password.empty());
 +  if (find_generic_result_ == noErr) {
@@ -100,15 +99,15 @@ diff --git a/components/os_crypt/common/keychain_password_mac.mm b/components/os
  
    if (error != noErr) {
      OSSTATUS_DLOG(ERROR, error) << "Keychain add failed";
-@@ -70,6 +79,8 @@
- }
+@@ -71,6 +80,8 @@
  
  }  // namespace
-+
-+bool (*g_solara_safe_storage_key_may_be_created)() = nullptr;
  
++bool (*g_solara_safe_storage_key_may_be_created)() = nullptr;
++
  // static
  KeychainPassword::KeychainNameType& KeychainPassword::GetServiceName() {
+   static KeychainNameContainerType service_name(kDefaultServiceName);
 @@ -110,6 +121,10 @@
  
    if (password.error() == errSecItemNotFound) {
@@ -123,26 +122,19 @@ diff --git a/components/os_crypt/common/keychain_password_mac.mm b/components/os
 diff --git a/components/os_crypt/async/browser/keychain_key_provider.h b/components/os_crypt/async/browser/keychain_key_provider.h
 --- a/components/os_crypt/async/browser/keychain_key_provider.h
 +++ b/components/os_crypt/async/browser/keychain_key_provider.h
-@@ -49,6 +49,7 @@
+@@ -39,6 +39,7 @@ class COMPONENT_EXPORT(OS_CRYPT_ASYNC) KeychainKeyProvider
  
   private:
    friend class KeychainKeyProviderCompatTest;
 +  friend class KeychainKeyProviderNoResetTest;
    FRIEND_TEST_ALL_PREFIXES(KeychainKeyProviderTest, GetKey_Success);
-   FRIEND_TEST_ALL_PREFIXES(KeychainKeyProviderTest, GetKey_CustomTagAndSalt);
    FRIEND_TEST_ALL_PREFIXES(KeychainKeyProviderTest, GetKey_NotFound);
-@@ -58,8 +59,15 @@
+   FRIEND_TEST_ALL_PREFIXES(KeychainKeyProviderTest, GetKey_Failure_AuthFailed);
+@@ -46,6 +47,8 @@ class COMPONENT_EXPORT(OS_CRYPT_ASYNC) KeychainKeyProvider
+ 
    // For testing.
    explicit KeychainKeyProvider(crypto::apple::KeychainV2* keychain);
-   KeychainKeyProvider(crypto::apple::KeychainV2* keychain,
-+                      base::OnceClosure on_failure);
 +  KeychainKeyProvider(crypto::apple::KeychainV2* keychain,
-                       std::string key_tag,
-                       base::span<const uint8_t> pbkdf2_salt);
-+
-+  KeychainKeyProvider(crypto::apple::KeychainV2* keychain,
-+                      std::string key_tag,
-+                      base::span<const uint8_t> pbkdf2_salt,
 +                      base::OnceClosure on_failure);
  
    // os_crypt_async::KeyProvider interface.
@@ -158,7 +150,7 @@ diff --git a/components/os_crypt/async/browser/keychain_key_provider.mm b/compon
  
  #include <array>
  #include <memory>
-@@ -28,6 +29,11 @@
+@@ -24,6 +25,11 @@
  #include "crypto/kdf.h"
  #include "crypto/subtle_passkey.h"
  
@@ -170,7 +162,7 @@ diff --git a/components/os_crypt/async/browser/keychain_key_provider.mm b/compon
  namespace os_crypt_async {
  
  namespace {
-@@ -52,9 +58,14 @@
+@@ -47,9 +53,14 @@
    if (!keychain_to_use) {
      if (base::CommandLine::ForCurrentProcess()->HasSwitch(
              os_crypt::switches::kUseMockKeychain)) {
@@ -188,31 +180,21 @@ diff --git a/components/os_crypt/async/browser/keychain_key_provider.mm b/compon
      } else {
        keychain_to_use = &crypto::apple::KeychainV2::GetInstance();
      }
-@@ -110,6 +121,23 @@
-     : keychain_for_testing_(keychain_for_testing),
-       key_tag_(std::move(key_tag)),
-       pbkdf2_salt_(base::ToVector(pbkdf2_salt)) {}
-+
+@@ -84,6 +95,13 @@
+     crypto::apple::KeychainV2* keychain_for_testing)
+     : keychain_for_testing_(keychain_for_testing) {}
+ 
 +KeychainKeyProvider::KeychainKeyProvider(
 +    crypto::apple::KeychainV2* keychain_for_testing,
-+    base::OnceClosure on_failure)
-+    : KeychainKeyProvider(keychain_for_testing, kDefaultKeyTag, kDefaultSalt,
-+                          std::move(on_failure)) {}
-+
-+KeychainKeyProvider::KeychainKeyProvider(
-+    crypto::apple::KeychainV2* keychain_for_testing,
-+    std::string key_tag,
-+    base::span<const uint8_t> pbkdf2_salt,
 +    base::OnceClosure on_failure)
 +    : keychain_for_testing_(keychain_for_testing),
-+      key_tag_(std::move(key_tag)),
-+      pbkdf2_salt_(base::ToVector(pbkdf2_salt)),
 +      fail_closed_on_error_(true),
 +      on_failure_(std::move(on_failure)) {}
- 
++
  KeychainKeyProvider::~KeychainKeyProvider() = default;
  
-@@ -162,6 +190,14 @@
+ void KeychainKeyProvider::GetKey(KeyCallback callback) {
+@@ -135,6 +153,14 @@
    // Deliberately do not run the key callback: that would let data loading proceed
    // without a key and could delete cookies or reset protected preferences.
    // Keep it waiting while the browser shows the error and exits.
@@ -230,13 +212,12 @@ diff --git a/components/os_crypt/async/browser/keychain_key_provider.mm b/compon
 diff --git a/components/os_crypt/async/browser/keychain_key_provider_unittest.mm b/components/os_crypt/async/browser/keychain_key_provider_unittest.mm
 --- a/components/os_crypt/async/browser/keychain_key_provider_unittest.mm
 +++ b/components/os_crypt/async/browser/keychain_key_provider_unittest.mm
-@@ -3,12 +3,22 @@
+@@ -3,11 +3,21 @@
  // found in the LICENSE file.
  
  #include "components/os_crypt/async/browser/keychain_key_provider.h"
 +#include "solara/core/ac_content_hooks.h"  // nogncheck
  
- #include <array>
 +#include <deque>
 +#include <memory>
 +#include <string>
@@ -253,7 +234,7 @@ diff --git a/components/os_crypt/async/browser/keychain_key_provider_unittest.mm
  #include "components/os_crypt/async/common/encryptor.h"
  #include "crypto/apple/fake_keychain_v2.h"
  #include "testing/gtest/include/gtest/gtest.h"
-@@ -120,4 +130,340 @@
+@@ -94,4 +104,317 @@
    EXPECT_FALSE(mock_keychain.called_add_generic());
  }
  
@@ -349,7 +330,7 @@ diff --git a/components/os_crypt/async/browser/keychain_key_provider_unittest.mm
 +
 +}
 +
-+class KeychainKeyProviderNoResetTest : public ::testing::TestWithParam<bool> {
++class KeychainKeyProviderNoResetTest : public ::testing::Test {
 + protected:
 +  void SetUp() override {
 +    g_solara_safe_storage_key_may_be_created = &TestKeyMayBeCreated;
@@ -365,16 +346,9 @@ diff --git a/components/os_crypt/async/browser/keychain_key_provider_unittest.mm
 +
 +  std::unique_ptr<KeychainKeyProvider> MakeProvider(
 +      crypto::apple::KeychainV2* keychain) {
-+    auto on_failure = base::BindOnce([](int* count) { ++*count; },
-+                                     &on_failure_count_);
-+    if (GetParam()) {
-+      constexpr auto kCustomSalt =
-+          std::to_array<uint8_t>({'p', 'e', 'p', 'p', 'e', 'r'});
-+      return base::WrapUnique(new KeychainKeyProvider(
-+          keychain, "v11", kCustomSalt, std::move(on_failure)));
-+    }
-+    return base::WrapUnique(
-+        new KeychainKeyProvider(keychain, std::move(on_failure)));
++    return base::WrapUnique(new KeychainKeyProvider(
++        keychain, base::BindOnce([](int* count) { ++*count; },
++                                 &on_failure_count_)));
 +  }
 +
 +  void GetKey(KeychainKeyProvider& provider,
@@ -382,13 +356,7 @@ diff --git a/components/os_crypt/async/browser/keychain_key_provider_unittest.mm
 +    provider.GetKey(std::move(callback));
 +  }
 +
-+  Encryptor::Key SecretAKey() {
-+    if (GetParam()) {
-+      const std::vector<uint8_t> bytes = {
-+          0x0B, 0xF2, 0xD5, 0xC2, 0x75, 0x96, 0x58, 0x70,
-+          0x73, 0x59, 0x6C, 0x47, 0x81, 0xFA, 0xDD, 0x5A};
-+      return Encryptor::Key(bytes, mojom::Algorithm::kAES128CBC);
-+    }
++  static Encryptor::Key SecretAKey() {
 +    const std::vector<uint8_t> bytes = {0xAF, 0x0F, 0x76, 0x2A, 0xAF, 0x6D,
 +                                        0x7D, 0x11, 0x58, 0x1B, 0x7A, 0xA8,
 +                                        0xCE, 0x72, 0x18, 0xDE};
@@ -403,7 +371,6 @@ diff --git a/components/os_crypt/async/browser/keychain_key_provider_unittest.mm
 +    GetKey(*provider, future.GetCallback());
 +    auto [tag, key] = future.Take();
 +    CHECK(key.has_value());
-+    EXPECT_EQ(tag, GetParam() ? "v11" : "v10");
 +    return std::move(*key);
 +  }
 +
@@ -413,7 +380,7 @@ diff --git a/components/os_crypt/async/browser/keychain_key_provider_unittest.mm
 +  int on_failure_count_ = 0;
 +};
 +
-+TEST_P(KeychainKeyProviderNoResetTest, ExistingDataItemBrieflyMissing) {
++TEST_F(KeychainKeyProviderNoResetTest, ExistingDataItemBrieflyMissing) {
 +  ScriptedKeychain keychain;
 +  keychain.QueueFind(base::unexpected(errSecItemNotFound));
 +  keychain.QueueFind(kSecretA);
@@ -424,7 +391,6 @@ diff --git a/components/os_crypt/async/browser/keychain_key_provider_unittest.mm
 +  auto& [tag, key] = future.Get();
 +
 +  ASSERT_TRUE(key.has_value());
-+  EXPECT_EQ(tag, GetParam() ? "v11" : "v10");
 +  EXPECT_EQ(*key, SecretAKey());
 +  EXPECT_EQ(keychain.find_count(), 2);
 +  EXPECT_EQ(keychain.add_if_absent_count(), 0);
@@ -433,7 +399,7 @@ diff --git a/components/os_crypt/async/browser/keychain_key_provider_unittest.mm
 +  EXPECT_EQ(on_failure_count_, 0);
 +}
 +
-+TEST_P(KeychainKeyProviderNoResetTest, ExistingDataItemMissingFailsClosed) {
++TEST_F(KeychainKeyProviderNoResetTest, ExistingDataItemMissingFailsClosed) {
 +  ScriptedKeychain keychain;
 +  keychain.QueueFind(base::unexpected(errSecItemNotFound));
 +  std::unique_ptr<KeychainKeyProvider> provider = MakeProvider(&keychain);
@@ -455,7 +421,7 @@ diff --git a/components/os_crypt/async/browser/keychain_key_provider_unittest.mm
 +  EXPECT_EQ(keychain.item_update_count(), 0);
 +}
 +
-+TEST_P(KeychainKeyProviderNoResetTest, FreshDirItemAppearsDuringAdd) {
++TEST_F(KeychainKeyProviderNoResetTest, FreshDirItemAppearsDuringAdd) {
 +  g_test_key_may_be_created = true;
 +  ScriptedKeychain keychain;
 +  keychain.QueueFind(base::unexpected(errSecItemNotFound));
@@ -468,7 +434,6 @@ diff --git a/components/os_crypt/async/browser/keychain_key_provider_unittest.mm
 +  auto& [tag, key] = future.Get();
 +
 +  ASSERT_TRUE(key.has_value());
-+  EXPECT_EQ(tag, GetParam() ? "v11" : "v10");
 +  EXPECT_EQ(*key, SecretAKey());
 +  EXPECT_EQ(keychain.add_if_absent_count(), 1);
 +  EXPECT_EQ(keychain.add_or_update_count(), 0);
@@ -476,7 +441,7 @@ diff --git a/components/os_crypt/async/browser/keychain_key_provider_unittest.mm
 +  EXPECT_EQ(on_failure_count_, 0);
 +}
 +
-+TEST_P(KeychainKeyProviderNoResetTest, FreshDirItemMissingAddsOnce) {
++TEST_F(KeychainKeyProviderNoResetTest, FreshDirItemMissingAddsOnce) {
 +  g_test_key_may_be_created = true;
 +  ScriptedKeychain keychain;
 +  keychain.QueueFind(base::unexpected(errSecItemNotFound));
@@ -487,7 +452,6 @@ diff --git a/components/os_crypt/async/browser/keychain_key_provider_unittest.mm
 +  auto [tag, key] = future.Take();
 +
 +  ASSERT_TRUE(key.has_value());
-+  EXPECT_EQ(tag, GetParam() ? "v11" : "v10");
 +  EXPECT_EQ(keychain.add_if_absent_count(), 1);
 +  EXPECT_EQ(keychain.add_or_update_count(), 0);
 +  EXPECT_EQ(keychain.item_update_count(), 0);
@@ -496,7 +460,7 @@ diff --git a/components/os_crypt/async/browser/keychain_key_provider_unittest.mm
 +  EXPECT_EQ(*key, KeyFor(keychain.added()));
 +}
 +
-+TEST_P(KeychainKeyProviderNoResetTest, StartOverMakesOneNewKey) {
++TEST_F(KeychainKeyProviderNoResetTest, StartOverMakesOneNewKey) {
 +  base::OnceClosure start_over;
 +  g_test_start_over = &start_over;
 +  g_solara_safe_storage_unreadable = &TestSafeStorageUnreadable;
@@ -520,7 +484,6 @@ diff --git a/components/os_crypt/async/browser/keychain_key_provider_unittest.mm
 +  auto& [tag, key] = future.Get();
 +
 +  ASSERT_TRUE(key.has_value());
-+  EXPECT_EQ(tag, GetParam() ? "v11" : "v10");
 +  EXPECT_FALSE(g_test_start_over_allowed);
 +  EXPECT_EQ(keychain.find_count(), 5);
 +  EXPECT_EQ(keychain.add_if_absent_count(), 1);
@@ -529,7 +492,7 @@ diff --git a/components/os_crypt/async/browser/keychain_key_provider_unittest.mm
 +  EXPECT_EQ(on_failure_count_, 0);
 +}
 +
-+TEST_P(KeychainKeyProviderNoResetTest, StartOverKeepsAnItemThatReturned) {
++TEST_F(KeychainKeyProviderNoResetTest, StartOverKeepsAnItemThatReturned) {
 +  base::OnceClosure start_over;
 +  g_test_start_over = &start_over;
 +  g_solara_safe_storage_unreadable = &TestSafeStorageUnreadable;
@@ -551,14 +514,13 @@ diff --git a/components/os_crypt/async/browser/keychain_key_provider_unittest.mm
 +  auto& [tag, key] = future.Get();
 +
 +  ASSERT_TRUE(key.has_value());
-+  EXPECT_EQ(tag, GetParam() ? "v11" : "v10");
 +  EXPECT_EQ(*key, SecretAKey());
 +  EXPECT_EQ(keychain.add_if_absent_count(), 1);
 +  EXPECT_EQ(keychain.add_or_update_count(), 0);
 +  EXPECT_EQ(keychain.item_update_count(), 0);
 +}
 +
-+TEST_P(KeychainKeyProviderNoResetTest, UndecodableItemOnlyRetries) {
++TEST_F(KeychainKeyProviderNoResetTest, UndecodableItemOnlyRetries) {
 +  base::OnceClosure retry;
 +  g_test_start_over = &retry;
 +  g_solara_safe_storage_unreadable = &TestSafeStorageUnreadable;
@@ -588,9 +550,5 @@ diff --git a/components/os_crypt/async/browser/keychain_key_provider_unittest.mm
 +  EXPECT_EQ(keychain.item_update_count(), 0);
 +  EXPECT_EQ(on_failure_count_, 0);
 +}
-+
-+INSTANTIATE_TEST_SUITE_P(DefaultAndCustomTagAndSalt,
-+                         KeychainKeyProviderNoResetTest,
-+                         ::testing::Bool());
 +
  }  // namespace os_crypt_async

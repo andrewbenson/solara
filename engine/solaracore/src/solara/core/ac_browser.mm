@@ -88,23 +88,23 @@ namespace solaracore {
 
 const char* DispositionName(WindowOpenDisposition disposition) {
   switch (disposition) {
-    case WindowOpenDisposition::kCurrentTab:
+    case WindowOpenDisposition::CURRENT_TAB:
       return "current_tab";
-    case WindowOpenDisposition::kSingletonTab:
+    case WindowOpenDisposition::SINGLETON_TAB:
       return "singleton_tab";
-    case WindowOpenDisposition::kNewForegroundTab:
+    case WindowOpenDisposition::NEW_FOREGROUND_TAB:
       return "foreground_tab";
-    case WindowOpenDisposition::kNewBackgroundTab:
+    case WindowOpenDisposition::NEW_BACKGROUND_TAB:
       return "background_tab";
-    case WindowOpenDisposition::kNewPopup:
+    case WindowOpenDisposition::NEW_POPUP:
       return "popup";
-    case WindowOpenDisposition::kNewWindow:
+    case WindowOpenDisposition::NEW_WINDOW:
       return "window";
-    case WindowOpenDisposition::kNewPictureInPicture:
+    case WindowOpenDisposition::NEW_PICTURE_IN_PICTURE:
       return "picture_in_picture";
-    case WindowOpenDisposition::kOffTheRecord:
+    case WindowOpenDisposition::OFF_THE_RECORD:
       return "off_the_record";
-    case WindowOpenDisposition::kNewSplitView:
+    case WindowOpenDisposition::NEW_SPLIT_VIEW:
       return "split_view";
     default:
       return "other";
@@ -781,8 +781,8 @@ void WindowHost::OnTabStripModelChanged(
           source ? TabBridge::GetOrCreate(source)->tab() : nil;
       if (!disposition) {
         disposition = tab_strip_model->active_index() == inserted.index
-                          ? WindowOpenDisposition::kNewForegroundTab
-                          : WindowOpenDisposition::kNewBackgroundTab;
+                          ? WindowOpenDisposition::NEW_FOREGROUND_TAB
+                          : WindowOpenDisposition::NEW_BACKGROUND_TAB;
       }
       if ([delegate respondsToSelector:@selector
                     (window:didInsertTab:opener:disposition:)]) {
@@ -1165,14 +1165,14 @@ ACWebContentsDelegate::~ACWebContentsDelegate() {
 
 namespace {
 bool IsWindowDisposition(WindowOpenDisposition d) {
-  return d == WindowOpenDisposition::kNewPopup ||
-         d == WindowOpenDisposition::kNewWindow;
+  return d == WindowOpenDisposition::NEW_POPUP ||
+         d == WindowOpenDisposition::NEW_WINDOW;
 }
 bool IsNewTabDisposition(WindowOpenDisposition d) {
   return IsWindowDisposition(d) ||
-         d == WindowOpenDisposition::kNewForegroundTab ||
-         d == WindowOpenDisposition::kNewBackgroundTab ||
-         d == WindowOpenDisposition::kNewSplitView;
+         d == WindowOpenDisposition::NEW_FOREGROUND_TAB ||
+         d == WindowOpenDisposition::NEW_BACKGROUND_TAB ||
+         d == WindowOpenDisposition::NEW_SPLIT_VIEW;
 }
 }
 
@@ -1201,7 +1201,7 @@ content::WebContents* ACWebContentsDelegate::OpenURLFromTab(
       params.triggering_event_info ==
           blink::mojom::TriggeringEventInfo::kFromTrustedEvent &&
       ui::PageTransitionCoreTypeIs(params.transition, ui::PAGE_TRANSITION_LINK) &&
-      params.disposition == WindowOpenDisposition::kNewForegroundTab) {
+      params.disposition == WindowOpenDisposition::NEW_FOREGROUND_TAB) {
     auto* profile = Profile::FromBrowserContext(source->GetBrowserContext());
     content::WebContents::CreateParams create(
         profile, tab_util::GetSiteInstanceForNewTab(profile, params.url));
@@ -1224,9 +1224,9 @@ content::WebContents* ACWebContentsDelegate::OpenURLFromTab(
   base::AutoReset<WindowHost::PendingOpen> pending(&host->pending_open(),
                                                    std::move(open));
   if (IsWindowDisposition(params.disposition)) {
-    tab_params.disposition = WindowOpenDisposition::kNewForegroundTab;
-  } else if (params.disposition == WindowOpenDisposition::kNewSplitView) {
-    tab_params.disposition = WindowOpenDisposition::kNewBackgroundTab;
+    tab_params.disposition = WindowOpenDisposition::NEW_FOREGROUND_TAB;
+  } else if (params.disposition == WindowOpenDisposition::NEW_SPLIT_VIEW) {
+    tab_params.disposition = WindowOpenDisposition::NEW_BACKGROUND_TAB;
   }
   return BrowserWebContentsDelegate::OpenURLFromTab(
       source, tab_params, std::move(navigation_handle_callback));
@@ -1248,7 +1248,7 @@ content::WebContents* ACWebContentsDelegate::AddNewContents(
   }
   if (host_ && new_contents && source && user_gesture &&
       target_url.SchemeIsHTTPOrHTTPS() &&
-      disposition == WindowOpenDisposition::kNewForegroundTab &&
+      disposition == WindowOpenDisposition::NEW_FOREGROUND_TAB &&
       TabBridge::GetOrCreate(new_contents.get())->created_from_link() &&
       !TabBridge::GetOrCreate(new_contents.get())->pinned_link_checked() &&
       WantsPinnedLinkPolicy(source) && HasPlainPinnedLinkGesture(source)) {
@@ -1258,7 +1258,7 @@ content::WebContents* ACWebContentsDelegate::AddNewContents(
   if (host_ && new_contents) {
     TabBridge* bridge = TabBridge::GetOrCreate(new_contents.get());
     bridge->set_open(disposition, source);
-    if (disposition == WindowOpenDisposition::kNewPopup) {
+    if (disposition == WindowOpenDisposition::NEW_POPUP) {
       NSMutableDictionary* features = [NSMutableDictionary dictionary];
       const gfx::Rect& bounds = window_features.bounds;
       if (window_features.has_x) {
@@ -1276,7 +1276,7 @@ content::WebContents* ACWebContentsDelegate::AddNewContents(
       bridge->set_popup_features(features);
     }
     if (IsWindowDisposition(disposition)) {
-      disposition = WindowOpenDisposition::kNewForegroundTab;
+      disposition = WindowOpenDisposition::NEW_FOREGROUND_TAB;
     }
   }
   return BrowserWebContentsDelegate::AddNewContents(

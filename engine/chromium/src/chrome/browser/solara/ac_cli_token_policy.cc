@@ -317,13 +317,14 @@ bool IsWebProcess(content::RenderProcessHost* process) {
   if (!process) {
     return false;
   }
+  const int id = process->GetDeprecatedID();
   if (content::ChildProcessSecurityPolicy::GetInstance()->HasWebUIBindings(
           process->GetID())) {
     return false;
   }
   extensions::ProcessMap* extension_processes =
       extensions::ProcessMap::Get(process->GetBrowserContext());
-  return extension_processes && !extension_processes->Contains(process->GetID());
+  return extension_processes && !extension_processes->Contains(id);
 }
 
 bool IsWebSite(content::RenderFrameHost* frame, bool main_frame) {

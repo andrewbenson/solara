@@ -53,8 +53,10 @@ SKIP = {
     'helium/macos/change-keychain-name.patch':
         'renames the Safe Storage item; every user\'s passwords and cookies are encrypted with "Solara Safe Storage"',
     'helium/macos/change-product-dir-name.patch': 'moves the fallback product dir to net.imput.helium',
-    'helium/macos/updater/sparkle-glue.patch': 'Sparkle inside the framework; the app has its own updater',
+    'rebel/macos/sparkle-integration.patch': 'Sparkle inside the framework; the app has its own updater',
+    'helium/macos/updater/fixup-sparkle-glue.patch': 'Sparkle inside the framework',
     'helium/macos/updater/sparkle2-integration.patch': 'Sparkle inside the framework',
+    'helium/macos/updater/disable-default-updater.patch': 'Sparkle inside the framework',
     'helium/ui/crash-dialog.patch': 'a startup infobar asking to upload crashes to crash.helium.computer',
     'helium/core/use-system-python3.patch': 'Helium\'s build setup: .gn script_executable (reruns every action)',
     'helium/core/rbe-nativelink-config.patch': 'Helium\'s remote build setup',

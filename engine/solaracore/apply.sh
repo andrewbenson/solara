@@ -260,8 +260,6 @@ def gate(s, start, end, why):
 decl_at = """#if BUILDFLAG(IS_ANDROID)
 ChromeMainDelegate::ChromeMainDelegate()
     : ChromeMainDelegate(StartupTimestamps{}) {}
-#else
-ChromeMainDelegate::ChromeMainDelegate() = default;
 #endif
 """
 decl = """// Solara: SolaraCore (engine/solaracore) embeds Chrome: it does some of Chrome's startup itself.
@@ -430,7 +428,7 @@ PY
 
 hook "$src/chrome/browser/ui/sad_tab_controller.cc" "SadTabController" <<'PY'
 old = """  BrowserView* browser_view = BrowserView::GetBrowserViewForBrowser(browser);
-  CHECK(browser_view, base::NotFatalUntil::M162);
+  DCHECK(browser_view);
 """
 new = """  BrowserView* browser_view = BrowserView::GetBrowserViewForBrowser(browser);
   // Solara: SolaraCore's Browsers have no BrowserView (engine/solaracore).
@@ -1182,7 +1180,7 @@ hook(["bool g_solara_skip_cpu_health_sampling = false;\n",
       "      g_solara_skip_cpu_health_sampling ? nullptr\n"], edit, HOOKS)
 PY
 
-hook "$src/components/memory_pressure/disk_space_memory_pressure_evaluator_mac.cc" "the disk space check's relaxed period" <<'PY'
+hook "$src/components/memory_pressure/system_memory_pressure_evaluator_mac.cc" "the disk space check's relaxed period" <<'PY'
 at = "namespace memory_pressure::mac {\n"
 decl = """int g_solara_disk_space_check_seconds = 0;
 
@@ -1191,9 +1189,15 @@ constexpr base::ByteSize kSolaraRelaxedDiskSpace = base::GiB(20);
 }
 
 """
-old = """  UpdatePressureAndManageNotifications(new_disk_vote);
+old = """  if (disk_pressure_vote_ != new_disk_vote) {
+    disk_pressure_vote_ = new_disk_vote;
+    UpdatePressureAndManageNotifications();
+  }
 """
-new = """  UpdatePressureAndManageNotifications(new_disk_vote);
+new = """  if (disk_pressure_vote_ != new_disk_vote) {
+    disk_pressure_vote_ = new_disk_vote;
+    UpdatePressureAndManageNotifications();
+  }
 
   if (g_solara_disk_space_check_seconds > 0) {
     const base::TimeDelta period =
@@ -1204,7 +1208,7 @@ new = """  UpdatePressureAndManageNotifications(new_disk_vote);
     if (disk_space_check_timer_.GetCurrentDelay() != period) {
       disk_space_check_timer_.Start(
           FROM_HERE, period,
-          base::BindRepeating(&DiskSpaceMemoryPressureEvaluator::CheckDiskSpace,
+          base::BindRepeating(&SystemMemoryPressureEvaluator::CheckDiskSpace,
                               weak_ptr_factory_.GetWeakPtr()));
     }
   }
@@ -1623,6 +1627,23 @@ hook(["bool g_solara_bluetooth_poll_on_demand = false;\n",
       "void BluetoothAdapterMac::OnLowEnergyCentralManagerStateUpdated() {\n",
       "    poll_dirty_ = true;\n",
       "  if (g_solara_bluetooth_poll_on_demand) {\n    PollAdapterOnDemand();\n  }\n  DCHECK(callback);\n"], edit)
+PY
+
+hook "$src/chrome/browser/extensions/extension_action_storage_manager.cc" "restored browser action defaults notify" <<'PY'
+old = """  SetDefaultsFromValue(value->GetDict(), action);
+}
+"""
+new = """  SetDefaultsFromValue(value->GetDict(), action);
+  if (g_solara_embedder) {
+    ExtensionActionDispatcher::Get(browser_context_)
+        ->NotifyChange(action, nullptr, browser_context_);
+  }
+}
+"""
+def edit(s):
+    assert s.count(old) == 1
+    return s.replace(old, new)
+hook(["  if (g_solara_embedder) {\n    ExtensionActionDispatcher::Get(browser_context_)\n"], edit, HOOKS)
 PY
 
 hook "$src/extensions/browser/extension_user_script_loader.cc" "a script loader made once extensions are ready starts at once" <<'PY'

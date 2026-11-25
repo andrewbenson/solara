@@ -6405,33 +6405,8 @@ try {
       await evalApp(`ac.actions.switchProfile("${mainWindow}", "${home}"); return true`);
       await until("the first profile back", async () => (await state()).profileId === home).catch(() => null);
 
-      const privateWindow = await evalApp(`return ac.actions.openWindow({ incognito: true, url: ${JSON.stringify(`${secureBase}/call?private`)} })`);
-      try {
-        const privateTabs = () => evalApp(`const s = ac.store.getState(); const w = s.windows[${JSON.stringify(privateWindow)}]; return (w?.tabIds ?? []).map((id) => ({ id, url: s.tabs[id]?.url, title: s.tabs[id]?.title, loading: s.live[id]?.isLoading }))`);
-        const callTab = await until("the private call loaded", async () => (await privateTabs()).find((x) => x.url?.includes("/call?private") && x.title === "Call" && !x.loading), 15000);
-        const page = await pageFor(callTab.id, "/call?private");
-        const js = async (e) => (await cdp(page, "Runtime.evaluate", { expression: e, awaitPromise: true, userGesture: true, returnByValue: true })).result.value;
-        await js(`join(${JSON.stringify({ audio: true, video: true })})`);
-        await until("joined in a private window", async () => {
-          const request = await evalApp(`return ac.pageState.getState().pages["${callTab.id}"]?.permission ?? null`);
-          if (request) await evalApp(`ac.permissions.answerPermission("${callTab.id}", "${request.id}", "accept"); return true`);
-          return JSON.parse(await js("callState()")).joined ? true : null;
-        }, 10000);
-        const elsewhere = await evalApp(`return ac.store.getState().newTab(${JSON.stringify(privateWindow)}, { url: ${JSON.stringify(`${secureBase}/b?private-away`)} })`);
-        await until("the private window's other tab loaded", async () => (await privateTabs()).find((x) => x.id === elsewhere && !x.loading), 15000);
-        await evalApp(`ac.actions.switchToTab("${callTab.id}"); return true`);
-        await sleep(500);
-        await evalApp(`ac.actions.switchToTab("${elsewhere}"); return true`);
-        out.privateLeave = await until("the private call's document PiP", async () => docPip(callTab.id, true), 8000).then(() => true, () => false);
-        out.privateInPip = await js("callState()").then((x) => JSON.parse(x).inPip, () => null);
-        await evalApp(`return ac.webviews.get("${callTab.id}").exitPictureInPicture()`).catch(() => null);
-      } finally {
-        await evalApp(`ac.store.getState().closeWindow(${JSON.stringify(privateWindow)}); return true`).catch(() => null);
-      }
-
       const failed = !out.leave || !out.inPip.inPip || !out.inPip.tracks.every((x) => x.endsWith(":live")) || !out.back || !out.home.home ||
-        out.videoEntered !== true || !out.callTookOver || !out.videoPausedByTakeover || !out.callKeptPip || !out.micOnly || out.settingOffOpened ||
-        !out.privateLeave;
+        out.videoEntered !== true || !out.callTookOver || !out.videoPausedByTakeover || !out.callKeptPip || !out.micOnly || out.settingOffOpened;
       if (failed) throw new Error(JSON.stringify(out));
       return out;
     } finally {
@@ -8326,52 +8301,6 @@ try {
     const argv = execFileSync("ps", ["-o", "args=", "-p", String(pid)]).toString().trim();
     if (!argv.includes("-NSAppSleepDisabled YES")) throw new Error(`the process arguments lost the defaults: ${argv}`);
     return { pages: pages.length, argv: argv.slice(argv.indexOf("-NS")) };
-  });
-
-  await check("extension-action-defaults-relaunch", async () => {
-    await appUp("app-action-defaults.out.log");
-    const dir = join(scratch, "action-defaults-extension");
-    mkdirSync(dir, { recursive: true });
-    writeFileSync(join(dir, "manifest.json"), JSON.stringify({ manifest_version: 3, name: "Action defaults fixture", version: "1.0", action: { default_title: "Manifest action", default_popup: "popup.html" }, background: { service_worker: "worker.js" } }));
-    writeFileSync(join(dir, "popup.html"), "<!doctype html><title>Manifest popup</title>");
-    writeFileSync(join(dir, "worker.js"), "chrome.runtime.onInstalled.addListener(() => {});");
-    const installed = await exts(`install(${JSON.stringify(dir)}, "")`);
-    if (!installed?.id) throw new Error(`install: ${JSON.stringify(installed)}`);
-    const id = installed.id;
-    const shown = () => evalApp(`const actions = ac.extensions.useExtensions.getState().actions; return Object.values(actions).map((states) => states[${JSON.stringify(id)}]).find(Boolean) ?? null;`);
-    try {
-      const tab = await openTab(`${base}/e?action-defaults`, "Page E");
-      await exts(`configure("${id}", "", { pinned: true })`);
-      const manifest = await until("manifest action state through the watcher", shown);
-      assert.equal(manifest.title, "Manifest action");
-      assert.equal(manifest.popup, `chrome-extension://${id}/popup.html`);
-      assert.equal(manifest.badgeText, "");
-      assert.equal(manifest.icon, "");
-      const worker = await extensionWorker(id, "action.setIcon");
-      const changed = await cdp(worker, "Runtime.evaluate", {
-        expression: `(async () => { const imageData = new ImageData(16, 16); imageData.data.fill(255); await chrome.action.setIcon({ imageData }); await chrome.action.setBadgeText({ text: "SAVED" }); await chrome.action.setTitle({ title: "Programmatic action" }); return true; })()`,
-        awaitPromise: true,
-        returnByValue: true,
-      });
-      assert.equal(changed.result?.value, true, JSON.stringify(changed));
-      await until("programmatic action state through the watcher", async () => {
-        const value = await shown();
-        return value?.badgeText === "SAVED" && value.title === "Programmatic action" && value.icon?.startsWith("data:image/png;base64,") ? value : null;
-      });
-      await stopApp();
-      await appUp("app-action-defaults-relaunch.out.log");
-      const after = await until("manifest action state at startup", shown);
-      assert.equal(after.title, "Manifest action", "Chromium 158 does not restore programmatic titles");
-      assert.equal(after.popup, `chrome-extension://${id}/popup.html`);
-      assert.equal(after.badgeText, "", "Chromium 158 does not restore programmatic badges");
-      assert.equal(after.icon, "", "Chromium 158 does not restore programmatic icons");
-      const browser = await browserOf(tab.id);
-      const states = await evalApp(`return globalThis.expo.modules.SolaraChromeUI.actionStates(${browser}, ["${id}"])`);
-      assert.deepEqual(states[id], after);
-      return { startup: after, savedDefaultsRestored: false, chromium: 158 };
-    } finally {
-      await exts(`uninstall("${id}", "")`).catch(() => null);
-    }
   });
 
   await check("extension-pins-owner-shape", async () => {

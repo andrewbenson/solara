@@ -401,17 +401,16 @@ class BrowsingDataDone : public content::BrowsingDataRemover::Observer {
 
 namespace {
 
-const char* BrowserTypeName(BrowserWindowInterface* browser) {
-  if (DesktopBrowserWindowCapabilities::IsDocumentPictureInPicture(browser)) {
-    return "picture_in_picture";
-  }
-  switch (browser->GetType()) {
+const char* BrowserTypeName(BrowserWindowInterface::Type type) {
+  switch (type) {
     case BrowserWindowInterface::TYPE_NORMAL:
       return "normal";
     case BrowserWindowInterface::TYPE_POPUP:
       return "popup";
     case BrowserWindowInterface::TYPE_DEVTOOLS:
       return "devtools";
+    case BrowserWindowInterface::TYPE_PICTURE_IN_PICTURE:
+      return "picture_in_picture";
     default:
       return "app";
   }
@@ -419,7 +418,7 @@ const char* BrowserTypeName(BrowserWindowInterface* browser) {
 
 BrowserWindow* WindowForChromeBrowser(Browser* browser) {
   if (solaracore::ACBrowserWindow::IsOurs(browser) ||
-      DesktopBrowserWindowCapabilities::IsDocumentPictureInPicture(browser) ||
+      browser->GetType() == BrowserWindowInterface::TYPE_PICTURE_IN_PICTURE ||
       ![g_delegate respondsToSelector:@selector
                    (engineWindowForNewBrowserOfProfile:type:)]) {
     return nullptr;
@@ -427,7 +426,7 @@ BrowserWindow* WindowForChromeBrowser(Browser* browser) {
   SolaraCoreWindow* window = [g_delegate
       engineWindowForNewBrowserOfProfile:[SolaraCoreProfile
                                              wrapperFor:browser->GetProfile()]
-                                    type:@(BrowserTypeName(browser))];
+                                    type:@(BrowserTypeName(browser->GetType()))];
   solaracore::WindowHost* host = window.host;
   return host ? host->HostChromeBrowser(browser) : nullptr;
 }
@@ -1522,8 +1521,8 @@ void WatchTracingStart(std::shared_ptr<TracingStart> start, int checks_left) {
   const bool ahead = !url.length;
   NavigateParams params(browser, GURL(ahead ? "about:blank" : base::SysNSStringToUTF8(url)),
                         ui::PAGE_TRANSITION_TYPED);
-  params.disposition = foreground ? WindowOpenDisposition::kNewForegroundTab
-                                  : WindowOpenDisposition::kNewBackgroundTab;
+  params.disposition = foreground ? WindowOpenDisposition::NEW_FOREGROUND_TAB
+                                  : WindowOpenDisposition::NEW_BACKGROUND_TAB;
   params.window_action = NavigateParams::WindowAction::kNoAction;
   base::AutoReset<solaracore::WindowHost::PendingOpen> pending(
       &_host->pending_open(), solaracore::WindowHost::PendingOpen{params.disposition, nullptr});
@@ -1726,8 +1725,8 @@ void WatchTracingStart(std::shared_ptr<TracingStart> start, int checks_left) {
   base::AutoReset<solaracore::WindowHost::PendingOpen> pending(
       &_host->pending_open(),
       solaracore::WindowHost::PendingOpen{
-          foreground ? WindowOpenDisposition::kNewForegroundTab
-                     : WindowOpenDisposition::kNewBackgroundTab,
+          foreground ? WindowOpenDisposition::NEW_FOREGROUND_TAB
+                     : WindowOpenDisposition::NEW_BACKGROUND_TAB,
           nullptr});
   content::WebContents* contents = chrome::AddRestoredTab(
       browser, navigations, browser->GetTabStripModel()->count(), selected,
@@ -1760,8 +1759,8 @@ void WatchTracingStart(std::shared_ptr<TracingStart> start, int checks_left) {
   base::AutoReset<solaracore::WindowHost::PendingOpen> pending(
       &_host->pending_open(),
       solaracore::WindowHost::PendingOpen{
-          foreground ? WindowOpenDisposition::kNewForegroundTab
-                     : WindowOpenDisposition::kNewBackgroundTab,
+          foreground ? WindowOpenDisposition::NEW_FOREGROUND_TAB
+                     : WindowOpenDisposition::NEW_BACKGROUND_TAB,
           contents->GetWeakPtr()});
   TabStripModel* model = browser->GetTabStripModel();
   model->InsertWebContentsAt(model->count(), std::move(copy),
@@ -2479,10 +2478,10 @@ const performance_manager::PageNode* PageNodeOf(content::WebContents* contents) 
   if (host) {
     pending.emplace(&host->pending_open(),
                     solaracore::WindowHost::PendingOpen{
-                        WindowOpenDisposition::kNewForegroundTab,
+                        WindowOpenDisposition::NEW_FOREGROUND_TAB,
                         _contents->GetWeakPtr()});
   }
-  popups->ShowBlockedPopup(id_number, WindowOpenDisposition::kNewForegroundTab);
+  popups->ShowBlockedPopup(id_number, WindowOpenDisposition::NEW_FOREGROUND_TAB);
 }
 
 - (BOOL)executeChromeCommand:(int)command {

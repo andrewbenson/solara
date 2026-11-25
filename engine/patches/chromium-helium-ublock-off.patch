@@ -27,9 +27,9 @@ resources. Its id is no longer pinned by default either, so no profile pins (and
  #include "pdf/buildflags.h"
  #include "ui/base/resource/resource_bundle.h"
 -#include "third_party/ublock/resources/grit/ublock_resources_map.h"
- #include "ui/webui/buildflags.h"
  
- #if BUILDFLAG(ENABLE_WEBUI_NTP)
+ #if BUILDFLAG(IS_CHROMEOS)
+ #include "ash/keyboard/ui/resources/keyboard_resource_util.h"
 @@ -128,7 +127,6 @@
            extensions_features::kApiContextualTasksPrivate)) {
      AddComponentResourceEntries(kContextualTasksExtensionResources);
@@ -45,9 +45,9 @@ resources. Its id is no longer pinned by default either, so no profile pins (and
  #include "extensions/common/constants.h"
  #include "printing/buildflags/buildflags.h"
 -#include "third_party/ublock/resources/grit/ublock_resources.h"
- #include "ui/webui/buildflags.h"
  
- #if BUILDFLAG(ENABLE_WEBUI_NTP)
+ #if BUILDFLAG(IS_CHROMEOS)
+ #include "ash/constants/ash_extension_constants.h"
 @@ -104,7 +103,6 @@
      case IDR_NETWORK_SPEECH_SYNTHESIS_MANIFEST:
      case IDR_NETWORK_SPEECH_SYNTHESIS_MANIFEST_MV3:
@@ -63,9 +63,9 @@ resources. Its id is no longer pinned by default either, so no profile pins (and
  #include "ui/base/l10n/l10n_util.h"
  #include "ui/base/resource/resource_bundle.h"
 -#include "third_party/ublock/resources/grit/ublock_resources.h"
- #include "ui/webui/buildflags.h"
  
  #if BUILDFLAG(IS_CHROMEOS)
+ #include "ash/constants/ash_extension_constants.h"
 @@ -610,22 +609,7 @@
          l10n_util::GetStringUTF8(IDS_WEBSTORE_APP_DESCRIPTION));
    }

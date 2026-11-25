@@ -470,21 +470,19 @@
 +++ b/ui/accelerated_widget_mac/ca_renderer_layer_tree.mm
 @@ -34,6 +34,10 @@
  #include "ui/gfx/mac/io_surface.h"
- #include "ui/gfx/tone_map_util.h"
  #include "ui/gl/ca_renderer_layer_params.h"
-+
+ 
 +#if BUILDFLAG(IS_MAC)
 +#include "solara/core/ac_video_upscaler.h"  // nogncheck
 +#endif
- 
++
  namespace ui {
  
-@@ -436,6 +440,82 @@
-   // tree, they will be removed from the CALayer tree in this deallocation.
-   old_tree.reset();
+ // Transitioning between AVSampleBufferDisplayLayer and CALayer with IOSurface
+@@ -427,6 +431,82 @@
    has_committed_ = true;
-+}
-+
+ }
+ 
 +#if BUILDFLAG(IS_MAC)
 +bool CARendererLayerTree::UpscaleVideo(solaracore::VideoUpscaler* upscaler,
 +                                       bool allowed) {
@@ -559,10 +557,12 @@
 +
 +gfx::RectF CARendererLayerTree::ContentLayer::ShownContentsRect() const {
 +  return upscaled_io_surface_ ? gfx::RectF(0, 0, 1, 1) : contents_rect_;
- }
- 
++}
++
  void CARendererLayerTree::MatchLayersToOldTree(CARendererLayerTree* old_tree) {
-@@ -1174,7 +1254,8 @@
+   if (!old_tree)
+     return;
+@@ -1167,7 +1247,8 @@
          old_layer_->io_surface_color_space_ != io_surface_color_space_ ||
          old_layer_->cv_pixel_buffer_ != cv_pixel_buffer_ ||
          old_layer_->solid_color_contents_ != solid_color_contents_ ||
@@ -572,7 +572,7 @@
      // If the HDR headroom has changed then the HDRCopierLayer's tone mapping
      // may change, so re-draw this layer.
      if (old_layer_->type_ == CALayerType::kHDRCopier &&
-@@ -1182,7 +1263,8 @@
+@@ -1175,7 +1256,8 @@
              tree()->display_hdr_headroom_) {
        update_contents = true;
      }
@@ -582,7 +582,7 @@
      update_rect = old_layer_->rect_ != rect_;
      update_background_color =
          old_layer_->background_color_ != background_color_;
-@@ -1259,8 +1341,7 @@
+@@ -1252,8 +1334,7 @@
            }
          } else {
            result = AVSampleBufferDisplayLayerEnqueueIOSurface(
@@ -592,7 +592,7 @@
            if (!result) {
              LOG(ERROR) << "AVSampleBufferDisplayLayerEnqueueIOSurface failed";
            }
-@@ -1273,8 +1354,8 @@
+@@ -1266,8 +1347,8 @@
        break;
      case CALayerType::kDefault:
        if (update_contents) {
@@ -603,7 +603,7 @@
          } else if (solid_color_contents_) {
            ca_layer_.contents = solid_color_contents_->GetContents();
          } else {
-@@ -1305,7 +1386,7 @@
+@@ -1296,7 +1377,7 @@
  
    if (update_contents_rect) {
      if (type_ != CALayerType::kVideo)

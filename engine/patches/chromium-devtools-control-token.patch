@@ -79,19 +79,17 @@ diff --git a/content/browser/devtools/devtools_http_handler.cc b/content/browser
      TerminateOnUI(std::move(thread),
                    std::unique_ptr<ServerWrapper>(server_wrapper),
                    std::unique_ptr<DevToolsSocketFactory>(socket_factory));
-@@ -339,16 +389,53 @@ class DevToolsAgentHostClientImpl : public DevToolsAgentHostClient {
+@@ -339,14 +389,51 @@ class DevToolsAgentHostClientImpl : public DevToolsAgentHostClient {
        scoped_refptr<base::SingleThreadTaskRunner> task_runner,
        ServerWrapper* server_wrapper,
        int connection_id,
-       scoped_refptr<DevToolsAgentHost> agent_host,
--      const net::IPEndPoint& peer_address)
-+      const net::IPEndPoint& peer_address,
+-      scoped_refptr<DevToolsAgentHost> agent_host)
++      scoped_refptr<DevToolsAgentHost> agent_host,
 +      const DevToolsSocketFactory* solara_token_factory = nullptr)
        : task_runner_(std::move(task_runner)),
          server_wrapper_(server_wrapper),
          connection_id_(connection_id),
-         agent_host_(agent_host),
-         peer_address_(peer_address) {
+         agent_host_(agent_host) {
      CHECK_CURRENTLY_ON(BrowserThread::UI, base::NotFatalUntil::M159);
 +    if (solara_token_factory) {
 +      if (g_solara_devtools_token_client) {
@@ -180,11 +178,10 @@ diff --git a/content/browser/devtools/devtools_http_handler.cc b/content/browser
    }
  
   private:
-@@ -395,7 +502,17 @@ class DevToolsAgentHostClientImpl : public DevToolsAgentHostClient {
+@@ -395,6 +502,16 @@ class DevToolsAgentHostClientImpl : public DevToolsAgentHostClient {
    const raw_ptr<ServerWrapper> server_wrapper_;
    const int connection_id_;
    scoped_refptr<DevToolsAgentHost> agent_host_;
-   const net::IPEndPoint peer_address_;
 +  std::unique_ptr<SolaraDevToolsTokenClient> solara_token_client_;
 +  bool attached_ = false;
 +
@@ -344,7 +341,7 @@ diff --git a/content/browser/devtools/devtools_http_handler.cc b/content/browser
    // If we require user approval, we do not require guid.
    if (mode_ ==
        DevToolsAgentHost::RemoteDebuggingServerMode::kWithApprovalOnly) {
-@@ -870,28 +1076,33 @@ void DevToolsHttpHandler::OnWebSocketRequest(
+@@ -870,28 +1076,32 @@ void DevToolsHttpHandler::OnWebSocketRequest(
      return;
    }
  
@@ -359,12 +356,11 @@ diff --git a/content/browser/devtools/devtools_http_handler.cc b/content/browser
 -    connection_to_client_[connection_id] =
 -        std::make_unique<DevToolsAgentHostClientImpl>(
 -            thread_->task_runner(), server_wrapper_.get(), connection_id,
--            browser_agent, request.peer);
+-            browser_agent);
 -    AcceptWebSocket(connection_id, request);
 +    auto browser_client = std::make_unique<DevToolsAgentHostClientImpl>(
 +        thread_->task_runner(), server_wrapper_.get(), connection_id,
-+        browser_agent, request.peer,
-+        solara_token_mode_ ? socket_factory_.get() : nullptr);
++        browser_agent, solara_token_mode_ ? socket_factory_.get() : nullptr);
 +    if (solara_token_mode_ && !browser_client->attached()) {
 +      Send403(connection_id, "Connection rejected");
 +      return;
@@ -386,17 +382,16 @@ diff --git a/content/browser/devtools/devtools_http_handler.cc b/content/browser
    scoped_refptr<DevToolsAgentHost> agent =
        DevToolsAgentHost::GetForId(target_id);
    if (!agent) {
-@@ -906,12 +1116,16 @@ void DevToolsHttpHandler::OnWebSocketRequest(
+@@ -906,11 +1116,16 @@ void DevToolsHttpHandler::OnWebSocketRequest(
      return;
    }
  
 -  connection_to_client_[connection_id] =
 -      std::make_unique<DevToolsAgentHostClientImpl>(
--          thread_->task_runner(), server_wrapper_.get(), connection_id, agent,
--          request.peer);
+-          thread_->task_runner(), server_wrapper_.get(), connection_id, agent);
 +  auto client = std::make_unique<DevToolsAgentHostClientImpl>(
 +      thread_->task_runner(), server_wrapper_.get(), connection_id, agent,
-+      request.peer, solara_token_mode_ ? socket_factory_.get() : nullptr);
++      solara_token_mode_ ? socket_factory_.get() : nullptr);
 +  if (solara_token_mode_ && !client->attached()) {
 +    Send403(connection_id, "Connection rejected");
 +    return;

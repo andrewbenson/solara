@@ -27,6 +27,8 @@ final class FakeImportEngine: ImportEngine {
   var logs: [String] = []
   var forgets = 0
   var created: [(String, String?)] = []
+  var createdOptions: [(String?, String?)] = []
+  var readSpaceIds: [Set<String>?] = []
   var createFails = false
   var parents: ImportBookmarkParents? = ImportBookmarkParents(bar: "bar", other: "other", barEmpty: true, otherEmpty: false)
   var rootsAppearOnSubmit = false
@@ -74,8 +76,9 @@ final class FakeImportEngine: ImportEngine {
     return true
   }
 
-  func read(jobId: String, browserId: String, profileId: String, kinds: [ImportKind], progress: @escaping @MainActor (ImportKind, Bool) -> Void) async throws -> ImportRead {
+  func read(jobId: String, browserId: String, profileId: String, kinds: [ImportKind], spaceIds: Set<String>?, progress: @escaping @MainActor (ImportKind, Bool) -> Void) async throws -> ImportRead {
     calls.append("read:\(profileId)")
+    readSpaceIds.append(spaceIds)
     readCount += 1
     onRead?(readCount)
     readStarted?()
@@ -213,8 +216,9 @@ final class FakeImportEngine: ImportEngine {
 
   func dismissImportAsNewProfile() { calls.append("dismiss") }
 
-  func createProfile(name: String, color: String?) -> String? {
+  func createProfile(name: String, color: String?, icon: String?, shareWith: String?) -> String? {
     created.append((name, color))
+    createdOptions.append((icon, shareWith))
     return createFails ? nil : "new-\(name)"
   }
 
@@ -222,10 +226,10 @@ final class FakeImportEngine: ImportEngine {
   func log(_ line: String) { logs.append(line) }
 
   static func read(token: String? = "vault-1", name: String? = nil, failed: [ImportKind] = [], warnings: [ImportReadWarning] = [], credentials: [ImportCredential] = credentials(3),
-                   bookmarks: ImportBookmarkNode? = nil, tabs: [ImportTabRow] = [], favorites: [ImportTabRow] = [], hasSpaces: Bool = false,
+                   bookmarks: ImportBookmarkNode? = nil, tabs: [ImportTabRow] = [], favorites: [ImportTabRow] = [], spaces: [ImportSpaceRow] = [],
                    history: [ImportHistoryRow] = [], favicons: [ImportFaviconRow] = []) -> ImportRead {
     ImportRead(vaultToken: token, profileName: name, profileColor: nil, failed: failed, warnings: warnings, credentials: credentials,
-               bookmarks: bookmarks, tabs: tabs, favorites: favorites, hasSpaces: hasSpaces, history: history, favicons: favicons)
+               bookmarks: bookmarks, tabs: tabs, favorites: favorites, spaces: spaces, history: history, favicons: favicons)
   }
 
   static let recently = Date().timeIntervalSince1970 * 1000 - 3_600_000
@@ -265,9 +269,11 @@ final class FakeImportEngine: ImportEngine {
 
 @MainActor
 final class FakeScriptPath: ImportScriptPath {
+  var requests: [ImportRunRequest] = []
   var calls: [String] = []
   func scriptRun(_ request: ImportRunRequest, session: Int) async -> ImportRunOutcome {
     calls.append("run:\(request.runId):\(session)")
+    requests.append(request)
     return ImportRunOutcome(status: [.bookmarks: .done], counts: ImportCounts(bookmarks: 1))
   }
   func scriptCancel() { calls.append("cancel") }
@@ -308,6 +314,91 @@ struct ImportRunTests {
 
   func request(_ kinds: [ImportKind], browser: String = "chrome", profiles: [String] = ["Default"], target: String = "default", runId: String = "r1") -> ImportRunRequest {
     ImportRunRequest(runId: runId, browserId: browser, profileIds: profiles, spaceIds: [], kinds: kinds, target: target, withoutKey: false)
+  }
+
+  static let carriedSpace = ImportSpaceRow(id: "s", name: "Space", color: "#123456", colors: ["#123456", "#ABCDEF"], emoji: "🌱", icon: "leaf", profileId: "Default", pinned: [], tabs: [], theme: "{}")
+
+  @Test func spacesAreTheOnlySourceOfHasSpaces() {
+    let empty = FakeImportEngine.read()
+    let carried = FakeImportEngine.read(spaces: [Self.carriedSpace])
+    #expect(!empty.hasSpaces)
+    #expect(carried.hasSpaces)
+    #expect(carried.spaces == [Self.carriedSpace])
+  }
+
+  @Test func readFiltersPreserveSidebarEmptyAndSelectedSetsAndOrdinaryNil() async {
+    let selections = [[], ["z1"], ["unknown"]]
+    for ids in selections {
+      let (runs, engine, script, session) = setup([ImportFixtures.zen])
+      let req = ImportRunRequest(runId: "r1", browserId: "zen", profileIds: ["a"], spaceIds: ids, kinds: [.bookmarks], target: "default", withoutKey: false)
+      _ = await runs.run(req, session: session, engine: engine, script: script, scriptSession: 1)
+      #expect(engine.readSpaceIds == [Set(ids)])
+    }
+    let (runs, engine, script, session) = setup()
+    _ = await runs.run(request([.bookmarks]), session: session, engine: engine, script: script, scriptSession: 1)
+    #expect(engine.readSpaceIds == [nil])
+  }
+
+  @Test func destinationForwardsEmojiAndSharingOnlyWhenCreating() async {
+    let (runs, engine, _, session) = setup()
+    let runner = ImportRunner(runs: runs, engine: engine, session: session)
+    let first = await runner.destination("default", 0, "Original", "#0000FF", emoji: "🌱", shareWith: "work", stopped: { false })
+    #expect(first == .profile("default"))
+    #expect(engine.created.isEmpty)
+    let next = await runner.destination("default", 1, "Garden", "#0000FF", emoji: "🌱", shareWith: "default", stopped: { false })
+    #expect(next == .profile("new-Garden"))
+    #expect(engine.created.first?.0 == "Garden")
+    #expect(engine.created.first?.1 == "purple")
+    #expect(engine.createdOptions.first?.0 == "🌱")
+    #expect(engine.createdOptions.first?.1 == "default")
+    engine.askAnswer = false
+    let reused = await runner.destination("default", 2, "Work", nil, emoji: "🌱", shareWith: "default", stopped: { false })
+    #expect(reused == .profile("work"))
+    #expect(engine.created.count == 1)
+    let independent = await runner.destination("default", 3, "Separate", nil, stopped: { false })
+    #expect(independent == .profile("new-Separate"))
+    #expect(engine.createdOptions.last?.0 == nil)
+    #expect(engine.createdOptions.last?.1 == nil)
+  }
+
+  @Test func storedRouteOverrideCanBeClearedWithoutUsingForceScript() async throws {
+    let suite = "ImportTransport-\(UUID().uuidString)"
+    let defaults = try #require(UserDefaults(suiteName: suite))
+    defer { defaults.removePersistentDomain(forName: suite) }
+    let (runs, engine, script, session) = setup()
+    runs.forceScript = false
+    runs.scriptRouteDefault = { defaults.string(forKey: "ImportRoute") }
+    defaults.set("script", forKey: "ImportRoute")
+    _ = await runs.run(request([.bookmarks]), session: session, engine: engine, script: script, scriptSession: 1)
+    #expect(runs.route(of: "r1") == .js)
+    #expect(engine.readCount == 0)
+    #expect(engine.workspaces.isEmpty)
+    defaults.removeObject(forKey: "ImportRoute")
+    _ = await runs.run(request([.bookmarks], runId: "r2"), session: session, engine: engine, script: script, scriptSession: 1)
+    #expect(runs.route(of: "r2") == .swift)
+    #expect(engine.readCount == 1)
+  }
+
+  @Test func sidebarPlacementRemainsOnScriptWithOriginalSelection() async {
+    for browser in [ImportFixtures.arc, ImportFixtures.zen] {
+      let requests: [[ImportKind]] = [[.tabs], [.spaces], [.pinnedTabs], [.tabs, .favorites]]
+      for kinds in requests {
+        let (runs, engine, script, session) = setup([browser])
+        runs.forceScript = false
+        let req = ImportRunRequest(runId: "r1", browserId: browser.id, profileIds: ["p"], spaceIds: ["s", "unknown"], kinds: kinds, target: "work", withoutKey: true)
+        _ = await runs.run(req, session: session, engine: engine, script: script, scriptSession: 7)
+        #expect(runs.route(of: "r1") == .js)
+        #expect(engine.readCount == 0)
+        #expect(engine.created.isEmpty)
+        #expect(engine.workspaces.isEmpty)
+        #expect(script.requests.count == 1)
+        #expect(script.requests.first?.profileIds == req.profileIds)
+        #expect(script.requests.first?.spaceIds == req.spaceIds)
+        #expect(script.requests.first?.kinds == kinds)
+        #expect(script.requests.first?.target == "work")
+        #expect(script.requests.first?.withoutKey == true)
+      }
+    }
   }
 
   @Test func routeTakesChromiumFirefoxAndArcForEveryKindSwiftRuns() {
@@ -695,6 +786,7 @@ struct ImportRunTests {
     let req = ImportRunRequest(runId: "r1", browserId: "zen", profileIds: ["b"], spaceIds: ["z1"], kinds: [.bookmarks], target: "default", withoutKey: false)
     _ = await runs.run(req, session: session, engine: engine, script: script, scriptSession: 1)
     #expect(engine.calls.filter { $0.hasPrefix("read:") } == ["read:a", "read:b"])
+    #expect(engine.readSpaceIds == [Set(["z1"]), Set(["z1"])])
     #expect(engine.published.first?.preparing == 1)
   }
 
@@ -713,7 +805,7 @@ struct ImportRunTests {
 
   @Test func tabsFromASpacesSourceAreLeftOut() async {
     let (runs, engine, script, session) = setup()
-    engine.reads["Default"] = .success(FakeImportEngine.read(tabs: [ImportTabRow(url: "https://t.test/", title: "T", pinned: false, customTitle: nil)], hasSpaces: true))
+    engine.reads["Default"] = .success(FakeImportEngine.read(tabs: [ImportTabRow(url: "https://t.test/", title: "T", pinned: false, customTitle: nil)], spaces: [Self.carriedSpace]))
     _ = await runs.run(request([.tabs]), session: session, engine: engine, script: script, scriptSession: 1)
     #expect(engine.workspaces.isEmpty)
   }
@@ -864,7 +956,7 @@ struct ImportRunTests {
     #expect(ImportFavicons.chosen(read).map(\.png) == ["BBB"])
     #expect(ImportFavicons.chosen(FakeImportEngine.read(bookmarks: FakeImportEngine.tree, tabs: [tab], favicons: FakeImportEngine.icons)).map(\.png) == ["AAA", "BBB", "DDD"])
     let toolbar = FakeImportEngine.folder("", [FakeImportEngine.folder("Bar", [FakeImportEngine.link("A", "https://a.test/")], role: "toolbar")])
-    let withToolbar = FakeImportEngine.read(bookmarks: toolbar, tabs: [tab], hasSpaces: true, favicons: FakeImportEngine.icons)
+    let withToolbar = FakeImportEngine.read(bookmarks: toolbar, tabs: [tab], spaces: [Self.carriedSpace], favicons: FakeImportEngine.icons)
     #expect(ImportFavicons.chosen(withToolbar).map(\.png) == ["AAA", "DDD"])
     #expect(ImportFavicons.byPage(ImportFavicons.chosen(withToolbar)).map { $0.page + "=" + $0.favicon.png } == ["https://a.test/=DDD"])
   }

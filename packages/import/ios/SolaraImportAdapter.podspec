@@ -12,6 +12,6 @@ Pod::Spec.new do |s|
   s.dependency 'SolaraCore'
   s.frameworks     = 'AppKit', 'Security'
   s.libraries      = 'sqlite3'
-  s.source_files   = 'ImportModule.swift', 'ImportWriter.swift', 'Core/**/*.swift'
+  s.source_files   = 'ImportModule.swift', 'ImportRead.swift', 'ImportWriter.swift', 'Core/**/*.swift'
   s.pod_target_xcconfig = { 'DEFINES_MODULE' => 'YES' }
 end

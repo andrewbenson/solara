@@ -29,6 +29,7 @@ import struct
 import subprocess
 import tempfile
 import zipfile
+import zlib
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 SUPPORT = os.path.join(HERE, "home", "Library", "Application Support")
@@ -726,6 +727,26 @@ def arc_theme(name):
         return json.load(f)
 
 
+def chromium_favicons(path, pages):
+    db = new_db(path)
+    db.executescript("""
+        CREATE TABLE favicons(id INTEGER PRIMARY KEY, url LONGVARCHAR NOT NULL, icon_type INTEGER DEFAULT 1);
+        CREATE TABLE icon_mapping(id INTEGER PRIMARY KEY, page_url LONGVARCHAR NOT NULL, icon_id INTEGER);
+        CREATE TABLE favicon_bitmaps(id INTEGER PRIMARY KEY, icon_id INTEGER NOT NULL, image_data BLOB, width INTEGER, height INTEGER);
+    """)
+    def chunk(kind, data):
+        return struct.pack(">I", len(data)) + kind + data + struct.pack(">I", zlib.crc32(kind + data))
+    for index, page in enumerate(pages, 1):
+        color = bytes([index * 31, index * 17, index * 11, 255])
+        png = b"\x89PNG\r\n\x1a\n" + chunk(b"IHDR", struct.pack(">IIBBBBB", 1, 1, 8, 6, 0, 0, 0))
+        png += chunk(b"IDAT", zlib.compress(b"\x00" + color)) + chunk(b"IEND", b"")
+        db.execute("INSERT INTO favicons VALUES (?, ?, 1)", (index, page + "icon.png"))
+        db.execute("INSERT INTO icon_mapping VALUES (?, ?, ?)", (index, page, index))
+        db.execute("INSERT INTO favicon_bitmaps VALUES (?, ?, ?, 1, 1)", (index, index, png))
+    db.commit()
+    db.close()
+
+
 def build_arc():
     arc = os.path.join(SUPPORT, "Arc")
     root = os.path.join(arc, "User Data")
@@ -737,6 +758,11 @@ def build_arc():
         ("https://arc-login.example/", "https://arc-login.example/", "arc-user", v10(b"arc-pass"), 0, 1)])
     p1 = os.path.join(root, "Profile 1")
     write_json(os.path.join(p1, "Preferences"), {})
+    chromium_history(os.path.join(p1, "History"), [("https://arc-work-history.example/", "Arc work history", 3, 1, BASE_UNIX - 20, 0)])
+    chromium_bookmarks(os.path.join(d, "Bookmarks"), [bookmark("Arc personal bookmark", "https://arc-bookmark.example/", BASE_UNIX - 50, "c369bc65-b974-4d33-a83d-538f974a0101")], [], [])
+    chromium_bookmarks(os.path.join(p1, "Bookmarks"), [bookmark("Arc work bookmark", "https://arc-work-bookmark.example/", BASE_UNIX - 40, "c369bc65-b974-4d33-a83d-538f974a0102")], [], [])
+    chromium_favicons(os.path.join(d, "Favicons"), ["https://calendar.example/", "https://later.example/", "https://today.example/", "https://mail.example.com/", "https://untitled.example/"])
+    chromium_favicons(os.path.join(p1, "Favicons"), ["https://jira.example/", "https://slack.example/"])
 
     ref = BASE_UNIX - 978307200
 

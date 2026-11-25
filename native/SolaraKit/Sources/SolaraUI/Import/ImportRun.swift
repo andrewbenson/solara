@@ -32,6 +32,33 @@ public struct ImportReadWarning: Sendable, Equatable {
   }
 }
 
+public struct ImportSpaceRow: Sendable, Equatable {
+  public let id: String
+  public let name: String
+  public let color: String?
+  public let colors: [String]?
+  public let emoji: String?
+  public let icon: String?
+  public let profileId: String
+  public let pinned: [ImportBookmarkNode]
+  public let tabs: [ImportTabRow]
+  public let theme: String?
+
+  public init(id: String, name: String, color: String? = nil, colors: [String]? = nil, emoji: String? = nil, icon: String? = nil,
+              profileId: String, pinned: [ImportBookmarkNode], tabs: [ImportTabRow], theme: String? = nil) {
+    self.id = id
+    self.name = name
+    self.color = color
+    self.colors = colors
+    self.emoji = emoji
+    self.icon = icon
+    self.profileId = profileId
+    self.pinned = pinned
+    self.tabs = tabs
+    self.theme = theme
+  }
+}
+
 public struct ImportRead: Sendable, CustomStringConvertible, CustomDebugStringConvertible, CustomReflectable {
   public let vaultToken: String?
   public let profileName: String?
@@ -42,12 +69,13 @@ public struct ImportRead: Sendable, CustomStringConvertible, CustomDebugStringCo
   public let bookmarks: ImportBookmarkNode?
   public let tabs: [ImportTabRow]
   public let favorites: [ImportTabRow]
-  public let hasSpaces: Bool
+  public let spaces: [ImportSpaceRow]
+  public var hasSpaces: Bool { !spaces.isEmpty }
   public let history: [ImportHistoryRow]
   public let favicons: [ImportFaviconRow]
 
   public init(vaultToken: String?, profileName: String?, profileColor: String?, failed: [ImportKind], warnings: [ImportReadWarning], credentials: [ImportCredential],
-              bookmarks: ImportBookmarkNode? = nil, tabs: [ImportTabRow] = [], favorites: [ImportTabRow] = [], hasSpaces: Bool = false,
+              bookmarks: ImportBookmarkNode? = nil, tabs: [ImportTabRow] = [], favorites: [ImportTabRow] = [], spaces: [ImportSpaceRow] = [],
               history: [ImportHistoryRow] = [], favicons: [ImportFaviconRow] = []) {
     self.vaultToken = vaultToken
     self.profileName = profileName
@@ -58,7 +86,7 @@ public struct ImportRead: Sendable, CustomStringConvertible, CustomDebugStringCo
     self.bookmarks = bookmarks
     self.tabs = tabs
     self.favorites = favorites
-    self.hasSpaces = hasSpaces
+    self.spaces = spaces
     self.history = history
     self.favicons = favicons
   }
@@ -125,7 +153,7 @@ public protocol ImportEngine: AnyObject {
   func transientImportRefused()
   func isUnlocked(_ browserId: String) -> Bool
   func unlock(_ browserId: String) async -> Bool
-  func read(jobId: String, browserId: String, profileId: String, kinds: [ImportKind], progress: @escaping @MainActor (ImportKind, Bool) -> Void) async throws -> ImportRead
+  func read(jobId: String, browserId: String, profileId: String, kinds: [ImportKind], spaceIds: Set<String>?, progress: @escaping @MainActor (ImportKind, Bool) -> Void) async throws -> ImportRead
   func cancelRead(jobId: String)
   func discard(token: String)
   func writeNative(token: String, engineProfile: String, kinds: [String]) async -> ImportNativeWritten?
@@ -149,7 +177,7 @@ public protocol ImportEngine: AnyObject {
   func engineProfile(_ id: String) -> String
   func askImportAsNewProfile() async -> Bool?
   func dismissImportAsNewProfile()
-  func createProfile(name: String, color: String?) -> String?
+  func createProfile(name: String, color: String?, icon: String?, shareWith: String?) -> String?
   func publish(_ progress: ImportProgressUpdate)
   func log(_ line: String)
 }
@@ -532,7 +560,7 @@ final class ImportRunner {
       control.jobId = jobId
       var read: ImportRead
       do {
-        read = try await engine.read(jobId: jobId, browserId: source.id, profileId: profile.id, kinds: profileKinds) { [weak self] kind, ended in
+        read = try await engine.read(jobId: jobId, browserId: source.id, profileId: profile.id, kinds: profileKinds, spaceIds: bySpaces ? Set(request.spaceIds) : nil) { [weak self] kind, ended in
           self?.progressed(kind, ended)
         }
       } catch ImportReadFailure.cancelled {
@@ -816,7 +844,7 @@ final class ImportRunner {
     )
   }
 
-  func destination(_ target: String, _ index: Int, _ name: String, _ color: String?, stopped: () -> Bool) async -> ImportDestination {
+  func destination(_ target: String, _ index: Int, _ name: String, _ color: String?, emoji: String? = nil, shareWith: String? = nil, stopped: () -> Bool) async -> ImportDestination {
     if cancelled() || stopped() { return .halted }
     if index == 0 { return .profile(target) }
     if let clash = engine.profiles().first(where: { ImportProfileName.same($0.name, name) }) {
@@ -825,6 +853,6 @@ final class ImportRunner {
       if !asNew { return .profile(clash.id) }
     }
     if cancelled() || stopped() { return .halted }
-    return engine.createProfile(name: name, color: ImportProfileColor.of(color)).map(ImportDestination.profile) ?? .unavailable
+    return engine.createProfile(name: name, color: ImportProfileColor.of(color), icon: emoji, shareWith: shareWith).map(ImportDestination.profile) ?? .unavailable
   }
 }

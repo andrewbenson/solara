@@ -199,6 +199,12 @@ public class SettingsModule: Module {
     #endif
 
     #if DEBUG
+    AsyncFunction("devBrowserServiceCommands") { (action: String, urls: [String]) -> [String] in
+      MainActor.assumeIsolated { NativeBrowserServiceCommands.probe(action, urls: urls) }
+    }.runOnQueue(.main)
+    #endif
+
+    #if DEBUG
     AsyncFunction("devLinkCommands") { (action: String) -> [String] in
       MainActor.assumeIsolated { NativeLinkCommands.probe(action) }
     }.runOnQueue(.main)

@@ -246,6 +246,112 @@ try {
   await until("the slow page is loading", (s) => s.live?.a?.isLoading === true);
   await step("stop ends the load", () => menu("w1", "stop"), (_, s) => s.live?.a?.isLoading === false);
 
+  const services = (action, urls = []) => run(`return expo.modules.SolaraSettings.devBrowserServiceCommands(${JSON.stringify(action)}, ${JSON.stringify(urls)});`);
+  async function pick(windowId, urls, trigger = () => menu(windowId, "openFile"), mutate = null) {
+    if (baseline) {
+      await run(`globalThis.filePickerOriginal = expo.modules.SolaraShell.pickFiles; expo.modules.SolaraShell.pickFiles = () => new Promise(resolve => { globalThis.finishFilePicker = resolve; }); return true;`);
+    } else await services("begin");
+    try {
+      await trigger();
+      if (baseline) await until("baseline picker pending", async () => await run("return typeof finishFilePicker === 'function';"));
+      if (!baseline) assert.deepEqual(await services("read"), ["picker"]);
+      if (mutate) await mutate();
+      if (baseline) await run(`finishFilePicker(${JSON.stringify(urls)}); return true;`);
+      else await services("complete", urls);
+      await handledNatively("Open File picker completion");
+    } finally {
+      if (baseline) await run(`expo.modules.SolaraShell.pickFiles = filePickerOriginal; delete globalThis.finishFilePicker; delete globalThis.filePickerOriginal; return true;`);
+      else await services("end");
+    }
+  }
+  await run('ac.store.getState().activate("a"); return true;');
+  const cancelBefore = await nativeState();
+  await pick("w1", []);
+  assert.deepEqual((await nativeState()).windows.w1.tabIds, cancelBefore.windows.w1.tabIds);
+  pass("file picker cancellation creates no tabs");
+  const files = ["file:///solara-fixture-one.html", "file:///solara-fixture-two.html"];
+  await pick("w1", files, () => press("o", 31, ["command"]));
+  await until("two files with last active", s => s.tabs[s.windows.w1.activeTabIds[s.windows.w1.profileId]]?.url === files[1]);
+  assert.equal(Object.values((await nativeState()).tabs).filter(t => files.includes(t.url)).length, 2);
+  pass("Open File shortcut opens all files and activates last");
+  await run('ac.store.getState().activate("a"); return true;');
+  const staleURL = "file:///solara-stale-picker.html";
+  await pick("w1", [staleURL], () => bridge("openFile"), () => run('ac.store.getState().activate("b"); return true;'));
+  if (baseline) await until("baseline picker retargets after active tab change", s => Object.values(s.tabs).some(t => t.url === staleURL));
+  else assert.ok(!Object.values((await nativeState()).tabs).some(t => t.url === staleURL));
+  pass("picker active-target race", { baselineRetargets: baseline });
+  const promotedSmallTab = smallTab(await nativeState());
+  await menu(small, "openFile");
+  await until("Open File expands Little Solara without picker", s => !s.windows[small] && s.tabs[promotedSmallTab]?.windowId !== small);
+  await handledNatively("Little Solara Open File");
+  await run('ac.store.getState().activate("a"); return true;');
+  await run(`ac.store.getState().openPeek("a", ${JSON.stringify(`${base}/service-peek`)}); return true;`);
+  const servicePeek = (await until("service Peek", s => !!s.peeks.w1)).peeks.w1.tabId;
+  await menu("w1", "openFile");
+  await until("Open File promotes Peek without picker", s => !s.peeks.w1 && s.windows.w1.activeTabIds[s.windows.w1.profileId] === servicePeek);
+  await handledNatively("Peek Open File");
+  await until("autofill source ready", async () => !!(await run(`return JSON.parse(expo.modules.SolaraStoreAdapter.pageFacts(${JSON.stringify(servicePeek)}) || "null")?.ready;`)));
+  if (!baseline) {
+    await services("begin");
+    try {
+      await services("shown");
+      await menu("w1", "autofill");
+      assert.deepEqual(await services("read"), ["field"]);
+      await services("refused");
+      await menu("w1", "autofill", "passwords");
+      assert.deepEqual((await services("read")).slice(-2), ["passwords", "settings:passwords:default"]);
+      await menu(privateWindow, "autofill");
+      assert.equal((await services("read")).at(-1), "settings:autofill:default");
+      await handledNatively("autofill shown/refused and private Settings profile");
+      pass("native autofill modes, successful suggestion suppresses Settings, private refusal uses original profile");
+    } finally { await services("end"); }
+  } else {
+    await run(`globalThis.autofillOriginals = [expo.modules.SolaraChromeUI.showAutofillSuggestions, expo.modules.SolaraSettings.navigate, expo.modules.SolaraShell.openWindow];
+      globalThis.autofillCalls = []; globalThis.autofillShown = true;
+      expo.modules.SolaraChromeUI.showAutofillSuggestions = (id, passwords) => { autofillCalls.push(passwords ? "passwords" : "field"); return Promise.resolve(autofillShown); };
+      expo.modules.SolaraSettings.navigate = (pane, profile) => { autofillCalls.push("settings:" + pane + ":" + profile); return Promise.resolve(); };
+      expo.modules.SolaraShell.openWindow = () => Promise.resolve(); return true;`);
+    try {
+      await menu("w1", "autofill");
+      await until("baseline autofill shown", async () => (await run("return autofillCalls;")).length === 1);
+      assert.deepEqual(await run("return autofillCalls;"), ["field"]);
+      await run("autofillShown = false; return true;");
+      await menu("w1", "autofill", "passwords");
+      await until("baseline passwords Settings", async () => (await run("return autofillCalls;")).at(-1) === "settings:passwords:default");
+      assert.deepEqual((await run("return autofillCalls;")).slice(-2), ["passwords", "settings:passwords:default"]);
+      await menu(privateWindow, "autofill");
+      await until("baseline private Settings", async () => (await run("return autofillCalls;")).at(-1) === "settings:autofill:null");
+      assert.equal((await run("return autofillCalls;")).at(-1), "settings:autofill:null");
+      pass("baseline autofill success/refusal and private default Settings profile");
+    } finally {
+      await run(`expo.modules.SolaraChromeUI.showAutofillSuggestions = autofillOriginals[0]; expo.modules.SolaraSettings.navigate = autofillOriginals[1]; expo.modules.SolaraShell.openWindow = autofillOriginals[2]; delete globalThis.autofillOriginals; delete globalThis.autofillCalls; delete globalThis.autofillShown; return true;`);
+    }
+  }
+  const pickerWindow = await run(`return ac.store.getState().createWindow({ url: ${JSON.stringify(`${base}/picker-window`)} });`);
+  await until("second picker window", s => !!s.windows[pickerWindow]);
+  const mainTabs = (await nativeState()).windows.w1.tabIds;
+  await pick(pickerWindow, ["file:///solara-second-window.html"]);
+  await until("picker stays in invoking window", s => Object.values(s.tabs).some(t => t.windowId === pickerWindow && t.url === "file:///solara-second-window.html"));
+  assert.deepEqual((await nativeState()).windows.w1.tabIds, mainTabs);
+  const closedURL = "file:///solara-closed-picker.html";
+  await pick(pickerWindow, [closedURL], () => menu(pickerWindow, "openFile"), async () => {
+    await menu(pickerWindow, "closeWindow");
+    await until("picker invoking window closed", s => !s.windows[pickerWindow]);
+  });
+  if (baseline) await until("baseline closed picker reroutes", s => Object.values(s.tabs).some(t => t.url === closedURL));
+  else assert.ok(!Object.values((await nativeState()).tabs).some(t => t.url === closedURL));
+  pass("picker second-window isolation and closed-window receipt");
+  for (const id of [...(await nativeState()).windowOrder]) await run(`ac.store.getState().closeWindow(${JSON.stringify(id)}); return true;`);
+  await until("no browser windows", s => s.windowOrder.length === 0);
+  const noWindowFiles = ["file:///solara-no-window-one.html", "file:///solara-no-window-two.html"];
+  await pick(null, noWindowFiles, () => bridge("openFile", null));
+  const created = await until("no-window picker creates window", s => s.windowOrder.length === 1);
+  const createdWindow = created.windowOrder[0];
+  const expected = baseline ? noWindowFiles[0] : noWindowFiles[1];
+  assert.equal(created.tabs[created.windows[createdWindow].activeTabIds[created.windows[createdWindow].profileId]]?.url, expected);
+  assert.equal(Object.values(created.tabs).filter(t => noWindowFiles.includes(t.url)).length, baseline ? 1 : 2);
+  pass("no-window multiple-file behavior", { expectedFiles: baseline ? 1 : 2 });
+
   writeFileSync(join(output, "result.json"), JSON.stringify({ passed: true, checks: evidence.map((e) => e.label) }, null, 2));
   console.log(`${evidence.length}/${evidence.length} passed`);
 } finally {

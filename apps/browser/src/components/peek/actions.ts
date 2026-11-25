@@ -80,10 +80,6 @@ export function runPeekCommand(command: string, windowId: string): boolean {
   const s = store();
   const peek = s.peeks[windowId];
   if (!peek) return false;
-  if (command === "openFile") {
-    openPeekAsTab(windowId);
-    return true;
-  }
   if (command !== "closeTab" || s.windowUi[windowId]?.panel.open) return false;
   if (s.find[peek.tabId]?.open) {
     s.setFind(peek.tabId, { open: false, count: null, active: 0 });

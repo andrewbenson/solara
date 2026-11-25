@@ -5,7 +5,6 @@ import { markPanelFrame } from "./perfMarks";
 import {
   closeWindow as closeNativeWindow,
   openExternalURL,
-  pickFiles,
   prompt,
   setAppearance,
   type CommandEvent,
@@ -47,7 +46,6 @@ import { numberedTabs } from "../components/sidebar/entries";
 import { openExtensionFromMenu } from "../components/extensions/bridge";
 import { toggleCastPicker } from "../components/media/cast";
 import { openManageExtensions, openPinDialog, openWebStore } from "../components/extensions/state";
-import { requestAutofill } from "../components/site/Autofill";
 import { openProfileMenu } from "../components/ProfileIndicator";
 import { groupOf, multiSelection } from "../store/organize";
 import { reopenClosedTogether } from "../store/closedTogether";
@@ -56,7 +54,6 @@ import {
   closeLittleSolara,
   cycleLittleSolaraProfile,
   moveLittleSolaraToProfile,
-  openInMainWindow,
   openLittleSolara,
   openLittleSolaraProfileMenu,
 } from "../components/littleSolara/actions";
@@ -76,7 +73,7 @@ export const commandHandlers = {
 };
 
 export function runCommand({ command, arg, windowId: requested }: CommandEvent) {
-  if (command === "openBookmark" || command === "jumpToSelection" || ["copyUrl", "copyUrlAsMarkdown", "copyQuoteLink", "share"].includes(command)) return void nativeWorkspaceCommand(command, arg, requested);
+  if (command === "openBookmark" || command === "jumpToSelection" || ["copyUrl", "copyUrlAsMarkdown", "copyQuoteLink", "share", "openFile", "autofill"].includes(command)) return void nativeWorkspaceCommand(command, arg, requested);
   if (nativeOwnsWorkspace() && nativeWorkspaceCommand(command, arg, requested)) return;
   if (__DEV__ && !commandHandlersEnabled) { commandHandlerBlocked++; return; }
   if (__DEV__) commandHandlerCalls++;
@@ -296,8 +293,6 @@ export function runCommand({ command, arg, windowId: requested }: CommandEvent) 
       return void openWebStore(windowId);
     case "pinExtensions":
       return openPinDialog(windowId);
-    case "autofill":
-      return void requestAutofill(windowId, arg, tabId);
     case "newProfile":
       return void createProfile(windowId).then((id) => id && switchProfile(windowId, id));
   }
@@ -342,8 +337,6 @@ function runWindowCommand(command: string, arg: string | null | undefined, reque
       return openSettings("shortcuts");
     case "importBrowserData":
       return openImport();
-    case "openFile":
-      return void openFiles(requested);
     case "manageExtensions":
       return openManageExtensions(requested);
     case "setBookmarksBar":
@@ -370,9 +363,6 @@ function runLittleSolaraCommand(command: string, arg: string | null | undefined,
       return;
     case "focusCommandBar":
       s.openPanel(windowId, tab?.url ?? "");
-      return;
-    case "openFile":
-      openInMainWindow(windowId);
       return;
     case "switchProfile":
       if (arg) moveLittleSolaraToProfile(windowId, arg);
@@ -407,13 +397,3 @@ async function addBookmarkToFolder(windowId: string, tabId: string, folder: stri
   await bookmarkWriter.addBookmark({ profileId, url: tab.url, title: tab.title, favicon: tab.favicon, parentId }).catch(reportBookmarkFailure);
 }
 
-async function openFiles(windowId: string | null) {
-  const urls = await pickFiles();
-  if (!urls.length) return;
-  const s = useBrowser.getState();
-  const target = resolveWindowId(s, windowId);
-  if (!target) return void openWindow({ url: urls[0] });
-  let last: string | undefined;
-  for (const url of urls) last = useBrowser.getState().newTab(target, { url });
-  if (last) useBrowser.getState().activate(last);
-}

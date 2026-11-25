@@ -599,3 +599,5 @@ VM gate: tests-only expected compile red for the absent planner; then bounded fi
 All Swift and driver execution remains pending; source application is not runtime verification.
 
 Copy links and share: Swift source delivered in slice 3; CopyLinkCommandTests and handler-disabled copy/quote/share drivers in layouts 0 and 1 remain VM gates. No build or runtime verification claimed.
+
+Open File and autofill: Swift source delivered in slice 4; BrowserServiceCommandTests, native-page-commands (picker/autofill legs), little-solara and shortcuts matrix/presses/precedence in layouts 0 and 1 remain VM gates. Real file panel, Chrome dropdown, ownership loss and page replacement require VM checks; no build or runtime verification claimed.

@@ -36,10 +36,10 @@ enum NativeWorkspaceCommands {
   private static var lastFindRequest = 0
 
   static func install() {
-    for command in WorkspaceMenuCommand.commands.union(ViewMenuCommand.commands).union(PageMenuCommand.commands).union(FindMenuCommand.commands).union(BookmarkMenuCommand.commands).union(CopyLinkCommand.commands) {
+    for command in WorkspaceMenuCommand.commands.union(ViewMenuCommand.commands).union(PageMenuCommand.commands).union(FindMenuCommand.commands).union(BookmarkMenuCommand.commands).union(CopyLinkCommand.commands).union(BrowserServiceCommand.commands) {
       NativeMenuCommands.argumentHandlers[command] = { arg, windowId in perform(command, arg: arg, windowId: windowId) }
     }
-    NativeMenuCommands.keepsMenuDispatch = ViewMenuCommand.commands.union(PageMenuCommand.commands).union(BookmarkMenuCommand.commands).union(CopyLinkCommand.commands)
+    NativeMenuCommands.keepsMenuDispatch = ViewMenuCommand.commands.union(PageMenuCommand.commands).union(BookmarkMenuCommand.commands).union(CopyLinkCommand.commands).union(BrowserServiceCommand.commands)
     NativeMenuCommands.workspaceAvailability = { command, arg, windowId in
       guard NativeStoreHandle.ownsWorkspace, let state = NativeStoreHandle.store?.state,
         WorkspaceMenuCommand.commands.contains(command) else { return nil }
@@ -249,6 +249,7 @@ enum NativeWorkspaceCommands {
     let timing = NewTabMainThreadTiming.begin("command.\(command)", windowId: windowId)
     defer { NewTabMainThreadTiming.end(timing) }
     #endif
+    if BrowserServiceCommand.commands.contains(command) { return NativeBrowserServiceCommands.perform(command, arg: arg, windowId: windowId) }
     if BookmarkMenuCommand.commands.contains(command) { return NativeBookmarkCommands.perform(command, arg: arg, windowId: windowId) }
     if CopyLinkCommand.commands.contains(command) { return NativeLinkCommands.perform(command, arg: arg, windowId: windowId) }
     if ViewMenuCommand.commands.contains(command) { return performView(command, arg: arg, windowId: windowId) }

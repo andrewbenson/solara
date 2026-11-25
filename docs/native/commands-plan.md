@@ -171,3 +171,5 @@ Source implementation is present: `WorkspaceMenuCommand` resolves the first grou
 Swift tests and the handler-disabled native driver are written. `node --check` and whitespace checks pass. Compile, Swift test and hidden-instance checklist items remain pending VM execution. Local typecheck and JS tests are skipped because this clone has no `node_modules`. Exact commands are in `result.md`. No commits or push.
 
 Copy links and share: Swift source delivered in slice 3; CopyLinkCommandTests and handler-disabled copy/quote/share drivers in layouts 0 and 1 remain VM gates. No build or runtime verification claimed.
+
+Open File and autofill: Swift source delivered in slice 4; BrowserServiceCommandTests, native-page-commands (picker/autofill legs), little-solara and shortcuts matrix/presses/precedence in layouts 0 and 1 remain VM gates. Real file panel, Chrome dropdown, ownership loss and page replacement require VM checks; no build or runtime verification claimed.

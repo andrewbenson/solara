@@ -6405,8 +6405,33 @@ try {
       await evalApp(`ac.actions.switchProfile("${mainWindow}", "${home}"); return true`);
       await until("the first profile back", async () => (await state()).profileId === home).catch(() => null);
 
+      const privateWindow = await evalApp(`return ac.actions.openWindow({ incognito: true, url: ${JSON.stringify(`${secureBase}/call?private`)} })`);
+      try {
+        const privateTabs = () => evalApp(`const s = ac.store.getState(); const w = s.windows[${JSON.stringify(privateWindow)}]; return (w?.tabIds ?? []).map((id) => ({ id, url: s.tabs[id]?.url, title: s.tabs[id]?.title, loading: s.live[id]?.isLoading }))`);
+        const callTab = await until("the private call loaded", async () => (await privateTabs()).find((x) => x.url?.includes("/call?private") && x.title === "Call" && !x.loading), 15000);
+        const page = await pageFor(callTab.id, "/call?private");
+        const js = async (e) => (await cdp(page, "Runtime.evaluate", { expression: e, awaitPromise: true, userGesture: true, returnByValue: true })).result.value;
+        await js(`join(${JSON.stringify({ audio: true, video: true })})`);
+        await until("joined in a private window", async () => {
+          const request = await evalApp(`return ac.pageState.getState().pages["${callTab.id}"]?.permission ?? null`);
+          if (request) await evalApp(`ac.permissions.answerPermission("${callTab.id}", "${request.id}", "accept"); return true`);
+          return JSON.parse(await js("callState()")).joined ? true : null;
+        }, 10000);
+        const elsewhere = await evalApp(`return ac.store.getState().newTab(${JSON.stringify(privateWindow)}, { url: ${JSON.stringify(`${secureBase}/b?private-away`)} })`);
+        await until("the private window's other tab loaded", async () => (await privateTabs()).find((x) => x.id === elsewhere && !x.loading), 15000);
+        await evalApp(`ac.actions.switchToTab("${callTab.id}"); return true`);
+        await sleep(500);
+        await evalApp(`ac.actions.switchToTab("${elsewhere}"); return true`);
+        out.privateLeave = await until("the private call's document PiP", async () => docPip(callTab.id, true), 8000).then(() => true, () => false);
+        out.privateInPip = await js("callState()").then((x) => JSON.parse(x).inPip, () => null);
+        await evalApp(`return ac.webviews.get("${callTab.id}").exitPictureInPicture()`).catch(() => null);
+      } finally {
+        await evalApp(`ac.store.getState().closeWindow(${JSON.stringify(privateWindow)}); return true`).catch(() => null);
+      }
+
       const failed = !out.leave || !out.inPip.inPip || !out.inPip.tracks.every((x) => x.endsWith(":live")) || !out.back || !out.home.home ||
-        out.videoEntered !== true || !out.callTookOver || !out.videoPausedByTakeover || !out.callKeptPip || !out.micOnly || out.settingOffOpened;
+        out.videoEntered !== true || !out.callTookOver || !out.videoPausedByTakeover || !out.callKeptPip || !out.micOnly || out.settingOffOpened ||
+        !out.privateLeave;
       if (failed) throw new Error(JSON.stringify(out));
       return out;
     } finally {

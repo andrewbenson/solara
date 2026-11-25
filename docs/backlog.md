@@ -4,6 +4,7 @@ Ideas the owner wants kept, not scheduled. Newest first. Move an item into a pla
 
 | Added | Item | Priority | Notes |
 |---|---|---|---|
+| 2026-11-25 | Hooks: a HookCommandRunner dropped while its child still runs can leave that child a zombie (its exit source is cancelled with the runner, so nothing reaps it). Found by the independent review of the reap-race fix; not introduced by it | Low | Reap pending children on deinit or hand them to a process-lifetime reaper |
 | 2026-11-25 | Tests: shortcut-presses-test's "⌘T then +80 ms ⌘V" leg fails about 1 run in 3 with the native layout on: the paste lands in the new field as it should, but the harness's own key-gap bound (79–110 ms) catches 119–127 ms gaps on a loaded Hill Studio. Widen the bound or measure the gap the app saw | Low | Harness timing; found by seltab45 during the 0.4.9 commands slices |
 | 2026-11-25 | Tests: bookmarks-bar-test's folder-to-sidebar leg ("folder becomes pinned sidebar group: timed out") fails in both layouts on main 6587ee35 with slice 1 (Debug AECA6C0D), before and after slice 2 (077c7889), 56/57 | Low | Pre-existing; found by seltab45 |
 | 2026-11-25 | Tests: native-find-commands-test's "a click that ends the focus gate keeps focus where the click put it" fails about 1 run in 3 on main 6587ee35 with the native layout off (layout 0): the first responder stays NSTextView. Seen before and after the commands slice 1 (40fc6a69) | Low | Flake in the focus-gate click leg; found by seltab45 |

@@ -11,7 +11,7 @@ import { bookmarkProfileId, engineProfile } from "../../store/model";
 import { shownPageId } from "../../store/peek";
 import { openImport } from "../settings/windows";
 import { useSidebarWidth } from "../sidebar/tokens";
-import { openModeFor, openUrl } from "./actions";
+import { openBookmark, openModeFor } from "./actions";
 import { handleBookmarksBarMenuChoice } from "./bookmarksBarActions";
 import { BOOKMARKS_BAR_HEIGHT, nativeBookmarksBarAvailable } from "./bookmarksBarPolicy";
 import { bookmarksBarSnapshot } from "./bookmarksBarSnapshot";
@@ -47,6 +47,14 @@ export function NativeBookmarksBarFeed({ windowId }: { windowId: string }) {
 
 function useBookmarksBarActions(windowId: string) {
   useEffect(() => onHostedEvent("bookmarksBar", windowId, (name, payload) => {
+    if (name === "press" && typeof payload.id === "string") {
+      openBookmark(payload.id, windowId, openModeFor({ metaKey: payload.metaKey === true, shiftKey: payload.shiftKey === true, altKey: payload.altKey === true, middle: payload.middle === true }));
+      return;
+    }
+    if (name === "menuChoice" && typeof payload.action === "string" && ["open", "tab", "window", "incognito", "split", "openAll", "openAllWindow", "openAllIncognito"].includes(payload.action)) {
+      if (typeof payload.id === "string") void handleBookmarksBarMenuChoice(windowId, "", payload.action, payload.id);
+      return;
+    }
     const s = useBrowser.getState();
     const window = s.windows[windowId];
     if (!window) return;
@@ -55,14 +63,7 @@ function useBookmarksBarActions(windowId: string) {
     const roots = s.bookmarks.roots[currentProfileId];
     const children = roots ? folderChildren(s.bookmarks, roots.bar) : [];
     const node = typeof payload.id === "string" ? children.find((n) => n.id === payload.id) : undefined;
-    if (name === "press" && node?.kind === "url") {
-      openUrl(node.url, windowId, openModeFor({
-        metaKey: payload.metaKey === true,
-        shiftKey: payload.shiftKey === true,
-        altKey: payload.altKey === true,
-        middle: payload.middle === true,
-      }));
-    } else if (name === "move" && node && roots) {
+    if (name === "move" && node && roots) {
       if (typeof payload.into === "string") {
         const target = children.find((n) => n.id === payload.into);
         if (target?.kind === "folder" && target.id !== node.id) void submitBookmarks(currentProfileId, [{ method: "moveBookmark", args: [node.id, target.id] }]).catch(reportBookmarkFailure);

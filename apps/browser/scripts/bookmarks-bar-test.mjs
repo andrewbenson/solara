@@ -456,9 +456,10 @@ try {
     });
   }
   await rep.check("native-menu-open-all-confirmation", async () => {
-    const before = await run("return { tabs: [...S().windows.w1.tabIds], confirms: bmbar.confirms.length }; ");
+    const native = await run('return typeof expo.modules.SolaraSettings.devBookmarkConfirmation === "function";');
+    const before = await run(`return { tabs: [...S().windows.w1.tabIds], confirms: ${native ? "(await expo.modules.SolaraSettings.devBookmarkConfirmation(true))" : "bmbar.confirms"}.length };`);
     await choose("item", menuFixtures.many, `openAll:${menuFixtures.many}`);
-    const prompts = await until("large-folder confirmation", "return bmbar.confirms;", (value) => value.length > before.confirms);
+    const prompts = await until("large-folder confirmation", `return ${native ? "(await expo.modules.SolaraSettings.devBookmarkConfirmation(true))" : "bmbar.confirms"};`, (value) => value.length > before.confirms);
     assert.deepEqual(prompts.at(-1), { title: "Open 16 tabs?", message: "This folder has a lot of bookmarks.", confirmTitle: "Open All", windowId: "w1" });
     assert.deepEqual(await run("return S().windows.w1.tabIds;"), before.tabs, "cancelled confirmation opens nothing");
   });

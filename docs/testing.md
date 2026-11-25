@@ -587,3 +587,13 @@ Peek isolation, Little Solara and a second window. It honors `SOLARA_NATIVE_WIND
 Use `--baseline` against the matching pre-change app and JS; omit it for native acceptance.
 Swift coverage is in `PageMenuCommandTests` (the `jump` cases), including field selection, textarea scrolling,
 shadow/frame focus, editable carets, empty targets and page routing. Swift/driver execution is pending.
+
+## Open bookmark command ownership
+
+`native-page-commands-test.mjs <Debug app> <fresh output directory>` checks bookmark menu/direct-bridge navigation,
+folder/deleted-ID no-ops, blank targets, Peek isolation, Little Solara and private original-profile lookup with JS handlers disabled.
+Use `--baseline` only with the matching main + slice 1 app/JS. Run before/after in layouts 0 and 1; the driver records nativeLayout.
+Also run bookmarks-bar, native-tab-commands and shortcuts matrix/presses/precedence in both layouts; give native-tab's harness the process-env layout override.
+`BookmarkMenuCommandTests` covers read-only/unavailable catalogs, ID scoping, routing, modes and stale confirmation receipts.
+VM gate: tests-only expected compile red for the absent planner; then bounded filtered/full SwiftPM and matching Debug app builds.
+All Swift and driver execution remains pending; source application is not runtime verification.

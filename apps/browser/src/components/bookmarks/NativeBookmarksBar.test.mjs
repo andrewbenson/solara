@@ -43,7 +43,7 @@ const sources = {
   "../settings/windows": `export const openImport = () => globalThis.nativeBookmarksBarTest.actions.push(["import"]);`,
   "./actions": `
     export const openModeFor = (mods) => mods;
-    export const openUrl = (...args) => globalThis.nativeBookmarksBarTest.actions.push(["url", ...args]);
+    export const openBookmark = (...args) => globalThis.nativeBookmarksBarTest.actions.push(["bookmark", ...args]);
   `,
   "./bookmarksBarPolicy": `export const BOOKMARKS_BAR_HEIGHT = 30; export const nativeBookmarksBarAvailable = () => globalThis.nativeBookmarksBarTest.kinds.includes("bookmarksBar");`,
   "../../lib/bookmarkWriter": `
@@ -112,10 +112,10 @@ test("hosted snapshots and action subscriptions retain their window and current 
   assert.equal(JSON.parse(second.props.state).profileId, "two");
   assert.deepEqual(f.subscriptions, [["bookmarksBar", "first"], ["bookmarksBar", "second"]]);
   f.listeners.get("second")("press", { id: "second", metaKey: true, shiftKey: true, altKey: false, ctrlKey: true, middle: true });
-  assert.deepEqual(f.actions, [["url", "https://second.example", "second", { metaKey: true, shiftKey: true, altKey: false, middle: true }]]);
+  assert.deepEqual(f.actions, [["bookmark", "second", "second", { metaKey: true, shiftKey: true, altKey: false, middle: true }]]);
   f.state.windows.first.profileId = "two";
   f.listeners.get("first")("press", { id: "a" });
-  assert.equal(f.actions.length, 1);
+  assert.deepEqual(f.actions.at(-1), ["bookmark", "a", "first", { metaKey: false, shiftKey: false, altKey: false, middle: false }]);
   f.listeners.get("first")("menuChoice", { action: "manage" });
   assert.deepEqual(f.actions.at(-1), ["menuChoice", "first", "two", "manage", undefined]);
   f.cleanups.forEach((cleanup) => cleanup());
@@ -129,9 +129,9 @@ test("native menu choices replace JS menu requests and retain nested bookmark id
     ["press", { id: "folder" }], ["contextMenu", { id: "a" }],
     ["overflowPress", { ids: ["a"] }], ["otherPress", {}], ["importContextMenu", {}],
   ]) event(name, payload);
-  assert.deepEqual(f.actions, []);
+  assert.deepEqual(f.actions, [["bookmark", "folder", "first", { metaKey: false, shiftKey: false, altKey: false, middle: false }]]);
   event("menuChoice", { action: "open", id: "child" });
-  assert.deepEqual(f.actions.at(-1), ["menuChoice", "first", "one", "open", "child"]);
+  assert.deepEqual(f.actions.at(-1), ["menuChoice", "first", "", "open", "child"]);
   event("menuChoice", { action: "bar", id: "newTab" });
   assert.deepEqual(f.actions.at(-1), ["menuChoice", "first", "one", "bar", "newTab"]);
   event("menuChoice", { action: "addPage", id: "a" });
@@ -140,7 +140,7 @@ test("native menu choices replace JS menu requests and retain nested bookmark id
   assert.deepEqual(f.actions.at(-1), ["import"]);
 });
 
-test("events drawn for a previous profile cannot act on the newly selected profile", () => {
+test("native opening receives identity while stale profile mutations are refused", () => {
   mount();
   const event = f.listeners.get("first");
   f.state.windows.first.profileId = "two";
@@ -153,9 +153,9 @@ test("events drawn for a previous profile cannot act on the newly selected profi
     ["importContextMenu", {}],
     ["menuChoice", { action: "delete", id: "second" }],
   ]) event(name, { ...payload, profileId: "one" });
-  assert.deepEqual(f.actions, []);
+  assert.deepEqual(f.actions, [["bookmark", "second", "first", { metaKey: false, shiftKey: false, altKey: false, middle: false }]]);
   event("press", { id: "second", profileId: "two" });
-  assert.equal(f.actions.at(-1)[1], "https://second.example");
+  assert.equal(f.actions.at(-1)[1], "second");
 });
 
 
@@ -212,13 +212,13 @@ test("invalid, removed and stale drag sources and targets cannot write", () => {
   assert.deepEqual(f.actions, []);
 });
 
-test("a removed window ignores hosted events", () => {
+test("a removed window refuses writes and delegates opening to native validation", () => {
   mount();
   delete f.state.windows.first;
   const event = f.listeners.get("first");
   event("move", { id: "a", index: 0, profileId: "one" });
   event("press", { id: "a", profileId: "one" });
-  assert.deepEqual(f.actions, []);
+  assert.deepEqual(f.actions, [["bookmark", "a", "first", { metaKey: false, shiftKey: false, altKey: false, middle: false }]]);
 });
 
 test("menu choices preserve colon-containing IDs and reject unrelated or removed bookmarks", () => {
@@ -365,7 +365,7 @@ test("the native layout keeps bookmark actions alive through a headless feed", a
   event("focusPage", {});
   event("importPress", {});
   assert.deepEqual(f.actions, [
-    ["url", "https://a.example", "first", { metaKey: false, shiftKey: false, altKey: false, middle: false }],
+    ["bookmark", "a", "first", { metaKey: false, shiftKey: false, altKey: false, middle: false }],
     ["move", "a", "bar", 2],
     ["add", { profileId: "one", parentId: "bar", index: 0, url: "https://new.example", title: "New" }],
     ["menuChoice", "first", "one", "manage", undefined],

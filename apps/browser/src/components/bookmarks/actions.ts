@@ -1,11 +1,8 @@
-import { confirm } from "@solara/shell";
+import { nativeWorkspaceCommand } from "@solara/settings";
 import { create } from "zustand";
-import { focus, openWindow } from "../../lib/actions";
 import { bookmarkWriter, reportBookmarkFailure } from "../../lib/bookmarkWriter";
-import { folderLinks } from "../../store/bookmarks";
 import { useBrowser } from "../../store/browser";
-import { activeTabId, bookmarkProfileId, resolveWindowId, viewTabIds } from "../../store/model";
-import { originalProfile } from "../../store/small";
+import { bookmarkProfileId, resolveWindowId, viewTabIds } from "../../store/model";
 
 type OpenMode = "current" | "background" | "foreground" | "window" | "incognito" | "split";
 
@@ -17,55 +14,15 @@ export function openModeFor(e: { metaKey?: boolean; shiftKey?: boolean; altKey?:
 }
 
 export function openUrl(url: string, windowId: string | null | undefined, mode: OpenMode) {
-  const s = useBrowser.getState();
-  const id = resolveWindowId(s, windowId);
-  const w = id ? s.windows[id] : undefined;
-  if (mode === "incognito") return void openWindow({ incognito: true, url, profileId: originalProfile(s, w) });
-  if (!id || mode === "window") {
-    const created = openWindow(w?.incognito ? { incognito: true, url, profileId: originalProfile(s, w) } : { url, profileId: w?.profileId });
-    return focus(created);
-  }
-  const tabId = activeTabId(s, id);
-  if (mode === "split") {
-    const result = s.openSplitPane(id, { url });
-    if (result.ok) return;
-    return void s.newTab(id, { url });
-  }
-  if (mode === "current" && tabId) return s.navigate(tabId, url);
-  s.newTab(id, { url, background: mode === "background", openerId: mode === "background" ? tabId : undefined });
+  nativeWorkspaceCommand("openBookmarkItems", JSON.stringify({ url, mode }), windowId ?? null);
 }
 
-export async function openFolder(folderId: string, windowId: string | null | undefined, mode: "tabs" | "window" | "incognito" = "tabs") {
-  const s = useBrowser.getState();
-  const links = folderLinks(s.bookmarks, folderId);
-  if (!links.length) return;
-  if (links.length > 15) {
-    const { confirmed } = await confirm({
-      title: `Open ${links.length} tabs?`,
-      message: "This folder has a lot of bookmarks.",
-      confirmTitle: "Open All",
-      windowId: resolveWindowId(s, windowId),
-    });
-    if (!confirmed) return;
-  }
-  const id = resolveWindowId(s, windowId);
-  const source = id ? s.windows[id] : undefined;
-  if (mode !== "tabs" || !id) {
-    const incognito = mode === "incognito" || !!source?.incognito;
-    const created = openWindow({ url: links[0]!.url, incognito, profileId: incognito ? undefined : source?.profileId });
-    openInOrder(created, links.slice(1), activeTabId(useBrowser.getState(), created));
-    return focus(created);
-  }
-  const first = useBrowser.getState().newTab(id, { url: links[0]!.url });
-  openInOrder(id, links.slice(1), first);
+export function openBookmark(id: string, windowId: string | null | undefined, mode: OpenMode) {
+  nativeWorkspaceCommand("openBookmarkItems", JSON.stringify({ id, mode }), windowId ?? null);
 }
 
-function openInOrder(windowId: string, links: { url: string }[], after: string | undefined) {
-  for (const link of links) {
-    const tabIds = useBrowser.getState().windows[windowId]?.tabIds ?? [];
-    const index = after && tabIds.includes(after) ? tabIds.indexOf(after) + 1 : undefined;
-    after = useBrowser.getState().newTab(windowId, { url: link.url, background: true, index }) || after;
-  }
+export function openFolder(id: string, windowId: string | null | undefined, mode: "tabs" | "window" | "incognito" = "tabs") {
+  nativeWorkspaceCommand("openBookmarkItems", JSON.stringify({ id, mode, folder: true }), windowId ?? null);
 }
 
 export type BookmarkDialogState =

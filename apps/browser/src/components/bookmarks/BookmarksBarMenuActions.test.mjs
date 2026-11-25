@@ -7,17 +7,19 @@ const { shellNativeModules } = await import('../../test-native/shell.ts');
 const { useBookmarkEditor } = await import('./edit.ts');
 
 const actionsURL = new URL("../../lib/actions.ts", import.meta.url).href;
+const bookmarkActionsURL = new URL("./actions.ts", import.meta.url).href;
 const browserURL = new URL("../../store/browser.ts", import.meta.url).href;
 const fake = (source) => ({ url: `data:text/javascript,${encodeURIComponent(source)}`, shortCircuit: true });
 const hooks = registerHooks({
   resolve(specifier, context, next) {
+    if (context.parentURL === bookmarkActionsURL && specifier === "@solara/settings") return fake(`export const nativeWorkspaceCommand = (...args) => globalThis.bookmarkMenuRequests.push(args);`);
     const resolved = next(specifier, context);
     if (resolved.url === actionsURL) return fake(`import { useBrowser } from ${JSON.stringify(browserURL)}; export const focus = (id) => useBrowser.getState().setFocusedWindow(id); export const openWindow = (options) => useBrowser.getState().createWindow(options);`);
     return resolved;
   },
 });
 const { handleBookmarksBarMenuChoice } = await import("./bookmarksBarActions.ts");
-after(() => hooks.deregister());
+after(() => { hooks.deregister(); delete globalThis.bookmarkMenuRequests; });
 const S = () => useBrowser.getState();
 const shell = shellNativeModules.SolaraShell;
 const original = { prompt: shell.prompt, showMenu: shell.showMenu, confirm: shell.confirm, copyText: shell.copyText };
@@ -35,44 +37,30 @@ beforeEach(() => {
   folder = S().addBookmarkFolder({ profileId: "default", title: "Folder" });
   nested = S().addBookmark({ profileId: "default", parentId: folder, title: "Nested", url: "https://nested.example/" });
   useBookmarkEditor.getState().set(null);
-  requests = [];
+  requests = globalThis.bookmarkMenuRequests = [];
 });
 after(() => Object.assign(shell, original));
 
 const choice = (action, id) => handleBookmarksBarMenuChoice(windowId, "default", action, id);
 const barChildren = () => S().bookmarks.nodes[S().bookmarks.roots.default.bar].children;
 
-test("URL choices preserve current, foreground, window, private and split destinations", async () => {
-  const source = S().windows[windowId].activeTabIds.default;
-  await choice("open", nested);
-  assert.equal(S().tabs[source].url, "https://nested.example/");
-  await choice("tab", first);
-  const foreground = S().windows[windowId].activeTabIds.default;
-  assert.notEqual(foreground, source);
-  assert.equal(S().tabs[foreground].url, S().bookmarks.nodes[first].url);
-  for (const [action, incognito] of [["window", false], ["incognito", true]]) {
-    const before = Object.keys(S().windows);
-    await choice(action, first);
-    const created = Object.values(S().windows).find((window) => !before.includes(window.id));
-    assert.equal(created.incognito, incognito);
-    assert.equal(S().tabs[created.activeTabIds[created.profileId]].url, S().bookmarks.nodes[first].url);
+test("URL choices send bookmark identity and destination to the native owner", async () => {
+  const before = structuredClone({ tabs: S().tabs, windows: S().windows });
+  for (const [action, mode] of [["open", "current"], ["tab", "foreground"], ["window", "window"], ["incognito", "incognito"], ["split", "split"]]) {
+    await choice(action, nested);
+    assert.deepEqual(requests.at(-1), ["openBookmarkItems", JSON.stringify({ id: nested, mode }), windowId]);
   }
-  await choice("split", first);
-  assert.ok(Object.values(S().splits).some((split) => split.windowId === windowId && split.tabIds.some((id) => S().tabs[id].url === S().bookmarks.nodes[first].url)));
+  assert.deepEqual({ tabs: S().tabs, windows: S().windows }, before);
 });
 
-test("folder choices open all in order and retain the greater-than-fifteen confirmation", async () => {
-  S().addBookmark({ profileId: "default", parentId: folder, title: "Second", url: "https://second.example/" });
+test("folder choices delegate opening and confirmation to the native owner", async () => {
   const before = [...S().windows[windowId].tabIds];
-  await choice("openAll", folder);
-  const created = S().windows[windowId].tabIds.filter((id) => !before.includes(id));
-  assert.deepEqual(created.map((id) => S().tabs[id].url), ["https://nested.example/", "https://second.example/"]);
-  for (let i = 0; i < 14; i++) S().addBookmark({ profileId: "default", parentId: folder, title: String(i), url: `https://many.example/${i}` });
-  shell.confirm = (request) => { requests.push(request); return Promise.resolve({ confirmed: false, suppressed: false }); };
-  const count = S().windows[windowId].tabIds.length;
-  await choice("openAll", folder);
-  assert.equal(requests[0].title, "Open 16 tabs?");
-  assert.equal(S().windows[windowId].tabIds.length, count);
+  shell.confirm = () => { throw new Error("JavaScript requested bookmark confirmation"); };
+  for (const [action, mode] of [["openAll", "tabs"], ["openAllWindow", "window"], ["openAllIncognito", "incognito"]]) {
+    await choice(action, folder);
+    assert.deepEqual(requests.at(-1), ["openBookmarkItems", JSON.stringify({ id: folder, mode, folder: true }), windowId]);
+  }
+  assert.deepEqual(S().windows[windowId].tabIds, before);
 });
 
 test("shared Add Page and prompted Add Folder flows insert after their context node", async () => {

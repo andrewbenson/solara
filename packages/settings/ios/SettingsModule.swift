@@ -189,6 +189,15 @@ public class SettingsModule: Module {
       MainActor.assumeIsolated { SettingsDev.drive(action, argument) }
     }.runOnQueue(.main)
 
+    #if DEBUG
+    AsyncFunction("devBookmarkConfirmation") { (cancel: Bool) -> [[String: String]] in
+      MainActor.assumeIsolated {
+        NativeBookmarkCommands.cancelConfirmation = cancel
+        return NativeBookmarkCommands.confirmations
+      }
+    }.runOnQueue(.main)
+    #endif
+
     AsyncFunction("devPageCommands") { () -> [String: Any] in
       #if DEBUG
       let external = MainActor.assumeIsolated { NativeWorkspaceCommands.lastExternal }

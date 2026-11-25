@@ -59,7 +59,7 @@ Native window lifetime must not depend on `lib/windowSync.ts`: it currently open
 | `reload`, `forceReload` | `withLivePage` and webview reload/forceReload | `PageIssuer` wake/admission, page `.reload`/`.forceReload` | R |
 | `stop` | webview `stopLoading` | Page `.stopLoading` | R |
 | `openFile` | `openFiles` uses shell picker and newTab; Peek promotes, Little Solara expands | Native file picker + Store `newTab`/`createWindow`; Peek/Little Solara routing | R/N orchestration |
-| `openBookmark` | Bookmark lookup then `s.navigate` | Native bookmark catalog + Store `navigate` | R |
+| `openBookmark` | Direct native ID request; bookmark open adapters bypass the mirror | `BookmarkMenuCommand` and `NativeBookmarkCommands`, original-profile owner snapshot and canonical navigation | Swift source present; VM verification pending |
 | `togglePageEngine` | `lib/engines.togglePageEngine` | Native engine-switch policy, page registry replacement and Store `updateTab` | N orchestration |
 | `savePage`, `caretBrowsing`, `printWithSystemDialog` | webview `runPageCommand(savePage/caretBrowsing/systemPrint)` | Page `.runPageCommand` | R |
 | `print` | webview `print` | Page `.print` | R |

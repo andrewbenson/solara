@@ -7,6 +7,7 @@ import { launch, session, sleep } from "../../../scripts/lib/instance.mjs";
 
 const [appArg, outputArg] = process.argv.slice(2);
 assert.ok(appArg && outputArg, "usage: node apps/browser/scripts/native-page-commands-test.mjs <Debug app> <fresh output directory>");
+const baseline = process.argv.includes("--baseline");
 const appPath = resolve(appArg);
 const output = resolve(outputArg);
 assert.equal(execFileSync("/usr/libexec/PlistBuddy", ["-c", "Print CFBundleIdentifier", join(appPath, "Contents/Info.plist")], { encoding: "utf8", timeout: 5000 }).trim(), "network.benson.solara.dev");
@@ -61,6 +62,7 @@ async function until(label, accept, ms = 12000) {
 }
 
 async function handledNatively(label) {
+  if (baseline) return;
   await sleep(200);
   const stats = await run("return ac.commandHandlers.stats();");
   assert.equal(stats.enabled, false, `${label}: JS handlers unexpectedly enabled`);
@@ -103,7 +105,7 @@ try {
   const other = `http://localhost:${server.address().port}`;
   app = await launch(appPath, {
     data: join(output, "data"), fresh: true, onboarded: true, probe: true, keepData: true,
-    env: { SOLARA_NATIVE_WINDOW_LAYOUT: "1" },
+    env: { SOLARA_NATIVE_WINDOW_LAYOUT: process.env.SOLARA_NATIVE_WINDOW_LAYOUT ?? "1" },
     session: session({
       windows: [{ id: "w1", frame: [80, 80, 1100, 800], activeTabIds: { default: "a" } }],
       tabs: [{ id: "a", url: `${base}/a`, title: "A" }, { id: "b", url: `${other}/b`, title: "B" }],
@@ -119,8 +121,30 @@ try {
     await sleep(100);
   }
   await sleep(500);
-  handlerBaseline = await run("const baseline = ac.commandHandlers.stats(); ac.commandHandlers.setEnabled(false); return baseline;");
+  handlerBaseline = await run(`const stats = ac.commandHandlers.stats(); ac.commandHandlers.setEnabled(${baseline}); return stats;`);
 
+  pass("native layout capability", { layout: await run('return expo.modules.SolaraWindowShell.nativeLayout("w1");') });
+  const bookmark = await run(`return ac.bookmarks.addBookmark({ profileId: "default", title: "Command bookmark", url: ${JSON.stringify(`${base}/bookmark`)} });`);
+  const folder = await run('return ac.bookmarks.addBookmarkFolder({ profileId: "default", title: "Command folder" });');
+  async function openBookmarkIn(windowId, tabId) {
+    const before = await nativeState();
+    await menu(windowId, "openBookmark", bookmark);
+    await until("bookmark URL on routed native tab", (s) => s.tabs[tabId]?.url === `${base}/bookmark`);
+    await handledNatively("openBookmark");
+    const after = await nativeState();
+    for (const [id, t] of Object.entries(before.tabs)) {
+      if (id !== tabId) assert.equal(after.tabs[id]?.url, t.url, `bookmark changed unrelated tab ${id}`);
+    }
+    for (const id of [folder, "deleted-bookmark-id"]) {
+      await menu(windowId, "openBookmark", id);
+      await handledNatively("invalid bookmark consumed");
+      assert.equal((await nativeState()).tabs[tabId]?.url, `${base}/bookmark`);
+    }
+    pass("bookmark menu target and consumed no-ops", { windowId, tabId });
+  }
+  await openBookmarkIn("w1", "a");
+  await run(`ac.store.getState().navigate("a", ${JSON.stringify(`${base}/a`)}); return true;`);
+  await until("bookmark leaves page ready for existing checks", (s) => s.tabs.a.url === `${base}/a`);
   await reloads("reload asks the page again", "/a", () => menu("w1", "reload"));
   await reloads("forceReload asks the page again", "/a", () => menu("w1", "forceReload"));
   await reloads("a real ⌘R reloads through the menu", "/a", () => press("r", 15, ["command"]));
@@ -165,6 +189,20 @@ try {
   await sleep(500);
   assert.equal(loads("/a"), mainLoads, "the main window's page is not reloaded");
 
+  await openBookmarkIn(small, smallTab(await nativeState()));
+  const blank = await run('return ac.store.getState().newTab("w1", {});');
+  await openBookmarkIn("w1", blank);
+  await run('ac.store.getState().activate("a"); return true;');
+  await run(`ac.runCommand({ command: "openBookmark", arg: ${JSON.stringify(bookmark)}, windowId: "w1" }); return true;`);
+  await until("bookmark direct bridge", (s) => s.tabs.a.url === `${base}/bookmark`);
+  await handledNatively("bookmark direct bridge");
+  await run(`ac.store.getState().openPeek("a", ${JSON.stringify(`${base}/peek`)}); return true;`);
+  const peek = await until("bookmark Peek ready", (s) => !!s.peeks?.w1?.tabId);
+  await openBookmarkIn("w1", peek.peeks.w1.tabId);
+  await run('ac.store.getState().closePeek("w1"); return true;');
+  const privateWindow = await run('return ac.store.getState().createWindow({ incognito: true, profileId: "default", url: "about:blank" });');
+  const privateState = await until("private bookmark window", (s) => !!s.windows[privateWindow]);
+  await openBookmarkIn(privateWindow, privateState.windows[privateWindow].activeTabIds[privateState.windows[privateWindow].profileId]);
   await run(`ac.store.getState().navigate("a", ${JSON.stringify(`${base}/slow`)}); return true;`);
   await until("the slow page is loading", (s) => s.live?.a?.isLoading === true);
   await step("stop ends the load", () => menu("w1", "stop"), (_, s) => s.live?.a?.isLoading === false);

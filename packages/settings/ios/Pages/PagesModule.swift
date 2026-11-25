@@ -316,7 +316,7 @@ final class NativePageView: ExpoView {
 
   private func send(_ event: BookmarksPageEvent) {
     switch event {
-    case .open(let url, let mode): onPageEvent(["kind": "open", "url": url, "mode": mode.rawValue])
+    case .open(let id, let mode): onPageEvent(["kind": "open", "id": id, "mode": mode.rawValue])
     case .openAll(let id, let newWindow): onPageEvent(["kind": "openAll", "id": id, "newWindow": newWindow])
     case .edit(let id): onPageEvent(["kind": "edit", "id": id])
     case .addGroup(let id): onPageEvent(["kind": "addGroup", "id": id])

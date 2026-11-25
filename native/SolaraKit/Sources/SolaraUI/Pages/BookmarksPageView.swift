@@ -215,10 +215,10 @@ public final class BookmarksPageModel {
     }
     let id = node.id
     if let url = node.url, !node.isFolder {
-      item("Open in New Tab") { [weak self] in self?.emit(.open(url, .foreground)) }
-      item("Open in New Window") { [weak self] in self?.emit(.open(url, .window)) }
-      item("Open in Incognito Window") { [weak self] in self?.emit(.open(url, .incognito)) }
-      item("Open in Split View") { [weak self] in self?.emit(.open(url, .split)) }
+      item("Open in New Tab") { [weak self] in self?.emit(.open(node.id, .foreground)) }
+      item("Open in New Window") { [weak self] in self?.emit(.open(node.id, .window)) }
+      item("Open in Incognito Window") { [weak self] in self?.emit(.open(node.id, .incognito)) }
+      item("Open in Split View") { [weak self] in self?.emit(.open(node.id, .split)) }
       menu.addItem(.separator())
       item("Edit…") { [weak self] in self?.emit(.edit(id)) }
       item("Copy Link") {
@@ -506,7 +506,7 @@ struct BookmarkRowView: View {
     .background(RoundedRectangle(cornerRadius: 7, style: .circular).fill(fill))
     .contentShape(Rectangle())
     .onHover { hovered = $0 }
-    .onTapGesture(count: 2) { node.isFolder ? model.choose(folder: node.id) : model.emit(.open(node.url ?? "", .current)) }
+    .onTapGesture(count: 2) { node.isFolder ? model.choose(folder: node.id) : model.emit(.open(node.id, .current)) }
     .simultaneousGesture(TapGesture().onEnded {
       onFocus()
       let flags = (NSApp.currentEvent?.modifierFlags ?? NSEvent.modifierFlags)
@@ -559,10 +559,10 @@ struct BookmarkRowMenuProxy: View {
 
   var body: some View {
     if let url = node.url, !node.isFolder {
-      Button("Open in New Tab") { model.emit(.open(url, .foreground)) }
-      Button("Open in New Window") { model.emit(.open(url, .window)) }
-      Button("Open in Incognito Window") { model.emit(.open(url, .incognito)) }
-      Button("Open in Split View") { model.emit(.open(url, .split)) }
+      Button("Open in New Tab") { model.emit(.open(node.id, .foreground)) }
+      Button("Open in New Window") { model.emit(.open(node.id, .window)) }
+      Button("Open in Incognito Window") { model.emit(.open(node.id, .incognito)) }
+      Button("Open in Split View") { model.emit(.open(node.id, .split)) }
       Divider()
       Button("Edit…") { model.emit(.edit(node.id)) }
       Button("Copy Link") {

@@ -81,7 +81,7 @@ export const commandHandlers = {
 };
 
 export function runCommand({ command, arg, windowId: requested }: CommandEvent) {
-  if (command === "jumpToSelection") return void nativeWorkspaceCommand(command, arg, requested);
+  if (command === "openBookmark" || command === "jumpToSelection") return void nativeWorkspaceCommand(command, arg, requested);
   if (nativeOwnsWorkspace() && nativeWorkspaceCommand(command, arg, requested)) return;
   if (__DEV__ && !commandHandlersEnabled) { commandHandlerBlocked++; return; }
   if (__DEV__) commandHandlerCalls++;
@@ -279,10 +279,6 @@ export function runCommand({ command, arg, windowId: requested }: CommandEvent) 
       return page ? bookmarkTab(windowId, page.id) : undefined;
     case "addBookmarkToFolder":
       return page && arg ? void addBookmarkToFolder(windowId, page.id, arg) : undefined;
-    case "openBookmark": {
-      const node = arg ? s.bookmarks.nodes[arg] : undefined;
-      return node?.kind === "url" && tab ? s.navigate(tab.id, node.url) : undefined;
-    }
     case "togglePageEngine":
       return void (tabId && togglePageEngine(tabId));
     case "toggleMute":

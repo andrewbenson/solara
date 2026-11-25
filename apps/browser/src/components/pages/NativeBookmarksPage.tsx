@@ -8,12 +8,12 @@ import type { RemovedBookmarks } from "../../store/bookmarks";
 import { useBrowser } from "../../store/browser";
 import { engineProfile } from "../../store/model";
 import type { BookmarkNode } from "../../store/types";
-import { openFolder, openUrl } from "../bookmarks/actions";
+import { openBookmark, openFolder } from "../bookmarks/actions";
 import { editBookmark } from "../bookmarks/edit";
 import { openImport } from "../settings/windows";
 import { pageThemeState } from "./nativePageTheme";
 
-type OpenMode = Parameters<typeof openUrl>[2];
+type OpenMode = Parameters<typeof openBookmark>[2];
 type Bookmarks = ReturnType<typeof useBrowser.getState>["bookmarks"];
 
 function profileNodes(b: Bookmarks, roots: { bar: string; other: string } | undefined) {
@@ -58,7 +58,7 @@ export function NativeBookmarksPage({ tabId, profileId }: { tabId: string; profi
 
   const onEvent = async (e: NativePageEvent) => {
     const id = String(e.id ?? "");
-    if (e.kind === "open") openUrl(String(e.url), windowId, e.mode as OpenMode);
+    if (e.kind === "open") openBookmark(id, windowId, e.mode as OpenMode);
     else if (e.kind === "openAll") void openFolder(id, windowId, e.newWindow ? "window" : "tabs");
     else if (e.kind === "edit") editBookmark(id, windowId, { profileId });
     else if (e.kind === "addGroup") addFolderToSidebar(id, windowId);

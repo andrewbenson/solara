@@ -194,7 +194,7 @@ reading mode hooks read); apply.sh's other hooks are set next to the code they s
 apply.sh also has three hooks for idle wakeups:
 - `cpu_health_tracker.cc`: with `g_solara_skip_cpu_health_sampling`, `CpuHealthTracker` gets no `CpuProbe`, so there's
   no 15 s CPU sampling. That sampling only feeds Chrome's performance-intervention toolbar button.
-- `system_memory_pressure_evaluator_mac.cc`: with `g_solara_disk_space_check_seconds`, free disk is checked at that
+- `disk_space_memory_pressure_evaluator_mac.cc`: with `g_solara_disk_space_check_seconds`, free disk is checked at that
   period while more than 20 GiB are free, and at Chrome's 5 s otherwise.
 - `extension_action_storage_manager.cc`: restored browser-action defaults notify the `ExtensionActionDispatcher`, so
   `ac_extensions_watch_actions`' watchers see them.
@@ -651,6 +651,40 @@ applied them before Helium): `0005-disable-default-extensions` (without its `web
 leaves out stay out, as before: `disable-download-quarantine` (Chrome quarantines every download itself, with
 `com.apple.quarantine` and its source URL in `kMDItemWhereFroms`), `prefs-always-prompt-for-download-directory`
 (Chrome's default, save to Downloads without asking, is Solara's) and `enable-extra-locales`.
+
+### 0.21.2 → 0.22.4 (Chromium 158.0.8127.88, 2026-11-24)
+
+The owner approved the 0.4.8 move to helium-macos 0.22.4.1. Remove the three deleted Sparkle
+skip entries and skip `sparkle-glue.patch` together with `sparkle2-integration.patch`; keep signing,
+password-manager disabling and keychain renaming skipped. Separate hunks in shared files are allowed:
+both series minus skips must apply without fuzz and must not depend on skipped-only files or symbols.
+All 381 applied target patches have no references to `sparkle_glue`, `IDC_HELIUM_APPROVE_UPDATE`
+or `SparkleGlue`. Keep upstream keychain reset prevention applied under its existing guard allowance,
+and the Solara Safe Storage name patch byte-for-byte unchanged. On 2026-11-24 the owner approved
+replacing `chromium-safe-storage-no-silent-reset.patch` with eng158d's independently reviewed 158
+revision: upstream's configurable tag/salt constructors broke the old patch. The revision preserves
+the creation gate, atomic add-only operation, duplicate readback and fail-closed recovery, adapts
+constructors and tests for both tag/salt pairs, and locks the fake keychain's newly guarded fields.
+`ac_safe_storage.mm` is unchanged. The eng158f continuation may adapt non-security patches while preserving
+behavior; Safe Storage, security changes and behavior that cannot be preserved still require a stop.
+See [the 158 plan](native/engine-update-plan-158.md) for exact pins, evidence, disk estimates and status.
+
+For this approved move, rename `src/out` to `~/chromium-build/out.157-aside` before resetting the
+checkout; preserve it as rollback. Set the domain cache and stage marker aside with `.157-aside`
+suffixes too. Never delete the 156 or 157 asides. Start only with at least 35 GB free and stop if free
+space falls below 20 GB. The symbol audit, rollback renames, checkout resets and steps 1 and 3 passed: all 381 Helium
+patches applied without fuzz and the existing four guard allowances passed. Step 4 resumed after the
+owner approved the reviewed Safe Storage replacement. Two further context-only refreshes applied, then
+`chromium-document-pip-bar.patch` hit a new upstream PiP-type guard around return-to-tab setup. Its
+title and return callbacks were adapted inside that guard in eng158f, with null-safe later title accesses.
+All Chromium patches and both layers applied. Chromium 158 removed saved extension-action default
+persistence entirely; the owner approved removing our obsolete restore notification after confirming
+there is no replacement restore path. Programmatic icons, badges and titles reset to manifest defaults
+at relaunch, matching Chrome 158. Registry notifications and initial action-state queries remain intact;
+`acceptance.mjs extension-action-defaults-relaunch` checks startup delivery and the reset expectation.
+Ten patches received context-only refreshes for strict replay, preserving every added and removed line.
+The existing auto-PiP incognito-setting patch was missing from the live tree and is now applied.
+The finished-tree check passes all 76 steps and 320 paths. See the plan for GN and build status.
 
 ### 0.20.1 → 0.20.3 (Chromium 156.0.8078.79, 2026-11-04)
 

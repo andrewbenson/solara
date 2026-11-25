@@ -8328,6 +8328,52 @@ try {
     return { pages: pages.length, argv: argv.slice(argv.indexOf("-NS")) };
   });
 
+  await check("extension-action-defaults-relaunch", async () => {
+    await appUp("app-action-defaults.out.log");
+    const dir = join(scratch, "action-defaults-extension");
+    mkdirSync(dir, { recursive: true });
+    writeFileSync(join(dir, "manifest.json"), JSON.stringify({ manifest_version: 3, name: "Action defaults fixture", version: "1.0", action: { default_title: "Manifest action", default_popup: "popup.html" }, background: { service_worker: "worker.js" } }));
+    writeFileSync(join(dir, "popup.html"), "<!doctype html><title>Manifest popup</title>");
+    writeFileSync(join(dir, "worker.js"), "chrome.runtime.onInstalled.addListener(() => {});");
+    const installed = await exts(`install(${JSON.stringify(dir)}, "")`);
+    if (!installed?.id) throw new Error(`install: ${JSON.stringify(installed)}`);
+    const id = installed.id;
+    const shown = () => evalApp(`const actions = ac.extensions.useExtensions.getState().actions; return Object.values(actions).map((states) => states[${JSON.stringify(id)}]).find(Boolean) ?? null;`);
+    try {
+      const tab = await openTab(`${base}/e?action-defaults`, "Page E");
+      await exts(`configure("${id}", "", { pinned: true })`);
+      const manifest = await until("manifest action state through the watcher", shown);
+      assert.equal(manifest.title, "Manifest action");
+      assert.equal(manifest.popup, `chrome-extension://${id}/popup.html`);
+      assert.equal(manifest.badgeText, "");
+      assert.equal(manifest.icon, "");
+      const worker = await extensionWorker(id, "action.setIcon");
+      const changed = await cdp(worker, "Runtime.evaluate", {
+        expression: `(async () => { const imageData = new ImageData(16, 16); imageData.data.fill(255); await chrome.action.setIcon({ imageData }); await chrome.action.setBadgeText({ text: "SAVED" }); await chrome.action.setTitle({ title: "Programmatic action" }); return true; })()`,
+        awaitPromise: true,
+        returnByValue: true,
+      });
+      assert.equal(changed.result?.value, true, JSON.stringify(changed));
+      await until("programmatic action state through the watcher", async () => {
+        const value = await shown();
+        return value?.badgeText === "SAVED" && value.title === "Programmatic action" && value.icon?.startsWith("data:image/png;base64,") ? value : null;
+      });
+      await stopApp();
+      await appUp("app-action-defaults-relaunch.out.log");
+      const after = await until("manifest action state at startup", shown);
+      assert.equal(after.title, "Manifest action", "Chromium 158 does not restore programmatic titles");
+      assert.equal(after.popup, `chrome-extension://${id}/popup.html`);
+      assert.equal(after.badgeText, "", "Chromium 158 does not restore programmatic badges");
+      assert.equal(after.icon, "", "Chromium 158 does not restore programmatic icons");
+      const browser = await browserOf(tab.id);
+      const states = await evalApp(`return globalThis.expo.modules.SolaraChromeUI.actionStates(${browser}, ["${id}"])`);
+      assert.deepEqual(states[id], after);
+      return { startup: after, savedDefaultsRestored: false, chromium: 158 };
+    } finally {
+      await exts(`uninstall("${id}", "")`).catch(() => null);
+    }
+  });
+
   await check("extension-pins-owner-shape", async () => {
     await appUp("app-pins-owner.out.log");
     mainWindow = await until("a window", async () => (await state()).windowId, 30000);

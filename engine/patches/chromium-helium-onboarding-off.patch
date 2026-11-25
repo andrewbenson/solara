@@ -29,29 +29,28 @@ font, which isn't shipped.
 -components/helium_onboarding/helium_onboarding_strings.grdp
 --- a/chrome/browser/BUILD.gn
 +++ b/chrome/browser/BUILD.gn
-@@ -3553,7 +3553,6 @@
-     "//chrome/browser/ui/webui/user_education_internals:mojo_bindings",
+@@ -2267,7 +2267,6 @@
      "//chrome/browser/web_applications/mojom:mojom_web_apps_enum",
+     "//chrome/common",
      "//chrome/common/request_header_integrity:buildflags",
 -    "//components/helium_onboarding:generated_resources",
      "//components/autofill/core/browser/ml_model/logging:mojo_bindings",
      "//components/enterprise/connectors:mojom",
-     "//components/webui/chrome_urls/mojom:mojo_bindings",
+     "//components/input",
 --- a/chrome/browser/ui/startup/startup_browser_creator_impl.cc
 +++ b/chrome/browser/ui/startup/startup_browser_creator_impl.cc
-@@ -66,7 +66,6 @@
+@@ -63,7 +63,6 @@
  #include "chrome/common/pref_names.h"
  #include "chrome/common/webui_url_constants.h"
  #include "components/custom_handlers/protocol_handler_registry.h"
 -#include "components/helium_services/pref_names.h"
  #include "components/prefs/pref_service.h"
- #include "components/sessions/core/serialized_navigation_entry.h"
- #include "components/sessions/core/serialized_user_agent_override.h"
-@@ -657,15 +656,6 @@
-       provider.GetCommandLineTabs(*command_line_, cur_dir_, profile_);
+ #include "components/signin/public/base/signin_switches.h"
+ #include "components/tab_groups/tab_group_id.h"
+@@ -646,15 +645,6 @@
    LaunchResult launch_result =
        tabs.empty() ? LaunchResult::kNormally : LaunchResult::kWithGivenUrls;
--
+ 
 -  bool no_first_run =
 -      base::CommandLine::ForCurrentProcess()->HasSwitch(switches::kNoFirstRun);
 -  if (!is_incognito_or_guest && !no_first_run) {
@@ -60,9 +59,10 @@ font, which isn't shipped.
 -      return {tabs, LaunchResult::kWithGivenUrls};
 -    }
 -  }
- 
+-
    if (whats_new_enabled && (launch_result == LaunchResult::kWithGivenUrls ||
                              is_incognito_or_guest || is_post_crash_launch)) {
+     whats_new::LogStartupType(whats_new::StartupType::kIneligible);
 --- a/chrome/browser/ui/webui/BUILD.gn
 +++ b/chrome/browser/ui/webui/BUILD.gn
 @@ -50,7 +50,6 @@
@@ -73,7 +73,7 @@ font, which isn't shipped.
      ":signin_internals_ui",
      ":webui",
      "//chrome/browser/actor/ui:actor_overlay",
-@@ -652,36 +651,6 @@
+@@ -652,37 +651,6 @@
    }
  }
  
@@ -102,6 +102,7 @@ font, which isn't shipped.
 -    "//components/helium_onboarding:generated_resources",
 -    "//components/helium_onboarding:localized_strings",
 -    "//components/helium_services",
+-    "//components/push_messaging",
 -    "//extensions/common",
 -    "//ui/webui",
 -  ]

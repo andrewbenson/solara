@@ -747,15 +747,15 @@ public class ShellModule: Module {
     let quiet = { NSApp.modalWindow == nil && !NSApp.windows.contains { $0.attachedSheet != nil || $0.isSheet && $0.isVisible } }
     let workspace = NotificationCenter.default
     sidebarObservers.append((workspace, workspace.addObserver(forName: NSApplication.didResignActiveNotification, object: nil, queue: .main) { _ in
-      if quiet() { emit("resignActive") }
+      if quiet() { _ = NativeMenuCommands.switcherRelease?(); emit("resignActive") }
     }))
     let distributed = DistributedNotificationCenter.default()
     sidebarObservers.append((distributed, distributed.addObserver(forName: .init("com.apple.screenIsLocked"), object: nil, queue: .main) { _ in
       if quiet() { emit("screenLocked") }
     }))
-    SwitcherHold.onRelease = { emit("switcherReleased") }
+    SwitcherHold.onRelease = { if NativeMenuCommands.switcherRelease?() != true { emit("switcherReleased") } }
     flagsMonitor = NSEvent.addLocalMonitorForEvents(matching: .flagsChanged) { event in
-      if SwitcherHold.released(by: event.modifierFlags) { emit("switcherReleased") }
+      if SwitcherHold.released(by: event.modifierFlags) { SwitcherHold.onRelease?() }
       return event
     }
   }

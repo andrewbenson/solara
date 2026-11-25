@@ -17,6 +17,7 @@ its delay, shows the store's rows, and commits row presses with both delayed and
   process.exit(2);
 }
 const keep = args.includes("--keep-data");
+const baseline = args.includes("--baseline");
 const scratch = mkdtempSync(join(tmpdir(), "ac-tab-pickers-"));
 const rep = reporter(join(scratch, "tab-pickers-test.log"), { name: "tab-pickers-test" });
 
@@ -37,7 +38,6 @@ const HELPERS = `
 const C = globalThis.expo.modules.SolaraCEF;
 const H = globalThis.expo.modules.SolaraHosted;
 const settle = (ms) => new Promise((r) => setTimeout(r, ms));
-const ui = () => ac.sidebarRows.useSidebarUi.getState();
 const active = () => ac.store.getState().windows.w1.activeTabIds.default;
 const native = () => H.tabPickers("w1").then(JSON.parse);
 const act = (n, a) => C.devWindow(n, a);
@@ -73,9 +73,10 @@ const untilSnapshot = async (what, accept, ms = 5000) => {
 try {
   app = await launch(resolve(appArg), {
     data: join(scratch, "data"), fresh: true, session: fixture, onboarded: true, probe: true,
-    env: { SOLARA_NATIVE_SHELL: "1" },
+    env: { SOLARA_NATIVE_SHELL: "1", SOLARA_NATIVE_WINDOW_LAYOUT: process.env.SOLARA_NATIVE_WINDOW_LAYOUT ?? "1" },
     ready: "return !!ac.store.getState().windows.w1 && !!ac.sidebarRows",
   });
+  const handlers = await run(`ac.commandHandlers.setEnabled(${baseline}); return ac.commandHandlers.stats();`);
   const number = await until("the window", `return C.chromeWindows().then((ws) => ws.find((w) => w.visible)?.window ?? null);`, 15000);
   const press = (name) => run(`return key(${number}, ${JSON.stringify(KEYS[name][0])}, ${KEYS[name][1]});`);
   for (const id of ["b", "c", "d", "e", "a"]) {
@@ -87,7 +88,7 @@ try {
     return until("the native search panel", `return native().then((d) => d.search && d.search.typing ? d.search : null);`, 4000);
   };
   const searchClosed = () =>
-    until("search closes", `return ui().searchTabs === null && native().then((d) => !d.search || null);`, 3000);
+    until("search closes", `return native().then((d) => !d.search || null);`, 3000);
   const selected = () => run(`return native().then((d) => d.search.rows[d.search.selected]);`);
   const verifySelection = async (expected, what) => {
     const id = await run(`return active();`);
@@ -182,9 +183,9 @@ try {
 
   for (const [round, gap] of [80, 0, 0, 0, 0, 0, 0, 0, 0, 0].entries()) {
     await rep.check(`native-switcher-click-${round}-${gap}ms`, async () => {
-      const early = await run(`ac.runCommand({ command: "tabSwitcher", windowId: "w1" }); return settle(60).then(() => !!(ui().switcher && ui().switcher.visible));`);
+      const early = await run(`ac.runCommand({ command: "tabSwitcher", windowId: "w1" }); return settle(60).then(() => native().then((d) => !!d.switcher));`);
       if (early) throw new Error("visible before its delay");
-      const s = await until("the switcher shows", `const s = ui().switcher; return s && s.visible ? s : null;`, 2000);
+      const s = await until("the switcher shows", `return native().then((d) => d.switcher ?? null);`, 2000);
       const panel = await until("the native switcher", `return native().then((d) => d.switcher && d.switcher.ids.length ? d.switcher : null);`, 2000);
       const frame = panel.frame;
       if (JSON.stringify(panel.ids) !== JSON.stringify(s.ids) || panel.index !== s.index) throw new Error(`native ${JSON.stringify(panel)}, store ${JSON.stringify(s)}`);
@@ -192,7 +193,7 @@ try {
       const target = 2;
       const rowY = Math.round(frame[1] + frame[3] - 8 - s.ids.length * 40 + target * 40 + 20);
       await run(`return click(${number}, [${Math.round(frame[0] + frame[2] / 2)}, ${rowY}], ${gap}).then(() => true);`);
-      await until("the switcher closes", `return !ui().switcher || null;`, 2000);
+      await until("the switcher closes", `return native().then((d) => !d.switcher || null);`, 2000);
       await sleep(200);
       const now = await run(`return active();`);
       if (now !== s.ids[target]) throw new Error(`active ${now}, clicked ${s.ids[target]} in ${s.ids}`);
@@ -200,6 +201,11 @@ try {
       return { frame, ids: s.ids, picked: now };
     });
   }
+  if (!baseline) await rep.check("native-command-ownership", async () => {
+    const stats = await run("return ac.commandHandlers.stats();");
+    if (stats.enabled || stats.calls !== handlers.calls || stats.blocked !== handlers.blocked) throw new Error(JSON.stringify({ handlers, stats }));
+    return true;
+  });
 } catch (e) {
   rep.record("run", { error: e });
 } finally {

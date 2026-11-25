@@ -7,6 +7,7 @@ import { launch, session, sleep } from "../../../scripts/lib/instance.mjs";
 
 const [appArg, outputArg] = process.argv.slice(2);
 assert.ok(appArg && outputArg, "usage: node apps/browser/scripts/native-tab-commands-test.mjs <Debug app> <fresh output directory>");
+const baseline = process.argv.includes("--baseline");
 const appPath = resolve(appArg);
 const output = resolve(outputArg);
 assert.equal(execFileSync("/usr/libexec/PlistBuddy", ["-c", "Print CFBundleIdentifier", join(appPath, "Contents/Info.plist")], { encoding: "utf8", timeout: 5000 }).trim(), "network.benson.solara.dev");
@@ -53,8 +54,8 @@ async function capture(label, details = {}) {
   assert.equal(native.consistent, true, `${label}: inconsistent native snapshot`);
   const windowIds = await run("return ac.shell.windowIds();");
   const stats = await run("return ac.commandHandlers.stats();");
-  assert.equal(stats.enabled, false, `${label}: JS handlers unexpectedly enabled`);
-  assert.equal(stats.calls, handlerBaseline.calls, `${label}: JS handler made a decision`);
+  assert.equal(stats.enabled, baseline, `${label}: JS handlers unexpectedly enabled`);
+  if (!baseline) assert.equal(stats.calls, handlerBaseline.calls, `${label}: JS handler made a decision`);
   assert.equal(stats.blocked, handlerBaseline.blocked, `${label}: command fell through to disabled JS`);
   const entry = { label, ...state, native, windowIds, handlerBaseline, stats, ...details };
   evidence.push(entry);
@@ -164,24 +165,60 @@ try {
   const peekURL = `http://127.0.0.1:${server.address().port}/peek`;
   app = await launch(appPath, {
     data: join(output, "data"), fresh: true, onboarded: true, probe: true, keepData: true,
-    env: { SOLARA_NATIVE_WINDOW_LAYOUT: "1" },
+    env: { SOLARA_NATIVE_WINDOW_LAYOUT: process.env.SOLARA_NATIVE_WINDOW_LAYOUT ?? "1" },
     session: session({
       profiles: ["Personal", "Work"],
       windows: [
         { id: "w1", frame: [80, 80, 1100, 800], activeTabIds: { default: "a" } },
         { id: "w2", frame: [140, 100, 900, 700], activeTabIds: { default: "z" } },
       ],
-      tabs: ["a", "b", "c", "d"].map((id) => ({ id, url: `about:blank#${id}`, title: id.toUpperCase() })).concat([{ id: "z", windowId: "w2", url: "about:blank#z", title: "Z" }]),
+      tabs: ["a", "b", "c", "d"].map((id) => ({ id, url: `about:blank#${id}`, title: id.toUpperCase(), lastActiveAt: Date.now() - 100 * ["a", "b", "c", "d"].indexOf(id) })).concat([{ id: "z", windowId: "w2", url: "about:blank#z", title: "Z" }]),
       settings: { warnBeforeClosingWindow: false, warnBeforeClosingLastTab: false, warnBeforeMovingTabsToProfile: false, sleepInactiveTabs: false, newTabOpens: "page", newTabPosition: "bottom", shareTabsAcrossWindows: false },
     }),
     ready: "return !!ac.commandHandlers && !!ac.shell.devKeyEquivalent && !!ac.shell.devTypeKeys && !!globalThis.acPerf && !!expo.modules.SolaraApp.devWorkspaceMenuCommand && !!ac.store.getState().windows.w2;",
   });
-  handlerBaseline = await run("const baseline = ac.commandHandlers.stats(); ac.commandHandlers.setEnabled(false); return baseline;");
+  handlerBaseline = await run(`const stats = ac.commandHandlers.stats(); ac.commandHandlers.setEnabled(${baseline}); return stats;`);
   await until("fixture NSWindows materialized", async () => {
     const ids = await run("return ac.shell.windowIds();");
     return ids.includes("w1") && ids.includes("w2");
   });
-  await capture("JS command handlers disabled; native workspace required");
+  await capture("native layout and command ownership", { layout: await run('return expo.modules.SolaraWindowShell.nativeLayout("w1");') });
+  const pickers = (id = "w1") => run(`return expo.modules.SolaraHosted.tabPickers(${JSON.stringify(id)}).then(JSON.parse);`);
+  const release = () => run(baseline ? "ac.switcher.commitSwitcher(); return true;" : "return expo.modules.SolaraHosted.devReleaseTabSwitcher();");
+  for (const source of ["menu", "bridge", "key"]) {
+    if (source === "menu") await menu("w1", "searchTabs");
+    if (source === "bridge") await run('ac.runCommand({command:"searchTabs",windowId:"w1"}); return true;');
+    if (source === "key") await press("w1", "a", 0, ["command", "shift"]);
+    await until("search focus " + source, async () => (await pickers()).search?.typing);
+    await capture("native search " + source, { picker: await pickers() });
+    await press("w1", "\u001b", 53, [], { focus: null, send: true });
+    await until("search Escape", async () => !(await pickers()).search);
+  }
+  for (const backward of [false, true]) {
+    await run(`ac.runCommand({command:"tabSwitcher",arg:${JSON.stringify(backward ? "backward" : "forward")},windowId:"w1"}); return true;`);
+    await until("switcher delay and native rows", async () => (await pickers()).switcher?.ids.length > 1);
+    const before = (await pickers()).switcher;
+    await run('ac.runCommand({command:"tabSwitcher",arg:"forward",windowId:"w1"}); return true;');
+    const next = (await pickers()).switcher;
+    assert.equal(next.index, (before.index + 1) % before.ids.length);
+    const target = next.ids[next.index];
+    await release();
+    await until("switcher release", state => active(state) === target);
+    const settled = await nativeState();
+    await release();
+    assert.equal((await nativeState()).rev, settled.rev, "release commits once");
+    await capture("native switcher direction/release once", { backward, target, before, next });
+  }
+  await run('return expo.modules.SolaraApp.devPostKey("w1", "`", 50, ["control"]);');
+  await until("real switcher key hold", async () => (await pickers()).switcher?.ids.length > 1);
+  const keyed = (await pickers()).switcher;
+  if (baseline) await release(); else await run('return expo.modules.SolaraApp.devPostModifiers("w1");');
+  await until("modifier release selects", state => active(state) === keyed.ids[keyed.index]);
+  await capture("real switcher key and modifier release");
+  await run('ac.runCommand({command:"tabSwitcher",windowId:"w1"}); ac.store.getState().activate("c"); return true;');
+  await release();
+  assert.equal(active((await nativeState()).data), "c", "unrelated activation invalidates the pending switch");
+  await setup('ac.store.getState().activate("a")');
 
   const pageValue = async (expression) => {
     const page = await app.page((target) => target.url === "about:blank#a");

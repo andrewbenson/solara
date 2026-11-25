@@ -45,7 +45,6 @@ async function fixture(kind) {
   };
   for (const [path, name] of [
     ["./HoverCard", "HoverCard"], ["../live/MeetingAlert", "MeetingAlert"],
-    ["./SearchTabs", "SearchTabs"], ["./TabSwitcher", "TabSwitcher"],
   ]) modules[path] = { [name]: leaf(name) };
   const NativeIconPicker = leaf("NativeIconPicker");
   modules["./IconPicker"] = { IconPicker: (value) => {
@@ -112,7 +111,7 @@ for (const kind of ["sidebar", "download"]) {
     try {
       await f.layout(1000, 700);
       const before = { ...f.renders };
-      for (const name of kind === "sidebar" ? ["SidebarOverlays", "HoverCard", "MeetingAlert", "IconPicker", "NativeIconPicker", "SearchTabs", "TabSwitcher"] : ["DownloadMagnet"]) assert.equal(before[name], 2);
+      for (const name of kind === "sidebar" ? ["SidebarOverlays", "HoverCard", "MeetingAlert", "IconPicker", "NativeIconPicker"] : ["DownloadMagnet"]) assert.equal(before[name], 2);
       for (const [x, y] of [[0, 0], [12, 8], [0, 0]]) await f.layout(1000, 700, x, y);
       assert.deepEqual(f.renders, before);
       await f.layout(1024, 720);

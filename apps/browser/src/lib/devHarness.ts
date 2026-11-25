@@ -72,9 +72,7 @@ export function startDevHarness() {
     get extensions(): typeof import("../components/extensions/state") {
       return require("../components/extensions/state");
     },
-    get switcher(): typeof import("../components/sidebar/switcher") {
-      return require("../components/sidebar/switcher");
-    },
+
     get sidebarRows(): typeof import("../components/sidebar/state") {
       return require("../components/sidebar/state");
     },

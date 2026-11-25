@@ -601,3 +601,12 @@ All Swift and driver execution remains pending; source application is not runtim
 Copy links and share: Swift source delivered in slice 3; CopyLinkCommandTests and handler-disabled copy/quote/share drivers in layouts 0 and 1 remain VM gates. No build or runtime verification claimed.
 
 Open File and autofill: Swift source delivered in slice 4; BrowserServiceCommandTests, native-page-commands (picker/autofill legs), little-solara and shortcuts matrix/presses/precedence in layouts 0 and 1 remain VM gates. Real file panel, Chrome dropdown, ownership loss and page replacement require VM checks; no build or runtime verification claimed.
+
+Commands slice 5 is source-only pending VM acceptance: TabFocusCommandTests expects tests-only compilation red
+on the preceding stack (missing TabFocusCommand). Run its bounded SwiftPM filter, then the full candidate suite
+and matching Debug app builds per the commands plan. In layouts 0 and 1 run native-tab-commands and tab-pickers
+before with --baseline, candidate without; then shortcuts matrix/presses/precedence, focus-hold and little-solara.
+Native-tab records actual nativeLayout, disables candidate JS command handlers, checks search menu/bridge/key
+focus/Escape, switcher direction/stepping, release once, actual key/modifier release and unrelated activation.
+Tab-pickers checks typing/Return, restore, clicks and cancellation through native state. Late/replaced hosts,
+ownership loss and NSMenu tracking remain runtime gates. No Swift compilation or runtime pass is claimed.

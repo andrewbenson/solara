@@ -27,6 +27,8 @@ public struct TabSwitcherState: Decodable, Equatable, Sendable {
   public var rows: [String: Row]
   public var dark: Bool
   public var theme: [String: String]
+
+  public init(ids: [String], index: Int, rows: [String: Row], dark: Bool, theme: [String: String]) { self.ids = ids; self.index = index; self.rows = rows; self.dark = dark; self.theme = theme }
 }
 
 public enum TabSwitcherMetrics {
@@ -129,7 +131,7 @@ public final class TabSwitcherPanelView: NSView {
     }
     for (view, item) in zip(rowViews, shown) {
       view.icon.favicons = favicons
-      view.set(item.row, index: item.index, focused: item.index == next.index, palette: palette, focusFill: color("switcherFocus"), outline: color("switcherOutline"))
+      view.set(item.row, index: item.index, focused: item.index == next.index, palette: palette, focusFill: color("switcherFocus") ?? (next.dark ? NSColor.white.withAlphaComponent(0.3) : NSColor.black.withAlphaComponent(0.18)), outline: color("switcherOutline") ?? (next.dark ? NSColor.white.withAlphaComponent(0.15) : NSColor.black.withAlphaComponent(0.1)))
     }
     frame = TabSwitcherMetrics.frame(windowWidth: windowSize.width, windowHeight: windowSize.height, rows: range.count)
     needsLayout = true
@@ -210,13 +212,17 @@ final class TabSwitcherRowView: NSView {
   override func updateTrackingAreas() {
     super.updateTrackingAreas()
     if let tracking { removeTrackingArea(tracking) }
-    let area = NSTrackingArea(rect: .zero, options: [.mouseEnteredAndExited, .activeAlways, .inVisibleRect], owner: self)
+    let area = NSTrackingArea(rect: .zero, options: [.mouseEnteredAndExited, .mouseMoved, .activeAlways, .inVisibleRect], owner: self)
     addTrackingArea(area)
     tracking = area
   }
 
   override func mouseEntered(with event: NSEvent) {
     inside = true
+    if let index { onEvent?(.hover(index)) }
+  }
+
+  override func mouseMoved(with event: NSEvent) {
     if let index { onEvent?(.hover(index)) }
   }
 

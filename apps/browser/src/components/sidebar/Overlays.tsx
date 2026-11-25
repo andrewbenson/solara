@@ -5,8 +5,6 @@ import { startSidebarEffects } from "./effects";
 import { MeetingAlert } from "../live/MeetingAlert";
 import { HoverCard } from "./HoverCard";
 import { IconPicker } from "./IconPicker";
-import { SearchTabs } from "./SearchTabs";
-import { TabSwitcher } from "./TabSwitcher";
 import { useSidebarWidth } from "./tokens";
 
 export function SidebarOverlays({ windowWidth }: { windowWidth: number }) {
@@ -22,8 +20,6 @@ export function SidebarOverlays({ windowWidth }: { windowWidth: number }) {
       <HoverCard windowId={windowId} width={size.width} height={size.height} />
       <MeetingAlert windowId={windowId} windowWidth={windowWidth} />
       <IconPicker windowId={windowId} sidebarWidth={sidebarWidth} />
-      <SearchTabs windowId={windowId} />
-      <TabSwitcher windowId={windowId} />
     </View>
   );
 }

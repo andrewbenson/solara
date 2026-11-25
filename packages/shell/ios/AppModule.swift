@@ -210,6 +210,16 @@ public class AppModule: Module {
       #endif
     }.runOnQueue(.main)
 
+    #if DEBUG
+    AsyncFunction("devPostModifiers") { (windowId: String) -> Bool in
+      guard let window = WindowManager.shared.windows[windowId], let event = NSEvent.keyEvent(
+        with: .flagsChanged, location: .zero, modifierFlags: [], timestamp: ProcessInfo.processInfo.systemUptime,
+        windowNumber: window.windowNumber, context: nil, characters: "", charactersIgnoringModifiers: "", isARepeat: false, keyCode: 59) else { return false }
+      NSApp.postEvent(event, atStart: false)
+      return true
+    }.runOnQueue(.main)
+    #endif
+
     AsyncFunction("devPostKey") { (windowId: String, key: String, keyCode: Int, modifiers: [String]) -> Bool in
       #if DEBUG
       guard let window = WindowManager.shared.windows[windowId] else { return false }

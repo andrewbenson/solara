@@ -33,6 +33,8 @@ public struct TabSearchState: Decodable, Equatable, Sendable {
   public var closed: [Row]
   public var dark: Bool
   public var theme: [String: String]
+
+  public init(open: [Row], closed: [Row], dark: Bool, theme: [String: String]) { self.open = open; self.closed = closed; self.dark = dark; self.theme = theme }
   public var openId: Int? = nil
 }
 
@@ -368,11 +370,11 @@ public final class TabSearchPanelView: NSView, NSTextFieldDelegate {
   private func choose(_ index: Int) {
     guard rows.indices.contains(index) else { return }
     let row = rows[index]
-    close(restoringFocus: false)
+    close(restoringFocus: false, notifying: false)
     onEvent?(.choose(kind: row.kind, id: row.id))
   }
 
-  private func close(restoringFocus: Bool = true) {
+  private func close(restoringFocus: Bool = true, notifying: Bool = true) {
     guard !closing else { return }
     closing = true
     let saved = savedResponder
@@ -380,7 +382,7 @@ public final class TabSearchPanelView: NSView, NSTextFieldDelegate {
     if field.currentEditor() != nil, let window {
       if !restoringFocus || !Self.restorable(saved, in: window) || !window.makeFirstResponder(saved) { window.makeFirstResponder(nil) }
     }
-    onEvent?(.close)
+    if notifying { onEvent?(.close) }
   }
 
   private static func owner(of responder: NSResponder?, besides field: NSTextField) -> NSResponder? {

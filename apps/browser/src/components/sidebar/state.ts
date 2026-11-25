@@ -9,8 +9,6 @@ type SidebarUi = {
   renaming: (Target & { windowId: string }) | null;
   iconPicker: (Target & { windowId: string; anchor: Anchor | null }) | null;
   hover: Hover | null;
-  searchTabs: string | null;
-  switcher: { windowId: string; ids: string[]; index: number; visible: boolean } | null;
   dragWidth: Record<string, number>;
 };
 
@@ -18,8 +16,6 @@ export const useSidebarUi = create<SidebarUi>()(() => ({
   renaming: null,
   iconPicker: null,
   hover: null,
-  searchTabs: null,
-  switcher: null,
   dragWidth: {},
 }));
 

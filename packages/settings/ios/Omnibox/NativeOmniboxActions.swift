@@ -232,9 +232,7 @@ enum NativeOmniboxActions {
       }
       return true
     case "searchTabs":
-      _ = try? store.dispatch(Command("openPanel", [.string(windowId), ""]), origin: .native)
-      NativeOmniboxView.hosts[windowId]?.view?.openNativePanel(text: "")
-      return true
+      return NativeTabFocusCommands.perform("searchTabs", arg: nil, windowId: windowId)
     case "split:withTab":
       return chooseSplitTab(windowId: windowId, view: view)
     default: return false

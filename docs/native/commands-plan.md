@@ -75,8 +75,8 @@ Native window lifetime must not depend on `lib/windowSync.ts`: it currently open
 | Command | Current JS handler | Swift owner/action | State |
 | --- | --- | --- | --- |
 | `focusCommandBar` | Developer URL edit, omnibox panel, empty-card/new-tab bar or hero focus; `focusClaims` | Native command focus resolver, existing `FocusHandoff`/`FocusMoves`, omnibox/hero controllers; Store `openPanel`/`closePanel` | N policy/R primitives |
-| `searchTabs` | Sidebar search state | Native sidebar search presenter | N routing |
-| `tabSwitcher` | `sidebar/switcher.switcherStep`; shell `SwitcherHold` tracks release | Native switcher state/selection controller; Store `activate` | N behavior |
+| `searchTabs` | Direct native bridge | `TabFocusCommand.search`, native presenter/focus receipt; canonical activate/restoreClosed | Swift source present; VM verification pending |
+| `tabSwitcher` | Direct native bridge | `TabFocusCommand`, native hold/pointer/cancel controller and shell modifier release; Store `activate` | Swift source present; VM verification pending |
 | `findInPage`, `findAndReplace` | `s.setFind` and focus claim | Store `setFind`, native FindBar focus | R |
 | `findNext`, `findPrevious` | Open find if no query, else webview `find` | Store `setFind`; page `.find` | R |
 | `useSelectionForFind` | page evaluate selection then `s.setFind` | Native page selection query + Store `setFind` | R |

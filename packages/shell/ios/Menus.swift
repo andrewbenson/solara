@@ -220,12 +220,15 @@ final class CommandItem: NSMenuItem, Rebindable {
 enum SwitcherHold {
   static var onRelease: (() -> Void)?
   private static var held: NSEvent.ModifierFlags = []
+  private static var serial = 0
 
   static func opened(by item: CommandItem) {
     let mods = MainMenu.heldModifiers(of: item)
     let event = NSApp.currentEvent
     held = !mods.isEmpty && event?.type == .keyDown && event?.modifierFlags.isSuperset(of: mods) == true ? mods : []
-    if held.isEmpty { DispatchQueue.main.async { onRelease?() } }
+    serial += 1
+    let receipt = serial
+    if held.isEmpty { DispatchQueue.main.async { if receipt == serial { onRelease?() } } }
   }
 
   static func released(by flags: NSEvent.ModifierFlags) -> Bool {
@@ -236,6 +239,7 @@ enum SwitcherHold {
 }
 
 public enum NativeMenuCommands {
+  nonisolated(unsafe) public static var switcherRelease: (() -> Bool)?
   nonisolated(unsafe) public static var handlers: [String: (String?) -> Void] = [:]
   nonisolated(unsafe) public static var workspaceAvailability: ((String, String?, String?) -> Bool?)?
   nonisolated(unsafe) public static var argumentHandlers: [String: (String?, String?) -> Bool] = [:]
@@ -258,7 +262,10 @@ final class MenuTarget: NSObject, NSMenuItemValidation {
         prepareDispatch(item.command)
         prepared = true
       }
-      if run(item.arg, item.windowless ? nil : WindowManager.shared.keyWindowId) { return }
+      if run(item.arg, item.windowless ? nil : WindowManager.shared.keyWindowId) {
+        if item.command == "tabSwitcher" { SwitcherHold.opened(by: item) }
+        return
+      }
     }
     if let run = NativeMenuCommands.handlers[item.command] {
       return run(item.windowless ? nil : WindowManager.shared.keyWindowId)

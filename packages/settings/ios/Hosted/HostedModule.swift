@@ -179,6 +179,12 @@ public class HostedModule: Module {
       NativeTabPickers.switcherPresses.take(windowId)
     }
 
+    #if DEBUG
+    AsyncFunction("devReleaseTabSwitcher") { () in
+      _ = NativeMenuCommands.switcherRelease?()
+    }.runOnQueue(.main)
+    #endif
+
     AsyncFunction("tabPickers") { (windowId: String) -> String in
       FrameUpdates.readOnMain { NativeTabPickers.describe(windowId) }
     }.runOnQueue(.main)

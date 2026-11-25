@@ -24,7 +24,6 @@ import { bookmarkTab } from "../bookmarks/actions";
 import { hideKeyedToast, showToast, useToasts } from "../layout/splitActions";
 import { calendarMenuItem, newLiveFolderMenuItem, runCalendarMenu, runNewLiveFolder } from "./liveMenus";
 import { openSyncedTab, syncedDevicesMenuItem } from "../../sync/menu";
-import { setSidebarUi } from "./state";
 import { hasOwnGroupIcon } from "./TabIcon";
 import { newFolderWithTab, removeFromFolder } from "./tileFolderUi";
 import { toggleNewTabBar } from "../omnibox/newTabBar";
@@ -228,7 +227,7 @@ export async function openSidebarMenu(windowId: string) {
   if (choice === "newTab") {
     if (!toggleNewTabBar(windowId)) s.newTab(windowId, { newTabCommand: true });
   }
-  else if (choice === "search") setSidebarUi({ searchTabs: windowId });
+  else if (choice === "search") nativeWorkspaceCommand("searchTabs", null, windowId);
   else if (choice === "clean") s.cleanUpTabs(windowId);
   else if (choice === "mute") muteAll(windowId, !muted);
   else if (choice === "closeAll") closeAllTabs(windowId);
@@ -325,7 +324,7 @@ export async function openOverflowMenu(windowId: string) {
     { id: "closeAll", title: "Close All Tabs", symbol: "xmark", ...menuShortcut("closeAllTabs") },
   ]);
   if (!choice) return;
-  if (choice === "search") setSidebarUi({ searchTabs: windowId });
+  if (choice === "search") nativeWorkspaceCommand("searchTabs", null, windowId);
   else if (choice.startsWith("tab:")) switchToTab(choice.slice(4));
   else if (openSyncedTab(choice, windowId, w.profileId)) return;
   else if (choice.startsWith("restore:")) s.restoreClosed(choice.slice(8), windowId);

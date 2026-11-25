@@ -6,9 +6,7 @@ import { newGroupWithSelection, openIconPicker, startRename } from "./actions";
 import { closeAllTabs } from "./menus";
 import { toggleNewTabBar } from "../omnibox/newTabBar";
 import { movePinnedTitle, togglePinnedRows } from "./movePinned";
-import { setSidebarUi } from "./state";
 import { tidyPins } from "./tidyPinsUi";
-import { switcherStep } from "./switcher";
 
 export function runSidebarCommand(command: BrowserCommand, arg: string | null, windowId: string): boolean {
   const s = useBrowser.getState();
@@ -33,9 +31,6 @@ export function runSidebarCommand(command: BrowserCommand, arg: string | null, w
     case "tidyPins":
       tidyPins(windowId);
       return true;
-    case "searchTabs":
-      setSidebarUi({ searchTabs: windowId, hover: null });
-      return true;
     case "renameTab":
       if (tabId) void startRename(windowId, { kind: "tab", id: tabId });
       return true;
@@ -47,9 +42,6 @@ export function runSidebarCommand(command: BrowserCommand, arg: string | null, w
       return true;
     case "returnToPinnedUrl":
       if (tabId) s.returnToPinnedUrl(tabId);
-      return true;
-    case "tabSwitcher":
-      switcherStep(windowId, arg === "backward");
       return true;
   }
   return false;

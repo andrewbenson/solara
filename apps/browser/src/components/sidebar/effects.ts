@@ -6,7 +6,6 @@ import { useBrowser } from "../../store/browser";
 import { changedIds } from "../../store/changes";
 import { dismissHover } from "./hover";
 import { sidebarUi } from "./state";
-import { cancelSwitcher, commitSwitcher, moveSwitcher, releaseSwitcherMouse } from "./switcher";
 
 const AUTO_CLEAN_EVERY_MS = 30 * 60 * 1000;
 let started = false;
@@ -17,8 +16,6 @@ export function startSidebarEffects() {
   startLive();
 
   useBrowser.subscribe((s, prev) => {
-    const switcher = sidebarUi().switcher;
-    if (switcher && s.windows !== prev.windows && !s.windows[switcher.windowId]) cancelSwitcher();
     for (const id of changedIds(s.tabs, prev.tabs)) {
       const muted = s.tabs[id]?.muted;
       if (muted !== undefined && prev.tabs[id] && prev.tabs[id]!.muted !== muted) void webviews.get(id)?.setMuted(muted);
@@ -30,10 +27,6 @@ export function startSidebarEffects() {
       dismissHover();
       useBrowser.getState().closeAbandonedNewTabs();
     }
-    if (e.type === "switcherReleased" || e.type === "resignActive") commitSwitcher();
-    if (e.type === "switcherMouseUp") releaseSwitcherMouse();
-    if (e.type === "switcherKey" && e.key === "escape") cancelSwitcher();
-    if (e.type === "switcherKey" && e.key !== "escape") moveSwitcher(e.key === "next" ? 1 : -1);
   });
 
   onWindowEvent((e) => {

@@ -653,6 +653,11 @@ final class PoolPage: TabPoolPage {
 
   func hold(_ held: Bool) { page.setHeld(held) }
 
+  func prepareToShow() {
+    setShown(true)
+    page.flushPainting()
+  }
+
   func whenDrawn(_ done: @escaping @MainActor (_ drawn: Bool) -> Void) { page.whenDrawn(done) }
 
   private func apply() {

@@ -29,6 +29,7 @@ extern NSNotificationName const SolaraCorePictureInPictureDidChangeNotification;
 @property (nonatomic) BOOL warm;
 @property (nonatomic) BOOL neighbour;
 @property (nonatomic) BOOL held;
+- (void)flushPainting;
 - (void)whenDrawn:(void (^)(BOOL drawn))done;
 @property (nonatomic) BOOL autoPictureInPicture;
 @property (nonatomic, readonly) BOOL discarded;

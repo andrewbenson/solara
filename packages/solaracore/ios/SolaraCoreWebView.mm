@@ -1937,6 +1937,11 @@ static SolaraCoreTab *StartParkedPage(NSString *url, NSString *profileName, NSSt
       completion:^(NSString *json) { [tab tracePictureInPicture:[@"page: " stringByAppendingString:json ?: @"(no answer)"] withInputs:NO]; }];
 }
 
+- (void)flushPainting {
+  [PendingPainting() removeObject:self];
+  [self applyPainting];
+}
+
 - (void)schedulePainting {
   [PendingPainting() addObject:self];
   if (gPaintingScheduled) return;

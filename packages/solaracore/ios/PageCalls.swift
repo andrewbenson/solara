@@ -270,6 +270,10 @@ public final class PooledPage {
 
   public var holdsUntilDrawn: Bool { view is SolaraCoreWebView }
 
+  public func flushPainting() {
+    (view as? SolaraCoreWebView)?.flushPainting()
+  }
+
   public func setHeld(_ held: Bool) {
     (view as? SolaraCoreWebView)?.held = held
   }

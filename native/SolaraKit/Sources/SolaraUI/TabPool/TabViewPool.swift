@@ -7,6 +7,7 @@ import SolaraModel
 public protocol TabPoolPage: AnyObject {
   var view: NSView { get }
   func setShown(_ shown: Bool)
+  func prepareToShow()
   func focus()
   func retire()
   var holdsUntilDrawn: Bool { get }
@@ -15,6 +16,7 @@ public protocol TabPoolPage: AnyObject {
 }
 
 public extension TabPoolPage {
+  func prepareToShow() { setShown(true) }
   var holdsUntilDrawn: Bool { false }
   func hold(_ held: Bool) {}
   func whenDrawn(_ done: @escaping @MainActor (_ drawn: Bool) -> Void) { done(true) }
@@ -118,9 +120,9 @@ public final class TabViewPool {
     scheduled = false
     let replaced = retireChangedIdentities()
     let ops = TabViewPlan.plan(wanted: wanted, slots: slots.keys, current: places, visible: shown)
-    let rehosted = rehost()
     endStaleHolds()
     guard !ops.isEmpty else {
+      let rehosted = rehost()
       focusReplaced()
       if rehosted || replaced { onPlaced?(places.mapValues(Self.describe)) }
       return
@@ -129,7 +131,25 @@ public final class TabViewPool {
     let initialKeys = ops.reduce(into: [String: TabSlotKey]()) { keys, op in
       if case .attach(let id, let key, _) = op { keys[id] = key }
     }
-    let holding = holds(ops)
+    for op in ops {
+      guard case .create(let id, let windowId) = op else { continue }
+      #if SOLARA_PROBES
+      let timing = NewTabMainThreadTiming.begin("pool.make", windowId: windowId, tabId: id)
+      #endif
+      let madePage = make(id, windowId)
+      #if SOLARA_PROBES
+      NewTabMainThreadTiming.end(timing)
+      #endif
+      guard let page = madePage else { continue }
+      pages[id] = page
+      identities[id] = identity(of: id)
+      made.insert(id)
+      let frame = initialContainer(initialKeys[id], windowId: windowId)?.bounds
+      park(page.view, in: windowId, initial: true, initialFrame: frame)
+    }
+    let prepared = prepareTransferSuccessors(ops)
+    _ = rehost(excluding: prepared)
+    let holding = holds(ops).filter { !prepared.contains($0.value.id) }
     for op in ops {
       switch op {
       case .attach(let id, _, _), .drop(let id): endHold(id, settle: false)
@@ -149,22 +169,9 @@ public final class TabViewPool {
         notShown(id)
         guard let page = pages.removeValue(forKey: id) else { continue }
         page.retire()
-      case .create(let id, let windowId):
-        #if SOLARA_PROBES
-        let timing = NewTabMainThreadTiming.begin("pool.make", windowId: windowId, tabId: id)
-        #endif
-        let madePage = make(id, windowId)
-        #if SOLARA_PROBES
-        NewTabMainThreadTiming.end(timing)
-        #endif
-        guard let page = madePage else { continue }
-        pages[id] = page
-        identities[id] = identity(of: id)
-        made.insert(id)
-        let frame = initialContainer(initialKeys[id], windowId: windowId)?.bounds
-        park(page.view, in: windowId, initial: true, initialFrame: frame)
+      case .create: break
       case .attach(let id, let key, _):
-        guard let view = pages[id]?.view, let container = slots.container(for: key) else { continue }
+        guard !prepared.contains(id), let view = pages[id]?.view, let container = slots.container(for: key) else { continue }
         attach(view, to: container, tabId: id)
       case .behind(let id, let key, _):
         guard holding[id] == nil, let view = pages[id]?.view, let container = slots.container(for: key) else { continue }
@@ -173,7 +180,7 @@ public final class TabViewPool {
         guard holding[id] == nil, let view = pages[id]?.view else { continue }
         park(view, in: windowId)
       case .visible(let id, let on):
-        if on, let page = pages[id] {
+        if on, !prepared.contains(id), let page = pages[id] {
           page.setShown(true)
           watchFirstFrame(id, page: page)
         }
@@ -195,6 +202,32 @@ public final class TabViewPool {
     }
     focusReplaced()
     onPlaced?(places.mapValues(Self.describe))
+  }
+
+  private func prepareTransferSuccessors(_ ops: [TabViewOp]) -> Set<String> {
+    var incoming: [TabSlotKey: String] = [:]
+    for op in ops {
+      if case .attach(let id, let key, _) = op { incoming[key] = id }
+    }
+    var prepared: Set<String> = []
+    for op in ops {
+      let outgoing: String
+      switch op {
+      case .attach(let id, _, true), .hide(let id, _, true), .behind(let id, _, true): outgoing = id
+      default: continue
+      }
+      guard case .slot(let key)? = places[outgoing], case .card = key, nativePlacement(key.windowId),
+        let next = incoming[key], next != outgoing, sameProfile(outgoing, next),
+        shown[next] == true || ops.contains(.visible(next, true)),
+        places[next].map({ TabViewPlan.windowOf($0) == key.windowId }) ?? true,
+        let page = pages[next], let leaving = pages[outgoing], let container = slots.container(for: key),
+        container.window != nil, leaving.view.superview === container else { continue }
+      move(page.view, into: container, below: true)
+      page.prepareToShow()
+      watchFirstFrame(next, page: page)
+      prepared.insert(next)
+    }
+    return prepared
   }
 
   private func holds(_ ops: [TabViewOp]) -> [String: (id: String, key: TabSlotKey?)] {
@@ -419,9 +452,9 @@ public final class TabViewPool {
     wanted.first { $0.tabId == tabId }?.identity ?? ""
   }
 
-  private func rehost() -> Bool {
+  private func rehost(excluding prepared: Set<String> = []) -> Bool {
     var moved = false
-    for (id, place) in places.sorted(by: { $0.key < $1.key }) where held[id] == nil {
+    for (id, place) in places.sorted(by: { $0.key < $1.key }) where held[id] == nil && !prepared.contains(id) {
       guard let view = pages[id]?.view else { continue }
       let container: NSView?
       switch place {

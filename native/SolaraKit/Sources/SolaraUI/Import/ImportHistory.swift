@@ -86,10 +86,13 @@ public enum ImportFavicons {
   }
 
   public static func chosen(_ read: ImportRead) -> [ImportFaviconRow] {
-    let pages = pages(read)
-    guard !read.favicons.isEmpty, !pages.isEmpty else { return [] }
+    chosen(read.favicons, pages: pages(read))
+  }
+
+  public static func chosen(_ favicons: [ImportFaviconRow], pages: [String]) -> [ImportFaviconRow] {
+    guard !favicons.isEmpty, !pages.isEmpty else { return [] }
     let wanted = Set(pages.map { Array(page($0).utf16) })
-    return read.favicons.filter { wanted.contains(Array(page($0.page).utf16)) }
+    return favicons.filter { wanted.contains(Array(page($0.page).utf16)) }
   }
 
   public static func byPage(_ favicons: [ImportFaviconRow]) -> [(page: String, favicon: ImportFaviconRow)] {

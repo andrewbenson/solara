@@ -168,6 +168,44 @@ public final class ImportService: @unchecked Sendable {
   public func cancelRead(jobId: String) { session.jobs.cancel(jobId) }
 
   #if DEBUG
+  static var diaFixture: String? { ProcessInfo.processInfo.environment["SOLARA_IMPORT_DIA_FIXTURE"] }
+  #endif
+
+  static var diaFixtureStatus: DiaAutomation.Status? {
+    #if DEBUG
+    if diaFixture != nil { return .granted }
+    #endif
+    return nil
+  }
+
+  static func diaTabs(_ importer: Importer) throws -> DiaTabsResult {
+    #if DEBUG
+    if let diaFixture { return try JSONDecoder().decode(DiaTabsResult.self, from: Data(contentsOf: URL(fileURLWithPath: diaFixture))) }
+    #endif
+    guard DiaAutomation.isRunning(diaBundleId) else { throw ImportError.notRunning("Dia isn't running") }
+    var result = try DiaTabsImport.read(from: DiaAppleEvents(bundleIdentifier: diaBundleId))
+    result.favicons = importer.favicons(browserId: "dia", pages: result.profiles.flatMap { $0.pinned.map(\.url) + $0.tabs.map(\.url) })
+    return result
+  }
+
+  public func readDiaTabs() async throws -> DiaTabsResult {
+    try await onWork { [importer] in try Self.diaTabs(importer) }
+  }
+
+  @MainActor public static func openDia() async -> Bool {
+    #if DEBUG
+    if diaFixture != nil { return true }
+    #endif
+    if ProcessInfo.processInfo.environment["SOLARA_BACKGROUND"] == "1" { return false }
+    guard let app = NSWorkspace.shared.urlForApplication(withBundleIdentifier: diaBundleId) else { return false }
+    let config = NSWorkspace.OpenConfiguration()
+    config.activates = false
+    return await withCheckedContinuation { continuation in
+      NSWorkspace.shared.openApplication(at: app, configuration: config) { _, error in continuation.resume(returning: error == nil) }
+    }
+  }
+
+  #if DEBUG
   public var devVaultCount: Int { session.vault.count }
   #endif
 
@@ -194,6 +232,9 @@ public final class ImportService: @unchecked Sendable {
   }
 
   public func diaStatus(ask: Bool) async -> String? {
+    #if DEBUG
+    if Self.diaFixture != nil { return DiaAutomation.Status.granted.rawValue }
+    #endif
     guard let json = try? await onWork({ try ImportModule.json(DiaAutomation.status(Self.diaBundleId, ask: ask)) }) else { return nil }
     return (try? JSONSerialization.jsonObject(with: Data(json.utf8), options: [.fragmentsAllowed])) as? String
   }
@@ -332,12 +373,12 @@ public class ImportModule: Module {
     }
 
     AsyncFunction("diaAutomationStatus") { (promise: Promise) in
-      self.run(promise) { try Self.json(DiaAutomation.status(ImportService.diaBundleId, ask: false)) }
+      self.run(promise) { try Self.json(ImportService.diaFixtureStatus ?? DiaAutomation.status(ImportService.diaBundleId, ask: false)) }
     }
 
     AsyncFunction("requestDiaAutomation") { (promise: Promise) in
       let ask = ProcessInfo.processInfo.environment["SOLARA_BACKGROUND"] != "1"
-      self.run(promise) { try Self.json(DiaAutomation.status(ImportService.diaBundleId, ask: ask)) }
+      self.run(promise) { try Self.json(ImportService.diaFixtureStatus ?? DiaAutomation.status(ImportService.diaBundleId, ask: ask)) }
     }
 
     AsyncFunction("openAutomationSettings") { (promise: Promise) in
@@ -346,6 +387,9 @@ public class ImportModule: Module {
     }.runOnQueue(.main)
 
     AsyncFunction("openDia") { (promise: Promise) in
+      #if DEBUG
+      if ImportService.diaFixture != nil { return promise.resolve(nil) }
+      #endif
       if ProcessInfo.processInfo.environment["SOLARA_BACKGROUND"] == "1" { return promise.reject("background", "a background instance doesn't open Dia") }
       guard let app = NSWorkspace.shared.urlForApplication(withBundleIdentifier: ImportService.diaBundleId) else {
         return promise.reject("notFound", "Dia isn't installed")
@@ -358,12 +402,7 @@ public class ImportModule: Module {
     }.runOnQueue(.main)
 
     AsyncFunction("readDiaTabs") { (promise: Promise) in
-      self.run(promise) {
-        guard DiaAutomation.isRunning(ImportService.diaBundleId) else { throw ImportError.notRunning("Dia isn't running") }
-        var result = try DiaTabsImport.read(from: DiaAppleEvents(bundleIdentifier: ImportService.diaBundleId))
-        result.favicons = self.importer.favicons(browserId: "dia", pages: result.profiles.flatMap { $0.pinned.map(\.url) + $0.tabs.map(\.url) })
-        return try Self.json(result)
-      }
+      self.run(promise) { try Self.json(ImportService.diaTabs(self.importer)) }
     }
 
     AsyncFunction("importBookmarksHTML") { (path: String, promise: Promise) in

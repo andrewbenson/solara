@@ -15,6 +15,8 @@ final class ImportAdapter: ImportServices, ImportScriptPath {
   private var swiftSession = 0
   private let direct = SettingsDirectWrites.store != nil
   private var service: ImportService? { direct ? ImportService.shared : nil }
+  private var diaRoute: ImportRoute = .js
+  private var diaLaunched = Date.distantPast
 
   func open() async -> ImportOpening {
     if direct { swiftSession = ImportRuns.shared.open() }
@@ -159,9 +161,15 @@ final class ImportAdapter: ImportServices, ImportScriptPath {
     return Self.dia(await service.diaStatus(ask: ProcessInfo.processInfo.environment["SOLARA_BACKGROUND"] != "1"))
   }
 
-  func openDia() async -> Bool { await SettingsAdapters.js("import.openDia") as? Bool ?? false }
+  func openDia() async -> Bool {
+    guard direct, ImportRuns.shared.diaRoute(engine: ImportRunEngine.shared) == .swift else { return await SettingsAdapters.js("import.openDia") as? Bool ?? false }
+    diaLaunched = Date()
+    return await ImportService.openDia()
+  }
 
   func readDiaTabs() async -> DiaRead {
+    diaRoute = direct ? ImportRuns.shared.diaRoute(engine: ImportRunEngine.shared) : .js
+    guard diaRoute == .js else { return await readDiaTabsDirectly() }
     guard let result = await SettingsAdapters.js("import.readDia") as? [String: Any] else {
       return .failed(code: "unreadable", message: "Couldn't read Dia's tabs")
     }
@@ -175,7 +183,37 @@ final class ImportAdapter: ImportServices, ImportScriptPath {
     return .read(profiles: profiles, windowCount: result.int("windowCount") ?? 0)
   }
 
+  private func readDiaTabsDirectly() async -> DiaRead {
+    do {
+      var result = try await ImportService.shared.readDiaTabs()
+      var tries = 0
+      while result.windowCount == 0, Date().timeIntervalSince(diaLaunched) < 15, tries < 8 {
+        try await Task.sleep(for: .milliseconds(1500))
+        result = try await ImportService.shared.readDiaTabs()
+        tries += 1
+      }
+      let read = Self.diaRead(result)
+      ImportRuns.shared.dia = read
+      return .read(profiles: read.profiles.map { DiaProfileSummary(id: $0.id, name: $0.name, pinnedCount: $0.pinned.count, tabCount: $0.tabs.count) }, windowCount: read.windowCount)
+    } catch let error as SolaraImportAdapter.ImportError {
+      return .failed(code: error.code, message: error.description)
+    } catch {
+      return .failed(code: "unreadable", message: error.localizedDescription)
+    }
+  }
+
+  nonisolated static func diaRead(_ result: SolaraImportAdapter.DiaTabsResult) -> ImportDiaRead {
+    ImportDiaRead(
+      profiles: result.profiles.map { ImportDiaProfile(id: $0.id, name: $0.name, pinned: $0.pinned.map(ImportRunEngine.tab), tabs: $0.tabs.map(ImportRunEngine.tab)) },
+      windowCount: result.windowCount,
+      favicons: result.favicons.map { ImportFaviconRow(page: $0.page, icon: $0.icon, png: $0.png) }
+    )
+  }
+
   func runDia(profileIds: [String], target: String, pinned: Bool, open: Bool) async -> ImportRunOutcome {
+    if diaRoute == .swift {
+      return await ImportRuns.shared.importDia(profileIds: profileIds, target: target, pinned: pinned, open: open, session: swiftSession, engine: ImportRunEngine.shared)
+    }
     let kinds: [SolaraUI.ImportKind] = (open ? [.tabs] : []) + (pinned ? [.pinnedTabs] : [])
     return Self.runOutcome(await SettingsAdapters.js("import.runDia", ["profileIds": profileIds, "target": target, "pinned": pinned, "open": open], session), kinds: kinds)
   }

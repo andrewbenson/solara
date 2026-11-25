@@ -348,6 +348,20 @@ public final class ImportRuns {
     return await whileActive { await ImportRunner(runs: self, engine: engine, session: id).importSafari(source, target: target, cookies: cookies) }
   }
 
+  public var dia: ImportDiaRead?
+
+  public func diaRoute(engine: ImportEngine) -> ImportRoute {
+    let route = preferred(.swift, engine: engine)
+    engine.log("[import] dia route=\(route.rawValue)")
+    return route
+  }
+
+  public func importDia(profileIds: [String], target: String, pinned: Bool, open: Bool, session id: Int, engine: ImportEngine) async -> ImportRunOutcome {
+    guard admitted(id) else { return .cancelledRun }
+    let read = dia
+    return await whileActive { await ImportRunner(runs: self, engine: engine, session: id).importDia(read, profileIds: profileIds, target: target, pinned: pinned, open: open) }
+  }
+
   private func preferred(_ route: ImportRoute, engine: ImportEngine) -> ImportRoute {
     var route = route
     if route == .swift, scriptRouteDefault() == "script" {
@@ -380,6 +394,7 @@ public final class ImportRuns {
 
   public func dispose(engine: ImportEngine, script: ImportScriptPath) {
     stop(engine)
+    dia = nil
     script.scriptDispose()
   }
 

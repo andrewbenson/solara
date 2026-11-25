@@ -242,6 +242,11 @@ final class NativeSiteMenu {
     case .permission(let type): pickPermission(type)
     case .shared(let action):
       guard case .press(_, let rect) = event else { return }
+      if action == "copy" || action == "share" {
+        let options: [String: Any] = ["tabId": tabId, "anchor": [rect.minX, rect.minY, rect.width, rect.height]]
+        let arg = (try? JSONSerialization.data(withJSONObject: options)).flatMap { String(data: $0, encoding: .utf8) }
+        if NativeLinkCommands.perform(action == "copy" ? "copyUrl" : "share", arg: arg, windowId: windowId) { dismiss(); return }
+      }
       let captured = context
       let clickAt = NSApp.currentEvent.map { $0.type == .leftMouseUp ? $0.timestamp * 1000 : 0 } ?? 0
       dismiss()

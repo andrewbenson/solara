@@ -43,6 +43,13 @@ enum NativeTabMenu {
       guard let store = WorkspaceWrites.store, store === owner, store.state.tabs[tabId] != nil else {
         return NSLog("[tabs] %@: gone or stood down while its menu was open", tabId)
       }
+      if choice == "copy" || choice == "copyMd" || choice.hasPrefix("share:via:") {
+        var options: [String: Any] = multi ? ["ids": selected] : ["tabId": tabId]
+        if choice.hasPrefix("share:via:") { options["via"] = String(choice.dropFirst(10)) }
+        let arg = (try? JSONSerialization.data(withJSONObject: options)).flatMap { String(data: $0, encoding: .utf8) }
+        _ = NativeLinkCommands.perform(choice.hasPrefix("share:") ? "share" : choice == "copyMd" ? "copyUrlAsMarkdown" : "copyUrl", arg: arg, windowId: windowId)
+        return
+      }
       if multi {
         guard let command = TabMenuPlan.multiCommand(choice, windowId: windowId, ids: selected, state: store.state) else {
           return js(tabId, choice, selected)

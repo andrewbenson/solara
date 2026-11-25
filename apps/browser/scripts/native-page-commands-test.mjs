@@ -124,10 +124,49 @@ try {
   handlerBaseline = await run(`const stats = ac.commandHandlers.stats(); ac.commandHandlers.setEnabled(${baseline}); return stats;`);
 
   pass("native layout capability", { layout: await run('return expo.modules.SolaraWindowShell.nativeLayout("w1");') });
+  if (!baseline) {
+    const probe = (action) => run(`return expo.modules.SolaraSettings.devLinkCommands(${JSON.stringify(action)});`);
+    await probe("begin");
+    try {
+      await menu("w1", "copyUrl");
+      assert.deepEqual(await probe("read"), [`${base}/a`]);
+      await bridge("copyUrlAsMarkdown");
+      assert.equal((await probe("read")).at(-1), `[Page /a](${base}/a)`);
+      await press("C", 8, ["command", "shift"]);
+      assert.equal((await probe("read")).at(-1), `${base}/a`);
+      const page = await app.page("/a");
+      await page.eval("getSelection().selectAllChildren(document.body); true");
+      await menu("w1", "copyUrl");
+      await until("quote offer then native toast action", async () => {
+        await probe("quote");
+        return (await probe("read")).at(-1)?.includes("#:~:text=");
+      });
+      await menu("w1", "copyUrl");
+      await until("quote offer receipt", async () => (await probe("offer")).length > 0);
+      const captured = (await probe("read")).length;
+      await run(`ac.store.getState().navigate("a", ${JSON.stringify(`${base}/a?new-document`)}); return true;`);
+      await until("quote source navigated", s => s.tabs.a.url === `${base}/a?new-document`);
+      await probe("quote");
+      assert.equal((await probe("read")).length, captured, "stale quote action copied from a newer document");
+      await run(`ac.store.getState().navigate("a", ${JSON.stringify(`${base}/a`)}); return true;`);
+      await until("copy fixture restored", s => s.tabs.a.url === `${base}/a`);
+      await page.eval("getSelection().removeAllRanges(); true");
+      const count = (await probe("read")).length;
+      await menu("w1", "copyQuoteLink");
+      await handledNatively("copy, Markdown, shortcut, quote toast and empty quote");
+      assert.equal((await probe("read")).length, count);
+      pass("native copy and quote effects use scoped clipboard capture");
+    } finally { await probe("end"); }
+  }
   const bookmark = await run(`return ac.bookmarks.addBookmark({ profileId: "default", title: "Command bookmark", url: ${JSON.stringify(`${base}/bookmark`)} });`);
   const folder = await run('return ac.bookmarks.addBookmarkFolder({ profileId: "default", title: "Command folder" });');
   async function openBookmarkIn(windowId, tabId) {
     const before = await nativeState();
+    if (!baseline) {
+      await run('return expo.modules.SolaraSettings.devLinkCommands("begin");');
+      try { await menu(windowId, "copyUrl"); assert.deepEqual(await run('return expo.modules.SolaraSettings.devLinkCommands("read");'), before.tabs[tabId].url ? [before.tabs[tabId].url] : []); await handledNatively("copy routed native target"); }
+      finally { await run('return expo.modules.SolaraSettings.devLinkCommands("end");'); }
+    }
     await menu(windowId, "openBookmark", bookmark);
     await until("bookmark URL on routed native tab", (s) => s.tabs[tabId]?.url === `${base}/bookmark`);
     await handledNatively("openBookmark");

@@ -36,10 +36,10 @@ enum NativeWorkspaceCommands {
   private static var lastFindRequest = 0
 
   static func install() {
-    for command in WorkspaceMenuCommand.commands.union(ViewMenuCommand.commands).union(PageMenuCommand.commands).union(FindMenuCommand.commands).union(BookmarkMenuCommand.commands) {
+    for command in WorkspaceMenuCommand.commands.union(ViewMenuCommand.commands).union(PageMenuCommand.commands).union(FindMenuCommand.commands).union(BookmarkMenuCommand.commands).union(CopyLinkCommand.commands) {
       NativeMenuCommands.argumentHandlers[command] = { arg, windowId in perform(command, arg: arg, windowId: windowId) }
     }
-    NativeMenuCommands.keepsMenuDispatch = ViewMenuCommand.commands.union(PageMenuCommand.commands).union(BookmarkMenuCommand.commands)
+    NativeMenuCommands.keepsMenuDispatch = ViewMenuCommand.commands.union(PageMenuCommand.commands).union(BookmarkMenuCommand.commands).union(CopyLinkCommand.commands)
     NativeMenuCommands.workspaceAvailability = { command, arg, windowId in
       guard NativeStoreHandle.ownsWorkspace, let state = NativeStoreHandle.store?.state,
         WorkspaceMenuCommand.commands.contains(command) else { return nil }
@@ -250,6 +250,7 @@ enum NativeWorkspaceCommands {
     defer { NewTabMainThreadTiming.end(timing) }
     #endif
     if BookmarkMenuCommand.commands.contains(command) { return NativeBookmarkCommands.perform(command, arg: arg, windowId: windowId) }
+    if CopyLinkCommand.commands.contains(command) { return NativeLinkCommands.perform(command, arg: arg, windowId: windowId) }
     if ViewMenuCommand.commands.contains(command) { return performView(command, arg: arg, windowId: windowId) }
     if PageMenuCommand.commands.contains(command) { return performPage(command, arg: arg, windowId: windowId) }
     if FindMenuCommand.commands.contains(command) { return performFind(command, windowId: windowId) }

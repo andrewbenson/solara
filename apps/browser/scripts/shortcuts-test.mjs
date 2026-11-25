@@ -1057,29 +1057,37 @@ for (const where of ["the find field", "the page"]) {
   await sleep(400);
 
   await resetToPageField("", [0, 0]);
-  await clipboard.set("sentinel-links");
+  const nativeCopy = await ac(`return !!expo.modules.SolaraSettings.devLinkCommands;`);
+  const linkClipboard = nativeCopy ? {
+    set: () => ac(`return expo.modules.SolaraSettings.devLinkCommands("begin");`),
+    get: () => ac(`return expo.modules.SolaraSettings.devLinkCommands("read").then(values => values.at(-1));`),
+  } : clipboard;
+  try {
+  await linkClipboard.set("sentinel-links");
   await ac(`const s = ac.store.getState(); s.setSelection("w1", ["t4", "t2", "t3"]); return 1;`);
   await sleep(300);
   await postKeys([keyPress("C", 8, 0, ["command", "shift"])]);
   await sleep(800);
-  const selectedWithShown = await clipboard.get();
+  const selectedWithShown = await linkClipboard.get();
   check("⇧⌘C with the shown tab in a selection copies the selection", selectedWithShown === ["t2", "t3", "t4"].map((id) => `${pages}/?${id}`).join("\n"), JSON.stringify(selectedWithShown));
-  await clipboard.set("sentinel-links");
+  await linkClipboard.set("sentinel-links");
   await ac(`ac.store.getState().setSelection("w1", ["t4", "t1", "t2"]); return 1;`);
   await sleep(300);
   await postKeys([keyPress("C", 8, 0, ["command", "shift"])]);
   await sleep(800);
-  const outside = await clipboard.get();
+  const outside = await linkClipboard.get();
   check("⇧⌘C with a selection that leaves out the shown tab copies the shown page's link", outside === `${pages}/?t3`, JSON.stringify(outside));
-  await clipboard.set("sentinel-links");
+  await linkClipboard.set("sentinel-links");
   await ac(`const s = ac.store.getState(); s.activate("t1"); s.setSelection("w1", ["t4", "t1", "t2"]); return 1;`);
   await sleep(300);
   await postKeys([keyPress("C", 8, 0, ["command", "shift"])]);
   await sleep(800);
-  const copied = await clipboard.get();
+  const copied = await linkClipboard.get();
   const expected = ["t1", "t2", "t4"].map((id) => `${pages}/?${id}`).join("\n");
   check("⇧⌘C with three tabs selected copies their links, one per line, in sidebar order", copied === expected, JSON.stringify(copied));
   await ac(`ac.store.getState().setSelection("w1", []); return 1;`);
+  } finally { if (nativeCopy) await ac(`return expo.modules.SolaraSettings.devLinkCommands("end");`); }
+
 }
 await fullShortcutSnapshotFits("after the presses");
 for (const busy of [0, 120]) {

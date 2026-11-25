@@ -169,3 +169,5 @@ New Store actions `closeCommandTabs`/`reopenCommandClosed` preserve the close-to
 Source implementation is present: `WorkspaceMenuCommand` resolves the first group, `WorkspaceClosePolicy` decides close warnings and stale-animation admission, and `NativeWorkspaceCommands` owns native command effects. The shell's menu, undo, close-request and developer paths reach native ownership; direct JS callers try the native bridge first. New/closed windows from these commands are materialized in Swift; the existing JS window mirror remains idempotent glue and still owns unrelated lifecycle feeds.
 
 Swift tests and the handler-disabled native driver are written. `node --check` and whitespace checks pass. Compile, Swift test and hidden-instance checklist items remain pending VM execution. Local typecheck and JS tests are skipped because this clone has no `node_modules`. Exact commands are in `result.md`. No commits or push.
+
+Copy links and share: Swift source delivered in slice 3; CopyLinkCommandTests and handler-disabled copy/quote/share drivers in layouts 0 and 1 remain VM gates. No build or runtime verification claimed.

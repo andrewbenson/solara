@@ -4,14 +4,12 @@ import { showNativePanelNow } from "../components/CommandPanel";
 import { markPanelFrame } from "./perfMarks";
 import {
   closeWindow as closeNativeWindow,
-  copyText,
   openExternalURL,
   pickFiles,
   prompt,
   setAppearance,
   type CommandEvent,
 } from "@solara/shell";
-import { markdownLink } from "@solara/core";
 import { useBrowser } from "../store/browser";
 import { activeTabId, bookmarkProfileId, isPinnedRow, resolveWindowId } from "../store/model";
 import {
@@ -42,8 +40,7 @@ import { withLivePage } from "./livePage";
 import { webviews } from "./webviews";
 import { togglePageEngine } from "./engines";
 import { goBack, goForward } from "../components/layout/history";
-import { openSplitPane, showToast } from "../components/layout/splitActions";
-import { copiedLinksMessage, copySelectedUrls } from "../components/sidebar/actions";
+import { openSplitPane } from "../components/layout/splitActions";
 import { commandRoute } from "./commandRoute";
 import { runSidebarCommand } from "../components/sidebar/commands";
 import { numberedTabs } from "../components/sidebar/entries";
@@ -51,8 +48,6 @@ import { openExtensionFromMenu } from "../components/extensions/bridge";
 import { toggleCastPicker } from "../components/media/cast";
 import { openManageExtensions, openPinDialog, openWebStore } from "../components/extensions/state";
 import { requestAutofill } from "../components/site/Autofill";
-import { copyPageUrl } from "../components/site/selection";
-import { shareTab } from "../components/site/share";
 import { openProfileMenu } from "../components/ProfileIndicator";
 import { groupOf, multiSelection } from "../store/organize";
 import { reopenClosedTogether } from "../store/closedTogether";
@@ -81,7 +76,7 @@ export const commandHandlers = {
 };
 
 export function runCommand({ command, arg, windowId: requested }: CommandEvent) {
-  if (command === "openBookmark" || command === "jumpToSelection") return void nativeWorkspaceCommand(command, arg, requested);
+  if (command === "openBookmark" || command === "jumpToSelection" || ["copyUrl", "copyUrlAsMarkdown", "copyQuoteLink", "share"].includes(command)) return void nativeWorkspaceCommand(command, arg, requested);
   if (nativeOwnsWorkspace() && nativeWorkspaceCommand(command, arg, requested)) return;
   if (__DEV__ && !commandHandlersEnabled) { commandHandlerBlocked++; return; }
   if (__DEV__) commandHandlerCalls++;
@@ -184,15 +179,6 @@ export function runCommand({ command, arg, windowId: requested }: CommandEvent) 
       );
     case "stop":
       return void web?.stopLoading();
-    case "share":
-      return void shareTab(page, windowId, arg?.startsWith("via:") ? arg.slice(4) : null);
-    case "copyUrl":
-    case "copyUrlAsMarkdown": {
-      const copied = peekTabId(s, windowId) ? undefined : copySelectedUrls(windowId, command === "copyUrlAsMarkdown");
-      if (copied) return showToast(windowId, copiedLinksMessage(copied.count, command === "copyUrlAsMarkdown"), undefined, { icon: "link" });
-      if (command === "copyUrl") return page ? void copyPageUrl(page.id) : undefined;
-      return page ? copyText(markdownLink(page.customTitle || page.title, page.url)) : undefined;
-    }
     case "findInPage":
       if (page) expectFocus(windowId, findFocus(page.id));
       return page ? s.setFind(page.id, { open: true, replace: false, focusRequest: Date.now() }) : undefined;

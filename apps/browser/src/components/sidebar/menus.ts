@@ -1,3 +1,4 @@
+import { nativeWorkspaceCommand } from "@solara/settings";
 import { showMenu, type MenuItem } from "@solara/shell";
 import { closeGroup, closeTab, closeTabs, moveTabToProfile, moveTabToWindow, switchToTab, toggleMute } from "../../lib/actions";
 import { moveGroupToBookmarksBar } from "../../lib/bookmarkGroups";
@@ -11,7 +12,6 @@ import type { GroupColor, Tab } from "../../store/types";
 import {
   allMuted,
   bookmarkTabs,
-  copyUrls,
   editPinnedPage,
   muteAll,
   newGroupWithSelection,
@@ -22,7 +22,6 @@ import {
 import { isCalendarUrl } from "../../live/meetings";
 import { bookmarkTab } from "../bookmarks/actions";
 import { hideKeyedToast, showToast, useToasts } from "../layout/splitActions";
-import { shareTab } from "../site/share";
 import { calendarMenuItem, newLiveFolderMenuItem, runCalendarMenu, runNewLiveFolder } from "./liveMenus";
 import { openSyncedTab, syncedDevicesMenuItem } from "../../sync/menu";
 import { setSidebarUi } from "./state";
@@ -68,6 +67,8 @@ export async function openTabMenu(windowId: string, tab: Tab) {
 }
 
 export function runTabMenuChoice(windowId: string, tabId: string, choice: string) {
+  if (choice === "copy") return void nativeWorkspaceCommand("copyUrl", JSON.stringify({ tabId }), windowId);
+  if (choice.startsWith("share:via:")) return void nativeWorkspaceCommand("share", JSON.stringify({ tabId, via: choice.slice(10) }), windowId);
   const s = store();
   const tab = s.tabs[tabId];
   if (!tab) return;
@@ -100,8 +101,6 @@ export function runTabMenuChoice(windowId: string, tabId: string, choice: string
   else if (choice === "unsplit") s.removeTabFromSplit(tab.id);
   else if (choice === "mute") toggleMute(tab.id);
   else if (choice === "engine") void togglePageEngine(tab.id);
-  else if (choice === "copy") copyUrls([tab.id], false);
-  else if (choice.startsWith("share:via:")) void shareTab(tab, windowId, choice.slice(10));
   else if (choice === "bookmark") void bookmarkTab(windowId, tab.id);
   else if (choice.startsWith("profile:")) void moveTabToProfile(tab.id, choice.slice(8));
   else if (choice.startsWith("window:")) moveTabToWindow(tab.id, choice.slice(7));
@@ -118,6 +117,7 @@ async function openMultiMenu(windowId: string, ids: string[]) {
 }
 
 export function runTabMenuSelectionChoice(windowId: string, ids: string[], choice: string) {
+  if (choice === "copy" || choice === "copyMd") return void nativeWorkspaceCommand(choice === "copy" ? "copyUrl" : "copyUrlAsMarkdown", JSON.stringify({ ids }), windowId);
   const s = store();
   if (!choice || !ids.length || ids.some((id) => !s.tabs[id] || s.tabs[id]!.windowId !== windowId)) return;
   const tabs = ids.map((id) => s.tabs[id]!);
@@ -128,8 +128,6 @@ export function runTabMenuSelectionChoice(windowId: string, ids: string[], choic
   else if (choice === "newGroup") newGroupWithSelection(windowId, ids);
   else if (choice.startsWith("group:")) s.placeTabs(ids, { pinned: false, groupId: choice.slice(6) });
   else if (choice === "ungroup") s.removeTabsFromGroup(ids);
-  else if (choice === "copy") copyUrls(ids, false);
-  else if (choice === "copyMd") copyUrls(ids, true);
   else if (choice === "bar") void bookmarkTabs(windowId, ids, "bar");
   else if (choice.startsWith("folder:")) void bookmarkTabs(windowId, ids, choice.slice(7));
   else if (choice.startsWith("window:")) {
@@ -180,6 +178,7 @@ export async function openGroupMenu(windowId: string, groupId: string) {
 }
 
 export function runGroupMenuChoice(windowId: string, groupId: string, choice: string) {
+  if (choice === "copy" || choice === "copyMd") return void nativeWorkspaceCommand(choice === "copy" ? "copyUrl" : "copyUrlAsMarkdown", JSON.stringify({ groupId }), windowId);
   const target = { kind: "group" as const, id: groupId };
   if (choice === "rename") return void startRename(windowId, target);
   const s = store();
@@ -200,8 +199,6 @@ export function runGroupMenuChoice(windowId: string, groupId: string, choice: st
   } else if (choice === "pin") s.moveGroup(groupId, { pinned: !g.pinned });
   else if (choice === "duplicate") s.duplicateGroup(groupId);
   else if (choice === "collapse") s.updateGroup(groupId, { collapsed: !g.collapsed });
-  else if (choice === "copy") copyUrls(g.tabIds, false);
-  else if (choice === "copyMd") copyUrls(g.tabIds, true);
   else if (choice === "ungroup") s.ungroup(groupId);
   else if (choice === "bookmarkBar") void moveGroupToBookmarksBar(groupId).catch(reportBookmarkFailure);
   else if (choice === "close") void closeGroup(groupId);

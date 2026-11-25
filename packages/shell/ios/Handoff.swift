@@ -32,12 +32,12 @@ public enum Handoff {
   }
 }
 
-enum SharePicker {
+public enum SharePicker {
   private static var current: NSSharingServicePicker?
   private static let delegate = ShareDelegate()
   private static let background = ProcessInfo.processInfo.environment["SOLARA_BACKGROUND"] == "1"
 
-  static func show(url: String, title: String?, windowId: String?, anchor: [Double]?, done: @escaping () -> Void) {
+  public static func show(url: String, title: String?, windowId: String?, anchor: [Double]?, done: @escaping () -> Void) {
     let window = windowId.flatMap { WindowManager.shared.windows[$0] } ?? NSApp.keyWindow
     guard let link = URL(string: url), let window, let view = window.contentView else { return done() }
     var rect = NSRect(x: view.bounds.midX - 1, y: view.isFlipped ? 40 : view.bounds.maxY - 42, width: 2, height: 2)
@@ -95,7 +95,7 @@ enum SharePicker {
     picker.show(relativeTo: rect, of: view, preferredEdge: .minY)
   }
 
-  static func perform(service: String, url: String, title: String?, windowId: String?) {
+  public static func perform(service: String, url: String, title: String?, windowId: String?) {
     guard let link = URL(string: url), let match = services().first(where: { $0.title == service }) else { return }
     if background {
       return log("share via \(service) (not performed): \(describe(url, title))")

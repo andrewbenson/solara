@@ -1552,9 +1552,8 @@ enum NativeGroupMenu {
     case .close:
       _ = NativeGroupActions.close(groupId)
     case .copy(let markdown):
-      guard let text = GroupMenu.copiedText(store.state, ids: store.state.groups[groupId]?.tabIds ?? [], markdown: markdown) else { return }
-      NSPasteboard.general.clearContents()
-      NSPasteboard.general.setString(text, forType: .string)
+      let data = try? JSONSerialization.data(withJSONObject: ["groupId": groupId])
+      _ = NativeLinkCommands.perform(markdown ? "copyUrlAsMarkdown" : "copyUrl", arg: data.flatMap { String(data: $0, encoding: .utf8) }, windowId: windowId)
     case .newTab:
       if GroupMenu.newTabOpensBar(store.state, windowId: windowId) { return js(groupId, raw) }
       let tab = dispatch(store, Command("newTabInGroup", [.string(groupId)]))

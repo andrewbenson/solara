@@ -1,13 +1,12 @@
-import { cleanUrl, markdownLink } from "@solara/core";
 import { beginNativeRename } from "@solara/settings";
-import { copyText, prompt } from "@solara/shell";
+import { prompt } from "@solara/shell";
 import { bookmarkWriter, reportBookmarkFailure, submitBookmarks } from "../../lib/bookmarkWriter";
 import { updateFolder } from "../../live/store";
 import { useBrowser } from "../../store/browser";
 import { ancestorIds } from "../../store/groups";
 import { activeTabId, bookmarkProfileId, inPinnedContainer, pinSection, tabLayoutOf, viewTabIds } from "../../store/model";
 import type { ClickMods } from "../../store/drops";
-import { groupLabel, groupOf, multiSelection, selectedTabIds } from "../../store/organize";
+import { groupLabel, groupOf, selectedTabIds } from "../../store/organize";
 import type { Tab } from "../../store/types";
 import { measureRow, setSidebarUi, sidebarUi, type Target } from "./state";
 
@@ -77,29 +76,6 @@ export function newGroupWithSelection(windowId: string, ids = selectedTabIds(sto
 
 const urlLabel = (url: string) => url.replace(/^[a-z][\w+.-]*:\/\//i, "").replace(/^www\./, "").replace(/\/$/, "");
 export const tabTitle = (t: Pick<Tab, "customTitle" | "title" | "url">) => t.customTitle || t.title || (t.url && urlLabel(t.url)) || "New Tab";
-
-export function copyUrls(ids: string[], markdown: boolean): string | undefined {
-  const tabs = ids.map((id) => store().tabs[id]).filter((t): t is Tab => !!t?.url);
-  if (!tabs.length) return undefined;
-  const lines = tabs.map((t) => (markdown ? markdownLink(tabTitle(t), t.url) : cleanUrl(t.url)));
-  const text = markdown && lines.length > 1 ? lines.map((l) => `- ${l}`).join("\n") : lines.join("\n");
-  copyText(text);
-  return text;
-}
-
-export function copiedLinksMessage(count: number, markdown: boolean): string {
-  if (!count) return "No Links to Copy";
-  return `Copied ${count} ${count === 1 ? "Link" : "Links"}${markdown ? " as Markdown" : ""}`;
-}
-
-export function copySelectedUrls(windowId: string, markdown: boolean): { count: number; text: string } | undefined {
-  const s = store();
-  const ids = multiSelection(s, windowId);
-  const active = activeTabId(s, windowId);
-  if (!active || !ids.includes(active)) return undefined;
-  const linked = ids.filter((id) => s.tabs[id]?.url);
-  return { count: linked.length, text: (linked.length && copyUrls(linked, markdown)) || "" };
-}
 
 export async function bookmarkTabs(windowId: string, ids: string[], folder: string | "bar" | "new") {
   const s = store();

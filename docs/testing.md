@@ -597,3 +597,5 @@ Also run bookmarks-bar, native-tab-commands and shortcuts matrix/presses/precede
 `BookmarkMenuCommandTests` covers read-only/unavailable catalogs, ID scoping, routing, modes and stale confirmation receipts.
 VM gate: tests-only expected compile red for the absent planner; then bounded filtered/full SwiftPM and matching Debug app builds.
 All Swift and driver execution remains pending; source application is not runtime verification.
+
+Copy links and share: Swift source delivered in slice 3; CopyLinkCommandTests and handler-disabled copy/quote/share drivers in layouts 0 and 1 remain VM gates. No build or runtime verification claimed.

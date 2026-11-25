@@ -1,3 +1,4 @@
+import { nativeWorkspaceCommand } from "@solara/settings";
 import { unwrapPageEvent, type OpenWindowRequest, type PageEngine, type PageCreated, type PageIssue, type StoreReportDisposition, type ViewEventName, type WebViewProps } from "@solara/solaracore";
 import { reportsKnownHistory } from "./layout/backAction";
 import { finishRNPageIssue, isPageCurrent, pageReport, updatePageContext, type PageContext, type PageIdentity, type PageIssuePreview } from "@solara/store";
@@ -22,7 +23,7 @@ import { patchPage, pageOf, setBrowserId, setPopover, usePages } from "./layout/
 import { openFromPage } from "./layout/openFromPage";
 import { closeFolderPanelIn } from "./sidebar/tileFolderUi";
 import { answerExternalApp, shouldPromptForPopups, showAutofillPrompt, showPasswordPrompt } from "./site/Prompts";
-import { copyLinkToSelection, searchSelection, setPageSelection, type PageSelection } from "./site/selection";
+import { searchSelection, setPageSelection, type PageSelection } from "./site/selection";
 import { requestDisplayMedia } from "./media/SharePicker";
 import { setNowPlaying, setPictureInPictureState } from "./media/state";
 import { noteScroll, revealToolbar } from "./layout/toolbarAutoHide";
@@ -377,7 +378,7 @@ export function pageEventHandlers(session: PageSession): PageEventHandlers {
     },
     onCommand: ({ command, text, modifiers }) => {
       if (command === "search") searchSelection(tabId, text, modifiers);
-      else if (command === "copyLinkToHighlight") void copyLinkToSelection(tabId);
+      else if (command === "copyLinkToHighlight") void nativeWorkspaceCommand("copyQuoteLink", JSON.stringify({ tabId }), null);
       else if (command === "escape" && usePages.getState().popover[tabId]) setPopover(tabId, null);
       else if (command === "escape" && !closeFolderPanelIn(tab()?.windowId) && !closePeekOnEscape(tabId)) closeLittleSolaraOnEscape(tabId);
     },

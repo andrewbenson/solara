@@ -9,10 +9,11 @@ import { devtools, launch, reporter, session, sleep } from "../../../scripts/lib
 
 const args = process.argv.slice(2);
 const appArg = args.find((a) => !a.startsWith("--"));
-if (!appArg || resolve(appArg).startsWith("/Applications/") || args.some((arg) => arg.startsWith("--") && arg !== "--keep-data")) {
+if (!appArg || resolve(appArg).startsWith("/Applications/") || args.some((arg) => arg.startsWith("--") && arg !== "--keep-data" && arg !== "--baseline")) {
   console.error("usage: node share-test.mjs <Debug Solara.app under apps/browser/build-*> [--keep-data]");
   process.exit(2);
 }
+const baseline = args.includes("--baseline");
 const keep = args.includes("--keep-data");
 const scratch = mkdtempSync(join(tmpdir(), "ac-share-"));
 const rep = reporter(join(scratch, "share-test.log"), { name: "share-test" });
@@ -152,10 +153,17 @@ try {
   });
 
   await rep.check("File › Share… (⌥⌘S) shares the page in front", async () => {
+    const stats = await run(`const stats = ac.commandHandlers.stats(); ac.commandHandlers.setEnabled(${baseline}); return stats;`);
     const before = activation().length;
     await run(`return ac.shell.devKeyEquivalent("w1", ${JSON.stringify({ key: "s", keyCode: 1, modifiers: ["command", "option"] })})`);
     const line = await shareLine(before);
     assert.ok(line.includes(`url=${origin}/page?id=1 title="Share Fixture"`), line);
+    if (!baseline) {
+      const after = await run("return ac.commandHandlers.stats();");
+      assert.equal(after.calls, stats.calls);
+      assert.equal(after.blocked, stats.blocked);
+    }
+    await run("ac.commandHandlers.setEnabled(true); return true;");
   });
 
   await rep.check("with DevTools docked on the left, the share picker opens at the click point, beside DevTools", async () => {

@@ -198,6 +198,12 @@ public class SettingsModule: Module {
     }.runOnQueue(.main)
     #endif
 
+    #if DEBUG
+    AsyncFunction("devLinkCommands") { (action: String) -> [String] in
+      MainActor.assumeIsolated { NativeLinkCommands.probe(action) }
+    }.runOnQueue(.main)
+    #endif
+
     AsyncFunction("devPageCommands") { () -> [String: Any] in
       #if DEBUG
       let external = MainActor.assumeIsolated { NativeWorkspaceCommands.lastExternal }

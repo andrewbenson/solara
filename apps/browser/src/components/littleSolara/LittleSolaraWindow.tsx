@@ -1,3 +1,4 @@
+import { nativeWorkspaceCommand } from "@solara/settings";
 import { WindowBackdrop } from "@solara/shaders";
 import { littleSolaraShellActive, setLittleSolaraBackdrop, setLittleSolaraBar } from "@solara/settings";
 import { setTrafficLightsCenter, WindowDragRegion } from "@solara/shell";
@@ -14,7 +15,6 @@ import { ToolbarPopupAnchor } from "../extensions/ToolbarExtensions";
 import { dropToolbarAnchor, setToolbarAnchor } from "../extensions/bridge";
 import { setUrlAnchor } from "../layout/windowLayout";
 import { showUrlBarMenu } from "../omnibox/paste";
-import { copyPageUrl } from "../site/selection";
 import { profileSymbol } from "../profiles/icons";
 import { addMediaActions, mediaTheme, NativeMediaView } from "../media/nativeMedia";
 import { breadcrumb } from "@solara/core";
@@ -59,16 +59,16 @@ const copiedUntil: Record<string, ReturnType<typeof setTimeout>> = {};
 
 addMediaActions({
   smallBar: (windowId, tabId, extra) => {
+    if (extra.action === "copy") {
+      void nativeWorkspaceCommand("copyUrl", JSON.stringify({ tabId }), windowId);
+      clearTimeout(copiedUntil[windowId]);
+      useCopied.set(windowId, true);
+      copiedUntil[windowId] = setTimeout(() => useCopied.set(windowId, false), 1400);
+      return;
+    }
     const s = useBrowser.getState();
     const tab = tabId ? s.tabs[tabId] : undefined;
     switch (extra.action) {
-      case "copy":
-        if (!tab?.url) return;
-        void copyPageUrl(tab.id);
-        clearTimeout(copiedUntil[windowId]);
-        useCopied.set(windowId, true);
-        copiedUntil[windowId] = setTimeout(() => useCopied.set(windowId, false), 1400);
-        return;
       case "open":
         return openInMainWindow(windowId);
       case "field":

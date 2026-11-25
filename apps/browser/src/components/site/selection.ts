@@ -1,11 +1,9 @@
 import { setSearchEngineName, setSelectionPopover } from "@solara/solaracore";
-import { chooseTextFragment, cleanUrl, searchUrl, withTextFragment, type SelectionContext } from "@solara/core";
-import { copyText } from "@solara/shell";
+import { searchUrl } from "@solara/core";
 import { create } from "zustand";
 import { webviews } from "../../lib/webviews";
 import { useBrowser } from "../../store/browser";
 import { defaultSearchEngine } from "../../store/settings";
-import { showToast } from "../layout/splitActions";
 import { openModeFor } from "../bookmarks/actions";
 import { openFromPage } from "../layout/openFromPage";
 
@@ -47,63 +45,6 @@ export function searchSelection(tabId: string, text: string, modifiers: ClickMod
   const mode = openModeFor(modifiers);
   const disposition = mode === "current" || mode === "incognito" ? "foreground" : mode;
   openFromPage({ url, disposition }, { windowId: tab.windowId, profileId: tab.profileId, tabId });
-}
-
-const SELECTION_CONTEXT = `(() => {
-  const sel = getSelection();
-  if (!sel || sel.isCollapsed || !sel.rangeCount) return post("result", "null");
-  const range = sel.getRangeAt(0);
-  const block = (node) => {
-    let el = node.nodeType === 1 ? node : node.parentElement;
-    while (el && el !== document.body && !/^(block|list-item|table|table-cell|flex|grid)$/.test(getComputedStyle(el).display)) el = el.parentElement;
-    return el || document.body;
-  };
-  const text = (from, to) => {
-    const r = document.createRange();
-    try { r.setStart(...from); r.setEnd(...to); } catch (e) { return ""; }
-    return r.toString();
-  };
-  const startBlock = block(range.startContainer), endBlock = block(range.endContainer);
-  post("result", JSON.stringify({
-    selected: sel.toString(),
-    before: text([startBlock, 0], [range.startContainer, range.startOffset]),
-    after: text([range.endContainer, range.endOffset], [endBlock, endBlock.childNodes.length]),
-    pageText: (document.body.innerText || "").slice(0, 3000000),
-  }));
-})()`;
-
-async function linkToSelection(tabId: string): Promise<string | null> {
-  const url = store().tabs[tabId]?.url;
-  const web = webviews.get(tabId);
-  if (!url || !/^https?:/.test(url) || !web) return null;
-  const context = await web.evaluate<SelectionContext>(SELECTION_CONTEXT);
-  const fragment = context && !("error" in context) ? chooseTextFragment(context) : null;
-  return fragment ? withTextFragment(cleanUrl(url), fragment) : null;
-}
-
-export async function copyLinkToSelection(tabId: string) {
-  const link = await linkToSelection(tabId);
-  const windowId = store().tabs[tabId]?.windowId;
-  if (!link || !windowId) return;
-  copyText(link);
-  showToast(windowId, "Copied Quote Link", "Links directly to the selected text.", { icon: "quote.bubble.fill" });
-}
-
-const HAS_SELECTION = `post("result", JSON.stringify(!!String(getSelection() || "").trim()))`;
-
-export async function copyPageUrl(tabId: string) {
-  const tab = store().tabs[tabId];
-  if (!tab?.url) return;
-  const clean = cleanUrl(tab.url);
-  copyText(clean);
-  const title = clean !== tab.url ? "Copied a clean link without trackers" : "Copied Current URL";
-  const web = webviews.get(tabId);
-  const selected = /^https?:/.test(tab.url) && web ? await web.evaluate<boolean>(HAS_SELECTION) : false;
-  if (selected !== true) return showToast(tab.windowId, title, undefined, { icon: "link" });
-  showToast(tab.windowId, title, "Share a link directly to this text instead?", {
-    icon: "link",
-    action: { title: "Copy Quote Link", run: () => void copyLinkToSelection(tabId) },
-  });
 }
 
 const FOCUSED = `const focused = () => {
@@ -213,5 +154,5 @@ export async function replaceInField(tabId: string, query: string, replacement: 
 }
 
 if (__DEV__) {
-  (globalThis as { acSelection?: unknown }).acSelection = { usePageSelection, searchSelection, linkToSelection, copyPageUrl, replaceInField };
+  (globalThis as { acSelection?: unknown }).acSelection = { usePageSelection, searchSelection, replaceInField };
 }

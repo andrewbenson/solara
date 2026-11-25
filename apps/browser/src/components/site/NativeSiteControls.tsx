@@ -1,3 +1,4 @@
+import { nativeWorkspaceCommand } from "@solara/settings";
 import { addNativeSettingsHandlers } from "../settings/nativeSettings";
 import { openSettings } from "../settings/windows";
 import { webviews } from "../../lib/webviews";
@@ -6,8 +7,6 @@ import { patchPage, setPopover, usePage } from "../layout/pageState";
 import { showToast } from "../layout/splitActions";
 import { toggleCastPicker } from "../media/cast";
 import { togglePictureInPicture, useMedia } from "../media/state";
-import { copyPageUrl } from "./selection";
-import { shareTab } from "./share";
 import type { PageEngine, SecurityInfo } from "@solara/solaracore";
 import type { Tab } from "../../store/types";
 import type { Settings } from "../../store/settings";
@@ -194,8 +193,8 @@ addNativeSettingsHandlers({
     if (method === "reload") return page?.reload();
   },
   "site.action": (tabId: string, action: string, args: { rect: Rect; clickAt: number; engine: PageEngine; rule: PageEngine | null; title: string; detail: string; icon: string }, snapshot: Pick<Tab, "url" | "title" | "customTitle"> & { windowId: string }) => {
-    if (action === "share") return shareTab(snapshot, snapshot.windowId, null, args.rect);
-    if (action === "copy") return copyPageUrl(tabId);
+    if (action === "share") return nativeWorkspaceCommand("share", JSON.stringify({ tabId, anchor: args.rect }), snapshot.windowId);
+    if (action === "copy") return nativeWorkspaceCommand("copyUrl", JSON.stringify({ tabId: tabId }), snapshot.windowId);
     if (action === "find") return useBrowser.getState().setFind(tabId, { open: true, replace: false, focusRequest: Date.now() });
     if (action === "cast") return toggleCastPicker(snapshot.windowId);
     if (action === "pip") { void togglePictureInPicture(tabId, { clickAt: args.clickAt, control: 0 }); return; }

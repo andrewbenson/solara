@@ -194,6 +194,11 @@ public final class FindBarView: NSView, NSTextFieldDelegate {
     }
   }
 
+  public override func viewDidUnhide() {
+    super.viewDidUnhide()
+    scheduleFocusIfNeeded()
+  }
+
   private func scheduleFocusIfNeeded() {
     guard let request = state?.focusRequest, request != 0, request != handledFocus,
           scheduledFocus == nil, window != nil, !isHiddenOrHasHiddenAncestor else { return }

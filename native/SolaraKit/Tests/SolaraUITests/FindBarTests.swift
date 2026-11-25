@@ -133,6 +133,72 @@ import Testing
     #expect(events == [.focused])
   }
 
+  @Test(arguments: [false, true]) func hiddenFocusRequestRetriesWhenRevealed(hideAncestor: Bool) async throws {
+    let panel = panel()
+    defer { panel.close() }
+    let host = NSView(frame: NSRect(x: 0, y: 0, width: 340, height: 40))
+    host.isHidden = hideAncestor
+    panel.contentView?.addSubview(host)
+    let bar = view(try state())
+    bar.isHidden = !hideAncestor
+    host.addSubview(bar)
+    let other = try otherField(in: panel)
+    let responder = panel.firstResponder
+    let keyWindow = NSApp.keyWindow
+    var events: [FindBarEvent] = []
+    bar.onEvent = { events.append($0) }
+    bar.update(try state(focus: 1))
+    await nextMainTurn()
+    #expect(panel.firstResponder === responder)
+    #expect(events.isEmpty)
+    let hiddenView: NSView = hideAncestor ? host : bar
+    hiddenView.isHidden = false
+    await nextMainTurn()
+    #expect(events == [.focused])
+    let query = try field(bar, "Find on Page")
+    let editor = try #require(query.currentEditor())
+    #expect(panel.firstResponder === editor)
+    #expect(NSApp.keyWindow === keyWindow)
+    #expect(panel.makeFirstResponder(other))
+    let restoredResponder = panel.firstResponder
+    hiddenView.isHidden = true
+    hiddenView.isHidden = false
+    await nextMainTurn()
+    #expect(panel.firstResponder === restoredResponder)
+    #expect(events == [.focused])
+  }
+
+  @Test(arguments: [false, true]) func expiredOrDisallowedRequestCannotFocusOnAncestorReveal(expired: Bool) async throws {
+    let panel = panel()
+    defer { panel.close() }
+    let host = NSView(frame: NSRect(x: 0, y: 0, width: 340, height: 40))
+    host.isHidden = true
+    panel.contentView?.addSubview(host)
+    let bar = view(try state())
+    host.addSubview(bar)
+    _ = try otherField(in: panel)
+    let responder = panel.firstResponder
+    var events: [FindBarEvent] = []
+    var elapsed = 0.0
+    var allowed = true
+    var checkedRequests: [Int] = []
+    bar.onEvent = { events.append($0) }
+    bar.allowsFocus = { request in
+      checkedRequests.append(request)
+      return FindMenuCommand.focusAllowed(expired: elapsed >= 0.350, pendingGateLive: allowed)
+    }
+    bar.update(try state(focus: 1))
+    await nextMainTurn()
+    #expect(checkedRequests.isEmpty)
+    if expired { elapsed = 0.351 } else { allowed = false }
+    host.isHidden = false
+    await nextMainTurn()
+    #expect(checkedRequests == [1])
+    #expect(panel.firstResponder === responder)
+    #expect(try field(bar, "Find on Page").currentEditor() == nil)
+    #expect(events.isEmpty)
+  }
+
   @Test func hidingTheHostCancelsQueuedFocus() async throws {
     let panel = panel()
     defer { panel.close() }

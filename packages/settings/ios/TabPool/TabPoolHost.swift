@@ -18,7 +18,6 @@ final class TabPoolHost {
   var stateObservers: [@MainActor () -> Void] = []
   private var pool: TabViewPool?
   private var preparingPlacement = false
-  private var preparedWindows = Set<String>()
   private var listener: Int?
   private var slotObserver: NSObjectProtocol?
   private var overlaysObserver: NSObjectProtocol?
@@ -201,21 +200,24 @@ final class TabPoolHost {
       #if DEBUG || SOLARA_PERF_TRACE
       let layoutTrace = LayoutTrace.begin("poolPrepareLayouts", String(snapshot.rev))
       #endif
-      preparedWindows = NativeWindowShell.preparePagePlacement(snapshot.state, revision: snapshot.rev)
+      _ = NativeWindowShell.preparePagePlacement(snapshot.state, revision: snapshot.rev)
       #if DEBUG || SOLARA_PERF_TRACE
       LayoutTrace.end(layoutTrace)
       #endif
-      refreshInScope(snapshot.state)
+      refreshInScope(snapshot.state, revision: snapshot.rev)
     }
   }
 
   private func refresh() {
     guard !preparingPlacement else { return }
     guard let store = NativeStoreHandle.store else { return }
-    store.sequence { refreshInScope(store.state) }
+    store.sequence {
+      let snapshot = store.snapshot
+      refreshInScope(snapshot.state, revision: snapshot.rev)
+    }
   }
 
-  private func refreshInScope(_ state: BrowserState) {
+  private func refreshInScope(_ state: BrowserState, revision: Int) {
     #if DEBUG || SOLARA_PERF_TRACE
     let trace = LayoutTrace.begin("poolRefresh")
     defer { LayoutTrace.end(trace) }
@@ -231,10 +233,14 @@ final class TabPoolHost {
     for key in shellNSWindows.keyEnumerator().allObjects.compactMap({ $0 as? String }) where !shellWindows.contains(key) {
       shellNSWindows.removeObject(forKey: key as NSString)
     }
+    let preparedWindows = Set(shellWindows.filter { NativeWindowShell.pagePlacementReady($0, revision: revision) })
     let fresh = TabViewWanted.from(state, windows: shellWindows, isInternal: Self.isInternal, frozen: { _ in false }, newTabShown: newTabShown)
       .map { entry in
         var entry = entry
-        if NativeWindowShell.nativeLayoutActive(entry.windowId), !preparedWindows.contains(entry.windowId) { entry.shown = .none }
+        if entry.shown != .none, NativeWindowShell.nativeLayoutActive(entry.windowId), !preparedWindows.contains(entry.windowId) {
+          pool.setNeedsReconcile()
+          entry.shown = .none
+        }
         return entry
       }
       .filter { entry in

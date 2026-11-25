@@ -102,6 +102,13 @@ enum NativePeek {
     return host.view.convert(host.view.bounds, to: shell)
   }
 
+  static func pagePlacementReady(_ windowId: String, tabId: String?, shell: WindowShellView) -> Bool {
+    guard let tabId else { return hosts[windowId]?.view.state == nil }
+    guard let host = hosts[windowId], host.shell === shell, host.view.state?.tabId == tabId,
+      shell.view(in: .peek) === host.view, !host.view.needsLayout else { return false }
+    return TabSlots.shared.container(for: .peek(windowId)) === host.view.pageSlot
+  }
+
   static func sample(_ windowId: String) -> [String: Any]? {
     guard let host = hosts[windowId] else { return nil }
     return [
@@ -156,7 +163,11 @@ final class PeekHost {
     }
     self.sourceId = sourceId
     view.isHidden = fullscreenTabId != nil && next.tabId != fullscreenTabId
-    if view.state == next, shell.view(in: .peek) === view { return }
+    if view.state == next, shell.view(in: .peek) === view {
+      TabSlots.shared.set(.peek(windowId), container: view.pageSlot)
+      view.layoutNativeContentIfNeeded()
+      return
+    }
     if view.state?.tabId != next.tabId { eventGeneration += 1 }
     if shell.view(in: .peek) !== view {
       shell.mount(.peek, view)

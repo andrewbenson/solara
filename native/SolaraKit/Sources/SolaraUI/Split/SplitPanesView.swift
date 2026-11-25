@@ -99,7 +99,8 @@ public final class SplitPanesView: FrameLayoutView {
       } else {
         for pane in panes.values { pane.layoutNativeContentIfNeeded() }
       }
-      for pane in panes.values {
+      for (tabId, pane) in panes {
+        TabSlots.shared.set(.pane(windowId, tabId), container: pane.page)
         pane.edgeShadow.tint = windowShell?.cardEdgeTint
         pane.edgeRim.tint = windowShell?.cardEdgeTint
       }
@@ -112,6 +113,25 @@ public final class SplitPanesView: FrameLayoutView {
         self.singlePage = nil
       }
     }
+  }
+
+  public func placementIsCurrent(revision: Int, generation: UInt64) -> Bool {
+    guard !stopped, !needsLayout, let installed,
+      installed.input.storeRevision == revision, installed.input.windowGeneration == generation,
+      frame == CGRect(origin: .zero, size: installed.frames.card.size) else { return false }
+    let expected = installed.panes.filter { $0.key != installed.input.peekTabId }
+    guard Set(panes.keys) == Set(expected.keys) else { return false }
+    for (id, pane) in panes {
+      guard !pane.needsLayout, pane.superview === self,
+        let rect = expected[id], let viewport = installed.pageViewports[id],
+        pane.frame == rect.offsetBy(dx: -installed.frames.card.minX, dy: -installed.frames.card.minY),
+        pane.page.frame == viewport.offsetBy(dx: -rect.minX, dy: -rect.minY),
+        TabSlots.shared.container(for: .pane(windowId, id)) === pane.page else { return false }
+    }
+    if installed.input.split == nil, let id = installed.input.selectedTabId, let pane = panes[id] {
+      return TabSlots.shared.container(for: .card(windowId)) === pane.page
+    }
+    return true
   }
 
   private func reuseSinglePane(_ snapshot: WindowLayoutSnapshot) {
@@ -165,9 +185,9 @@ public final class SplitPanesView: FrameLayoutView {
     let active = window.activeTabIds[window.profileId]
     let nextSplit = Splits.splitOf(next, active)
     if nextSplit != split || active != activeId {
+      if nextSplit != split || installed == nil { needsLayout = true }
       split = nextSplit
       activeId = active
-      needsLayout = true
     }
     refreshEmpty()
     publishCardStyle()
@@ -451,15 +471,15 @@ final class SplitLeafView: FrameLayoutView {
     let trace = LayoutTrace.begin("paneToolbarRebuild")
     defer { LayoutTrace.end(trace) }
     #endif
-    toolbar.onHiddenOrDetached()
-    toolbar.onHiddenOrDetached = {}
-    toolbar.removeFromSuperview()
-    toolbar = ToolbarView(frame: .zero)
-    toolbar.isHidden = true
+    if !toolbar.resetForTabRebind() {
+      toolbar.removeFromSuperview()
+      toolbar = ToolbarView(frame: .zero)
+      toolbar.isHidden = true
+      addSubview(toolbar)
+      needsLayout = true
+    }
     toolbarJson = nil
-    addSubview(toolbar)
     setEmpty(nil)
-    needsLayout = true
   }
 
   func setToolbar(_ json: String?) {

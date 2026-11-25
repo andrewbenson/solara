@@ -116,7 +116,12 @@ enum NativeSplitChrome {
         return
       }
       let payload: [String: Any] = ["id": click.id, "kind": click.kind.rawValue, "meta": click.meta, "alt": click.alt, "shift": click.shift, "text": click.text ?? NSNull()]
-      let send: () -> Void = { Task { @MainActor in _ = await SettingsAdapters.js("split.toolbarClick", windowId, tabId, payload) } }
+      let send: () -> Void = {
+        #if DEBUG
+        didSendToolbarClick?(windowId, tabId, click)
+        #endif
+        Task { @MainActor in _ = await SettingsAdapters.js("split.toolbarClick", windowId, tabId, payload) }
+      }
       if let toolbar = view?.toolbar(tabId), click.id == "urlEdit" {
         if click.kind == .focus { NativeExtensionActionPopup.dropHeldFieldBlur(from: toolbar) }
         if click.kind == .blur {
@@ -250,6 +255,58 @@ enum NativeSplitChrome {
   static func toolbar(windowId: String, tabId: String) -> ToolbarView? { owners[windowId]?.panes.toolbar(tabId) }
 
   #if DEBUG
+  private static var didSendToolbarClick: ((String, String, ToolbarClick) -> Void)?
+
+  static func devRetireDeveloperURL(windowId: String, from tabId: String, to nextId: String, text: String) -> String {
+    var result: [String: Any] = ["accepted": false]
+    func encoded() -> String {
+      guard let data = try? JSONSerialization.data(withJSONObject: result), let json = String(data: data, encoding: .utf8) else { return "{}" }
+      return json
+    }
+    func refused(_ reason: String) -> String {
+      result["reason"] = reason
+      return encoded()
+    }
+    let environment = ProcessInfo.processInfo.environment
+    guard environment["SOLARA_BACKGROUND"] == "1" else { return refused("background-required") }
+    guard environment["SOLARA_DATA_DIR"]?.isEmpty == false else { return refused("data-directory-required") }
+    guard NativeOmniboxActions.ownsActions else { return refused("native-actions-unavailable") }
+    guard let store = NativeStoreHandle.store else { return refused("store-unavailable") }
+    guard store.state.activeTabId(windowId) == tabId else { return refused("source-not-active") }
+    guard tabId != nextId else { return refused("destination-is-source") }
+    guard store.state.tabs[nextId]?.windowId == windowId else { return refused("destination-window-mismatch") }
+    guard !store.state.splits.values.contains(where: { $0.tabIds.contains(tabId) || $0.tabIds.contains(nextId) }) else { return refused("split-tab") }
+    guard let host = NativeWindowShell.host(windowId) else { return refused("window-host-unavailable") }
+    guard let owner = owners[windowId] else { return refused("pane-owner-unavailable") }
+    guard let toolbar = owner.panes.toolbar(tabId) else { return refused("toolbar-unavailable") }
+    guard let field = toolbar.urlEditView as? NSTextField else { return refused("url-field-unavailable") }
+    guard let window = field.window else { return refused("url-field-detached") }
+    if field.currentEditor() == nil || window.firstResponder !== field.currentEditor() {
+      guard window.makeFirstResponder(field) else { return refused("url-field-focus-refused") }
+    }
+    guard let editor = field.currentEditor() as? NSTextView else { return refused("field-editor-unavailable") }
+    editor.string = text
+    var sent: [[String: Any]] = []
+    didSendToolbarClick = { id, tab, click in
+      sent.append(["windowId": id, "tabId": tab, "id": click.id, "kind": click.kind.rawValue,
+        "text": click.text ?? "", "activeTabId": store.state.activeTabId(windowId) ?? ""])
+    }
+    defer { didSendToolbarClick = nil }
+    do { _ = try store.dispatch(Command("activate", [.string(nextId)]), origin: .native) }
+    catch { result["error"] = String(describing: error); return encoded() }
+    result["activeBeforeProjection"] = store.state.activeTabId(windowId)
+    host.scheduleLayoutProjection()
+    FrameUpdates.flush()
+    toolbar.onHiddenOrDetached()
+    NativeExtensionActionPopup.flushHeldFieldBlur(from: toolbar)
+    NativeExtensionActionPopup.flushHeldFieldBlur(from: toolbar)
+    result["accepted"] = true
+    result["sent"] = sent
+    result["activeAfterProjection"] = store.state.activeTabId(windowId)
+    result["replaced"] = owner.panes.toolbar(nextId) != nil && owner.panes.toolbar(nextId) !== toolbar
+    return encoded()
+  }
+
   static func bookmarksView(_ windowId: String) -> BookmarksBarView? { owners[windowId]?.bookmarksView }
   #endif
 
@@ -331,6 +388,11 @@ final class NativePaneLayoutHost {
     features = NativePaneOverlays.adopt(shell.windowId)
     panes.pagesPooled = true
     panes.onCardStyle = { [weak shell] in shell?.cardStyle = $0 }
+  }
+
+  func placementIsCurrent(revision: Int) -> Bool {
+    !stopped && snapshot?.input.storeRevision == revision && snapshot?.input.windowGeneration == generation
+      && panes.placementIsCurrent(revision: revision, generation: generation)
   }
 
   func install(_ snapshot: WindowLayoutSnapshot, state: BrowserState) {

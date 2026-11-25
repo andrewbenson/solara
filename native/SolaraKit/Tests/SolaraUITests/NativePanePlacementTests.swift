@@ -22,6 +22,88 @@ struct NativePanePlacementTests {
     #expect(seen == [Set([.pane("w", "a"), .pane("w", "b")])])
   }
 
+  @Test func placementValidityRejectsOldRevisionsGenerationsGeometryAndSlots() throws {
+    var state = try fixture()
+    state.splits = Table()
+    let view = SplitPanesView(windowId: "pane-placement")
+    defer { view.stop() }
+    let first = try snapshot(state, width: 1000)
+    view.install(first, state: state)
+    let revision = first.input.storeRevision
+    let generation = first.input.windowGeneration
+    #expect(view.placementIsCurrent(revision: revision, generation: generation))
+    #expect(!view.placementIsCurrent(revision: revision + 1, generation: generation))
+    #expect(!view.placementIsCurrent(revision: revision, generation: generation + 1))
+    let page = try #require(view.container("a"))
+    let frame = page.frame
+    page.frame.size.width -= 1
+    #expect(!view.placementIsCurrent(revision: revision, generation: generation))
+    page.frame = frame
+    let replacement = NSView()
+    TabSlots.shared.set(.pane("pane-placement", "a"), container: replacement)
+    #expect(!view.placementIsCurrent(revision: revision, generation: generation))
+    view.install(first, state: state)
+    #expect(TabSlots.shared.container(for: .pane("pane-placement", "a")) === page)
+    #expect(view.placementIsCurrent(revision: revision, generation: generation))
+    TabSlots.shared.remove(.card("pane-placement"), container: page)
+    #expect(!view.placementIsCurrent(revision: revision, generation: generation))
+    view.install(first, state: state)
+    #expect(view.placementIsCurrent(revision: revision, generation: generation))
+    view.needsLayout = true
+    #expect(!view.placementIsCurrent(revision: revision, generation: generation))
+    view.install(first, state: state)
+    #expect(view.placementIsCurrent(revision: revision, generation: generation))
+    view.stop()
+    #expect(!view.placementIsCurrent(revision: revision, generation: generation))
+  }
+
+  @Test func replacementGenerationOwnsSlotsAfterTheOldOwnerStops() throws {
+    var state = try fixture()
+    state.splits = Table()
+    let old = SplitPanesView(windowId: "pane-placement")
+    let replacement = SplitPanesView(windowId: "pane-placement")
+    defer { old.stop(); replacement.stop() }
+    let first = try snapshot(state, width: 1000)
+    old.install(first, state: state)
+    let input = try #require(WindowLayoutInput(state: state, windowId: "pane-placement",
+      windowGeneration: first.input.windowGeneration + 1, storeRevision: first.input.storeRevision + 1,
+      bounds: CGRect(x: 0, y: 0, width: 850, height: 600)))
+    replacement.install(.of(input, generation: 1), state: state)
+    #expect(!old.placementIsCurrent(revision: first.input.storeRevision, generation: first.input.windowGeneration))
+    #expect(replacement.placementIsCurrent(revision: input.storeRevision, generation: input.windowGeneration))
+    #expect(!replacement.placementIsCurrent(revision: first.input.storeRevision, generation: first.input.windowGeneration))
+    let page = try #require(replacement.container("a"))
+    old.stop()
+    #expect(TabSlots.shared.container(for: .card("pane-placement")) === page)
+    #expect(TabSlots.shared.container(for: .pane("pane-placement", "a")) === page)
+    #expect(replacement.placementIsCurrent(revision: input.storeRevision, generation: input.windowGeneration))
+  }
+
+  #if DEBUG || SOLARA_PROBES
+  @Test func unchangedPlacementCanBeReusedAndInvalidatedByASiblingFrameJob() throws {
+    var state = try fixture()
+    state.splits = Table()
+    let view = SplitPanesView(windowId: "pane-placement")
+    defer { view.stop() }
+    let first = try snapshot(state, width: 1000)
+    view.install(first, state: state)
+    let page = try #require(view.container("a"))
+    let passes = view.placementLayoutPasses
+    #expect(view.placementIsCurrent(revision: first.input.storeRevision, generation: first.input.windowGeneration))
+    FrameUpdates.flush()
+    #expect(view.placementLayoutPasses == passes)
+    let sibling = NSView()
+    FrameUpdates.schedule(sibling) {
+      TabSlots.shared.remove(.pane("pane-placement", "a"), container: page)
+    }
+    FrameUpdates.flush()
+    #expect(!view.placementIsCurrent(revision: first.input.storeRevision, generation: first.input.windowGeneration))
+    view.install(first, state: state)
+    #expect(view.placementIsCurrent(revision: first.input.storeRevision, generation: first.input.windowGeneration))
+    #expect(view.placementLayoutPasses == passes)
+  }
+  #endif
+
   @Test func switchingSinglePanesKeepsTheCardAndOutgoingPageAttached() throws {
     var state = try fixture()
     state.splits = Table()
@@ -68,7 +150,7 @@ struct NativePanePlacementTests {
     state.windows["pane-placement"]?.activeTabIds["p"] = "b"
     view.install(try snapshot(state, width: 1000), state: state)
     let toolbar = try #require(view.toolbar("b"))
-    #expect(toolbar !== oldToolbar)
+    #expect(toolbar === oldToolbar)
     #expect(toolbar.state?.tabId == "b")
     let current = try snapshot(state, width: 1000)
     let expected = try #require(current.toolbars["b"])
@@ -89,7 +171,8 @@ struct NativePanePlacementTests {
     #expect(releases == 1)
   }
 
-  @Test func singlePaneReuseDoesNotCarryAnEditorsRequestToTheIncomingTab() throws {
+  @Test(arguments: [false, true])
+  func singlePaneReuseDoesNotCarryAnEditorsRequestToTheIncomingTab(incomingEditing: Bool) throws {
     var state = try fixture()
     state.splits = Table()
     let view = SplitPanesView(windowId: "pane-placement")
@@ -98,17 +181,21 @@ struct NativePanePlacementTests {
       singletonToolbar(tabId).replacingOccurrences(of: #""url":null"#,
         with: #""url":{"developer":{"text":"\#(tabId)","editing":true,"request":1},"host":"","restTrail":"","hoverTrail":"","hoverButtons":[],"trailing":[],"pinned":false}"#)
     }
-    view.setToolbars(["a": editingToolbar("a"), "b": editingToolbar("b")])
+    view.setToolbars(["a": editingToolbar("a"), "b": incomingEditing ? editingToolbar("b") : singletonToolbar("b")])
     view.install(try snapshot(state, width: 1000), state: state)
     let container = try #require(view.container("a"))
     let oldEditor = try #require(view.toolbar("a")?.urlEditView as? NSTextField)
     #expect(oldEditor.stringValue == "a")
     state.windows["pane-placement"]?.activeTabIds["p"] = "b"
     view.install(try snapshot(state, width: 1000), state: state)
-    let editor = try #require(view.toolbar("b")?.urlEditView as? NSTextField)
     #expect(view.container("b") === container)
-    #expect(editor !== oldEditor)
-    #expect(editor.stringValue == "b")
+    if incomingEditing {
+      let editor = try #require(view.toolbar("b")?.urlEditView as? NSTextField)
+      #expect(editor !== oldEditor)
+      #expect(editor.stringValue == "b")
+    } else {
+      #expect(view.toolbar("b")?.urlEditView == nil)
+    }
   }
 
   @Test(arguments: [false, true])
@@ -124,10 +211,176 @@ struct NativePanePlacementTests {
     state.windows["pane-placement"]?.activeTabIds["p"] = "b"
     view.install(try snapshot(state, width: 1000), state: state)
     #expect(view.container("b") === old)
-    #expect(view.toolbar("b") !== toolbar)
+    #expect(view.toolbar("b") === toolbar)
     #expect(view.toolbar("b")?.state?.tabId == (incomingToolbar ? "b" : nil))
     #expect(view.toolbar("b")?.isHidden == !incomingToolbar)
   }
+
+  @Test func reusedToolbarDropsOutgoingURLSecurityAndCallbacks() throws {
+    var state = try fixture()
+    state.splits = Table()
+    let view = SplitPanesView(windowId: "pane-placement")
+    defer { view.stop() }
+    let outgoing = singletonToolbar("a").replacingOccurrences(of: #""url":null"#,
+      with: #""url":{"host":"old.test","restTrail":"/old","hoverTrail":"/old","insecure":"http","hoverButtons":[],"trailing":[],"pinned":false}"#)
+    let incoming = singletonToolbar("b").replacingOccurrences(of: #""url":null"#,
+      with: #""url":{"host":"new.test","restTrail":"/new","hoverTrail":"/new","hoverButtons":[],"trailing":[],"pinned":false}"#)
+    view.setToolbars(["a": outgoing, "b": incoming])
+    view.install(try snapshot(state, width: 1000), state: state)
+    let toolbar = try #require(view.toolbar("a"))
+    let oldField = try #require(ToolbarWebKitPillTests.fieldIn(toolbar))
+    var clicks: [String] = []
+    view.onToolbarClick = { tabId, _ in clicks.append(tabId) }
+    state.windows["pane-placement"]?.activeTabIds["p"] = "b"
+    view.install(try snapshot(state, width: 1000), state: state)
+    #expect(view.toolbar("b") === toolbar)
+    let field = try #require(ToolbarWebKitPillTests.fieldIn(toolbar))
+    #expect(field.sample()["text"] as? String == "new.test/new")
+    #expect(field.sample()["lock"] == nil)
+    #expect(toolbar.urlEditView == nil)
+    oldField.onClick(ToolbarClick(id: "url", kind: .press))
+    #expect(clicks.isEmpty)
+    field.onClick(ToolbarClick(id: "url", kind: .press))
+    #expect(clicks == ["b"])
+  }
+
+  #if DEBUG
+  @Test(arguments: [false, true]) func markedDeveloperEditCannotCrossTabRetirement(incomingEditing: Bool) throws {
+    _ = NSApplication.shared
+    var state = try fixture()
+    state.splits = Table()
+    let view = SplitPanesView(windowId: "pane-placement")
+    let window = NSWindow(contentRect: CGRect(x: 0, y: 0, width: 1000, height: 700), styleMask: [.borderless], backing: .buffered, defer: true)
+    window.isReleasedWhenClosed = false
+    window.contentView = view
+    var pending: [@MainActor () -> Void] = []
+    ToolbarUrlFieldView.enqueueEditFocus = { pending.append($0) }
+    defer { ToolbarUrlFieldView.enqueueEditFocus = nil; view.stop(); window.close() }
+    func toolbar(_ id: String, editing: Bool, request: Int = 1) -> String {
+      singletonToolbar(id).replacingOccurrences(of: #""url":null"#,
+        with: #""url":{"developer":{"text":"\#(id)","editing":\#(editing),"request":\#(request)},"host":"","restTrail":"","hoverTrail":"","hoverButtons":[],"trailing":[],"pinned":false}"#)
+    }
+    view.setToolbars(["a": toolbar("a", editing: true), "b": toolbar("b", editing: incomingEditing, request: 2)])
+    view.install(try snapshot(state, width: 1000), state: state)
+    let outgoing = try #require(view.toolbar("a"))
+    let a = try #require(outgoing.urlEditView as? DeveloperUrlField)
+    try #require(pending.count == 1)
+    pending.removeFirst()()
+    let aText = try #require(a.currentEditor() as? NSTextView)
+    let aURL = try #require(ToolbarWebKitPillTests.fieldIn(outgoing))
+    var renewed = try #require(outgoing.state?.url)
+    renewed.developer?.request = 2
+    aURL.update(renewed, palette: try #require(outgoing.state?.palette))
+    try #require(pending.count == 1)
+    let staleFocus = pending.removeFirst()
+    aText.setMarkedText("にほん", selectedRange: NSRange(location: 3, length: 0), replacementRange: NSRange(location: 0, length: (aText.string as NSString).length))
+    try #require(aText.hasMarkedText())
+    let draft = aText.string
+    let oldFinish = a.onFinish
+    let oldFocus = a.onFocused
+    let oldClick = aURL.onClick
+    var events: [(String, ToolbarClick)] = []
+    view.onToolbarClick = { events.append(($0, $1)) }
+    state.windows["pane-placement"]?.activeTabIds["p"] = "b"
+    view.install(try snapshot(state, width: 1000), state: state)
+    let incoming = try #require(view.toolbar("b"))
+    #expect(incoming !== outgoing)
+    #expect(events.count == 1)
+    #expect(events.first?.0 == "a")
+    #expect(events.first?.1.kind == .blur)
+    #expect(events.first?.1.text == draft)
+    #expect(a.currentEditor() == nil)
+    let afterRetirement = window.firstResponder
+    staleFocus()
+    #expect(window.firstResponder === afterRetirement)
+    #expect(a.currentEditor() == nil)
+    if !incomingEditing {
+      #expect(incoming.urlEditView == nil)
+      #expect(pending.isEmpty)
+      view.setToolbars(["b": toolbar("b", editing: true, request: 2)])
+    }
+    let b = try #require(incoming.urlEditView as? DeveloperUrlField)
+    #expect(b !== a)
+    try #require(pending.count == 1)
+    pending.removeFirst()()
+    let bText = try #require(b.currentEditor() as? NSTextView)
+    #expect(window.firstResponder === bText)
+    #expect(bText.string == "b")
+    #expect(!bText.hasMarkedText())
+    let beforeOldCallbacks = events.count
+    staleFocus()
+    oldFinish(.submit, "A stale submit")
+    oldFocus()
+    oldClick(ToolbarClick(id: "urlEdit", kind: .submit, text: "A stale click"))
+    a.onFinish(.submit, "A retired submit")
+    a.onFocused()
+    a.controlTextDidEndEditing(Notification(name: NSControl.textDidEndEditingNotification, object: a))
+    #expect(events.count == beforeOldCallbacks)
+    #expect(window.firstResponder === bText)
+    #expect(!bText.hasMarkedText())
+    bText.insertText("B input", replacementRange: NSRange(location: 0, length: (bText.string as NSString).length))
+    b.validateEditing()
+    #expect(bText.string == "B input")
+    #expect(!bText.hasMarkedText())
+    #expect(b.control(b, textView: bText, doCommandBy: #selector(NSResponder.insertNewline(_:))))
+    let submits = events.filter { $0.1.kind == .submit }
+    #expect(submits.count == 1)
+    #expect(submits.first?.0 == "b")
+    #expect(submits.first?.1.text == "B input")
+    #expect(events.filter { $0.0 == "a" }.count == 1)
+  }
+
+  @Test func editingFallbackRetiresTextToOutgoingTabAndRejectsQueuedFocus() throws {
+    var state = try fixture()
+    state.splits = Table()
+    let view = SplitPanesView(windowId: "pane-placement")
+    let window = NSWindow(contentRect: CGRect(x: 0, y: 0, width: 1000, height: 700), styleMask: [.borderless], backing: .buffered, defer: true)
+    window.isReleasedWhenClosed = false
+    window.contentView = view
+    var pending: [@MainActor () -> Void] = []
+    ToolbarUrlFieldView.enqueueEditFocus = { pending.append($0) }
+    defer { ToolbarUrlFieldView.enqueueEditFocus = nil; view.stop(); window.close() }
+    func editingToolbar(_ tabId: String) -> String {
+      singletonToolbar(tabId).replacingOccurrences(of: #""url":null"#,
+        with: #""url":{"developer":{"text":"\#(tabId)","editing":true,"request":1},"host":"","restTrail":"","hoverTrail":"","hoverButtons":[],"trailing":[],"pinned":false}"#)
+    }
+    view.setToolbars(["a": editingToolbar("a"), "b": editingToolbar("b")])
+    view.install(try snapshot(state, width: 1000), state: state)
+    let toolbar = try #require(view.toolbar("a"))
+    let oldEditor = try #require(toolbar.urlEditView as? DeveloperUrlField)
+    #expect(pending.count == 1)
+    pending.removeFirst()()
+    #expect(window.makeFirstResponder(oldEditor))
+    let fieldEditor = try #require(oldEditor.currentEditor() as? NSTextView)
+    fieldEditor.string = "unsent old draft"
+    fieldEditor.selectedRange = NSRange(location: 3, length: 4)
+    var events: [(String, ToolbarClick)] = []
+    view.onToolbarClick = { events.append(($0, $1)) }
+    oldEditor.finished = false
+    let oldField = try #require(ToolbarWebKitPillTests.fieldIn(toolbar))
+    var renewed = try #require(toolbar.state?.url)
+    renewed.developer?.request = 2
+    oldField.update(renewed, palette: try #require(toolbar.state?.palette))
+    let staleFocus = try #require(pending.first)
+    fieldEditor.string = "unsent old draft"
+    fieldEditor.selectedRange = NSRange(location: 3, length: 4)
+    pending = []
+    state.windows["pane-placement"]?.activeTabIds["p"] = "b"
+    view.install(try snapshot(state, width: 1000), state: state)
+    let incoming = try #require(view.toolbar("b"))
+    #expect(incoming !== toolbar)
+    #expect(events.contains { $0.0 == "a" && $0.1.kind == .blur && $0.1.text == "unsent old draft" })
+    let nextEditor = try #require(incoming.urlEditView as? DeveloperUrlField)
+    #expect(pending.count == 1)
+    pending.removeFirst()()
+    let nextResponder = window.firstResponder
+    staleFocus()
+    oldEditor.onFinish(.submit, "stale")
+    #expect(window.firstResponder === nextResponder)
+    #expect(nextEditor.stringValue == "b")
+    #expect(!events.contains { $0.0 == "b" && $0.1.text == "stale" })
+  }
+  #endif
 
   @Test func singlePaneReusePreservesThePoolsOutgoingDrawHold() throws {
     var state = try fixture()

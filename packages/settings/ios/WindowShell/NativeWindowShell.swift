@@ -135,14 +135,21 @@ enum NativeWindowShell {
 
   static func preparePagePlacement(_ state: BrowserState, revision: Int) -> Set<String> {
     let hosts = lifetimes.ids.compactMap { id -> ShellHost? in
-      guard let host = lifetimes.host(id), host.queuePagePlacement(state, revision: revision) else { return nil }
+      guard let host = lifetimes.host(id), host.admitsPagePlacement(state, revision: revision) else { return nil }
+      if !host.pagePlacementReady(revision: revision) { host.queuePagePlacement(state, revision: revision) }
       return host
     }
     guard !hosts.isEmpty else { return [] }
     FrameUpdates.flush()
     return Set(hosts.compactMap { host in
-      host.finishPagePlacement(state, revision: revision) ? host.shell.windowId : nil
+      guard lifetimes.host(host.shell.windowId) === host,
+        host.finishPagePlacement(state, revision: revision) else { return nil }
+      return host.shell.windowId
     })
+  }
+
+  static func pagePlacementReady(_ windowId: String, revision: Int) -> Bool {
+    host(windowId)?.pagePlacementReady(revision: revision) == true
   }
 
   static func overlay(_ windowId: String) -> NSView? { host(windowId)?.shell.overlay }
@@ -520,25 +527,35 @@ extension ShellHost {
     return WindowLayoutSnapshot.of(input, generation: layoutGeneration).shownTops[tabId].map(Double.init)
   }
 
-  func queuePagePlacement(_ state: BrowserState, revision: Int) -> Bool {
-    guard ownsNativeLayout, !layoutStopped, state.windows[shell.windowId] != nil,
-      NativeWindowShell.nativeLayoutGeneration(shell.windowId) == windowGeneration else { return false }
+  func admitsPagePlacement(_ state: BrowserState, revision: Int) -> Bool {
+    ownsNativeLayout && !layoutStopped && revision >= layoutRevision && state.windows[shell.windowId] != nil
+      && NativeWindowShell.nativeLayoutGeneration(shell.windowId) == windowGeneration
+  }
+
+  func queuePagePlacement(_ state: BrowserState, revision: Int) {
+    guard admitsPagePlacement(state, revision: revision) else { return }
     layoutController?.receive(state, revision: revision, generation: windowGeneration)
-    return true
+    applyLayoutState(state, revision: revision)
+    if !layoutProjectionPending { scheduleLayoutProjection() }
   }
 
   func finishPagePlacement(_ state: BrowserState, revision: Int) -> Bool {
-    guard ownsNativeLayout, !layoutStopped, state.windows[shell.windowId] != nil,
-      NativeWindowShell.nativeLayoutGeneration(shell.windowId) == windowGeneration else { return false }
+    guard admitsPagePlacement(state, revision: revision) else { return false }
     if pagePlacementReady(revision: revision) { return true }
     applyLayoutState(state, revision: revision)
     refreshLayoutProjection()
     return pagePlacementReady(revision: revision)
   }
 
-  private func pagePlacementReady(revision: Int) -> Bool {
-    !layoutProjectionPending && lastLayoutInput?.storeRevision == revision && lastLayoutInput?.windowGeneration == windowGeneration
-      && shell.window != nil && paneLayout != nil
+  func pagePlacementReady(revision: Int) -> Bool {
+    guard ownsNativeLayout, !layoutStopped, !layoutProjectionPending, !shell.needsLayout,
+      layoutRevision == revision, let input = lastLayoutInput, let window = shell.window,
+      input.storeRevision == revision, input.windowGeneration == windowGeneration,
+      NativeWindowShell.nativeLayoutGeneration(shell.windowId) == windowGeneration,
+      input.bounds == shell.bounds, input.backingScale == window.backingScaleFactor,
+      input.presentation == shell.input else { return false }
+    return paneLayout?.placementIsCurrent(revision: revision) == true
+      && NativePeek.pagePlacementReady(shell.windowId, tabId: input.peekTabId, shell: shell)
   }
 
   func applyLayoutState(_ state: BrowserState, revision: Int) {

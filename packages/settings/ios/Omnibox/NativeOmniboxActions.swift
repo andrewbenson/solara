@@ -84,6 +84,7 @@ enum NativeOmniboxActions {
     guard ownsActions, click.id == "url" || click.id == "urlEdit" else { return false }
     guard let store = NativeStoreHandle.store, let tab = store.state.tabs[tabId], tab.windowId == windowId,
       store.state.windows[windowId]?.profileId == tab.profileId else { return true }
+    if click.id == "urlEdit", click.kind == .blur { return false }
     let active = store.state.activeTabId(windowId)
     if active != tabId {
       guard store.state.splits.values.contains(where: { $0.tabIds.contains(tabId) && active.map($0.tabIds.contains) == true }) else { return true }

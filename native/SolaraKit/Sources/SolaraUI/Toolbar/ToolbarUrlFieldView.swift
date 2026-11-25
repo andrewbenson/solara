@@ -26,6 +26,10 @@ final class ToolbarUrlFieldView: NSView {
   private var dividers: [CALayer] = []
   private var editor: DeveloperUrlField?
   private var handledEditRequest = 0
+  private var editGeneration: UInt64 = 0
+  #if DEBUG
+  static var enqueueEditFocus: ((@escaping @MainActor () -> Void) -> Void)?
+  #endif
   private(set) var look: SidebarFieldLook?
   private var accessory: [ToolbarButtonView] = []
   private let progress = CALayer()
@@ -91,6 +95,7 @@ final class ToolbarUrlFieldView: NSView {
 
   private func syncEditor(_ next: ToolbarUrlState, _ palette: ToolbarPaletteState) {
     guard let dev = next.developer, dev.editing else {
+      editGeneration &+= 1
       editor?.removeFromSuperview()
       editor = nil
       return
@@ -108,14 +113,34 @@ final class ToolbarUrlFieldView: NSView {
       handledEditRequest = dev.request
       if let editing = field.currentEditor() as? NSTextView { editing.string = dev.text } else { field.stringValue = dev.text }
       field.finished = false
-      DispatchQueue.main.async { [weak self, weak field] in
-        guard let self, let field, let window = field.window else { return }
+      editGeneration &+= 1
+      let generation = editGeneration
+      let focus: @MainActor () -> Void = { [weak self, weak field] in
+        guard let self, let field, self.editor === field, self.editGeneration == generation,
+          self.state?.developer?.editing == true, let window = field.window else { return }
         self.layoutSubtreeIfNeeded()
         if field.currentEditor() == nil || window.firstResponder !== field.currentEditor() { window.makeFirstResponder(field) }
         field.currentEditor()?.selectedRange = NSRange(location: 0, length: (field.stringValue as NSString).length)
         field.onFocused()
       }
+      #if DEBUG
+      if let enqueue = Self.enqueueEditFocus { enqueue(focus); return }
+      #endif
+      DispatchQueue.main.async { focus() }
     }
+  }
+
+  func retireEditing() {
+    editGeneration &+= 1
+    guard let editor else { return }
+    if !editor.finished {
+      let text = (editor.currentEditor() as? NSTextView)?.string ?? editor.stringValue
+      editor.finished = true
+      editor.onFinish(.blur, text)
+    }
+    editor.onFinish = { _, _ in }
+    editor.onFocused = {}
+    _ = editor.abortEditing()
   }
 
   var editorView: NSView? { editor }

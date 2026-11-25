@@ -28,7 +28,8 @@ public final class ToolbarView: NSView {
   private var reportedAnchors: [String: CGRect]?
   private var extensionAnchorRects: [String: CGRect] = [:]
   private var reportedFullScreenOffset: CGFloat = 0
-  private let url = ToolbarUrlFieldView()
+  private var url = ToolbarUrlFieldView()
+  private var bindingGeneration: UInt64 = 0
   private let updatePill = SidebarUpdatePill()
   static let updatePillHeight: CGFloat = 24
   static let updatePillPadding: CGFloat = 12
@@ -59,7 +60,7 @@ public final class ToolbarView: NSView {
     surface.addSublayer(stripes.layer)
     addSubview(content)
     content.addSubview(url)
-    url.onClick = { [weak self] click in self?.onClick(click) }
+    bindURL()
     updatePill.isHidden = true
     updatePill.onPress = { [weak self] in self?.onClick(ToolbarClick(id: "update", kind: .press)) }
     content.addSubview(updatePill)
@@ -69,6 +70,54 @@ public final class ToolbarView: NSView {
   }
 
   required init?(coder: NSCoder) { fatalError() }
+
+  private func bindURL() {
+    let generation = bindingGeneration
+    url.onClick = { [weak self] click in
+      guard let self, self.bindingGeneration == generation else { return }
+      self.onClick(click)
+    }
+  }
+
+  func resetForTabRebind() -> Bool {
+    let reusable = url.editorView == nil
+    url.retireEditing()
+    onHiddenOrDetached()
+    bindingGeneration &+= 1
+    if let anchor = ToolbarInfoPopover.current?.anchorView, anchor.isDescendant(of: self) { ToolbarInfoPopover.close() }
+    onHiddenOrDetached = {}
+    onGeometryChange = {}
+    onClick = { _ in }
+    onAnchors = { _ in }
+    onLayoutAnchorsChange = {}
+    guard reusable else { return false }
+    state = nil
+    reportedAnchors = nil
+    reportedLayoutAnchors = [:]
+    extensionAnchorRects = [:]
+    reportedFullScreenOffset = 0
+    for button in left + right + extensions {
+      button.onClick = { _ in }
+      button.removeFromSuperview()
+    }
+    left = []
+    right = []
+    extensions = []
+    updatePill.isHidden = true
+    url.removeFromSuperview()
+    url = ToolbarUrlFieldView()
+    content.addSubview(url)
+    bindURL()
+    stripes.show(nil)
+    band.removeAllAnimations()
+    progress.removeAllAnimations()
+    progress.isHidden = true
+    shownProgress = nil
+    setAutoHide(opacity: 1, scale: 1, lift: 0, interactive: true)
+    isHidden = true
+    needsLayout = true
+    return true
+  }
 
   public func setAutoHide(opacity: CGFloat, scale: CGFloat, lift: CGFloat, interactive: Bool) {
     self.interactive = interactive
@@ -152,10 +201,14 @@ public final class ToolbarView: NSView {
         out.append(views[i])
       } else {
         let made = ToolbarButtonView(state: spec, palette: palette)
+        let generation = bindingGeneration
         made.onClick = { [weak self, weak made] click in
-          guard let self else { return }
+          guard let self, self.bindingGeneration == generation else { return }
           if click.kind == .press, let made, let info = made.state.info {
-            ToolbarInfoPopover.show(info, relativeTo: made) { [weak self] in self?.onClick(ToolbarClick(id: info.actionId, kind: .press)) }
+            ToolbarInfoPopover.show(info, relativeTo: made) { [weak self] in
+              guard let self, self.bindingGeneration == generation else { return }
+              self.onClick(ToolbarClick(id: info.actionId, kind: .press))
+            }
             return
           }
           self.onClick(click)

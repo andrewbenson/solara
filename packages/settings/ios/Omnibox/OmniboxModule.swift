@@ -14,6 +14,12 @@ public class OmniboxModule: Module {
     }
 
     #if DEBUG
+    AsyncFunction("devRetireDeveloperURL") { (windowId: String, tabId: String, nextId: String, text: String) -> String in
+      MainActor.assumeIsolated {
+        NativeSplitChrome.devRetireDeveloperURL(windowId: windowId, from: tabId, to: nextId, text: text)
+      }
+    }.runOnQueue(.main)
+
     AsyncFunction("devAddressPress") { (windowId: String, tabId: String) -> Bool in
       MainActor.assumeIsolated {
         let environment = ProcessInfo.processInfo.environment

@@ -136,9 +136,9 @@ try {
   await new Promise((done, reject) => { server.once("error", reject); server.listen(0, "127.0.0.1", done); });
   const base = `http://127.0.0.1:${server.address().port}`;
   budget = setTimeout(() => { rep.record("five-minute run budget", { error: new Error("deadline exceeded") }); void stop(1); }, 300000);
-  launching = launch(appPath, {
-    data: join(output, "data"), fresh: true, onboarded: true, probe: true, keepData: true,
-    env: { SOLARA_NATIVE_SHELL: "1", SOLARA_NATIVE_OMNIBOX: "1", SOLARA_NATIVE_NEWTAB: "1" },
+  const launchFixture = (data, env = {}) => launch(appPath, {
+    data: join(output, data), fresh: true, onboarded: true, probe: true, keepData: true,
+    env: { SOLARA_NATIVE_SHELL: "1", SOLARA_NATIVE_OMNIBOX: "1", SOLARA_NATIVE_NEWTAB: "1", ...env },
     session: session({ windows: [{ id: "w1", activeTabIds: { default: "a" }, frame: [80, 80, 1280, 900] }],
       tabs: [{ id: "a", url: `${base}/start?utm_source=fixture&keep=yes`, title: "Omni Start" }, { id: "b", url: `${base}/switch`, title: "Omni Switch Target" }],
       settings: { developerMode: { default: { on: [], off: ["127.0.0.1"], reload: "reload" } }, searchSuggestions: false, searchEngine: "custom", customSearchUrl: `${base}/search?q=%s`, commandBarPreference: "search", addressBar: "toolbar", newTabOpens: "commandBar",
@@ -146,6 +146,7 @@ try {
     files: { "bench-offline": "1" },
     ready: "return !!globalThis.acPerf && !!ac.omnibox?.actions;",
   });
+  launching = launchFixture("data");
   app = await launching;
   clipboard = await getClipboard();
   await run("ac.omnibox.actions.disableJS(true); ac.omnibox.actions.reset(); return true;");
@@ -328,6 +329,31 @@ try {
     if (chromeBefore?.browser) assert.equal(chromeAfter.browser, chromeBefore.browser, "Return retains the existing Chrome tab");
     if (initial === true) assert.notEqual(await run(`return ac.store.getState().tabs[${JSON.stringify(id)}]?.newTabPlaceholder ?? null;`), true, "navigation settles the placeholder");
     evidence.push({ name: "New Tab into target identity", id, placeholderBefore: initial, chromeBefore, chromeAfter });
+    await clean(base);
+  });
+  await check("developer retirement blur keeps production routing to outgoing A", async () => {
+    await app.quit({ graceful: false });
+    launching = launchFixture("retirement-data", { SOLARA_NATIVE_WINDOW_LAYOUT: "1" });
+    app = await launching;
+    await run("ac.omnibox.actions.disableJS(true); ac.omnibox.actions.reset(); return true;");
+    await clean(base);
+    await run('const s = ac.store.getState(); s.updateSettings({addressBar:"toolbar",commandBarPlacement:"field",developerMode:{default:{on:["127.0.0.1"],off:[],reload:"reload"}}}); return true;');
+    await run('return ac.shell.devKeyEquivalent("w1", {key:"l",keyCode:37,modifiers:["command"]});');
+    await until("developer editor attached for retirement", () => app.snapshot({ windowId: "w1", shortcuts: true }, { timeout: 1000 }),
+      (state) => state.consistent && state.windows.find((w) => w.id === "w1")?.shortcutFields?.some((field) => String(field.value).includes(`${base}/`)));
+    const draft = "outgoing A field-editor draft";
+    const routed = await run(`return globalThis.expo.modules.SolaraOmniboxBar.devRetireDeveloperURL("w1","a","b",${JSON.stringify(draft)}).then(JSON.parse);`);
+    assert.equal(routed.accepted, true, JSON.stringify(routed));
+    assert.equal(routed.activeBeforeProjection, "b");
+    assert.equal(routed.activeAfterProjection, "b", "retirement never reactivates A");
+    assert.equal(routed.replaced, true, "the real pane projection retires A's editor");
+    assert.deepEqual(routed.sent, [{ windowId: "w1", tabId: "a", id: "urlEdit", kind: "blur", text: draft, activeTabId: "b" }],
+      "the real onToolbarClick/router reaches the tab-id-capturing send exactly once, including repeated detach/held-blur flush");
+    await native("retirement preserves B selection and both URLs", (state, window) => window?.selectedTabId === "b"
+      && state.tabs.some((tab) => tab.id === "a" && tab.url === `${base}/start?utm_source=fixture&keep=yes`)
+      && state.tabs.some((tab) => tab.id === "b" && tab.url === `${base}/switch`));
+    evidence.push({ name: "developer retirement production route", routed });
+    await run('ac.store.getState().updateSettings({developerMode:{default:{on:[],off:["127.0.0.1"],reload:"reload"}}}); return true;');
     await clean(base);
   });
 } catch (error) {

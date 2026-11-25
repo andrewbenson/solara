@@ -36,6 +36,29 @@ struct WindowLayoutContractTests {
     return state
   }
 
+  @Test(arguments: [false, true])
+  func closedRightSidebarPreservesItsSideAndHiddenFrame(rail: Bool) throws {
+    var state = try projectionState()
+    state.windows["w"]?.sidebarOpen = false
+    state.windows["w"]?.sidebarPosition = "right"
+    state.windows["w"]?.sidebarIconsOnly = rail
+    let bounds = CGRect(x: 0, y: 0, width: 1000, height: 700)
+    let presentation = DockedLayoutInput(size: bounds.size, dock: 0, away: true)
+    let input = try #require(WindowLayoutInput(state: state, windowId: "w", bounds: bounds, presentation: presentation))
+    #expect(input.layout.sidebarSide == .right)
+    #expect(input.presentation.sidebarSide == .right)
+    #expect(input.layout.dock == 0 && input.presentation.dock == 0)
+    let snapshot = WindowLayoutSnapshot.of(input, generation: 1)
+    #expect(try #require(snapshot.anchors["sidebar"]).minX >= 1000)
+    #expect(snapshot.frames.sidebarShift > 0)
+    let legacy = try #require(WindowLayoutInput(state: state, windowId: "w", bounds: bounds, sidebarPositionAllowed: false))
+    #expect(legacy.layout.sidebarSide == .left && legacy.presentation.sidebarSide == .left)
+    state.windows["w"]?.tabLayout = "top"
+    let top = try #require(WindowLayoutInput(state: state, windowId: "w", bounds: bounds))
+    #expect(top.layout.sidebarSide == .left && top.presentation.sidebarSide == .left)
+    #expect(WindowLayoutSnapshot.of(top, generation: 2).frames.sidebar == nil)
+  }
+
   @Test func topTabsClosedMovesTheStripAboveTheWindow() throws {
     var state = try projectionState()
     state.windows["w"]?.tabLayout = "top"

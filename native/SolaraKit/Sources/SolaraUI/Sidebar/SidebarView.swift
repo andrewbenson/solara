@@ -655,6 +655,12 @@ public final class SidebarView: NSView {
       slide(slides, under: inserted)
       if virtualizesRows { runViewportLink(for: motion.slide) }
     }
+    if virtualizesRows && !animated {
+      for item in visible where !shouldRealize(item) {
+        guard let view = views.removeValue(forKey: item.key) else { continue }
+        recycle(view, key: item.key)
+      }
+    }
     syncEdge()
     syncPill()
     if animated { syncPointer() }

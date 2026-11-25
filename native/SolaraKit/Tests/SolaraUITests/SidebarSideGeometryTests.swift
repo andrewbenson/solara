@@ -5,6 +5,52 @@ import SolaraModel
 
 @MainActor
 struct SidebarSideGeometryTests {
+  @Test(arguments: [42.0, 190.0])
+  func projectedRightSideSurvivesClosingPeekingAndReopening(width: Double) throws {
+    var state = BrowserState()
+    state.windows["w"] = BrowserWindow(id: "w", profileId: "default", incognito: false, frame: nil, createdAt: 0)
+    state.windows["w"]?.sidebarPosition = "right"
+    state.windows["w"]?.sidebarWidth = width
+    let bounds = CGRect(x: 0, y: 0, width: 1200, height: 800)
+    let projected = { () throws -> WindowLayoutInput in
+      try #require(WindowLayoutInput(state: state, windowId: "w", bounds: bounds))
+    }
+    let initial = try projected()
+    let rig = SidebarDockTests.Rig(SidebarDockState(open: true, width: width, sidebarPosition: initial.layout.sidebarSide.rawValue))
+    defer { rig.dock.stop() }
+    var watchedSides: [SidebarSide] = []
+    rig.dock.onWatch = { hold in
+      if hold != nil { watchedSides.append(rig.shell.input.sidebarSide) }
+    }
+    state.windows["w"]?.sidebarOpen = false
+    let closed = try projected()
+    rig.set { $0.open = false; $0.sidebarPosition = closed.layout.sidebarSide.rawValue }
+    rig.settle()
+    #expect(rig.dock.state.sidebarPosition == "right")
+    #expect(rig.shell.input.sidebarSide == .right)
+    #expect(watchedSides == [.right])
+    #expect(rig.dock.watchingHold == 8)
+    #expect(try #require(rig.shell.frames.sidebar).minX >= 1200)
+    #expect(rig.shell.frames.sidebarShift > 0)
+    rig.useManualTimers()
+    rig.dock.edge(over: true)
+    rig.settle()
+    #expect(rig.dock.peek.live)
+    let coverage = try #require(rig.shell.frames.sidebarCoverage(in: bounds))
+    #expect(coverage.contains(CGPoint(x: 1194, y: 400)))
+    #expect(!coverage.contains(CGPoint(x: 6, y: 400)))
+    #expect(rig.dock.watchingHold! > CGFloat(width))
+    state.windows["w"]?.sidebarOpen = true
+    let reopened = try projected()
+    rig.set { $0.open = true; $0.sidebarPosition = reopened.layout.sidebarSide.rawValue }
+    rig.settle()
+    #expect(!rig.dock.peek.live)
+    #expect(rig.shell.input.sidebarSide == .right)
+    #expect(try #require(rig.shell.frames.sidebar).maxX == 1200)
+    #expect(rig.shell.frames.sidebarShift == 0)
+    #expect(rig.dock.watchingHold == nil)
+  }
+
   @Test func rightSidebarReflectsSpatialFramesAtBothScales() {
     for scale: CGFloat in [1, 2] {
       for width: CGFloat in [42, 190] {

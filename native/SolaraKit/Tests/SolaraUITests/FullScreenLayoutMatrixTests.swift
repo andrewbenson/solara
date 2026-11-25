@@ -121,11 +121,11 @@ struct FullScreenLayoutMatrixTests {
               let actualName = input.profileCount > 1 && (input.layout.topTabs
                 || input.layout.dock > 0 && !SidebarRail.contains(width: Double(input.layout.sidebarWidth)) && !input.layout.addressBarInSidebar)
               #expect(actualName == layout.named)
-              #expect((input.layout.sidebarSide == .right) == layout.rightSidebar)
+              #expect((input.layout.sidebarSide == .right) == (!top && right))
               if top { #expect(input.layout.dock == (mode == 2 ? 0 : 1)) }
               if !top {
                 #expect((input.layout.dock == 0) == layout.hidden)
-                #expect((input.layout.sidebarSide == .right) == layout.rightSidebar)
+                #expect((input.layout.sidebarSide == .right) == (!top && right))
                 #expect(SidebarRail.contains(width: Double(input.layout.sidebarWidth)) == layout.icons)
               }
             }
@@ -143,7 +143,7 @@ struct FullScreenLayoutMatrixTests {
     state.settings["sidebarPosition"] = "right"
     let input = try #require(WindowLayoutInput(state: state, windowId: "matrix", bounds: CGRect(x: 0, y: 0, width: 1000, height: 700)))
     #expect(input.layout.chromeNavigationRow)
-    #expect(input.layout.sidebarSide == .left)
+    #expect(input.layout.sidebarSide == .right)
     #expect(input.layout.inset.top == ShellMetrics.cardTop + ShellMetrics.toolbarHeight)
   }
 

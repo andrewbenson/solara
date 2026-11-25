@@ -175,3 +175,38 @@ struct SidebarReusePlateauTests {
   }
 }
 #endif
+
+@MainActor
+@Suite(.serialized)
+struct SidebarProfileReturnBindingTests {
+  @Test func expandedGroupReturnDropsTheLastCellAfterPlacementMovesItPastTheClip() throws {
+    var state = try SidebarViewportTests.state(2000)
+    state.groups["g"] = TabGroup(id: "g", windowId: "w", profileId: "p", name: "Group", icon: nil, color: nil, collapsed: true, pinned: false, tabIds: ["t3", "t4", "t5"], createdAt: 1)
+    state.tabs["t2"] = nil
+    state.windows["w"]?.tabIds.removeAll { $0 == "t2" }
+    var look = SidebarHostState(profileId: "p")
+    look.addressBar = true
+    look.newTabAtTop = true
+    for x: CGFloat in [0, 1090] {
+      let host = SidebarLayer(frame: CGRect(x: 0, y: 0, width: 1280, height: 744))
+      let sidebar = SidebarView(windowId: "w", virtualizesRows: true)
+      sidebar.frame = CGRect(x: x, y: 0, width: 190, height: 744)
+      host.addSubview(sidebar)
+      sidebar.update(state: state, host: look)
+      sidebar.layoutSubtreeIfNeeded()
+      defer { sidebar.stop() }
+      let row = try #require(sidebar.views["t:t19"] as? SidebarRowView)
+      #expect(sidebar.presentationRect(of: row) == CGRect(x: 6, y: 660, width: 178, height: 34))
+      let stable = try #require(sidebar.views["t:t0"])
+      var expanded = state
+      expanded.groups["g"]?.collapsed = false
+      sidebar.update(state: expanded, host: look)
+      let item = try #require(sidebar.pageLayout.items.first { $0.key == "t:t19" })
+      #expect(sidebar.modelFrame(item) == CGRect(x: 6, y: 770, width: 178, height: 34))
+      #expect(sidebar.regionClip(item) == CGRect(x: 0, y: 5, width: 190, height: 739))
+      #expect(sidebar.views[item.key] == nil)
+      #expect(row.item == nil && row.superview == nil)
+      #expect(sidebar.views["t:t0"] === stable)
+    }
+  }
+}

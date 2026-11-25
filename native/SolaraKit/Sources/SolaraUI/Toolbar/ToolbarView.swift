@@ -6,6 +6,9 @@ public final class ToolbarView: NSView {
   static let buttonTop: CGFloat = 21.2 - 15
   static let bandEase = CAMediaTimingFunction(controlPoints: 0.25, 0.46, 0.45, 0.94)
 
+  public static var commandURLFocusAllowed: (Int, NSView) -> Bool = { _, _ in false }
+  public static var commandURLDidFocus: (Int, NSView) -> Void = { _, _ in }
+
   public var onClick: (ToolbarClick) -> Void = { _ in }
   public var onAnchors: ([String: CGRect]) -> Void = { _ in }
   public var onHiddenOrDetached: () -> Void = {}

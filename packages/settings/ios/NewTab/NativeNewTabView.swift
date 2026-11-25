@@ -1,5 +1,6 @@
 import AppKit
 import ExpoModulesCore
+import SolaraShell
 import SolaraModel
 import SolaraOmnibox
 import SolaraStore
@@ -15,6 +16,40 @@ final class NativeNewTabView: ExpoView {
     view.hero.focusBar()
     return true
   }
+  static func commandHasFocus(windowId: String, tabId: String, profileId: String) -> Bool {
+    live.allObjects.contains {
+      $0.windowId == windowId && $0.tabId == tabId && $0.profileId == profileId
+        && $0.window?.isKeyWindow == true && $0.hero.model?.tabId == tabId && $0.hero.model?.profileId == profileId
+        && !$0.isHiddenOrHasHiddenAncestor && !$0.hero.panelOpen && !$0.hero.onboarding && $0.hero.model?.field?.hasFocus == true
+    }
+  }
+  static func commandFocus(windowId: String, tabId: String, profileId: String) -> NSView? {
+    guard let view = live.allObjects.first(where: {
+      $0.windowId == windowId && $0.tabId == tabId && $0.profileId == profileId
+        && $0.window?.isKeyWindow == true && $0.hero.model?.tabId == tabId && $0.hero.model?.profileId == profileId
+        && !$0.isHiddenOrHasHiddenAncestor && !$0.hero.panelOpen && !$0.hero.onboarding && $0.hero.model?.field != nil
+    }) else {
+      #if DEBUG
+      let candidates = live.allObjects.filter { $0.windowId == windowId }
+      if candidates.isEmpty { FocusMoves.trace("commandBar hero commandFocus returned nil: no live view") }
+      for view in candidates {
+        let modelMatches = view.tabId == tabId && view.profileId == profileId
+          && view.hero.model?.tabId == tabId && view.hero.model?.profileId == profileId
+        FocusMoves.trace("commandBar hero commandFocus returned nil: notKey=\(view.window?.isKeyWindow != true) hidden=\(view.isHiddenOrHasHiddenAncestor) modelMismatch=\(!modelMatches) noField=\(view.hero.model?.field == nil) panelOpen=\(view.hero.panelOpen) onboarding=\(view.hero.onboarding)")
+      }
+      #endif
+      return nil
+    }
+    view.hero.focusBar()
+    guard view.hero.model?.field?.hasFocus == true else {
+      #if DEBUG
+      FocusMoves.trace("commandBar hero commandFocus returned nil: field refused focus")
+      #endif
+      return nil
+    }
+    return view.hero
+  }
+
   static let events = [
     "onOpen", "onSwitch", "onAction", "onExtension", "onRemoveHistory", "onChosen", "onOpenChip", "onDictate", "onContextMenu", "onJourney",
     "onLatency", "onBarLayout", "onDriverState",
@@ -60,7 +95,7 @@ final class NativeNewTabView: ExpoView {
     hero.focusAllowed = { [weak self] in
       guard let self else { return false }
       guard NativeStoreHandle.ownsWorkspace, let state = NativeStoreHandle.store?.state else { return true }
-      return state.activeTabId(self.windowId) == self.tabId
+      return state.activeTabId(self.windowId) == self.tabId && NativeCommandBarFocus.allowsAutomaticFocus(windowId: self.windowId, tabId: self.tabId)
     }
     hero.onBarLayout = { [weak self] height, heading in self?.onBarLayout(["height": height, "headingHeight": heading]) }
     addSubview(hero)
@@ -107,7 +142,13 @@ final class NativeNewTabView: ExpoView {
     }
     e.dictate = { [weak self] in self?.onDictate([:]) }
     e.contextMenu = { [weak self] hasSelection, hasValue in self?.onContextMenu(["hasSelection": hasSelection, "hasValue": hasValue]) }
-    e.journey = { [weak self] mark in self?.onJourney(["mark": mark.rawValue]) }
+    e.journey = { [weak self] mark in
+      guard let self else { return }
+      if mark == .focused, self.hero.model?.field?.hasFocus == true {
+        NativeCommandBarFocus.didFocus(windowId: self.windowId, tabId: self.tabId, profileId: self.profileId, destination: self.hero, hero: true)
+      }
+      self.onJourney(["mark": mark.rawValue])
+    }
     e.latency = { [weak self] ms in self?.onLatency(["ms": ms]) }
     if FieldTimingMarks.queryProbeEnabled {
       let journey = e.journey

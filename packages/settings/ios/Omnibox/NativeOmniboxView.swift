@@ -49,6 +49,17 @@ final class NativeOmniboxView: ExpoView, FocusHandoffDestination {
 
   required init(appContext: AppContext? = nil) {
     super.init(appContext: appContext)
+    Self.live.add(self)
+    bar.automaticFocusAllowed = { [weak self] in
+      guard let self else { return false }
+      guard NativeStoreHandle.ownsWorkspace else { return true }
+      let tabId = self.bar.model?.tabId ?? self.tabId
+      guard let state = NativeStoreHandle.store?.state, self.window?.isKeyWindow == true,
+        state.activeTabId(self.windowId) == tabId, state.tabs[tabId]?.profileId == self.bar.model?.profileId,
+        state.windowUi[self.windowId]?.panelOpen == true,
+        (state.windowUi[self.windowId]?.json["panel"]?["initialText"]?.string ?? "") == self.bar.model?.initialText else { return false }
+      return NativeCommandBarFocus.allowsAutomaticFocus(windowId: self.windowId, tabId: tabId)
+    }
     bar.autoresizingMask = [.width, .height]
     bar.frame = bounds
     bar.settings = { NativeSettingsHandle.model?.settings ?? SolaraModel.Settings(values: [:]) }
@@ -87,6 +98,76 @@ final class NativeOmniboxView: ExpoView, FocusHandoffDestination {
     }
   }
 
+  private static let live = NSHashTable<NativeOmniboxView>.weakObjects()
+
+  static func prepareCommandFocus(windowId: String, tabId: String, profileId: String, text: String) {
+    guard let view = hosts[windowId]?.view else {
+      #if DEBUG
+      FocusMoves.trace("commandBar prepareCommandFocus guard failed: no live view")
+      #endif
+      return
+    }
+    guard view.window?.isKeyWindow == true, view.tabId == tabId, view.profileId == profileId else {
+      #if DEBUG
+      FocusMoves.trace("commandBar prepareCommandFocus guard failed: key=\(view.window?.isKeyWindow == true) tabMatches=\(view.tabId == tabId) profileMatches=\(view.profileId == profileId)")
+      #endif
+      return
+    }
+    view.openNativePanel(text: text)
+    view.bar.layoutSubtreeIfNeeded()
+  }
+
+  private static func commandViews(windowId: String, tabId: String, profileId: String, newTab: Bool, text: String) -> [NativeOmniboxView] {
+    live.allObjects.filter {
+      $0.windowId == windowId && $0.bar.window?.isKeyWindow == true && !$0.bar.isHiddenOrHasHiddenAncestor
+        && $0.bar.model?.tabId == tabId && $0.bar.model?.profileId == profileId && $0.bar.model?.opensTab == newTab
+        && $0.bar.model?.initialText == (newTab ? "" : text)
+        && ($0.host == nil || $0.host?.shown == true)
+    }
+  }
+
+  static func commandHasFocus(windowId: String, tabId: String, profileId: String, newTab: Bool, text: String) -> Bool {
+    commandViews(windowId: windowId, tabId: tabId, profileId: profileId, newTab: newTab, text: text)
+      .contains { $0.bar.model?.field?.hasFocus == true }
+  }
+
+  static func commandFocus(windowId: String, tabId: String, profileId: String, newTab: Bool, text: String) -> NSView? {
+    guard NativeStoreHandle.store?.state.windowUi[windowId]?.panelOpen == true else {
+      #if DEBUG
+      FocusMoves.trace("commandBar commandFocus returned nil: panel closed")
+      #endif
+      return nil
+    }
+    if !newTab { hosts[windowId]?.view?.openNativePanel(text: text) }
+    guard let view = commandViews(windowId: windowId, tabId: tabId, profileId: profileId, newTab: newTab, text: text).first else {
+      #if DEBUG
+      let candidates = live.allObjects.filter { $0.windowId == windowId }
+      if candidates.isEmpty { FocusMoves.trace("commandBar commandFocus returned nil: no live view") }
+      for view in candidates {
+        let modelMatches = view.bar.model?.tabId == tabId && view.bar.model?.profileId == profileId
+          && view.bar.model?.opensTab == newTab && view.bar.model?.initialText == (newTab ? "" : text)
+        FocusMoves.trace("commandBar commandFocus returned nil: notKey=\(view.bar.window?.isKeyWindow != true) hidden=\(view.bar.isHiddenOrHasHiddenAncestor) modelMismatch=\(!modelMatches) hostNotShown=\(view.host != nil && view.host?.shown != true)")
+      }
+      #endif
+      return nil
+    }
+    view.bar.layoutSubtreeIfNeeded()
+    guard view.bar.model?.field != nil else {
+      #if DEBUG
+      FocusMoves.trace("commandBar commandFocus returned nil: no field")
+      #endif
+      return nil
+    }
+    view.bar.focusBar()
+    guard view.bar.model?.field?.hasFocus == true else {
+      #if DEBUG
+      FocusMoves.trace("commandBar commandFocus returned nil: field refused focus")
+      #endif
+      return nil
+    }
+    return view.bar
+  }
+
   var focusDestination: NSView { host ?? self }
 
   private func placeHost() {
@@ -115,7 +196,7 @@ final class NativeOmniboxView: ExpoView, FocusHandoffDestination {
 
   @objc private func commandWillDispatch(_ note: Notification) {
     MainActor.assumeIsolated {
-      guard note.userInfo?["command"] as? String == "focusCommandBar", let window, note.object as? NSWindow === window,
+      guard !NativeStoreHandle.ownsWorkspace, note.userInfo?["command"] as? String == "focusCommandBar", let window, note.object as? NSWindow === window,
         let host, !host.shown, let panel = NativeOmniboxPanel.decode(panelJSON), panel.ready, !panel.tabId.isEmpty
       else { return }
       awaitingOpen = true
@@ -153,11 +234,21 @@ final class NativeOmniboxView: ExpoView, FocusHandoffDestination {
       let window = store.state.windows[windowId], window.isSmall || store.state.settings.string("commandBarPlacement") != "centred",
       store.state.windowUi[windowId]?.json["panel"]?["newTab"]?.truthy != true,
       let tabId = store.state.activeTabId(windowId), let data = panelJSON.data(using: .utf8),
-      var panel = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any], panel["ready"] as? Bool == true else { return }
+      var panel = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any], panel["ready"] as? Bool == true else {
+      #if DEBUG
+      FocusMoves.trace("commandBar openNativePanel guard failed: ownsActions=\(NativeOmniboxActions.ownsActions) windowPresent=\(NativeStoreHandle.store?.state.windows[windowId] != nil) centred=\(NativeStoreHandle.store?.state.settings.string("commandBarPlacement") == "centred") newTab=\(NativeStoreHandle.store?.state.windowUi[windowId]?.json["panel"]?["newTab"]?.truthy == true) activeTab=\(NativeStoreHandle.store?.state.activeTabId(windowId) != nil) ready=\(NativeOmniboxPanel.decode(panelJSON)?.ready == true)")
+      #endif
+      return
+    }
     panel["open"] = true
     panel["tabId"] = tabId
     panel["text"] = text
-    guard let encoded = try? JSONSerialization.data(withJSONObject: panel) else { return }
+    guard let encoded = try? JSONSerialization.data(withJSONObject: panel) else {
+      #if DEBUG
+      FocusMoves.trace("commandBar openNativePanel guard failed: encoding")
+      #endif
+      return
+    }
     panelJSON = String(decoding: encoded, as: UTF8.self)
     showPanel(panelJSON)
   }
@@ -222,7 +313,12 @@ final class NativeOmniboxView: ExpoView, FocusHandoffDestination {
     e.contextMenu = { [weak self] hasSelection, hasValue in self?.onContextMenu(["hasSelection": hasSelection, "hasValue": hasValue]) }
     e.journey = { [weak self] mark in
       guard let self else { return }
-      if mark == .focused { NativeWorkspaceCommands.panelDidFocus(self) }
+      if mark == .focused {
+        if let model = self.bar.model, model.field?.hasFocus == true {
+          NativeCommandBarFocus.didFocus(windowId: model.windowId, tabId: model.tabId, profileId: model.profileId, destination: self.bar, hero: false)
+        }
+        NativeWorkspaceCommands.panelDidFocus(self)
+      }
       self.onJourney(["mark": mark.rawValue])
     }
     e.latency = { [weak self] ms in self?.onLatency(["ms": ms]) }

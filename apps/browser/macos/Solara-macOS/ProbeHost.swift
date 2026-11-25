@@ -539,11 +539,15 @@ final class ProbeHost {
               "url": safeURL(item["url"] as? String ?? ""), "title": Self.value(title),
               "tabId": Self.value(item["tabId"] as? String)])
           }
-          return ["variant": Self.value(source["variant"] as? String), "source": Self.value(source["source"] as? String),
+          var snapshot: [String: Any] = ["variant": Self.value(source["variant"] as? String), "source": Self.value(source["source"] as? String),
             "open": Self.value(source["mounted"] as? Bool), "focused": Self.value(source["focused"] as? Bool),
             "typed": omniboxText(source["typed"] as? String), "value": omniboxText(source["value"] as? String),
             "completion": omniboxText(source["completion"] as? String),
             "selectedIndex": Self.value(source["selected"] as? Int), "rows": rows]
+          #if DEBUG
+          snapshot["fieldSelection"] = source["fieldSelection"] ?? NSNull()
+          #endif
+          return snapshot
         }
         var dropSamples: [[String: Any]] = []
         var frames: [String: Any] = [:]

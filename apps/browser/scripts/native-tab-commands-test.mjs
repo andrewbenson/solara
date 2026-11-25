@@ -100,14 +100,14 @@ async function focusedHero(tabId, text) {
   writeFileSync(join(output, "evidence.json"), JSON.stringify(evidence, null, 2));
   throw new Error(`New Tab hero did not receive native command focus and text ${JSON.stringify(text)}: ${JSON.stringify(last)}`);
 }
-async function focusedPanel(label, text = "") {
+async function focusedPanel(label, text = "", { initialURL = false } = {}) {
   let native;
   try {
     await until(label, async () => {
       native = await app.snapshot({ windowId: "w1" }, { timeout: 1000 });
       const bar = native.windows.find((window) => window.id === "w1")?.omnibox;
       return native.consistent && bar?.source === "panel" && bar.open && bar.focused
-        && bar.typed === text && Array.isArray(bar.rows) && bar.rows.length > 0;
+        && bar.typed === text && Array.isArray(bar.rows) && (initialURL || bar.rows.length > 0);
     });
   } catch (error) {
     evidence.push({ label, failed: true, expectedText: text, native, error: String(error) });
@@ -224,6 +224,22 @@ try {
     const page = await app.page((target) => target.url === "about:blank#a");
     try { return await page.eval(expression); } finally { page.close(); }
   };
+  for (const source of ["menu", "bridge", "key"]) {
+    await setup('const s = ac.store.getState(); s.closePanel("w1"); s.activate("a"); s.updateSettings({addressBar:"toolbar",commandBarPlacement:"centred"})');
+    if (source === "menu") await menu("w1", "focusCommandBar");
+    if (source === "bridge") await run('ac.runCommand({command:"focusCommandBar",windowId:"w1"}); return true;');
+    if (source === "key") await press("w1", "l", 37, ["command"], {focus:"page"});
+    await focusedPanel(`${source} Command Bar owns native focus`, "about:blank#a", { initialURL: true });
+    await run('return ac.shell.devTypeKeys("w1", "retained focus text", 5);');
+    await focusedPanel(`${source} immediate typing replaces selected URL`, "retained focus text");
+    await menu("w1", "focusCommandBar");
+    const again = await focusedPanel(`${source} repeated Command Bar preserves edits`, "retained focus text");
+    const field = again.windows.find(w => w.id === "w1").omnibox;
+    assert.deepEqual(field.fieldSelection, {start:0,end:"retained focus text".length});
+    await capture(`${source} Command Bar preserves text and selects all`, {again});
+  }
+  await setup('ac.store.getState().closePanel("w1")');
+
   const keyPress = (key, keyCode, after = 0) => ({ key, keyCode, modifiers: ["command"], after });
   const postKeys = (presses) => run(`return expo.modules.SolaraApp.devPostKeys("w1", ${JSON.stringify(presses)});`);
   await run('return ac.shell.focusWindow("w1");');
@@ -246,6 +262,10 @@ try {
   const focused = await focusedHero(freshTab, "");
   await run('return ac.shell.devTypeKeys("w1", "native command focus", 5);');
   const typed = await focusedHero(freshTab, "native command focus");
+  await menu("w1", "focusCommandBar");
+  await run('return ac.shell.devTypeKeys("w1", "hero replacement", 5);');
+  await focusedHero(freshTab, "hero replacement");
+  await capture("Command Bar on New Tab selects the existing hero text");
   await capture("Command T transfers page focus to native hero and accepts typing", { focusedHero: focused, typedHero: typed });
 
   const checkPastes = async (label, expected) => {

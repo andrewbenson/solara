@@ -36,7 +36,9 @@ enum NativeWorkspaceCommands {
   private static var lastFindRequest = 0
 
   static func install() {
-    for command in WorkspaceMenuCommand.commands.union(ViewMenuCommand.commands).union(PageMenuCommand.commands).union(FindMenuCommand.commands).union(BookmarkMenuCommand.commands).union(CopyLinkCommand.commands).union(BrowserServiceCommand.commands).union(TabFocusCommand.commands) {
+    ToolbarView.commandURLFocusAllowed = { NativeCommandBarFocus.developerAllowed($0, field: $1) }
+    ToolbarView.commandURLDidFocus = { NativeCommandBarFocus.developerDidFocus($0, field: $1) }
+    for command in WorkspaceMenuCommand.commands.union(ViewMenuCommand.commands).union(PageMenuCommand.commands).union(FindMenuCommand.commands).union(BookmarkMenuCommand.commands).union(CopyLinkCommand.commands).union(BrowserServiceCommand.commands).union(TabFocusCommand.commands).union(["focusCommandBar"]) {
       NativeMenuCommands.argumentHandlers[command] = { arg, windowId in perform(command, arg: arg, windowId: windowId) }
     }
     NativeMenuCommands.keepsMenuDispatch = ViewMenuCommand.commands.union(PageMenuCommand.commands).union(BookmarkMenuCommand.commands).union(CopyLinkCommand.commands).union(BrowserServiceCommand.commands).union(TabFocusCommand.commands)
@@ -108,6 +110,18 @@ enum NativeWorkspaceCommands {
     }
     FrameUpdates.flush()
     return true
+  }
+
+  static func cancelPendingFindFocus(windowId: String) {
+    for (request, pending) in findFocus where pending.windowId == windowId {
+      findFocus[request] = nil
+      expiredFindRequests = Array((expiredFindRequests + [request]).suffix(16))
+      #if DEBUG
+      findFocusTimes[request] = nil
+      FocusMoves.trace("commandBar cancel pending find focus \(request)")
+      #endif
+      WindowHost.cancelCommandFocus(pending.generation, restoring: true)
+    }
   }
 
   private static func requestFindFocus(_ request: Int, windowId: String, tabId: String) {
@@ -253,6 +267,8 @@ enum NativeWorkspaceCommands {
     if BrowserServiceCommand.commands.contains(command) { return NativeBrowserServiceCommands.perform(command, arg: arg, windowId: windowId) }
     if BookmarkMenuCommand.commands.contains(command) { return NativeBookmarkCommands.perform(command, arg: arg, windowId: windowId) }
     if CopyLinkCommand.commands.contains(command) { return NativeLinkCommands.perform(command, arg: arg, windowId: windowId) }
+    if command == "focusCommandBar" { return NativeCommandBarFocus.perform(windowId: windowId) }
+    if ["newTab", "findInPage", "closeTab", "closeWindow"].contains(command) { NativeCommandBarFocus.cancel(windowId: windowId) }
     if ViewMenuCommand.commands.contains(command) { return performView(command, arg: arg, windowId: windowId) }
     if PageMenuCommand.commands.contains(command) { return performPage(command, arg: arg, windowId: windowId) }
     if FindMenuCommand.commands.contains(command) { return performFind(command, windowId: windowId) }
@@ -336,6 +352,13 @@ enum NativeWorkspaceCommands {
       NSLog("[commands] %@ failed: %@", command, String(describing: error))
     }
     return true
+  }
+
+  static func cancelNewTabFocus(windowId: String, restoring: Bool = false) {
+    if let previous = newTabFocus.removeValue(forKey: windowId), let generation = previous.generation {
+      WindowHost.cancelCommandFocus(generation, restoring: restoring)
+    }
+    if let previous = panelFocus.removeValue(forKey: windowId) { WindowHost.cancelCommandFocus(previous.generation, restoring: restoring) }
   }
 
   private static func requestPanelFocus(windowId: String, tabId: String?, generation: Int) {

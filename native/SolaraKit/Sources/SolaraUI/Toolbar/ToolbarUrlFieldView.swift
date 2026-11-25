@@ -103,7 +103,11 @@ final class ToolbarUrlFieldView: NSView {
     let field = editor ?? {
       let made = DeveloperUrlField()
       made.onFinish = { [weak self] kind, text in self?.onClick(ToolbarClick(id: "urlEdit", kind: kind, text: text)) }
-      made.onFocused = { [weak self] in self?.onClick(ToolbarClick(id: "urlEdit", kind: .focus)) }
+      made.onFocused = { [weak self, weak made] in
+        guard let self, let made else { return }
+        if let request = self.state?.developer?.request, request < 0 { ToolbarView.commandURLDidFocus(request, made) }
+        self.onClick(ToolbarClick(id: "urlEdit", kind: .focus))
+      }
       addSubview(made)
       editor = made
       return made
@@ -117,7 +121,8 @@ final class ToolbarUrlFieldView: NSView {
       let generation = editGeneration
       let focus: @MainActor () -> Void = { [weak self, weak field] in
         guard let self, let field, self.editor === field, self.editGeneration == generation,
-          self.state?.developer?.editing == true, let window = field.window else { return }
+          self.state?.developer?.editing == true, let window = field.window,
+          dev.request >= 0 || window.isKeyWindow && ToolbarView.commandURLFocusAllowed(dev.request, field) else { return }
         self.layoutSubtreeIfNeeded()
         if field.currentEditor() == nil || window.firstResponder !== field.currentEditor() { window.makeFirstResponder(field) }
         field.currentEditor()?.selectedRange = NSRange(location: 0, length: (field.stringValue as NSString).length)

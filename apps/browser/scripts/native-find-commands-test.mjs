@@ -241,23 +241,30 @@ try {
     assert.ok(ownTrace.some((line) => /release 6 to the page \(cap\) after \d+ ms/.test(line)), `the held letters went back to the page at the cap: ${JSON.stringify(ownTrace)}`);
     pass("a page that takes ⌘F itself gets every letter, in order, after the hold's cap", observed.pageOwnFind);
 
+    await run("ac.commandHandlers.setEnabled(true); return true;");
     const rawTrace = async () => run("return expo.modules.SolaraApp.devFocusHandoffTrace();");
-    const traceBefore = (await rawTrace()).length;
+    const traceBefore = (await rawTrace()).at(-1);
     await pageEval("a", `(() => { window.__keys = []; return true; })()`);
     await run(`return expo.modules.SolaraApp.devPostKeys("w1", ${JSON.stringify([{ ...keys.f, after: 0 }, { ...letter("a"), after: 0 }, { ...keys.l, after: 0 }, { ...letter("b"), after: 0 }, { ...letter("c"), after: 250 }, { ...letter("d"), after: 30 }])});`);
     await sleep(900);
     const replaySeen = await pageEval("a", "window.__keys");
-    const releaseTrace = (await rawTrace()).slice(traceBefore).filter((line) => /hold|adopt|release|drop/.test(line));
+    const traceAfter = await rawTrace();
+    const releaseTrace = traceAfter.slice(traceBefore == null ? 0 : traceAfter.indexOf(traceBefore) + 1)
+      .filter((line) => /hold|adopt|release|drop|commandBar/.test(line));
     observed.releaseOrder = { seen: replaySeen, trace: releaseTrace };
     console.log(`OBSERVED a held ⌘L re-sent at the cap: ${JSON.stringify(observed.releaseOrder)}`);
     const released = releaseTrace.findIndex((line) => /release \d+ to the page/.test(line));
     assert.ok(released >= 0, `the held keys went back to the page: ${JSON.stringify(observed.releaseOrder)}`);
     assert.ok(!releaseTrace.slice(released + 1).some((line) => /hold for/.test(line)), `re-sending the held ⌘L opens no second hold: ${JSON.stringify(releaseTrace)}`);
-    assert.ok(replaySeen.indexOf("a") >= 0 && replaySeen.indexOf("a") < replaySeen.indexOf("c") && replaySeen.indexOf("c") < replaySeen.indexOf("d"), `released and later letters keep their order: ${JSON.stringify(replaySeen)}`);
+    const fieldAfter = await responder("w1");
+    observed.releaseOrder.responder = fieldAfter;
+    assert.ok(replaySeen.includes("a"), `the letter before the released ⌘L reaches the page: ${JSON.stringify(replaySeen)}`);
+    assert.ok(releaseTrace.some((line) => /commandBar .* claim DeveloperUrlField/.test(line)) && isField(fieldAfter), `the released ⌘L focuses the developer URL field of this 127.0.0.1 page, as it did before: ${fieldAfter} ${JSON.stringify(releaseTrace)}`);
+    assert.ok(!replaySeen.includes("c") && !replaySeen.includes("d"), `later letters stay out of the page: ${JSON.stringify(replaySeen)}`);
     await press("w1", keys.escape, { wait: 150 });
     await press("w1", keys.escape, { wait: 150 });
     if (find(await nativeState(), "a").open) await closeFind("w1", "a", isField(await responder("w1")));
-    handlerBaseline = await run("return ac.commandHandlers.stats();");
+    handlerBaseline = await run("ac.commandHandlers.setEnabled(false); return ac.commandHandlers.stats();");
     pass("held keys re-sent at the cap, including a held ⌘L, open no second hold and keep their order", observed.releaseOrder);
 
     await run('ac.store.getState().activate("b"); return true;');

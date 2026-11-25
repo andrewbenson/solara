@@ -5,7 +5,8 @@ import { join, resolve } from "node:path";
 import { launch, reporter, session, sleep } from "../../../scripts/lib/instance.mjs";
 
 const [appArg, outputArg, ...rest] = process.argv.slice(2);
-assert.ok(appArg && outputArg && rest.length === 0, "usage: node native-omnibox-actions-test.mjs <Debug app> <fresh output directory>");
+assert.ok(appArg && outputArg && rest.every(arg => arg === "--baseline"), "usage: node native-omnibox-actions-test.mjs <Debug app> <fresh output directory>");
+const baseline = rest.includes("--baseline");
 const appPath = resolve(appArg);
 assert.ok(!appPath.startsWith("/Applications/") && !appPath.includes("/build-vista/"), "use a scratch Debug app");
 const output = resolve(outputArg);
@@ -124,6 +125,15 @@ const clean = async (base) => {
     s.navigate("a",${JSON.stringify(`${base}/start?utm_source=fixture&keep=yes`)}); s.activate("a"); return true;`);
   await native("fixture restored", (state, w) => w?.selectedTabId === "a" && w.tabIds.length === 2 && state.windows.length === 1);
 };
+const focusCommand = async (send) => {
+  const before = await run(`const s = ac.commandHandlers.stats(); ac.commandHandlers.setEnabled(${baseline}); return s;`);
+  try {
+    await send();
+    const after = await run("return ac.commandHandlers.stats();");
+    assert.equal(after.blocked, before.blocked, "Command Bar never reaches disabled fallback");
+    if (!baseline) assert.equal(after.calls, before.calls, "Swift owns focus without JS command decisions");
+  } finally { await run(`ac.commandHandlers.setEnabled(${before.enabled}); return true;`); }
+};
 const assertNoJS = async () => {
   const state = await run("return ac.omnibox.actions.state();");
   assert.deepEqual(state, { disabled: true, received: {}, executed: {} }, "native actions emit no JavaScript fallback action callbacks");
@@ -138,7 +148,7 @@ try {
   budget = setTimeout(() => { rep.record("five-minute run budget", { error: new Error("deadline exceeded") }); void stop(1); }, 300000);
   const launchFixture = (data, env = {}) => launch(appPath, {
     data: join(output, data), fresh: true, onboarded: true, probe: true, keepData: true,
-    env: { SOLARA_NATIVE_SHELL: "1", SOLARA_NATIVE_OMNIBOX: "1", SOLARA_NATIVE_NEWTAB: "1", ...env },
+    env: { SOLARA_NATIVE_WINDOW_LAYOUT: process.env.SOLARA_NATIVE_WINDOW_LAYOUT ?? "1", SOLARA_NATIVE_SHELL: "1", SOLARA_NATIVE_OMNIBOX: "1", SOLARA_NATIVE_NEWTAB: "1", ...env },
     session: session({ windows: [{ id: "w1", activeTabIds: { default: "a" }, frame: [80, 80, 1280, 900] }],
       tabs: [{ id: "a", url: `${base}/start?utm_source=fixture&keep=yes`, title: "Omni Start" }, { id: "b", url: `${base}/switch`, title: "Omni Switch Target" }],
       settings: { developerMode: { default: { on: [], off: ["127.0.0.1"], reload: "reload" } }, searchSuggestions: false, searchEngine: "custom", customSearchUrl: `${base}/search?q=%s`, commandBarPreference: "search", addressBar: "toolbar", newTabOpens: "commandBar",
@@ -256,18 +266,21 @@ try {
       await clean(base);
     });
   }
+  evidence.push({name:"actual native layout", layout:await run('return expo.modules.SolaraWindowShell.nativeLayout("w1");')});
   for (const addressBar of ["toolbar", "sidebar"]) {
     await check(`developer ${addressBar}: native URL editor Return and Escape`, async () => {
       await run(`const s = ac.store.getState(); s.updateSettings({addressBar:${JSON.stringify(addressBar)},commandBarPlacement:"field",
         developerMode:{default:{on:["127.0.0.1"],off:[],reload:"reload"}}}); return true;`);
       const focusDeveloper = async () => {
-        const sent = await run('return ac.shell.devKeyEquivalent("w1", {key:"l",keyCode:37,modifiers:["command"]});');
-        assert.ok(!sent?.error, JSON.stringify(sent));
+        await focusCommand(async () => {
+          const sent = await run('return ac.shell.devKeyEquivalent("w1", {key:"l",keyCode:37,modifiers:["command"]});');
+          assert.ok(!sent?.error, JSON.stringify(sent));
         const focused = await until("native developer URL field", () => app.snapshot({ windowId: "w1", shortcuts: true }, { timeout: 1000 }), (state) => {
           const window = state.windows.find((w) => w.id === "w1");
           return state.consistent && window?.panelOpen === false && window.shortcutFields?.some((field) => String(field.value).includes(`${base}/`));
         });
         evidence.push({ name: `developer ${addressBar} native field`, snapshot: focused });
+        });
       };
       await focusDeveloper();
       const url = `${base}/developer-${addressBar}`;
@@ -331,10 +344,11 @@ try {
     evidence.push({ name: "New Tab into target identity", id, placeholderBefore: initial, chromeBefore, chromeAfter });
     await clean(base);
   });
-  await check("developer retirement blur keeps production routing to outgoing A", async () => {
+  await check("native-layout-only developer retirement blur keeps production routing to outgoing A", async () => {
     await app.quit({ graceful: false });
     launching = launchFixture("retirement-data", { SOLARA_NATIVE_WINDOW_LAYOUT: "1" });
     app = await launching;
+    evidence.push({name:"retirement native layout", layout:await run('return expo.modules.SolaraWindowShell.nativeLayout("w1");')});
     await run("ac.omnibox.actions.disableJS(true); ac.omnibox.actions.reset(); return true;");
     await clean(base);
     await run('const s = ac.store.getState(); s.updateSettings({addressBar:"toolbar",commandBarPlacement:"field",developerMode:{default:{on:["127.0.0.1"],off:[],reload:"reload"}}}); return true;');

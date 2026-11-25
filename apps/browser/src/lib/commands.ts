@@ -1,7 +1,5 @@
 import { nativeOwnsWorkspace } from "../store/nativeStore";
 import { nativeAppIntegrationCommand, nativeWorkspaceCommand } from "@solara/settings";
-import { showNativePanelNow } from "../components/CommandPanel";
-import { markPanelFrame } from "./perfMarks";
 import {
   closeWindow as closeNativeWindow,
   openExternalURL,
@@ -29,10 +27,9 @@ import { useClearDataRequest } from "../components/pages/ClearDataDialog";
 import { openInternalPage } from "../components/pages/urls";
 import { openImport, openSettings } from "../components/settings/windows";
 import { focusSettingsSearch } from "../components/settings/searchState";
-import { closePanelToHeroBar, focusHeroBar } from "../components/omnibox/barState";
-import { closeNewTabBar, isEmptyCardTab, showNewTabBar, toggleNewTabBar } from "../components/omnibox/newTabBar";
+import { closePanelToHeroBar } from "../components/omnibox/barState";
+import { closeNewTabBar, toggleNewTabBar } from "../components/omnibox/newTabBar";
 import { NEW_TAB_BAR_POLICY } from "../store/newTabBar";
-import { addressBarInSidebar, commandBarCentred } from "../components/layout/windowLayout";
 import { addFolderToSidebar, restoreArcFolders } from "./bookmarkGroups";
 import { bookmarkWriter, reportBookmarkFailure } from "./bookmarkWriter";
 import { withLivePage } from "./livePage";
@@ -58,10 +55,10 @@ import {
   openLittleSolaraProfileMenu,
 } from "../components/littleSolara/actions";
 import { runPeekCommand } from "../components/peek/actions";
-import { startUrlEdit, tabInDeveloperMode, toggleDeveloperModeFor } from "../components/site/developerMode";
+import { toggleDeveloperModeFor } from "../components/site/developerMode";
 import { peekTabId } from "../store/peek";
 import { setSidebarPosition, toggleSidebarIconsOnly } from "../store/sidebarRail";
-import { expectFocus, findFocus, urlEditFocus } from "./focusClaims";
+import { expectFocus, findFocus } from "./focusClaims";
 
 let commandHandlersEnabled = true;
 let commandHandlerCalls = 0;
@@ -73,7 +70,7 @@ export const commandHandlers = {
 };
 
 export function runCommand({ command, arg, windowId: requested }: CommandEvent) {
-  if (command === "openBookmark" || command === "jumpToSelection" || ["copyUrl", "copyUrlAsMarkdown", "copyQuoteLink", "share", "openFile", "autofill", "searchTabs", "tabSwitcher"].includes(command)) return void nativeWorkspaceCommand(command, arg, requested);
+  if (command === "openBookmark" || command === "jumpToSelection" || ["copyUrl", "copyUrlAsMarkdown", "copyQuoteLink", "share", "openFile", "autofill", "searchTabs", "tabSwitcher", "focusCommandBar"].includes(command)) return void nativeWorkspaceCommand(command, arg, requested);
   if (nativeOwnsWorkspace() && nativeWorkspaceCommand(command, arg, requested)) return;
   if (__DEV__ && !commandHandlersEnabled) { commandHandlerBlocked++; return; }
   if (__DEV__) commandHandlerCalls++;
@@ -138,20 +135,6 @@ export function runCommand({ command, arg, windowId: requested }: CommandEvent) 
       return s.reopenClosed(windowId);
     case "restoreClosed":
       return arg ? s.restoreClosed(arg, windowId) : undefined;
-    case "focusCommandBar":
-      markPanelFrame("dispatch");
-      if (page && tabInDeveloperMode(page.id)) {
-        expectFocus(windowId, urlEditFocus(page.id));
-        return startUrlEdit(page.id);
-      }
-      if (page) {
-        showNativePanelNow(windowId, page.url);
-        return s.openPanel(windowId, page.url);
-      }
-      if (isEmptyCardTab(s, tab) && showNewTabBar(windowId)) return;
-      if (tab && addressBarInSidebar(s, windowId) && !commandBarCentred(s, windowId)) return s.openPanel(windowId, "");
-      if (!focusHeroBar(windowId, tabId)) return tab ? s.openPanel(windowId, "") : undefined;
-      return ui?.panel.open ? s.closePanel(windowId) : undefined;
     case "closeTab":
       if (ui?.panel.newTab) {
         closeNewTabBar(windowId);
@@ -360,9 +343,6 @@ function runLittleSolaraCommand(command: string, arg: string | null | undefined,
     case "closeTab":
       if (s.windowUi[windowId]?.panel.open && tab?.url) s.closePanel(windowId);
       else closeLittleSolara(windowId);
-      return;
-    case "focusCommandBar":
-      s.openPanel(windowId, tab?.url ?? "");
       return;
     case "switchProfile":
       if (arg) moveLittleSolaraToProfile(windowId, arg);

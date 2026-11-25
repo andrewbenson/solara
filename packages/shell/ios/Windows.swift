@@ -6,12 +6,17 @@ public enum WindowHost {
   @MainActor public static var closeRequest: ((String) -> Bool)?
   @MainActor public static func beginCommandFocus(_ command: String, windowId: String) -> Int? {
     guard let window = WindowManager.shared.windows[windowId] else { return nil }
-    NotificationCenter.default.post(name: Notification.Name("SolaraCommandWillDispatch"), object: window, userInfo: ["command": command])
-    guard command == "newTab" || command == "findInPage" else { return nil }
+    defer {
+      NotificationCenter.default.post(name: Notification.Name("SolaraCommandWillDispatch"), object: window, userInfo: ["command": command])
+    }
+    guard command == "newTab" || command == "findInPage" || command == "focusCommandBar" else { return nil }
     _ = FocusHandoff.shared.takeBegun()
-    let generation = FocusHandoff.shared.begin(in: window)
+    let generation = FocusHandoff.shared.begin(in: window, allowUnfocused: command == "focusCommandBar")
     _ = FocusHandoff.shared.takeBegun()
     return generation
+  }
+  @MainActor public static func commandFocusCurrent(_ generation: Int) -> Bool {
+    FocusHandoff.shared.isCurrent(generation)
   }
   @MainActor public static func commandFocusLive(_ generation: Int) -> Bool {
     FocusHandoff.shared.isLive(generation)
@@ -1227,6 +1232,9 @@ enum WindowMotion {
 }
 
 public enum FocusMoves {
+  #if DEBUG
+  @MainActor public static func trace(_ event: String) { FocusHandoff.shared.note(event) }
+  #endif
   public typealias PageFocus = @MainActor (@escaping @MainActor () -> Bool) -> Bool
   @MainActor public static var preparePageFocus: (@MainActor (NSView) -> PageFocus?)?
 
@@ -1326,11 +1334,11 @@ final class FocusHandoff {
   var gatesKeyWindow: Bool { NSApp.keyWindow.map { gates[ObjectIdentifier($0)] != nil } ?? false }
 
   @discardableResult
-  func begin(in window: NSWindow) -> Int? {
+  func begin(in window: NSWindow, allowUnfocused: Bool = false) -> Int? {
     guard window.isKeyWindow, WindowManager.shared.id(of: window) != nil else { return nil }
     let focused = window.firstResponder
     let existing = gates[ObjectIdentifier(window)]
-    guard existing != nil || Self.isPage(focused) else { return nil }
+    guard existing != nil || Self.isPage(focused) || (allowUnfocused && Self.unfocused(window)) else { return nil }
     if Self.isPage(focused), let input = focused as? NSTextInputClient, input.hasMarkedText() { return nil }
     let gate = existing ?? open(in: window)
     if let page = focused as? NSView, Self.isPage(page) {
@@ -1771,6 +1779,11 @@ final class FocusHandoff {
     gates.values.first { $0.generations.contains { $0.id == id } }
   }
 
+  func isCurrent(_ id: Int) -> Bool {
+    guard let gate = gate(of: id), gate.generations.last?.id == id else { return false }
+    return live(gate)
+  }
+
   func isLive(_ id: Int) -> Bool {
     guard let gate = gate(of: id) else { return false }
     return FocusGateRules.live(now: CACurrentMediaTime(), deadline: gate.deadline)
@@ -1856,7 +1869,7 @@ final class FocusHandoff {
     NSSound.beep()
   }
 
-  private func note(_ event: @autoclosure () -> String) {
+  fileprivate func note(_ event: @autoclosure () -> String) {
     #if DEBUG
     let responder = NSApp.keyWindow?.firstResponder.map { String(describing: type(of: $0)) } ?? "nil"
     trace.append(String(format: "%.1f ", CACurrentMediaTime() * 1000) + event() + " fr=" + responder)

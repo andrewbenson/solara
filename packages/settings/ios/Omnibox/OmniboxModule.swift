@@ -14,6 +14,16 @@ public class OmniboxModule: Module {
     }
 
     #if DEBUG
+    AsyncFunction("devDelayCommandFocus") { (windowId: String, milliseconds: Double) -> Bool in
+      MainActor.assumeIsolated {
+        let environment = ProcessInfo.processInfo.environment
+        guard environment["SOLARA_BACKGROUND"] == "1", environment["SOLARA_DATA_DIR"]?.isEmpty == false,
+          milliseconds.isFinite, milliseconds >= 0, milliseconds <= 200 else { return false }
+        NativeCommandBarFocus.presentationDelays[windowId] = milliseconds / 1000
+        return true
+      }
+    }.runOnQueue(.main)
+
     AsyncFunction("devRetireDeveloperURL") { (windowId: String, tabId: String, nextId: String, text: String) -> String in
       MainActor.assumeIsolated {
         NativeSplitChrome.devRetireDeveloperURL(windowId: windowId, from: tabId, to: nextId, text: text)

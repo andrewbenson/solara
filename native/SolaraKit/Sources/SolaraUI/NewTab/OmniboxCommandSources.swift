@@ -62,6 +62,10 @@ public enum OmniboxCommandSources {
     }
   }
 
+  public static func isDeveloperURL(_ url: String, settings: Settings, profileId: String) -> Bool {
+    developerHost(url).map { developerEnabled($0, settings: settings, profileId: profileId) } ?? false
+  }
+
   private static func developerHost(_ url: String) -> String? {
     guard let parsed = WhatwgURL(url), parsed.protocol == "http:" || parsed.protocol == "https:" else { return nil }
     let host = parsed.hostname.lowercased()

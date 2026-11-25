@@ -73,6 +73,8 @@ public final class OmniboxBarView: NSView {
     focusSoon()
   }
 
+  public var automaticFocusAllowed: () -> Bool = { true }
+
   public func focusBar() {
     model?.focusSelectingAll()
   }
@@ -94,7 +96,7 @@ public final class OmniboxBarView: NSView {
 
   private func focusSoon() {
     DispatchQueue.main.async { [weak self] in
-      guard let self, self.window != nil, !self.focusedOnce else { return }
+      guard let self, self.window != nil, !self.focusedOnce, self.automaticFocusAllowed() else { return }
       self.focusedOnce = true
       self.layoutSubtreeIfNeeded()
       self.model?.focusOnce()

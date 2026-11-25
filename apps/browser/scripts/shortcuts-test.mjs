@@ -802,7 +802,7 @@ for (const busy of [0, 120]) {
 {
   await resetToPageField("", [0, 0]);
   await clipboard.set("after-return");
-  await busyJsOnce(150);
+  assert.equal(await ac('return expo.modules.SolaraOmniboxBar.devDelayCommandFocus("w1", 150);'), true);
   await postKeys([keyPress("l", 37), keyPress("\r", 36, 20, []), keyPress("v", 9, 20)]);
   await sleep(2000);
   const trace = await ac(`return globalThis.expo.modules.SolaraApp.devFocusHandoffTrace();`);

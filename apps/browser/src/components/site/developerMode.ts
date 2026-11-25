@@ -88,7 +88,7 @@ export function useTabDeveloperMode(tabId: string | undefined): boolean {
 export const useUrlEdit = create<{ tabId: string | null; request: number }>(() => ({ tabId: null, request: 0 }));
 
 export function startUrlEdit(tabId: string) {
-  useUrlEdit.setState((s) => ({ tabId, request: s.request + 1 }));
+  useUrlEdit.setState((s) => ({ tabId, request: Math.max(0, s.request) + 1 }));
 }
 
 export function endUrlEdit(tabId: string) {

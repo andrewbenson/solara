@@ -44,6 +44,7 @@ enum NativeWorkspaceCommands {
     }
     NativeMenuCommands.keepsMenuDispatch = ViewMenuCommand.commands.union(PageMenuCommand.commands).union(BookmarkMenuCommand.commands).union(CopyLinkCommand.commands).union(BrowserServiceCommand.commands).union(TabFocusCommand.commands)
     NativeMenuCommands.workspaceAvailability = { command, arg, windowId in
+      if command == "findInPage", windowId == NativeSettingsWindow.windowId { return true }
       if command == "returnToPinnedUrl" { return NativePinnedPageCommands.available(windowId: windowId) }
       guard NativeStoreHandle.ownsWorkspace, let state = NativeStoreHandle.store?.state,
         WorkspaceMenuCommand.commands.contains(command) else { return nil }
@@ -275,6 +276,7 @@ enum NativeWorkspaceCommands {
     if ["newTab", "findInPage", "closeTab", "closeWindow"].contains(command) { NativeCommandBarFocus.cancel(windowId: windowId) }
     if ViewMenuCommand.commands.contains(command) { return performView(command, arg: arg, windowId: windowId) }
     if PageMenuCommand.commands.contains(command) { return performPage(command, arg: arg, windowId: windowId) }
+    if command == "findInPage", windowId == NativeSettingsWindow.windowId { NativeSettingsWindow.focusSearch(); return true }
     if FindMenuCommand.commands.contains(command) { return performFind(command, windowId: windowId) }
     guard NativeStoreHandle.ownsWorkspace, let store = NativeStoreHandle.store,
       WorkspaceMenuCommand.commands.contains(command) else { return false }

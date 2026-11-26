@@ -46,7 +46,7 @@ async function fixture() {
     react,
     "react/jsx-runtime": require("react/jsx-runtime"),
     "react-native": { View, Animated: { View }, StyleSheet: { absoluteFill: {} } },
-    "@solara/settings": { tabPool: {}, windowNativeLayout: () => true },
+    "@solara/settings": { SolaraHostedView: leaf("CastHost"), tabPool: {}, windowNativeLayout: () => true, windowShellActive: () => false },
     "../lib/pagesPool": { panePromptsNativeIn: () => true },
     "../lib/engines": { useEngineOffers: () => null },
     "../store/browser": { useBrowser },
@@ -68,7 +68,7 @@ async function fixture() {
     ["./PooledPageProps", ["PooledPageProps"]], ["./media/ShareBar", ["ShareBar"]], ["./pages", ["InternalPage"]],
     ["./NewTabPage", ["NewTabPage"]], ["./EmptyCard", ["EmptyCard"]], ["./FindBar", ["FindBar"]],
     ["./layout/PaneOverlays", ["StatusBubble", "SadTab"]], ["./site/SiteControls", ["SiteControls"]],
-    ["./media/SharePicker", ["SharePicker"]], ["./media/CastPicker", ["CastPicker"]], ["./layout/SwipeOverlay", ["NavigationOverlays"]],
+    ["./media/SharePicker", ["SharePicker"]], ["./layout/SwipeOverlay", ["NavigationOverlays"]],
   ]) modules[module] = Object.fromEntries(names.map((name) => [name, leaf(name)]));
   const exports = {};
   const source = readFileSync(new URL("./PaneContent.tsx", import.meta.url), "utf8");
@@ -93,7 +93,7 @@ async function fixture() {
 test("navigation updates the native page guest without redrawing sibling overlays", async () => {
   const f = await fixture();
   try {
-    const overlays = ["StatusBubble", "SiteControls", "SharePicker", "CastPicker"];
+    const overlays = ["StatusBubble", "SiteControls", "SharePicker", "CastHost"];
     const before = Object.fromEntries(overlays.map((name) => [name, f.renders[name]]));
     for (const count of Object.values(before)) assert.ok(count > 0);
     await f.update({ tabs: { a: { url: "https://two.invalid" } } });

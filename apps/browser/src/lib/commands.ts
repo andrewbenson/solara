@@ -38,7 +38,6 @@ import { openSplitPane } from "../components/layout/splitActions";
 import { commandRoute } from "./commandRoute";
 import { runSidebarCommand } from "../components/sidebar/commands";
 import { numberedTabs } from "../components/sidebar/entries";
-import { toggleCastPicker } from "../components/media/cast";
 import { openProfileMenu } from "../components/ProfileIndicator";
 import { groupOf, multiSelection } from "../store/organize";
 import { reopenClosedTogether } from "../store/closedTogether";
@@ -66,7 +65,7 @@ export const commandHandlers = {
 };
 
 export function runCommand({ command, arg, windowId: requested }: CommandEvent) {
-  if (command === "openBookmark" || command === "jumpToSelection" || ["copyUrl", "copyUrlAsMarkdown", "copyQuoteLink", "share", "openFile", "autofill", "searchTabs", "tabSwitcher", "focusCommandBar", "reload", "forceReload", "returnToPinnedUrl", "togglePageEngine", "openExtension", "addExtension", "pinExtensions", "manageExtensions"].includes(command)) return void nativeWorkspaceCommand(command, arg, requested);
+  if (command === "openBookmark" || command === "jumpToSelection" || ["copyUrl", "copyUrlAsMarkdown", "copyQuoteLink", "share", "openFile", "autofill", "searchTabs", "tabSwitcher", "focusCommandBar", "cast", "reload", "forceReload", "returnToPinnedUrl", "togglePageEngine", "openExtension", "addExtension", "pinExtensions", "manageExtensions"].includes(command)) return void nativeWorkspaceCommand(command, arg, requested);
   if (nativeOwnsWorkspace() && nativeWorkspaceCommand(command, arg, requested)) return;
   if (__DEV__ && !commandHandlersEnabled) { commandHandlerBlocked++; return; }
   if (__DEV__) commandHandlerCalls++;
@@ -241,8 +240,6 @@ export function runCommand({ command, arg, windowId: requested }: CommandEvent) 
       return page ? toggleMute(page.id) : undefined;
     case "downloads":
       return s.setDownloadsOpen(windowId, !ui?.downloadsOpen);
-    case "cast":
-      return void toggleCastPicker(windowId, tabId);
     case "showHistory":
       return openInternalPage("history", windowId);
     case "clearBrowsingData":

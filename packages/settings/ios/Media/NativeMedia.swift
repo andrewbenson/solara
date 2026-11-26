@@ -57,22 +57,6 @@ enum NativeMedia {
         update()
       }
     }
-    HostedViews.register(castPicker) { windowId in
-      let view = CastPickerView()
-      let popover = PopoverView(body: view)
-      var tabId = ""
-      popover.onDismiss = { action(windowId, "castPicker", tabId, ["action": "dismiss"]) }
-      view.onAction = { [weak popover] event in
-        if case .height(let h) = event { popover?.set(bodyHeight: CGFloat(h)); return }
-        castPicker(windowId, tabId, event)
-      }
-      return content(castPicker, windowId, popover) { json in
-        guard let state = CastPickerState.decode(json), let placement = PopoverEnvelope.decode(json) else { return }
-        tabId = state.tabId
-        popover.set(placement: placement, dark: state.theme.dark)
-        view.update(state)
-      }
-    }
     HostedViews.register(sharePicker) { windowId in
       let view = SharePickerView()
       let popover = PopoverView(body: view)
@@ -122,17 +106,6 @@ enum NativeMedia {
     return { mounted.removeAll { $0.view === entry } }
   }
 
-  static func castPicker(_ windowId: String, _ tabId: String, _ event: CastPickerAction) {
-    switch event {
-    case .cast(let id): action(windowId, "castPicker", tabId, ["action": "cast", "sinkId": id])
-    case .stop(let id): action(windowId, "castPicker", tabId, ["action": "stop", "sinkId": id])
-    case .source: action(windowId, "castPicker", tabId, ["action": "source"])
-    case .link: action(windowId, "castPicker", tabId, ["action": "link"])
-    case .done: action(windowId, "castPicker", tabId, ["action": "done"])
-    case .height: break
-    }
-  }
-
   static func sharePicker(_ windowId: String, _ tabId: String, _ event: SharePickerAction) {
     switch event {
     case .select(let id): action(windowId, "sharePicker", tabId, ["action": "select", "id": id])
@@ -173,6 +146,7 @@ enum NativeMedia {
       return json.flatMap { String(data: $0, encoding: .utf8) } ?? "[]"
     }
     var views: [NSView] = mounted.filter { $0.kind == kind && $0.windowId == windowId }.compactMap { $0.view.value }
+    if kind == castPicker { views += NativeCast.views(windowID: windowId) }
     if kind == sidebarPlayer { views += NativeSidebar.players(windowId: windowId) }
     if kind == hoverPlayer { views += NativeSidebarHoverCard.players(windowId: windowId) }
     views += NativePaneOverlays.host(windowId)?.mediaViews(kind) ?? []

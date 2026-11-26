@@ -3,7 +3,7 @@ import ExpoModulesCore
 public class ChromeUIModule: Module {
   public func definition() -> ModuleDefinition {
     Name("SolaraChromeUI")
-    Events("onDeviceChooser", "onCastDialog", "onCastRoutes", "onActionPopup", "onActionShortcut")
+    Events("onDeviceChooser", "onActionPopup", "onActionShortcut")
 
     OnCreate {
       SolaraCoreHost.chromeUIHandler = { [weak self] name, payload in
@@ -12,8 +12,6 @@ public class ChromeUIModule: Module {
         case "actionPopup": self?.sendEvent("onActionPopup", payload)
         case "actionShortcut": self?.sendEvent("onActionShortcut", payload)
         case "deviceChooser": self?.sendEvent("onDeviceChooser", payload)
-        case "castDialog": self?.sendEvent("onCastDialog", payload)
-        case "castRoutes": self?.sendEvent("onCastRoutes", payload)
         default: break
         }
       }
@@ -27,15 +25,6 @@ public class ChromeUIModule: Module {
       SolaraCoreHost.devShowBluetoothChooser(browserId: Int32(browserId), unauthorized: unauthorized)
     }.runOnQueue(.main)
     AsyncFunction("devChooserEvents") { SolaraCoreHost.testChooserEvents() }.runOnQueue(.main)
-
-    AsyncFunction("showCastDialog") { (browserId: Int) in SolaraCoreHost.showCastDialog(browserId: Int32(browserId)) }.runOnQueue(.main)
-    AsyncFunction("startCasting") { (id: Int, sink: String, mode: Int) in
-      SolaraCoreHost.castDialog(Int32(id), start: sink, mode: Int32(mode))
-    }.runOnQueue(.main)
-    AsyncFunction("stopCasting") { (id: Int, route: String) in SolaraCoreHost.castDialog(Int32(id), stop: route) }.runOnQueue(.main)
-    AsyncFunction("closeCastDialog") { (id: Int) in SolaraCoreHost.closeCastDialog(Int32(id)) }.runOnQueue(.main)
-    AsyncFunction("watchCastRoutes") { (profile: String) in SolaraCoreHost.watchCastRoutes(profile) }.runOnQueue(.main)
-    AsyncFunction("terminateCastRoute") { (route: String) in SolaraCoreHost.terminateCastRoute(route) }.runOnQueue(.main)
 
     AsyncFunction("actionStates") { (browserId: Int, ids: [String]) in
       SolaraCoreHost.actionStates(browserId: Int32(browserId), extensions: ids)

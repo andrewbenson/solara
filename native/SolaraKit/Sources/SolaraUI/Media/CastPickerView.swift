@@ -1,7 +1,7 @@
 import AppKit
 import QuartzCore
 
-public struct CastSinkState: Decodable, Equatable, Sendable {
+public struct CastSinkState: Equatable, Sendable {
   public var id: String
   public var name: String
   public var icon: String
@@ -9,11 +9,19 @@ public struct CastSinkState: Decodable, Equatable, Sendable {
   public var issue: Bool
   public var active: Bool
   public var busy: Bool
+
+  public init(id: String, name: String, icon: String, detail: String?, issue: Bool, active: Bool, busy: Bool) {
+    self.id = id
+    self.name = name
+    self.icon = icon
+    self.detail = detail
+    self.issue = issue
+    self.active = active
+    self.busy = busy
+  }
 }
 
-public struct CastPickerState: Decodable, Equatable, Sendable {
-  public var dialogId: String
-  public var tabId: String
+public struct CastPickerState: Equatable, Sendable {
   public var title: String
   public var canScreen: Bool
   public var rejected: Bool
@@ -21,9 +29,13 @@ public struct CastPickerState: Decodable, Equatable, Sendable {
   public var sinks: [CastSinkState]
   public var theme: MediaThemeState
 
-  public static func decode(_ json: String) -> CastPickerState? {
-    guard let data = json.data(using: .utf8) else { return nil }
-    return try? JSONDecoder().decode(CastPickerState.self, from: data)
+  public init(title: String, canScreen: Bool, rejected: Bool, rejectedText: String, sinks: [CastSinkState], theme: MediaThemeState) {
+    self.title = title
+    self.canScreen = canScreen
+    self.rejected = rejected
+    self.rejectedText = rejectedText
+    self.sinks = sinks
+    self.theme = theme
   }
 }
 

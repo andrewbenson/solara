@@ -156,7 +156,7 @@ Test hygiene the run keeps (each was a real failure):
 | closed-tabs-own-lists | Two tabs on the same page closed a moment apart each reopen with their own back/forward list (the entry tagged with the tab's id, `ac_tab_restore_tag`), also after ⌘Q and a relaunch |
 | js-reload-keeps-pages | A JS reload (development: Metro) parks each tab's page for its next view: no second load, no second history visit |
 | device-chooser | WebUSB `requestDevice` → the app's chooser (`onDeviceChooser`); `cancelDeviceChooser` → the page gets NotFoundError |
-| cast-dialog | `showCastDialog` → `onCastDialog` ("Cast tab"), `onCastRoutes` for the profile, `closeCastDialog` |
+| cast-dialog | Native Cast command opens the dialog, the profile watch receives routes, and toggling or closing the tab retires the dialog |
 | crash | A renderer crash → `onCrashed`, the app keeps running |
 | traffic-lights-after-profile-switch | The traffic lights keep their place after the window's profile changes |
 | passwords, passwords-more | Chrome's password store: save, list, reveal, edit, delete, never-save list, unlock (test reauth), export through the save panel, the autofill pref |
@@ -320,7 +320,7 @@ over, `-[SolaraCoreTab setTemporarySource:]`) is the tab a closed window's entry
 | Function / event | Status | Note |
 |---|---|---|
 | `onDeviceChooser`, `cancelDeviceChooser` | done | |
-| `showCastDialog`, `onCastDialog`, `closeCastDialog`, `watchCastRoutes`, `onCastRoutes` | done | |
+| Cast dialog receipts and route watches | done | Swift uses the host Cast API |
 | `actionStates`, `sidePanelURL` | done | |
 | `selectDevice`, `refreshDeviceChooser`, `openBluetoothSettings` | partial | No devices in a hidden run; the last opens System Settings |
 | `startCasting`, `stopCasting`, `terminateCastRoute` | partial | No Cast sinks here |

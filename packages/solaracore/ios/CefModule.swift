@@ -7,6 +7,10 @@ import IOKit.ps
 public enum SolaraCoreEventTaps {
   @MainActor public static var observers: [(String, [String: Any]) -> Void] = []
 
+  @MainActor public static func installCast() {
+    SolaraCoreHost.castUIHandler = { name, payload in send(name, payload) }
+  }
+
   static func send(_ name: String, _ payload: [String: Any]) {
     nonisolated(unsafe) let body = payload
     let deliver = { MainActor.assumeIsolated { for observer in observers { observer(name, body) } } }

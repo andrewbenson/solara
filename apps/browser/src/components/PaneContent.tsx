@@ -1,4 +1,4 @@
-import { tabPool, windowNativeLayout } from "@solara/settings";
+import { SolaraHostedView, tabPool, windowNativeLayout, windowShellActive } from "@solara/settings";
 import { memo, useEffect, useLayoutEffect, useMemo, useState } from "react";
 import { Animated, StyleSheet, View, type ViewStyle } from "react-native";
 import { layout } from "../lib/theme";
@@ -30,7 +30,6 @@ import { ZOOM_POPOVER_WIDTH, ZoomPopover } from "./site/ZoomHost";
 import { SelectionHost } from "./site/SelectionHost";
 import { SharePicker } from "./media/SharePicker";
 import { ShareBar } from "./media/ShareBar";
-import { CastPicker } from "./media/CastPicker";
 import { DeviceChooser } from "./site/DeviceChooser";
 import { NavigationOverlays } from "./layout/SwipeOverlay";
 import { isSmallWindow } from "../store/small";
@@ -93,7 +92,7 @@ export function PageOverlays({
       {popovers && popover === "zoom" && <ZoomPopover tabId={tabId} {...popoverSide} top={POPOVER_MARGIN} nativeAllowed={!peek} />}
       <SharePicker tabId={tabId} paneWidth={width} nativeAllowed={!peek} />
       {!newTabShown && !nativePrompts && <DeviceChooser tabId={tabId} left={Math.max(POPOVER_MARGIN, Math.min(geometry.urlLeft, width - 348))} top={POPOVER_MARGIN} />}
-      <CastPicker tabId={tabId} paneWidth={width} nativeAllowed={!peek} />
+      {(peek || !windowShellActive(windowId)) && <SolaraHostedView kind="media.castPicker" windowId={windowId} state={tabId} pointerEvents="box-none" style={StyleSheet.absoluteFill} />}
       <NavigationOverlays tabId={tabId} windowId={windowId} geometry={geometry} peek={peek} />
       {!nativePrompts && <SelectionHost tabId={tabId} nativeAllowed={!peek} />}
     </>

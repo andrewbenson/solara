@@ -242,6 +242,7 @@ bool gLinksHandled = false;
 bool gJSStarted = false;
 void (^gEventHandler)(NSString *, NSDictionary *);
 void (^gChromeUIHandler)(NSString *, NSDictionary *);
+void (^gCastUIHandler)(NSString *, NSDictionary *);
 void (^gExtensionsEventHandler)(NSString *, NSDictionary *);
 NSMutableDictionary<NSString *, NSDictionary *> *gInstallPrompts = [NSMutableDictionary dictionary];
 
@@ -722,20 +723,20 @@ static void StartEarlyWindow() {
 - (void)engine:(SolaraCoreEngine *)engine castDialog:(NSDictionary *)dialog tab:(SolaraCoreTab *)tab {
   NSMutableDictionary *payload = [dialog mutableCopy];
   payload[@"browserId"] = @(tab ? solaracore_host::BrowserId(tab) : 0);
-  if (gChromeUIHandler) gChromeUIHandler(@"castDialog", payload);
+  if (gCastUIHandler) gCastUIHandler(@"castDialog", payload);
   else if ([payload[@"open"] boolValue] && [SolaraCoreEngine respondsToSelector:@selector(closeCastDialog:)])
     [SolaraCoreEngine closeCastDialog:[payload[@"id"] intValue]];
 }
 
 - (void)engine:(SolaraCoreEngine *)engine castRoutes:(NSArray *)routes profile:(SolaraCoreProfile *)profile {
   PrepareEngineProfile(profile);
-  if (!gChromeUIHandler) return;
+  if (!gCastUIHandler) return;
   NSMutableArray<NSString *> *names = [NSMutableArray array];
   if (profile.offTheRecord)
     for (NSString *name in solaracore_host::LoadedProfileNames())
       if (solaracore_host::LoadedProfile(name) == profile) [names addObject:name];
   if (!names.count) [names addObject:solaracore_host::ProfileName(profile)];
-  for (NSString *name in names) gChromeUIHandler(@"castRoutes", @{@"profile" : name, @"routes" : routes ?: @[]});
+  for (NSString *name in names) gCastUIHandler(@"castRoutes", @{@"profile" : name, @"routes" : routes ?: @[]});
 }
 
 - (void)engine:(SolaraCoreEngine *)engine extensionSidePanel:(NSDictionary *)panel tab:(SolaraCoreTab *)tab {
@@ -1275,6 +1276,14 @@ static void StartEarlyWindow() {
 
 + (void)setChromeUIHandler:(void (^)(NSString *, NSDictionary *))handler {
   gChromeUIHandler = [handler copy];
+}
+
++ (void (^)(NSString *, NSDictionary *))castUIHandler {
+  return gCastUIHandler;
+}
+
++ (void)setCastUIHandler:(void (^)(NSString *, NSDictionary *))handler {
+  gCastUIHandler = [handler copy];
 }
 
 + (void)deviceChooser:(int)chooserId select:(int)index {

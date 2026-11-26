@@ -28,6 +28,7 @@ NS_ASSUME_NONNULL_BEGIN
 @property(class, nonatomic, copy, nullable) void (^eventHandler)(NSString *name, NSDictionary<NSString *, id> *payload);
 @property(class, readonly) NSArray<NSDictionary<NSString *, id> *> *displayMediaSources;
 @property(class, nonatomic, copy, nullable) void (^chromeUIHandler)(NSString *name, NSDictionary<NSString *, id> *payload);
+@property(class, nonatomic, copy, nullable) void (^castUIHandler)(NSString *name, NSDictionary<NSString *, id> *payload);
 + (void)resolveExternalApp:(NSString *)requestId open:(BOOL)open remember:(BOOL)remember NS_SWIFT_NAME(resolveExternalApp(_:open:remember:));
 + (void)deviceChooser:(int)chooserId select:(int)index NS_SWIFT_NAME(deviceChooser(_:select:));
 + (void)deviceChooser:(int)chooserId action:(NSString *)action NS_SWIFT_NAME(deviceChooser(_:action:));

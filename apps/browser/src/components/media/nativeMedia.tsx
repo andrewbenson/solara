@@ -4,7 +4,7 @@ import { stopCliControl, useCliIndicator } from "../../lib/cliControl";
 import type { Theme } from "../../lib/theme";
 import { addNativeSettingsHandlers } from "../settings/nativeSettings";
 
-export type NativeMediaKind = "media.cliPill" | "media.tabBadge" | "media.shareBar" | "media.castPicker" | "media.sharePicker" | "littleSolara.bar";
+export type NativeMediaKind = "media.cliPill" | "media.tabBadge" | "media.shareBar" | "media.sharePicker" | "littleSolara.bar";
 
 const THEME_KEYS = [
   "panel",

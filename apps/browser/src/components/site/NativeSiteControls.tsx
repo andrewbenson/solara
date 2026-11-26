@@ -5,7 +5,6 @@ import { webviews } from "../../lib/webviews";
 import { openPageIn, togglePageEngine } from "../../lib/engines";
 import { patchPage, setPopover, usePage } from "../layout/pageState";
 import { showToast } from "../layout/splitActions";
-import { toggleCastPicker } from "../media/cast";
 import type { PageEngine, SecurityInfo } from "@solara/solaracore";
 import type { Tab } from "../../store/types";
 import type { Settings } from "../../store/settings";
@@ -163,7 +162,6 @@ addNativeSettingsHandlers({
     if (action === "share") return nativeWorkspaceCommand("share", JSON.stringify({ tabId, anchor: args.rect }), snapshot.windowId);
     if (action === "copy") return nativeWorkspaceCommand("copyUrl", JSON.stringify({ tabId: tabId }), snapshot.windowId);
     if (action === "find") return useBrowser.getState().setFind(tabId, { open: true, replace: false, focusRequest: Date.now() });
-    if (action === "cast") return toggleCastPicker(snapshot.windowId);
     if (action === "engine") return openPageIn(tabId, args.engine, { rule: args.rule });
     if (action === "other-engine") return togglePageEngine(tabId);
     if (action === "privacy") return openSettings("privacy");

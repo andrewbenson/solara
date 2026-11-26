@@ -244,7 +244,7 @@ try {
     data, fresh: true, session: fixture, onboarded: true, probe: true,
     env: { SOLARA_ALLOW_AUDIO: "1", SOLARA_NATIVE_SHELL: shell ? "1" : "0",
       ...(prompts ? { SOLARA_NATIVE_PAGES_POOL: "1", SOLARA_SHELL_PANES: "1", SOLARA_TAB_POOL: "1" } : { SOLARA_NATIVE_PAGES_POOL: "0" }) },
-    switches: "--disable-audio-output --autoplay-policy=no-user-gesture-required",
+    switches: "--disable-audio-output --autoplay-policy=no-user-gesture-required --disable-media-route-providers-for-test",
     ready: "return !!ac.store.getState().windows.w1",
   });
 
@@ -520,8 +520,8 @@ try {
     const samples = await run(`
       const out = [];
       const sample = (until) => performance.now() >= until ? Promise.resolve() : first(${JSON.stringify(kind)}).then((r) => { if (r) out.push(r); return settle(8); }).then(() => sample(until));
-      ${open}
-      return sample(performance.now() + 400).then(() => out);`, 10000);
+      const opened = (() => { ${open} })();
+      return Promise.resolve(opened).then(() => sample(performance.now() + 400)).then(() => out);`, 10000);
     const last = samples.at(-1);
     if (!last) throw new Error("no native popover");
     const moving = samples.filter((r) => r.opacity > 0.02 && r.opacity < 0.98);
@@ -539,15 +539,13 @@ try {
     await crossCheckMedia(`${kind} rows and labels at rest`, kind, [last]);
     return { rect: last.card, frames: last.frames, height: last.height, labels: last.labels, animatedSamples: moving.length };
   };
-  const CAST = {
-    id: "cast-fixture", browserId: 0, open: true, header: "Cast tab", permissionRejected: false,
-    sinks: [
-      { id: "s1", name: "Living Room", state: "available", modes: 1, icon: 0, status: "", issue: "" },
-      { id: "s2", name: "Kitchen Speaker", state: "connected", routeId: "r2", modes: 1, icon: 2, status: "Casting Player", issue: "" },
-    ],
-  };
+  const CAST_SINKS = [
+    { id: "s1", name: "Living Room", state: "available", routeId: "", modes: 1, icon: 0, status: "", issue: "" },
+    { id: "s2", name: "Kitchen Speaker", state: "connected", routeId: "r2", modes: 1, icon: 2, status: "Casting Player", issue: "" },
+  ];
+  const castFixture = `M.devCastFixture("b", ${JSON.stringify(JSON.stringify(CAST_SINKS))})`;
   await rep.check("cast-picker", async () => {
-    const opened = await openPopover("media.castPicker", `acCast.useCast.setState({ dialogs: { b: ${JSON.stringify(CAST)} } });`);
+    const opened = await openPopover("media.castPicker", `return ${castFixture}.then((accepted) => { if (!accepted) throw new Error("native Cast fixture has no Chromium page"); });`);
     sameRect("cast", opened.rect, pickerFrames.cast);
     assert.equal(opened.labels.done, "Done");
     assert.equal(opened.labels.stop1, "Stop");
@@ -559,15 +557,18 @@ try {
     });
     const out = { rect: opened.rect, samples: opened.animatedSamples, pane: await inPane("media.castPicker", "castPicker") };
     if (shell) out.staysUp = await staysUp("media.castPicker");
-    await run(`globalThis.__castLog = []; const a = acNativeMedia.actions; globalThis.__castReal = a.castPicker; a.castPicker = (w, t, e) => { __castLog.push(e); }; return true;`);
+    const state = () => run(`return M.devCastState().then(JSON.parse);`);
     await run(`return first("media.castPicker").then((r) => click(centre(r.frames.done))).then(() => true);`);
+    assert.equal((await state()).dialogs.b, undefined);
+    await run(`return ${castFixture};`);
+    await until("native Cast fixture reopened", `return first("media.castPicker").then((r) => r?.opacity > 0.99);`);
     await run(`return first("media.castPicker").then((r) => click(centre(r.frames.sink0))).then(() => true);`);
+    await run(`return first("media.castPicker").then((r) => click(centre(r.frames.stop1))).then(() => true);`);
     await run(`return first("media.castPicker").then((r) => click([Math.round(r.card[0] - 200), Math.round(r.card[1] + 100)])).then(() => true);`);
-    const log = await until("cast actions", `return __castLog.length >= 3 ? __castLog : null;`, 3000);
-    await run(`acNativeMedia.actions.castPicker = __castReal; return true;`);
-    if (log.map((e) => e.action).join() !== "done,cast,dismiss" || log[1].sinkId !== "s1") throw new Error(`cast actions ${JSON.stringify(log)}`);
-    out.actions = log.map((e) => e.action);
-    await run(`acCast.useCast.setState({ dialogs: {} }); return true;`);
+    const after = await state();
+    assert.deepEqual(after.fixtureActions, ["close", "start:s1", "stop:r2", "close"]);
+    assert.equal(after.dialogs.b, undefined);
+    out.actions = after.fixtureActions;
     return out;
   });
 
@@ -691,6 +692,34 @@ try {
       await run(`st().closeWindow(${JSON.stringify(id)}); return true;`);
       await until("small fixture window closes", `return !st().windows[${JSON.stringify(id)}];`, 5000);
     }
+  });
+  await rep.check("cast-picker-page-owners", async () => {
+    const opens = async (owner, windowId, tabId) => {
+      await until("Chromium lets Swift attach the Cast receipt", `return M.devCastFixture(${JSON.stringify(tabId)}, ${JSON.stringify(JSON.stringify(CAST_SINKS))});`, 12000);
+      await until(`Cast picker in ${owner}`, `return M.probe("media.castPicker", ${JSON.stringify(windowId)}).then(JSON.parse).then((rows) => rows[0]?.opacity > 0.99);`);
+    };
+    const closed = (tabId) => until("Cast receipt was retired", `return M.devCastState().then(JSON.parse).then((s) => !s.dialogs[${JSON.stringify(tabId)}]);`);
+    await run(`ac.actions.switchToTab("b"); return true;`);
+    const peek = await run(`return st().openPeek("b", ${JSON.stringify(url("cast-peek"))});`);
+    try {
+      await opens("Peek", "w1", peek);
+    } finally {
+      await run(`ac.peek.dismissPeek("w1"); return true;`);
+    }
+    await closed(peek);
+    assert.equal(await run(`return st().windows.w1.activeTabIds.default;`), "b");
+    for (const options of [{ small: true }, { incognito: true }]) {
+      const windowId = await run(`return ac.actions.openWindow(${JSON.stringify({ ...options, url: url("cast-other-window") })});`);
+      const tabId = await until("Cast page in the new window", `return st().windows[${JSON.stringify(windowId)}]?.tabIds[0];`);
+      try {
+        await opens(options.small ? "Little Solara" : "the private window", windowId, tabId);
+        assert.deepEqual(await run(`return M.probe("media.castPicker", "w1").then(JSON.parse);`), []);
+      } finally {
+        await run(`st().closeWindow(${JSON.stringify(windowId)}); return true;`);
+      }
+      await closed(tabId);
+    }
+    return { peek, littleSolara: true, privateWindow: true };
   });
 } catch (e) {
   rep.record("run", { error: e });

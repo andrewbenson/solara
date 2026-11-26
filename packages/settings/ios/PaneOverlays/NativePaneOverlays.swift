@@ -136,6 +136,13 @@ enum NativePaneOverlays {
 final class PanePopoverWrap: NSView {
   var onLeave: (() -> Void)?
   var onReturn: (() -> Void)?
+  var onResize: (() -> Void)?
+
+  override func setFrameSize(_ size: NSSize) {
+    let changed = frame.size != size
+    super.setFrameSize(size)
+    if changed { onResize?() }
+  }
 
   override var isFlipped: Bool { true }
 
@@ -270,7 +277,6 @@ final class PaneOverlayHost {
   private var histories: [String: PanePopover<HistoryPanelView>] = [:]
   private var selections: [String: SelectionBarView] = [:]
   private var cliPills: [String: CliControlPillView] = [:]
-  private var casts: [String: (id: String, popover: PanePopover<CastPickerView>)] = [:]
   private var shares: [String: (id: String, popover: PanePopover<SharePickerView>, focus: HostedMount?)] = [:]
   private var swipes: [String: (wrap: PanePopoverWrap, capsule: SwipeCapsuleView)] = [:]
   private var navigationSwipes: [String: NativeNavigationSwipe] = [:]
@@ -307,7 +313,6 @@ final class PaneOverlayHost {
     var zoomed = Set<String>()
     var listed = Set<String>()
     var selected = Set<String>()
-    var casting = Set<String>()
     var piloted = Set<String>()
     var sharing = Set<String>()
     for (tabId, value) in tabs {
@@ -345,13 +350,6 @@ final class PaneOverlayHost {
       if let data = entry(value, kind: "cliPill", tabId: tabId), let json = String(data: data, encoding: .utf8), let state = CliPillState.decode(json) {
         piloted.insert(tabId)
         (cliPills[tabId] ?? makeCliPill(tabId)).update(state)
-      }
-      if let data = entry(value, kind: "castPicker", tabId: tabId), let json = String(data: data, encoding: .utf8), let state = CastPickerState.decode(json), let placement = PopoverEnvelope.decode(json) {
-        casting.insert(tabId)
-        if casts[tabId]?.id != state.dialogId { casts[tabId]?.popover.wrap.removeFromSuperview(); casts[tabId] = (state.dialogId, makeCast(tabId)) }
-        let cast = casts[tabId]!.popover
-        cast.popover.set(placement: placement, dark: state.theme.dark)
-        cast.body.update(state)
       }
       if let data = entry(value, kind: "sharePicker", tabId: tabId), let json = String(data: data, encoding: .utf8), let state = SharePickerState.decode(json), let placement = PopoverEnvelope.decode(json) {
         sharing.insert(tabId)
@@ -430,10 +428,6 @@ final class PaneOverlayHost {
     for (tabId, pill) in cliPills where !piloted.contains(tabId) {
       pill.removeFromSuperview()
       cliPills[tabId] = nil
-    }
-    for (tabId, cast) in casts where !casting.contains(tabId) {
-      cast.popover.wrap.removeFromSuperview()
-      casts[tabId] = nil
     }
     for tabId in shares.keys where !sharing.contains(tabId) { endShare(tabId) }
     relayout()
@@ -519,18 +513,6 @@ final class PaneOverlayHost {
     return pill
   }
 
-  private func makeCast(_ tabId: String) -> PanePopover<CastPickerView> {
-    let cast = PanePopover(CastPickerView(frame: .zero))
-    let windowId = windowId
-    cast.popover.onDismiss = { NativeMedia.action(windowId, "castPicker", tabId, ["action": "dismiss"]) }
-    cast.body.onAction = { [weak cast] event in
-      if case .height(let h) = event { cast?.setHeight(CGFloat(h)); return }
-      NativeMedia.castPicker(windowId, tabId, event)
-    }
-    cast.wrap.autoresizingMask = [.width, .height]
-    return cast
-  }
-
   private func makeShare(_ tabId: String) -> PanePopover<SharePickerView> {
     let share = PanePopover(SharePickerView(frame: .zero))
     let windowId = windowId
@@ -547,7 +529,6 @@ final class PaneOverlayHost {
 
   func mediaViews(_ kind: String) -> [NSView] {
     switch kind {
-    case NativeMedia.castPicker: return casts.values.map { $0.popover.popover }
     case NativeMedia.sharePicker: return shares.values.map { $0.popover.popover }
     case NativeMedia.cliPill: return Array(cliPills.values)
     default: return []
@@ -626,7 +607,6 @@ final class PaneOverlayHost {
     histories.values.forEach { $0.wrap.removeFromSuperview() }
     selections.values.forEach { $0.removeFromSuperview() }
     cliPills.values.forEach { $0.removeFromSuperview() }
-    casts.values.forEach { $0.popover.wrap.removeFromSuperview() }
     swipes.values.forEach { $0.wrap.removeFromSuperview() }
     prompts.values.forEach { $0.popover.wrap.removeFromSuperview() }
     choosers.values.forEach { $0.popover.wrap.removeFromSuperview() }
@@ -636,7 +616,6 @@ final class PaneOverlayHost {
     histories = [:]
     selections = [:]
     cliPills = [:]
-    casts = [:]
     swipes = [:]
     prompts = [:]
     choosers = [:]
@@ -661,7 +640,6 @@ final class PaneOverlayHost {
     }
     for (tabId, history) in histories { history.place(in: slot(tabId)) }
     for (tabId, pill) in cliPills { Self.place(pill, in: slot(tabId), bottom: false) }
-    for (tabId, cast) in casts { cast.popover.place(in: slot(tabId)) }
     for (tabId, share) in shares {
       share.popover.place(in: slot(tabId))
       focusShare(tabId)
@@ -747,7 +725,8 @@ final class PaneOverlayHost {
       for entry in prompts.values { tabs[entry.tabId, default: [:]][entry.kind.rawValue] = entry.popover.describe(inWindow).merging(["key": entry.key]) { _, key in key } }
       for entry in choosers.values { tabs[entry.tabId, default: [:]]["deviceChooser"] = entry.popover.describe(inWindow).merging(["id": entry.id]) { _, id in id } }
       for (tabId, history) in histories { tabs[tabId, default: [:]]["history"] = history.describe(inWindow) }
-      for (tabId, cast) in casts { tabs[tabId, default: [:]]["castPicker"] = cast.popover.describe(inWindow) }
+      let casts = NativeCast.panePickers(windowId)
+      for (tabId, cast) in casts { tabs[tabId, default: [:]]["castPicker"] = cast.describe(inWindow) }
       for (tabId, pill) in cliPills { tabs[tabId, default: [:]]["cliPill"] = ["frame": inWindow(pill, pill.bounds), "pill": inWindow(pill, pill.pillFrame), "shown": pill.shown, "progress": pill.progress] }
       for (tabId, share) in shares {
         var info = share.popover.describe(inWindow)

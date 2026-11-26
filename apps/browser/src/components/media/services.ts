@@ -1,4 +1,3 @@
-import { startCast } from "./cast";
 import { startTabShareCleanup } from "./ShareBar";
 import { cancelDisplayMediaOnNavigation } from "./SharePicker";
 
@@ -9,5 +8,4 @@ export function startMedia() {
   started = true;
   cancelDisplayMediaOnNavigation();
   startTabShareCleanup();
-  startCast();
 }

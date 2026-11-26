@@ -135,6 +135,7 @@ if (flag("--help") || flag("-h")) {
   process.exit(0);
 }
 if (flag("--list")) listChecks();
+const castSafe = flag("--cast-safe");
 const attaching = argv[0] === "--attach";
 if (attaching) argv.shift();
 const keep = flag("--keep") || attaching;
@@ -713,6 +714,7 @@ async function launch(logName = "app.out.log", env = {}, args = [], opts = {}) {
       SOLARA_TEST_REAUTH: "granted", SOLARA_DOWNLOADS_DIR: downloadsDir, SOLARA_ALLOW_AUDIO: "1",
       ...Object.fromEntries(["SOLARA_ALLOW_OCCLUSION", "SOLARA_TRACE_VISIBILITY", "SOLARA_TRACE_PIP", "SOLARA_NATIVE_SHELL", "SOLARA_NATIVE_BOOKMARKS", "SOLARA_NATIVE_TAB_SLEEP", "SOLARA_TAB_POOL"].filter((k) => process.env[k]).map((k) => [k, process.env[k]])),
       SOLARA_TRAFFIC_LIGHTS_LOG: lightsLog,
+      ...(castSafe ? { SOLARA_LAUNCH_SWITCHES_DEFAULTS: `solara-cast-${randomUUID()}`, SOLARA_LAUNCH_SWITCHES_OPTION: "1" } : {}),
       ...(selected.has("bookmarks-distribution-default") ? { SOLARA_RELEASE_LAUNCH: "1", SOLARA_NATIVE_BOOKMARKS: null } : {}),
       ...env,
       ...(process.env.SOLARA_ACCEPTANCE_VISIBLE === "1" ? { SOLARA_BACKGROUND: null } : {}),
@@ -2108,50 +2110,95 @@ try {
     }
   });
 
+  const castState = () => evalApp("return globalThis.expo.modules.SolaraMedia.devCastState().then(JSON.parse)");
+  const castDialog = async (tabId) => (await castState()).dialogs?.[tabId] ?? null;
+  const castToggle = (windowId, tabId) => evalApp(`return globalThis.expo.modules.SolaraMedia.devCastToggle(${JSON.stringify(windowId)}, ${JSON.stringify(tabId)})`);
+  const castAction = (tabId, dialogId, action, value = "") => evalApp(`return globalThis.expo.modules.SolaraMedia.devCastAction(${JSON.stringify(mainWindow)}, ${JSON.stringify(tabId)}, ${dialogId}, ${JSON.stringify(action)}, ${JSON.stringify(value)})`);
+
   await check("cast-dialog", async () => {
-    const browser = await browserOf(first.id);
-    const shown = await evalApp(`return globalThis.expo.modules.SolaraChromeUI.showCastDialog(${browser})`);
-    if (!shown) throw new Error("showCastDialog said no (media router off?)");
-    const dialog = await until("the app's Cast dialog", async () => evalApp(`return globalThis.acCast?.useCast.getState().dialogs["${first.id}"] ?? null`), 10000);
-    const routes = await evalApp(`return globalThis.acCast.useCast.getState().routes`);
-    await evalApp(`return globalThis.expo.modules.SolaraChromeUI.closeCastDialog(${dialog.id}).then(() => true)`);
-    await until("the dialog closed", async () => !(await evalApp(`return globalThis.acCast.useCast.getState().dialogs["${first.id}"] ?? null`)), 5000);
-    return { header: dialog.header, sinks: dialog.sinks?.length ?? 0, routeProfiles: Object.keys(routes ?? {}) };
+    const tab = await openTab(`${base}/a?cast-dialog`, "Page A");
+    await shownAndMounted(tab.id);
+    const runCast = () => evalApp(`ac.runCommand({ command: "cast", windowId: ${JSON.stringify(mainWindow)} }); return ac.commandHandlers.stats();`);
+    const before = await evalApp("ac.commandHandlers.setEnabled(false); return ac.commandHandlers.stats();");
+    const waitDialog = (id = tab.id) => until("the native Cast dialog", () => castDialog(id), 10000);
+    const waitClosed = (id = tab.id) => until("the native Cast dialog closed", async () => !(await castDialog(id)), 5000);
+    try {
+      const calls = await runCast();
+      if (calls.calls !== before.calls || calls.blocked !== before.blocked) throw new Error("Cast ran in the JS command handler");
+      const dialog = await waitDialog();
+      const routes = await until("the native profile watch", async () => {
+        const { routes } = await castState();
+        return Object.keys(routes ?? {}).length ? routes : null;
+      }, 5000);
+      await runCast();
+      await waitClosed();
+      await runCast();
+      const replacement = await waitDialog();
+      if (replacement.id === dialog.id || await castAction(tab.id, dialog.id, "dismiss")) throw new Error("stale Cast receipt");
+      if (!castSafe) {
+        const home = (await state()).profileId;
+        const work = await evalApp('return ac.store.getState().createProfile({ name: "Cast Work" })');
+        const switchTo = (profile) => evalApp(`ac.actions.switchProfile(${JSON.stringify(mainWindow)}, ${JSON.stringify(profile)}); return true`);
+        try {
+          await switchTo(work);
+          await waitClosed();
+        } finally {
+          await switchTo(home);
+        }
+        await shownAndMounted(tab.id);
+        if (!(await castToggle(mainWindow, tab.id))) throw new Error("Cast did not reopen after returning to the profile");
+        await waitDialog();
+      }
+      await closeTab(tab.id);
+      await waitClosed();
+      const safeMode = castSafe ? await evalApp("return ac.native.status().safeMode") : null;
+      if (castSafe && safeMode !== "option") throw new Error(`Cast safe mode is ${safeMode}`);
+      return { header: dialog.header, sinks: dialog.sinks.length, routeProfiles: Object.keys(routes), safeMode };
+    } finally {
+      await evalApp("ac.commandHandlers.setEnabled(true); return true;");
+      await closeTab(tab.id).catch(() => null);
+    }
   });
 
   await check("cast-routes", async () => {
-    const browser = await browserOf(first.id);
-    const routesNow = () => evalApp(`return Object.values(globalThis.acCast.useCast.getState().routes).flat()`);
-    const dialogNow = () => evalApp(`return globalThis.acCast.useCast.getState().dialogs["${first.id}"] ?? null`);
+    await shownAndMounted(first.id);
+    const routesNow = async () => Object.values((await castState()).routes ?? {}).flat();
+    const dialogNow = () => castDialog(first.id);
+    const castButton = () => evalApp(`return globalThis.expo.modules.SolaraToolbar.extensionToolbar(JSON.stringify({
+      windowId: ${JSON.stringify(mainWindow)}, tabId: ${JSON.stringify(first.id)}
+    })).then(JSON.parse).then((bar) => bar.buttons?.some((button) => button.id === "ext-cast") ?? false);`);
     const openDialog = async () => {
-      if (!(await evalApp(`return globalThis.expo.modules.SolaraChromeUI.showCastDialog(${browser})`))) throw new Error("showCastDialog said no");
-      return until("the test sink in the app's dialog", async () => {
+      if (!(await castToggle(mainWindow, first.id))) throw new Error("native Cast refused the page");
+      return until("the test sink in the native Cast dialog", async () => {
         const d = await dialogNow();
-        const sink = d?.sinks?.find((s) => s.name === "Solara Test Sink" && s.state === "available");
+        const sink = d?.sinks.find((s) => s.name === "Solara Test Sink" && s.state === "available");
         return sink ? { dialog: d, sink } : null;
       }, 10000).catch(async (e) => { throw new Error(`${e.message}; dialog ${JSON.stringify(await dialogNow())}`); });
     };
     const casting = async (dialogId, sink) => {
-      await evalApp(`return globalThis.expo.modules.SolaraChromeUI.startCasting(${dialogId}, ${JSON.stringify(sink.id)}, 2).then(() => true)`);
-      return until("the route in onCastRoutes", async () => (await routesNow()).find((r) => r.sink === sink.id) ?? null, 10000);
+      if (!(await castAction(first.id, dialogId, "start", sink.id))) throw new Error("Cast sink action was rejected");
+      return until("the route in the native profile watch", async () => (await routesNow()).find((r) => r.sink === sink.id) ?? null, 10000);
     };
     try {
       const { dialog, sink } = await openDialog();
       if (!(sink.modes & 2)) throw new Error(`the test sink can't cast a tab (modes ${sink.modes})`);
       const route = await casting(dialog.id, sink);
+      await until("the Cast button from native profile routes", castButton, 5000);
       const connected = await until("the sink connected in the dialog", async () => {
         const d = await dialogNow();
-        const s = d?.sinks?.find((x) => x.id === sink.id);
+        const s = d?.sinks.find((x) => x.id === sink.id);
         return s?.routeId === route.id && s.state === "connected" ? { dialog: d, sink: s } : null;
       }, 10000);
-      await evalApp(`return globalThis.expo.modules.SolaraChromeUI.stopCasting(${dialog.id}, ${JSON.stringify(route.id)}).then(() => true)`);
+      await castAction(first.id, dialog.id, "stop", sink.id);
       await until("the route gone after stopCasting", async () => !(await routesNow()).some((r) => r.id === route.id), 10000);
+      await until("the sink available again", async () => (await dialogNow())?.sinks.find((s) => s.id === sink.id)?.state === "available", 10000);
       const second = await casting(dialog.id, sink);
-      await evalApp(`return globalThis.expo.modules.SolaraChromeUI.closeCastDialog(${dialog.id}).then(() => true)`);
+      await castAction(first.id, dialog.id, "dismiss");
       await until("the dialog closed", async () => !(await dialogNow()), 5000);
       if (!(await routesNow()).some((r) => r.id === second.id)) throw new Error("closing the dialog ended the route");
-      await evalApp(`return globalThis.expo.modules.SolaraChromeUI.terminateCastRoute(${JSON.stringify(second.id)}).then(() => true)`);
+      await castAction(first.id, dialog.id, "terminate", second.id);
       await until("the route gone after terminateCastRoute", async () => !(await routesNow()).some((r) => r.id === second.id), 10000);
+      await until("the Cast button gone", async () => !(await castButton()), 5000);
       return {
         sink: { name: sink.name, modes: sink.modes },
         started: { route: route.description, source: route.source, castingStarted: connected.dialog.castingStarted, state: connected.sink.state },
@@ -2160,9 +2207,9 @@ try {
       };
     } finally {
       const d = await dialogNow().catch(() => null);
-      if (d) await evalApp(`return globalThis.expo.modules.SolaraChromeUI.closeCastDialog(${d.id}).then(() => true)`).catch(() => null);
+      if (d) await castAction(first.id, d.id, "dismiss").catch(() => null);
       for (const r of await routesNow().catch(() => []))
-        await evalApp(`return globalThis.expo.modules.SolaraChromeUI.terminateCastRoute(${JSON.stringify(r.id)}).then(() => true)`).catch(() => null);
+        await castAction(first.id, 0, "terminate", r.id).catch(() => null);
     }
   });
 

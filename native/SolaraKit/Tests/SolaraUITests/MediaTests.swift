@@ -158,7 +158,7 @@ import Testing
     let picker = CastPickerView(frame: NSRect(x: 0, y: 0, width: 340, height: 400))
     picker.onAction = { if case .height(let h) = $0 { heights.append(h) } }
     let sink = { (i: Int, active: Bool) in CastSinkState(id: "s\(i)", name: "Speaker \(i)", icon: "hifispeaker", detail: active ? "Casting" : nil, issue: false, active: active, busy: false) }
-    picker.update(CastPickerState(dialogId: "d", tabId: "t", title: "Cast tab", canScreen: false, rejected: false, rejectedText: "", sinks: [sink(0, false), sink(1, true)], theme: theme))
+    picker.update(CastPickerState(title: "Cast tab", canScreen: false, rejected: false, rejectedText: "", sinks: [sink(0, false), sink(1, true)], theme: theme))
     picker.layoutSubtreeIfNeeded()
     let f = picker.controlFrames
     #expect(f["sink0"] == CGRect(x: 6, y: 44, width: 328, height: 42))
@@ -172,7 +172,7 @@ import Testing
   @Test func castPickerCapsTheListAndShowsSources() {
     let picker = CastPickerView(frame: NSRect(x: 0, y: 0, width: 340, height: 600))
     let sinks = (0..<10).map { CastSinkState(id: "s\($0)", name: "TV \($0)", icon: "tv", detail: nil, issue: false, active: false, busy: false) }
-    picker.update(CastPickerState(dialogId: "d", tabId: "t", title: "Cast tab", canScreen: true, rejected: false, rejectedText: "", sinks: sinks, theme: theme))
+    picker.update(CastPickerState(title: "Cast tab", canScreen: true, rejected: false, rejectedText: "", sinks: sinks, theme: theme))
     picker.layoutSubtreeIfNeeded()
     let f = picker.controlFrames
     #expect(f["header"]!.height == 46)

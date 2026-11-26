@@ -90,7 +90,7 @@ try {
 
   await rep.check("(c) Chrome's cast dialog can't open for a WebKit tab", async () => {
     const id = await run(`return browserId();`);
-    const opened = await run(`return globalThis.expo.modules.SolaraChromeUI.showCastDialog(${id});`);
+    const opened = await run(`return globalThis.expo.modules.SolaraMedia.devCastToggle("w1", "t0");`);
     if (!(id < 0) || opened !== false) throw new Error(JSON.stringify({ id, opened }));
     return { browserId: id, opened };
   });

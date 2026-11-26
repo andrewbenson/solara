@@ -56,7 +56,7 @@ enum NativeExtensionCommands {
     heldStates[key] = states
     return ExtensionToolbarProjection.make(rows: NativeExtensionCatalog.visible(window), states: states,
       popup: popup, limit: input["limit"]?.int ?? Int.max,
-      routes: input["routes"]?.array?.compactMap(\.object) ?? [], webkit: store.pageEngine(tab, in: store.state) == "webkit",
+      routes: NativeCast.routes(windowID: window).map { ["sink": .string($0.sink), "description": .string($0.description)] }, webkit: store.pageEngine(tab, in: store.state) == "webkit",
       accent: input["accent"]?.string ?? "")
   }
 

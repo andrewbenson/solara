@@ -1,4 +1,5 @@
 import AppKit
+import SolaraCore
 import SolaraShell
 import ExpoModulesCore
 import SolaraUI
@@ -22,6 +23,7 @@ public class MediaModule: Module {
       DispatchQueue.main.async {
         MainActor.assumeIsolated {
           NativeMedia.register()
+          NativeCast.start()
           NativeLittleSolara.install()
           NativePaneOverlays.start()
           NativeDownloadsPanel.start()
@@ -40,6 +42,26 @@ public class MediaModule: Module {
         MainActor.assumeIsolated {
           let product = Bundle.main.productName
           CliPillIndicator.shared.set(shown: shown, product: product, command: product.lowercased())
+        }
+      }.runOnQueue(.main)
+    #endif
+
+    #if DEBUG
+      AsyncFunction("devCastState") { () -> String in
+        MainActor.assumeIsolated { SolaraCoreTestHooksAllowed() ? NativeCast.probe() : "{}" }
+      }.runOnQueue(.main)
+
+      AsyncFunction("devCastToggle") { (windowID: String, tabID: String) -> Bool in
+        MainActor.assumeIsolated { SolaraCoreTestHooksAllowed() && NativeCast.toggle(windowID: windowID, tabID: tabID) }
+      }.runOnQueue(.main)
+
+      AsyncFunction("devCastFixture") { (tabID: String, json: String) -> Bool in
+        MainActor.assumeIsolated { SolaraCoreTestHooksAllowed() && NativeCast.fixture(tabID: tabID, json: json) }
+      }.runOnQueue(.main)
+
+      AsyncFunction("devCastAction") { (windowID: String, tabID: String, dialogID: Int32, name: String, value: String) -> Bool in
+        MainActor.assumeIsolated {
+          SolaraCoreTestHooksAllowed() && NativeCast.devAction(windowID: windowID, tabID: tabID, dialogID: dialogID, name: name, value: value)
         }
       }.runOnQueue(.main)
     #endif

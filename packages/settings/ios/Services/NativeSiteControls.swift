@@ -246,6 +246,11 @@ final class NativeSiteMenu {
     case .permission(let type): pickPermission(type)
     case .shared(let action):
       guard case .press(_, let rect) = event else { return }
+      if action == "cast" {
+        dismiss()
+        NativeCast.toggle(windowID: windowId, tabID: tabId)
+        return
+      }
       if action == "pip" {
         NativeMediaStack.togglePictureInPicture(tabId: tabId, windowId: windowId, window: body.window)
         dismiss()

@@ -409,6 +409,7 @@ void solaracore_host::ApplyKeepAwakeSites(SolaraCoreProfile *profile) {
       item[@"webStoreUrl"] = fromStore ? [@"https://chromewebstore.google.com/detail/" stringByAppendingString:info[@"id"]] : NSNull.null;
       [list addObject:item];
     }
+    [NSNotificationCenter.defaultCenter postNotificationName:@"SolaraExtensionListRead" object:nil userInfo:@{@"profile" : profile ?: @""}];
     completion(@{@"extensions" : list});
   }];
 }

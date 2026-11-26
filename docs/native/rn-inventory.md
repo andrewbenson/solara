@@ -852,3 +852,8 @@ Media preferences: `media/pip.ts` no longer reads the mirror to synchronize glob
 auto-PiP/upscaling settings. NativeMediaPreferences owns this feed and the existing
 display-media picker enablement. The visible-page hook and remaining media stores
 are still JS. Row acceptance remains pending; historical totals above are unchanged.
+
+Extension search refresh: `extensions/searchEngines.ts` is deleted. Native notifications,
+debounce/reread, parsing, merging and settings writes replace its store subscription
+and mirror read. The extension catalog still supplies initial/change-driven listing;
+its JS store, popup, install and side-panel ownership remain for subsequent slices.

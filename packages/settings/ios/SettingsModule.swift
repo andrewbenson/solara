@@ -26,6 +26,7 @@ public class SettingsModule: Module {
         PairingAdapter.install()
         PictureInPictureAdapter.install()
         NativeMediaPreferences.start()
+        NativeExtensionSearchEngines.start()
         NativeSettingsWindow.install()
         NativeConfigNotifier.install()
         NativeTabPictures.install()

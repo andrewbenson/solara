@@ -29,7 +29,6 @@ import { shownPageId } from "../../store/peek";
 import { openFromPage, pageProfileId } from "../layout/openFromPage";
 import { tabForBrowser, usePages } from "../layout/pageState";
 import { refreshActionStates } from "./actions";
-import { startExtensionSearchEngines } from "./searchEngines";
 import * as state from "./state";
 import {
   activateExtension,
@@ -55,7 +54,6 @@ import { PRODUCT } from "../../lib/productName";
 
 export function startExtensionsBridge() {
   onExtensionTabsRequest(openRequestedTab);
-  startExtensionSearchEngines();
   onExtensionsChanged(({ profile }) => void refreshExtensions(profile));
   onEngineEvent("extensions.changed", ({ profile }) => void refreshExtensionsAfterChange(profile));
 

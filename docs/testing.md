@@ -634,3 +634,19 @@ Lead gates in both layouts (`SOLARA_NATIVE_WINDOW_LAYOUT` unset and `=1`):
 `pip-window-test.mjs <Debug app> <output>`, and `media-ui-test.mjs <Debug app> --prompts`,
 all under `apps/browser/scripts/`. Also check ownership loss/reacquisition and Settings
 changes with the JS settings subscription absent. No app build or driver run claimed.
+
+## Extension search refresh source slice (0.4.9 row 3)
+
+`ExtensionSearchRefreshTests` covers the existing debounce/reread schedule, profile
+merging, Chrome parsing, empty/error results, duplicate suppression and stale requests.
+Successful `SolaraCoreServices.listExtensions` results publish `SolaraExtensionListRead`.
+NativeExtensionSearchEngines listens independently of the JS extension replica, applies
+the existing 400 ms debounce and first 3 s reread, and writes through the native store.
+The JS extension catalog still initiates list requests until its later lifecycle slice.
+
+Lead: run `apps/browser/scripts/extension-search-refresh-test.mjs <Debug app> <scratch>`
+in both layouts, plus acceptance `extensions`. The new driver installs a local search
+provider, reads native snapshots, rejects JS search-settings writes, disables/enables
+and removes it, and checks that another profile's rows survive. Native ownership loss,
+store replacement and delayed engine callbacks still require host-level verification.
+No runtime verification claimed.

@@ -180,6 +180,9 @@ extension Session {
   public func restoreCommandWindow(_ appWindow: String, chromeWindow: String, live: [JSONValue]) -> String? {
     pruneClosingWindows()
     guard !chromeWindow.isEmpty else { return nil }
+    func recordedBrowser(_ tabId: String, in undo: ClosingWindowUndo) -> Int? {
+      undo.heldPages[tabId]?.page.ready?.browserId ?? undo.retiredChromiumBrowsers[tabId]
+    }
     let windowId: String
     if memory.closingWindowUndos[appWindow] != nil { windowId = appWindow }
     else {
@@ -187,7 +190,7 @@ extension Session {
       let browserIds = Set(live.compactMap { $0["browserId"]?.number }.compactMap { Int(exactly: $0) }.filter { $0 > 0 })
       let candidates = memory.closingWindowUndos.filter { id, undo in
         undo.before.windows[id]?.tabIds.contains { tabId in
-          tabIds.contains(tabId) || undo.heldPages[tabId]?.page.ready.map { browserIds.contains($0.browserId) } == true
+          tabIds.contains(tabId) || recordedBrowser(tabId, in: undo).map { browserIds.contains($0) } == true
         } == true
       }
       guard candidates.count == 1, let candidate = candidates.keys.first else { return nil }
@@ -200,7 +203,7 @@ extension Session {
       let named = request["storeTabId"]?.string.flatMap { window.tabIds.contains($0) ? $0 : nil }
       let browser = request["browserId"]?.number.flatMap { number -> String? in
         guard let browserId = Int(exactly: number), browserId > 0 else { return nil }
-        return window.tabIds.first { undo.heldPages[$0]?.page.ready?.browserId == browserId }
+        return window.tabIds.first { recordedBrowser($0, in: undo) == browserId }
       }
       let previous = Set(matched.map(\.id))
       let fallback: String? = request["url"]?.string.flatMap { url in
@@ -212,14 +215,17 @@ extension Session {
         return matches.count == 1 ? matches.first : nil
       }
       guard let id = browser ?? named ?? fallback, !previous.contains(id) else { continue }
-      matched.append((id, request["adoptId"]?.string))
+      let offer = request["adoptId"]?.string.flatMap { $0.isEmpty ? nil : $0 }
+      guard !undo.endedHeldPages.contains(id) || (browser == id && offer != nil) else { continue }
+      matched.append((id, offer))
     }
     guard !matched.isEmpty else { return nil }
     let tabs = window.tabIds.compactMap { undo.before.tabs[$0] }
     let groups = undo.before.groups.values.filter { $0.windowId == windowId }
     let splits = undo.before.splits.values.filter { $0.windowId == windowId }
     guard let restored = restoreClosingWindow(window, tabs, groups, splits, chromeWindow: chromeWindow,
-      liveTabIds: matched.map(\.id), recoveringChromeClose: true) else { return nil }
+      liveTabIds: matched.map(\.id), recoveringChromeClose: true,
+      reofferedTabIds: Set(matched.map(\.id)).intersection(undo.endedHeldPages)) else { return nil }
     for match in matched where undo.heldPages[match.id] == nil {
       guard let offer = match.offer, !offer.isEmpty, var tab = state.tabs[match.id] else { continue }
       tab.adoptId = offer

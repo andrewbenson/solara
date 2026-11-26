@@ -73,6 +73,38 @@ struct ExtensionTabsRequestTests {
     #expect(store.state.closedWindows.isEmpty)
   }
 
+  @Test(arguments: [false, true])
+  func littleWindowStayAdoptsTheSurvivingBrowserAfterItsViewDetaches(named: Bool) throws {
+    let clock = TestClock(1000)
+    let store = Store(state: BrowserState(settings: Settings.hydrated(from: nil)), clock: { clock.now })
+    let window = try #require(try store.dispatch(Command("createWindow", [
+      ["small": true, "frame": [80, 90, 900, 640], "url": "https://example.org/"]
+    ])).result?.string)
+    let original = try #require(store.state.windows[window])
+    let tab = try #require(store.state.activeTabId(window))
+    try store.dispatch(phaseAReport(tab, phaseACreated(store, tab)))
+    try store.dispatch(phaseAReport(tab, ["type": "ready", "generation": "G", "browserId": 42]))
+    var requests = ExtensionTabsRequest()
+    try store.dispatch(Command("closeWindow", [.string(window)]))
+    if named {
+      try requests.apply(["action": "windowCloseStarted", "appWindow": .string(window)], to: store)
+    }
+    try store.dispatch(phaseAReport(tab, ["type": "gone", "generation": "G"]))
+    if named { clock.advance(31_000) }
+    let wrong = try requests.apply(["action": "closeCancelled", "chromeWindow": "wrong",
+      "tabs": [["browserId": 43, "url": "https://example.org/", "profile": "", "incognito": false, "adoptId": "wrong-page"]]], to: store)
+    #expect(wrong == nil)
+    let result = try requests.apply(["action": "closeCancelled", "appWindow": .string(named ? window : ""), "chromeWindow": "recovery",
+      "tabs": [["browserId": 42, "url": "https://example.org/", "profile": "", "incognito": false, "adoptId": "surviving-page"]]], to: store)
+    let restored = try #require(result)
+    #expect(store.state.windows[restored]?.kind == original.kind)
+    #expect(store.state.windows[restored]?.frame == original.frame)
+    #expect(store.state.windows[restored]?.profileId == original.profileId)
+    #expect(store.state.activeTabId(restored) == tab)
+    #expect(store.state.tabs[tab]?.adoptId == "surviving-page")
+    #expect(store.state.closedTabs.isEmpty)
+  }
+
   @Test func committedCloseUsesTheAppWindowIdAndConsumesStaleOffers() throws {
     let store = makeStore()
     var requests = ExtensionTabsRequest()

@@ -3196,7 +3196,12 @@ NSView *ACWindowRootView(NSWindow *window) {
 }
 
 + (void)closeWindow:(NSWindow *)window {
+  [self closeWindow:window appWindow:nil];
+}
+
++ (void)closeWindow:(NSWindow *)window appWindow:(NSString *)appWindow {
   SolaraCoreWindowController *controller = [SolaraCoreWindowController forNSWindow:window];
+  if (appWindow.length) controller.appWindowId = appWindow;
   [controller beginAppClose];
   [SolaraCoreWebView keepTransfersOfWindow:window];
   if (controller) [controller.coreWindow close];

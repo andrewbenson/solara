@@ -80,8 +80,8 @@ enum ChromeWindows {
     return host.perform(NSSelectorFromString("rootViewOfWindow:"), with: window)?.takeUnretainedValue() as? NSView
   }
 
-  static func close(_ window: NSWindow) {
-    host?.perform(NSSelectorFromString("closeWindow:"), with: window)
+  static func close(_ window: NSWindow, appWindow: String) {
+    host?.perform(NSSelectorFromString("closeWindow:appWindow:"), with: window, with: appWindow)
   }
 
   static func showProfile(_ profile: String, in window: NSWindow) {

@@ -13,6 +13,7 @@ struct ClosingWindowUndo: Sendable, Equatable {
   var heldPages: [String: HeldPageSeed]
   var heldProducers: [String: PageProducerFence]
   var endedHeldPages: Set<String> = []
+  var retiredChromiumBrowsers: [String: Int] = [:]
 }
 
 func scrubPrivateClosingState(_ source: BrowserState, session: String, profiles: [String]) -> BrowserState {
@@ -178,6 +179,10 @@ extension Session {
       guard var undo = memory.closingWindowUndos[windowId],
         let producer = undo.heldProducers[id], producer.generation == generation, !producer.retired else { continue }
       if type == "gone" {
+        if let seed = undo.heldPages[id], seed.restorable, seed.tab.engine == "chromium",
+          let browserId = seed.page.ready?.browserId, browserId > 0 {
+          undo.retiredChromiumBrowsers[id] = browserId
+        }
         undo.heldPages[id] = nil
         undo.heldProducers[id] = nil
         undo.endedHeldPages.insert(id)
@@ -225,7 +230,7 @@ extension Session {
   }
 
   public func restoreClosingWindow(_ window: BrowserWindow, _ tabs: [Tab], _ groups: [TabGroup], _ splits: [SplitView], chromeWindow: String,
-    liveTabIds: [String], recoveringChromeClose: Bool = false) -> String? {
+    liveTabIds: [String], recoveringChromeClose: Bool = false, reofferedTabIds: Set<String> = []) -> String? {
     let s = state
     pruneClosingWindows()
     guard let undo = memory.closingWindowUndos[window.id],
@@ -238,7 +243,8 @@ extension Session {
     let profileId = original.incognito ? (original.originalProfileId ?? Ids.incognitoOriginal(original.profileId)) : original.profileId
     let wanted = Set(original.tabIds)
     let live = Set(liveTabIds).intersection(wanted).filter {
-      undo.before.tabs[$0]?.newTabPlaceholder != true && !undo.endedHeldPages.contains($0) && undo.heldPages[$0]?.restorable != false
+      undo.before.tabs[$0]?.newTabPlaceholder != true && (!undo.endedHeldPages.contains($0) || reofferedTabIds.contains($0))
+        && undo.heldPages[$0]?.restorable != false
     }
     guard !live.isEmpty else { return nil }
     let wantedGroups = Set(groups.map(\.id))

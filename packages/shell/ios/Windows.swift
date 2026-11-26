@@ -743,7 +743,7 @@ final class WindowManager: NSObject, NSWindowDelegate {
       fullScreenIds.remove(id)
       auxKinds[id] = nil
       smallIds.remove(id)
-      ChromeWindows.close(window)
+      ChromeWindows.close(window, appWindow: id)
       DispatchQueue.main.async { ChromeWindows.removeRoot(of: window) }
       return
     }

@@ -26,6 +26,7 @@ NS_ASSUME_NONNULL_BEGIN
 + (void)moveTrafficLightsCenter:(nullable NSValue *)center inWindow:(NSWindow *)window;
 
 + (void)closeWindow:(NSWindow *)window;
++ (void)closeWindow:(NSWindow *)window appWindow:(nullable NSString *)appWindow;
 
 + (void)showProfile:(NSString *)profile inWindow:(NSWindow *)window;
 + (void)prepareProfiles:(NSArray<NSString *> *)profiles forWindow:(NSWindow *)window;

@@ -58,7 +58,7 @@ import Testing
     for _ in 0..<9 { _ = view.control(field, textView: editor, doCommandBy: #selector(NSResponder.moveDown(_:))) }
     #expect(view.selectedIndex == 4)
     _ = view.control(field, textView: editor, doCommandBy: #selector(NSResponder.insertNewline(_:)))
-    #expect(events == [.close, .choose(kind: "tab", id: "docs")])
+    #expect(events == [.choose(kind: "tab", id: "docs")])
     view.open(Self.state())
     #expect(view.selectedIndex == 0 && view.query.isEmpty)
     events = []

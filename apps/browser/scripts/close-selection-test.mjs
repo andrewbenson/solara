@@ -14,7 +14,8 @@ if (!appArg) {
 ⌘W with several tabs selected in the sidebar, through a real key press on the window: the File menu's item reads
 "Close 3 Tabs", the press closes all 3 selected tabs (not just the active one) and clears the selection, and one
 ⇧⌘T brings all 3 back in their places. Then, with a New Tab among the selection so the close would take the window,
-⌘W asks once (SolaraShell.confirm, stubbed to count calls and answer Cancel) and cancelling closes nothing. The sidebar is native.`);
+⌘W asks once in the real close sheet on the window (read through the Debug window info and answered with Escape),
+and cancelling closes nothing and asks nothing more. The sidebar is native.`);
   process.exit(2);
 }
 const keep = args.includes("--keep-data");
@@ -62,6 +63,19 @@ const untilSnapshot = async (what, accept, ms = 5000) => {
     await sleep(100);
   }
   throw new Error(`${what}: native snapshot never matched (${JSON.stringify(last)})`);
+};
+const SHEET = `const C = globalThis.expo.modules.SolaraCEF; const act = (a) => C.chromeWindows().then((ws) => C.devWindow(ws.find((w) => w.hasRoot).window, a));`;
+const sheet = async () => JSON.parse(await run(`${SHEET} return act("winfo");`));
+const sheetKey = (info, chars, code) => run(`${SHEET} return C.devWindow(${info.sheetWindow}, "keys:0:${chars}:${code}");`);
+const untilSheet = async (what, want, ms = 6000) => {
+  const end = Date.now() + ms;
+  let last;
+  while (Date.now() < end) {
+    last = await sheet();
+    if (want(last)) return last;
+    await sleep(100);
+  }
+  throw new Error(`${what}: never true (last ${JSON.stringify(last)})`);
 };
 const until = async (what, body, ms = 8000) => {
   const end = Date.now() + ms;
@@ -136,19 +150,27 @@ try {
     await rep.check(`${tag}-closing-the-window-asks-once`, async () => {
       await run(`const s = ac.store.getState(); s.updateSettings({ warnBeforeClosingLastTab: true }); s.newTab("w1"); return true;`);
       const ids = await until("a New Tab", `const s = ac.store.getState(), w = s.windows.w1; return w.tabIds.length === 6 ? w.tabIds : null;`);
-      await run(`const M = globalThis.expo.modules.SolaraShell; globalThis.__asked = []; M.confirm = (o) => { globalThis.__asked.push(o.title ?? ""); return Promise.resolve({ confirmed: false, suppressed: false }); }; ac.store.getState().setSelection("w1", ${JSON.stringify(ids)}); return true;`);
+      if (await run(`${SHEET} return act("alertSheets:1");`) !== "1") throw new Error("this build has no real-sheet switch");
+      await run(`ac.store.getState().setSelection("w1", ${JSON.stringify(ids)}); return true;`);
       await sleep(300);
+      if ((await sheet()).sheet) throw new Error("a sheet before ⌘W");
       await press(K("w", 13));
+      const info = await untilSheet("the close sheet", (i) => i.sheet);
+      const text = info.sheetText.join(" | ");
+      if (!info.sheetText.includes("Close 6 tabs?")) throw new Error(`sheet reads ${text}`);
+      await sleep(500);
+      if ((await sheet()).sheetWindow !== info.sheetWindow) throw new Error("a second sheet replaced the first");
+      await sheetKey(info, "\\u001b", 53);
+      await untilSheet("the sheet gone", (i) => !i.sheet);
       await sleep(800);
-      const asked = await run(`return globalThis.__asked;`);
-      if (asked.length !== 1) throw new Error(`asked ${asked.length} times: ${JSON.stringify(asked)}`);
+      if ((await sheet()).sheet) throw new Error("asked again after Cancel");
       let left = await run(`return ac.store.getState().windows.w1?.tabIds.length ?? 0;`);
       if (left !== 6) throw new Error(`cancel left ${left} tabs`);
       await untilSnapshot("native cancel keeps every tab", async (state) => {
         left = await run(`return ac.store.getState().windows.w1?.tabIds.length ?? 0;`);
         return isDeepStrictEqual(state.windows[0]?.tabIds, ids) && state.tabs.length === left;
       });
-      return asked[0];
+      return text;
     });
     await app.quit();
     app = null;

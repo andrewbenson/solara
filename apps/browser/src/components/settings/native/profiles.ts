@@ -6,7 +6,7 @@ import { useBrowser, type BrowserState } from "../../../store/browser";
 import { refuseSafeHistoryDeletion } from "../../../store/safeLibraryEdits";
 import type { Profile, ProfileColor, ProfileTheme } from "../../../store/types";
 import { adoptProfileTheme } from "../../../sync/engine";
-import { parseArcTheme } from "../../import/arcTheme";
+import { parseArcTheme } from "../../../lib/arcTheme";
 import { importModule } from "../../import/module";
 
 type ProfilePatch = Partial<Pick<Profile, "name" | "color" | "icon" | "theme">>;

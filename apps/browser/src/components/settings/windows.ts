@@ -29,16 +29,7 @@ export function openSettings(pane?: SettingsPane, profileId?: string | null, det
   void openWindow(SETTINGS_WINDOW_ID, { kind: "settings", title: "Settings" });
 }
 
-let preferredImportSource: string | null = null;
-
-export function takePreferredImportSource() {
-  const id = preferredImportSource;
-  preferredImportSource = null;
-  return id;
-}
-
 export function openImport(browserId?: string) {
-  preferredImportSource = browserId ?? null;
-  setNativePreferredImportSource(preferredImportSource);
+  setNativePreferredImportSource(browserId ?? null);
   void openWindow(IMPORT_WINDOW_ID, { kind: "import", title: "Import from Another Browser" });
 }

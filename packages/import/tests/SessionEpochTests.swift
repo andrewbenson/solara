@@ -102,8 +102,7 @@ final class SessionEpochTests: XCTestCase {
 
   func testUnlockBlockedInTheKeychainWhenTheSessionEndsStaysLocked() {
     let session = makeSession()
-    let owner = session.claim()
-    let started = session.begin(owner: owner)!
+    let started = session.epoch.current
     let entered = DispatchSemaphore(value: 0)
     let release = DispatchSemaphore(value: 0)
     let done = DispatchSemaphore(value: 0)
@@ -116,57 +115,14 @@ final class SessionEpochTests: XCTestCase {
       done.signal()
     }
     XCTAssertEqual(entered.wait(timeout: .now() + deadline), .success)
-    session.forget(owner: owner)
+    session.forget()
     release.signal()
     XCTAssertEqual(done.wait(timeout: .now() + deadline), .success)
     XCTAssertFalse(session.importer.isUnlocked("chrome"))
   }
 
-  func testWorkQueuedBehindABlockerBeforeAForgetLandsNothing() throws {
-    for browserId in ["chrome", "firefox"] {
-      let session = makeSession()
-      let owner = session.claim()
-      let functions = DispatchQueue(label: "expo.modules.AsyncFunctionQueue.standin")
-      let work = DispatchQueue(label: "work.standin", attributes: .concurrent)
-      let blocker = DispatchSemaphore(value: 0)
-      let finished = DispatchGroup()
-      var outcomes: [String] = []
-      let outcomesLock = NSLock()
-      func record(_ s: String) { outcomesLock.withLock { outcomes.append(s) } }
-
-      functions.async { _ = blocker.wait(timeout: .now() + 10) }
-      finished.enter()
-      functions.async {
-        guard let job = session.start("job", owner: owner) else { record("rejected"); finished.leave(); return }
-        work.async {
-          defer { session.jobs.finish("job", job.cancellation); finished.leave() }
-          let token = session.keep(cookies: [self.cookie], addresses: [], cards: [], started: job.started)
-          record(session.isCurrent(job.started) ? "resolved \(token != nil)" : "cancelled")
-        }
-      }
-      finished.enter()
-      functions.async {
-        guard let started = session.begin(owner: owner) else { record("rejected"); finished.leave(); return }
-        work.async {
-          try? session.importer.unlock(browserId: browserId, primaryPassword: "pw", session: (session.epoch, started),
-                                       secret: { _, _ in Fixtures.chromiumSecret })
-          record(session.isCurrent(started) ? "unlocked" : "cancelled")
-          finished.leave()
-        }
-      }
-      functions.async { session.forget(owner: owner) }
-      blocker.signal()
-      XCTAssertEqual(finished.wait(timeout: .now() + deadline), .success)
-      functions.sync {}
-      XCTAssertFalse(outcomes.contains { $0.hasPrefix("resolved") || $0 == "unlocked" }, "\(browserId): \(outcomes)")
-      XCTAssertFalse(session.importer.isUnlocked(browserId), browserId)
-      XCTAssertEqual(session.vault.count, 0, browserId)
-    }
-  }
-
   func testSwiftUnlockWithNoForgetUnlocksAndReportsTrue() async {
     let session = makeSession()
-    _ = session.claim()
     let work = DispatchQueue(label: "work.standin", attributes: .concurrent)
     let unlocked = await session.unlock("chrome", on: work, secret: { _, _ in Fixtures.chromiumSecret })
     XCTAssertTrue(unlocked)
@@ -175,13 +131,12 @@ final class SessionEpochTests: XCTestCase {
 
   func testSwiftUnlockReportsFalseWhenAForgetLandsDuringItsWork() async {
     let session = makeSession()
-    let owner = session.claim()
     let work = DispatchQueue(label: "work.standin", attributes: .concurrent)
     let entered = DispatchSemaphore(value: 0)
     let release = DispatchSemaphore(value: 0)
     let forgotten = Task.detached {
       XCTAssertEqual(entered.wait(timeout: .now() + 10), .success)
-      session.forget(owner: owner)
+      session.forget()
       release.signal()
     }
     let unlocked = await session.unlock("chrome", on: work, secret: { _, _ in
@@ -194,67 +149,15 @@ final class SessionEpochTests: XCTestCase {
     XCTAssertFalse(session.importer.isUnlocked("chrome"))
   }
 
-  func testSwiftUnlockLosesToAJSForgetAlreadyQueued() async {
-    let session = makeSession()
-    let owner = session.claim()
-    let functions = DispatchQueue(label: "expo.modules.AsyncFunctionQueue.standin")
-    let work = DispatchQueue(label: "work.standin", attributes: .concurrent)
-    let blocker = DispatchSemaphore(value: 0)
-    let forgot = DispatchSemaphore(value: 0)
-    functions.async { _ = blocker.wait(timeout: .now() + 10) }
-    functions.async {
-      session.forget(owner: owner)
-      forgot.signal()
-    }
-    let unlocked = await session.unlock("chrome", on: work, secret: { _, _ in Fixtures.chromiumSecret })
-    XCTAssertTrue(unlocked)
-    XCTAssertTrue(session.importer.isUnlocked("chrome"))
-    blocker.signal()
-    XCTAssertEqual(forgot.wait(timeout: .now() + deadline), .success)
-    XCTAssertFalse(session.importer.isUnlocked("chrome"))
-  }
-
-  func testOldOwnersLateBodyAfterANewCreateIsRejected() throws {
-    let session = makeSession()
-    let old = session.claim()
-    let new = session.claim()
-    XCTAssertNil(session.begin(owner: old))
-    XCTAssertNil(session.start("job", owner: old))
-    let started = try XCTUnwrap(session.begin(owner: new))
-    try session.importer.unlock(browserId: "chrome", session: (session.epoch, started), secret: { _, _ in Fixtures.chromiumSecret })
-    XCTAssertNotNil(session.keep(cookies: [cookie], addresses: [], cards: [], started: started))
-
-    session.forget(owner: old)
-    XCTAssertTrue(session.isCurrent(started))
-    XCTAssertTrue(session.importer.isUnlocked("chrome"))
-    XCTAssertEqual(session.vault.count, 1)
-
-    session.forget(owner: new)
-    XCTAssertFalse(session.importer.isUnlocked("chrome"))
-    XCTAssertEqual(session.vault.count, 0)
-  }
-
-  func testOldBodyThatBeganBeforeANewCreateDropsItsWork() throws {
-    let session = makeSession()
-    let old = session.claim()
-    let started = try XCTUnwrap(session.begin(owner: old))
-    _ = session.claim()
-    try session.importer.unlock(browserId: "chrome", session: (session.epoch, started), secret: { _, _ in Fixtures.chromiumSecret })
-    XCTAssertNil(session.keep(cookies: [cookie], addresses: [], cards: [], started: started))
-    XCTAssertFalse(session.importer.isUnlocked("chrome"))
-    XCTAssertFalse(session.isCurrent(started))
-  }
-
   func testALateClearSparesTheNewEpochsWork() throws {
     let session = makeSession()
-    let owner = session.claim()
-    let old = try XCTUnwrap(session.begin(owner: owner))
-    let oldJob = try XCTUnwrap(session.start("old", owner: owner))
+    let old = session.epoch.current
+    let oldJob = (started: session.epoch.current, cancellation: session.jobs.start("old", epoch: session.epoch.current))
     try session.importer.unlock(browserId: "firefox", primaryPassword: "pw", session: (session.epoch, old))
     XCTAssertNotNil(session.keep(cookies: [cookie], addresses: [], cards: [], started: old))
 
     let next = session.epoch.advance()
-    let newJob = try XCTUnwrap(session.start("new", owner: owner))
+    let newJob = (started: session.epoch.current, cancellation: session.jobs.start("new", epoch: session.epoch.current))
     try session.importer.unlock(browserId: "chrome", session: (session.epoch, next), secret: { _, _ in Fixtures.chromiumSecret })
     XCTAssertNotNil(session.keep(cookies: [cookie], addresses: [], cards: [], started: next))
     session.clear(before: next)
@@ -268,38 +171,24 @@ final class SessionEpochTests: XCTestCase {
 
   func testForgetCancelsAStartedJobAndTheNextStartRuns() throws {
     let session = makeSession()
-    let owner = session.claim()
-    let job = try XCTUnwrap(session.start("job", owner: owner))
+    let job = (started: session.epoch.current, cancellation: session.jobs.start("job", epoch: session.epoch.current))
     XCTAssertFalse(job.cancellation.isCancelled)
-    session.forget(owner: owner)
+    session.forget()
     XCTAssertTrue(job.cancellation.isCancelled)
-    let again = try XCTUnwrap(session.start("job", owner: owner))
+    let again = (started: session.epoch.current, cancellation: session.jobs.start("job", epoch: session.epoch.current))
     XCTAssertFalse(again.cancellation.isCancelled)
-  }
-
-  func testStartRechecksTheEpochAfterRegisteringItsJob() throws {
-    let session = makeSession()
-    let owner = session.claim()
-    session.afterJobStart.set { session.forget(owner: owner) }
-    XCTAssertNil(session.start("job", owner: owner))
-    XCTAssertEqual(session.jobs.count, 0)
-    session.afterJobStart.set(nil)
-    let job = try XCTUnwrap(session.start("job", owner: owner))
-    XCTAssertFalse(job.cancellation.isCancelled)
-    XCTAssertEqual(session.jobs.count, 1)
   }
 
   func testSessionForgetClearsEverythingAndDropsLateWork() throws {
     let session = makeSession()
-    let owner = session.claim()
-    let started = try XCTUnwrap(session.begin(owner: owner))
+    let started = session.epoch.current
     let unlockSession = (epoch: session.epoch, started: started)
     try session.importer.unlock(browserId: "chrome", session: unlockSession, secret: { _, _ in Fixtures.chromiumSecret })
     try session.importer.unlock(browserId: "firefox", primaryPassword: "pw", session: unlockSession)
-    let job = try XCTUnwrap(session.start("job", owner: owner))
+    let job = (started: session.epoch.current, cancellation: session.jobs.start("job", epoch: session.epoch.current))
     XCTAssertNotNil(session.keep(cookies: [cookie], addresses: [], cards: [], started: started))
 
-    session.forget(owner: owner)
+    session.forget()
 
     XCTAssertTrue(job.cancellation.isCancelled)
     XCTAssertFalse(session.importer.isUnlocked("chrome"))

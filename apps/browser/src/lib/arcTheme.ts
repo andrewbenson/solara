@@ -1,5 +1,5 @@
-import { padPosition, sanitizeTheme, THEME_TEXTURES } from "../../lib/profileTheme";
-import type { ProfileTheme, ThemeColor, ThemeLook, ThemeMode, ThemeTexture } from "../../store/types";
+import { padPosition, sanitizeTheme, THEME_TEXTURES } from "./profileTheme";
+import type { ProfileTheme, ThemeColor, ThemeLook, ThemeMode, ThemeTexture } from "../store/types";
 
 type Json = Record<string, unknown>;
 

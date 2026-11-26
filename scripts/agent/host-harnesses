@@ -45,7 +45,6 @@ HARNESSES = {
     'sheet-host': 'host',
     'bookmark-owner': 'host',
     'bookmark-launch': 'host',
-    'import-adopt': 'scratch',
     'pairing-authentication': 'scratch',
     'pairing-host': 'products',
     'pairing-joining': 'scratch',

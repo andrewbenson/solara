@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { test } from "node:test";
 
@@ -40,7 +40,7 @@ test("moduleEvents reads module-level events and skips a view's", () => {
 });
 
 test("no two Expo modules declare the same module-level event", () => {
-  const files = execFileSync("git", ["ls-files", "*.swift"], { cwd: root, encoding: "utf8" }).split("\n").filter(Boolean);
+  const files = execFileSync("git", ["ls-files", "--cached", "--others", "--exclude-standard", "--deduplicate", "-z", "--", "*.swift"], { cwd: root, encoding: "utf8" }).split("\0").filter((file) => file && existsSync(join(root, file)));
   const owners = new Map();
   for (const file of files) {
     for (const { module, event } of moduleEvents(readFileSync(join(root, file), "utf8"))) {

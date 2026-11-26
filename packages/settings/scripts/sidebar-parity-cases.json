@@ -8,7 +8,6 @@
   "cases": [
     {
       "name": "Arc-selected",
-      "oracle": "strict",
       "source": {
         "browser": "arc",
         "spaces": [
@@ -166,108 +165,11 @@
               []
             ]
           }
-        },
-        "script": {
-          "outcome": {
-            "cancelled": false,
-            "status": {
-              "tabs": "done",
-              "spaces": "done",
-              "pinnedTabs": "done"
-            },
-            "counts": {
-              "bookmarks": 0,
-              "history": 0,
-              "tabs": 2,
-              "passwords": 0,
-              "cookies": 0,
-              "addresses": 0,
-              "cards": 0
-            },
-            "failures": [],
-            "notes": [],
-            "extensionsProfile": "default",
-            "extensions": []
-          },
-          "state": {
-            "profiles": [
-              {
-                "name": "Target",
-                "color": "blue",
-                "icon": null,
-                "dataClass": 0,
-                "theme": null,
-                "fileTheme": null
-              }
-            ],
-            "tabs": [
-              {
-                "profile": "p0",
-                "url": "https://calendar.example/",
-                "title": "Calendar",
-                "customTitle": "Row label",
-                "pinned": true,
-                "row": true,
-                "pinnedUrl": "https://calendar.example/",
-                "unloaded": true,
-                "navigation": null,
-                "groups": []
-              },
-              {
-                "profile": "p0",
-                "url": "https://today.example/",
-                "title": "Today",
-                "customTitle": "Open label",
-                "pinned": false,
-                "row": false,
-                "pinnedUrl": null,
-                "unloaded": true,
-                "navigation": null,
-                "groups": [
-                  "Imported"
-                ]
-              }
-            ],
-            "groups": [
-              {
-                "profile": "p0",
-                "path": "Imported",
-                "pinned": false,
-                "members": [
-                  "https://today.example/"
-                ]
-              }
-            ],
-            "windows": [
-              {
-                "incognito": false,
-                "isSmall": false
-              }
-            ],
-            "bookmarks": [
-              []
-            ],
-            "history": [
-              []
-            ],
-            "cachePages": [
-              []
-            ],
-            "nativeIconPages": [
-              []
-            ],
-            "live": [],
-            "adoption": false,
-            "parked": [
-              []
-            ]
-          }
         }
       }
     },
     {
       "name": "Arc-theme-success",
-      "oracle": "strict",
       "source": {
         "browser": "arc",
         "spaces": [
@@ -710,136 +612,11 @@
               []
             ]
           }
-        },
-        "script": {
-          "outcome": {
-            "cancelled": false,
-            "status": {
-              "tabs": "done",
-              "spaces": "done",
-              "pinnedTabs": "done"
-            },
-            "counts": {
-              "bookmarks": 0,
-              "history": 0,
-              "tabs": 2,
-              "passwords": 0,
-              "cookies": 0,
-              "addresses": 0,
-              "cards": 0
-            },
-            "failures": [],
-            "notes": [],
-            "extensionsProfile": "default",
-            "extensions": []
-          },
-          "state": {
-            "profiles": [
-              {
-                "name": "Target",
-                "color": "blue",
-                "icon": null,
-                "dataClass": 0,
-                "theme": {
-                  "stops": [
-                    {
-                      "color": {
-                        "r": 0.23537377450980398,
-                        "g": 0.7010600490196077,
-                        "b": 0.3885600490196079,
-                        "a": 1
-                      },
-                      "x": 0.31026006967667397,
-                      "y": 0.6607015235543412
-                    },
-                    {
-                      "color": {
-                        "r": 0.7562071078431373,
-                        "g": 0.020912990196078528,
-                        "b": 0.48659926470588233,
-                        "a": 1
-                      },
-                      "x": 0.8727993094192305,
-                      "y": 0.20873725797912507
-                    }
-                  ],
-                  "intensity": 0.8,
-                  "grain": 0.45,
-                  "texture": "grain",
-                  "translucency": 1,
-                  "mode": "light"
-                },
-                "fileTheme": null
-              }
-            ],
-            "tabs": [
-              {
-                "profile": "p0",
-                "url": "https://calendar.example/",
-                "title": "Calendar",
-                "customTitle": "Row label",
-                "pinned": true,
-                "row": true,
-                "pinnedUrl": "https://calendar.example/",
-                "unloaded": true,
-                "navigation": null,
-                "groups": []
-              },
-              {
-                "profile": "p0",
-                "url": "https://today.example/",
-                "title": "Today",
-                "customTitle": "Open label",
-                "pinned": false,
-                "row": false,
-                "pinnedUrl": null,
-                "unloaded": true,
-                "navigation": null,
-                "groups": [
-                  "Imported"
-                ]
-              }
-            ],
-            "groups": [
-              {
-                "profile": "p0",
-                "path": "Imported",
-                "pinned": false,
-                "members": [
-                  "https://today.example/"
-                ]
-              }
-            ],
-            "windows": [
-              {
-                "incognito": false,
-                "isSmall": false
-              }
-            ],
-            "bookmarks": [
-              []
-            ],
-            "history": [
-              []
-            ],
-            "cachePages": [
-              []
-            ],
-            "nativeIconPages": [
-              []
-            ],
-            "live": [],
-            "adoption": false,
-            "parked": [
-              []
-            ]
-          }
         }
       }
     },
     {
       "name": "Arc-empty-filter",
-      "oracle": "strict",
       "source": {
         "browser": "arc",
         "spaces": [
@@ -959,72 +736,11 @@
               []
             ]
           }
-        },
-        "script": {
-          "outcome": {
-            "cancelled": false,
-            "status": {
-              "tabs": "done",
-              "spaces": "done",
-              "pinnedTabs": "done"
-            },
-            "counts": {
-              "bookmarks": 0,
-              "history": 0,
-              "tabs": 0,
-              "passwords": 0,
-              "cookies": 0,
-              "addresses": 0,
-              "cards": 0
-            },
-            "failures": [],
-            "notes": [],
-            "extensionsProfile": "default",
-            "extensions": []
-          },
-          "state": {
-            "profiles": [
-              {
-                "name": "Target",
-                "color": "blue",
-                "icon": null,
-                "dataClass": 0,
-                "theme": null,
-                "fileTheme": null
-              }
-            ],
-            "tabs": [],
-            "groups": [],
-            "windows": [
-              {
-                "incognito": false,
-                "isSmall": false
-              }
-            ],
-            "bookmarks": [
-              []
-            ],
-            "history": [
-              []
-            ],
-            "cachePages": [
-              []
-            ],
-            "nativeIconPages": [
-              []
-            ],
-            "live": [],
-            "adoption": false,
-            "parked": [
-              []
-            ]
-          }
         }
       }
     },
     {
       "name": "Arc-unknown-filter",
-      "oracle": "strict",
       "source": {
         "browser": "arc",
         "spaces": [
@@ -1146,72 +862,11 @@
               []
             ]
           }
-        },
-        "script": {
-          "outcome": {
-            "cancelled": false,
-            "status": {
-              "tabs": "done",
-              "spaces": "done",
-              "pinnedTabs": "done"
-            },
-            "counts": {
-              "bookmarks": 0,
-              "history": 0,
-              "tabs": 0,
-              "passwords": 0,
-              "cookies": 0,
-              "addresses": 0,
-              "cards": 0
-            },
-            "failures": [],
-            "notes": [],
-            "extensionsProfile": "default",
-            "extensions": []
-          },
-          "state": {
-            "profiles": [
-              {
-                "name": "Target",
-                "color": "blue",
-                "icon": null,
-                "dataClass": 0,
-                "theme": null,
-                "fileTheme": null
-              }
-            ],
-            "tabs": [],
-            "groups": [],
-            "windows": [
-              {
-                "incognito": false,
-                "isSmall": false
-              }
-            ],
-            "bookmarks": [
-              []
-            ],
-            "history": [
-              []
-            ],
-            "cachePages": [
-              []
-            ],
-            "nativeIconPages": [
-              []
-            ],
-            "live": [],
-            "adoption": false,
-            "parked": [
-              []
-            ]
-          }
         }
       }
     },
     {
       "name": "Arc-favorites-empty-filter",
-      "oracle": "strict",
       "source": {
         "browser": "arc",
         "spaces": [
@@ -1347,83 +1002,11 @@
               []
             ]
           }
-        },
-        "script": {
-          "outcome": {
-            "cancelled": false,
-            "status": {
-              "favorites": "done"
-            },
-            "counts": {
-              "bookmarks": 0,
-              "history": 0,
-              "tabs": 1,
-              "passwords": 0,
-              "cookies": 0,
-              "addresses": 0,
-              "cards": 0
-            },
-            "failures": [],
-            "notes": [],
-            "extensionsProfile": "default",
-            "extensions": []
-          },
-          "state": {
-            "profiles": [
-              {
-                "name": "Target",
-                "color": "blue",
-                "icon": null,
-                "dataClass": 0,
-                "theme": null,
-                "fileTheme": null
-              }
-            ],
-            "tabs": [
-              {
-                "profile": "p0",
-                "url": "https://mail.example.com/",
-                "title": "Mail",
-                "customTitle": null,
-                "pinned": true,
-                "row": false,
-                "pinnedUrl": "https://mail.example.com/",
-                "unloaded": true,
-                "navigation": null,
-                "groups": []
-              }
-            ],
-            "groups": [],
-            "windows": [
-              {
-                "incognito": false,
-                "isSmall": false
-              }
-            ],
-            "bookmarks": [
-              []
-            ],
-            "history": [
-              []
-            ],
-            "cachePages": [
-              []
-            ],
-            "nativeIconPages": [
-              []
-            ],
-            "live": [],
-            "adoption": false,
-            "parked": [
-              []
-            ]
-          }
         }
       }
     },
     {
       "name": "Arc-repeat",
-      "oracle": "strict",
       "source": {
         "browser": "arc",
         "spaces": [
@@ -1602,130 +1185,12 @@
             "extensionsProfile": "default",
             "extensions": []
           }
-        },
-        "script": {
-          "outcome": {
-            "cancelled": false,
-            "status": {
-              "tabs": "done",
-              "spaces": "done",
-              "pinnedTabs": "done"
-            },
-            "counts": {
-              "bookmarks": 0,
-              "history": 0,
-              "tabs": 2,
-              "passwords": 0,
-              "cookies": 0,
-              "addresses": 0,
-              "cards": 0
-            },
-            "failures": [],
-            "notes": [],
-            "extensionsProfile": "default",
-            "extensions": []
-          },
-          "state": {
-            "profiles": [
-              {
-                "name": "Target",
-                "color": "blue",
-                "icon": null,
-                "dataClass": 0,
-                "theme": null,
-                "fileTheme": null
-              }
-            ],
-            "tabs": [
-              {
-                "profile": "p0",
-                "url": "https://calendar.example/",
-                "title": "Calendar",
-                "customTitle": "Row label",
-                "pinned": true,
-                "row": true,
-                "pinnedUrl": "https://calendar.example/",
-                "unloaded": true,
-                "navigation": null,
-                "groups": []
-              },
-              {
-                "profile": "p0",
-                "url": "https://today.example/",
-                "title": "Today",
-                "customTitle": "Open label",
-                "pinned": false,
-                "row": false,
-                "pinnedUrl": null,
-                "unloaded": true,
-                "navigation": null,
-                "groups": [
-                  "Imported"
-                ]
-              }
-            ],
-            "groups": [
-              {
-                "profile": "p0",
-                "path": "Imported",
-                "pinned": false,
-                "members": [
-                  "https://today.example/"
-                ]
-              }
-            ],
-            "windows": [
-              {
-                "incognito": false,
-                "isSmall": false
-              }
-            ],
-            "bookmarks": [
-              []
-            ],
-            "history": [
-              []
-            ],
-            "cachePages": [
-              []
-            ],
-            "nativeIconPages": [
-              []
-            ],
-            "live": [],
-            "adoption": false,
-            "parked": [
-              []
-            ]
-          },
-          "repeat": {
-            "cancelled": false,
-            "status": {
-              "tabs": "done",
-              "spaces": "done",
-              "pinnedTabs": "done"
-            },
-            "counts": {
-              "bookmarks": 0,
-              "history": 0,
-              "tabs": 0,
-              "passwords": 0,
-              "cookies": 0,
-              "addresses": 0,
-              "cards": 0
-            },
-            "failures": [],
-            "notes": [],
-            "extensionsProfile": "default",
-            "extensions": []
-          }
         }
       },
       "repeat": true
     },
     {
       "name": "Arc-tabs-implicit-kinds",
-      "oracle": "strict",
       "source": {
         "browser": "arc",
         "spaces": [
@@ -1881,108 +1346,11 @@
               []
             ]
           }
-        },
-        "script": {
-          "outcome": {
-            "cancelled": false,
-            "status": {
-              "tabs": "done",
-              "spaces": "done",
-              "pinnedTabs": "done"
-            },
-            "counts": {
-              "bookmarks": 0,
-              "history": 0,
-              "tabs": 2,
-              "passwords": 0,
-              "cookies": 0,
-              "addresses": 0,
-              "cards": 0
-            },
-            "failures": [],
-            "notes": [],
-            "extensionsProfile": "default",
-            "extensions": []
-          },
-          "state": {
-            "profiles": [
-              {
-                "name": "Target",
-                "color": "blue",
-                "icon": null,
-                "dataClass": 0,
-                "theme": null,
-                "fileTheme": null
-              }
-            ],
-            "tabs": [
-              {
-                "profile": "p0",
-                "url": "https://calendar.example/",
-                "title": "Calendar",
-                "customTitle": "Row label",
-                "pinned": true,
-                "row": true,
-                "pinnedUrl": "https://calendar.example/",
-                "unloaded": true,
-                "navigation": null,
-                "groups": []
-              },
-              {
-                "profile": "p0",
-                "url": "https://today.example/",
-                "title": "Today",
-                "customTitle": "Open label",
-                "pinned": false,
-                "row": false,
-                "pinnedUrl": null,
-                "unloaded": true,
-                "navigation": null,
-                "groups": [
-                  "Imported"
-                ]
-              }
-            ],
-            "groups": [
-              {
-                "profile": "p0",
-                "path": "Imported",
-                "pinned": false,
-                "members": [
-                  "https://today.example/"
-                ]
-              }
-            ],
-            "windows": [
-              {
-                "incognito": false,
-                "isSmall": false
-              }
-            ],
-            "bookmarks": [
-              []
-            ],
-            "history": [
-              []
-            ],
-            "cachePages": [
-              []
-            ],
-            "nativeIconPages": [
-              []
-            ],
-            "live": [],
-            "adoption": false,
-            "parked": [
-              []
-            ]
-          }
         }
       }
     },
     {
       "name": "Zen-tabs-implicit-kinds",
-      "oracle": "strict",
       "source": {
         "browser": "zen",
         "spaces": [
@@ -2138,108 +1506,11 @@
               []
             ]
           }
-        },
-        "script": {
-          "outcome": {
-            "cancelled": false,
-            "status": {
-              "tabs": "done",
-              "spaces": "done",
-              "pinnedTabs": "done"
-            },
-            "counts": {
-              "bookmarks": 0,
-              "history": 0,
-              "tabs": 2,
-              "passwords": 0,
-              "cookies": 0,
-              "addresses": 0,
-              "cards": 0
-            },
-            "failures": [],
-            "notes": [],
-            "extensionsProfile": "default",
-            "extensions": []
-          },
-          "state": {
-            "profiles": [
-              {
-                "name": "Target",
-                "color": "blue",
-                "icon": null,
-                "dataClass": 0,
-                "theme": null,
-                "fileTheme": null
-              }
-            ],
-            "tabs": [
-              {
-                "profile": "p0",
-                "url": "https://calendar.example/",
-                "title": "Calendar",
-                "customTitle": "Row label",
-                "pinned": true,
-                "row": true,
-                "pinnedUrl": "https://calendar.example/",
-                "unloaded": true,
-                "navigation": null,
-                "groups": []
-              },
-              {
-                "profile": "p0",
-                "url": "https://today.example/",
-                "title": "Today",
-                "customTitle": "Open label",
-                "pinned": false,
-                "row": false,
-                "pinnedUrl": null,
-                "unloaded": true,
-                "navigation": null,
-                "groups": [
-                  "Imported"
-                ]
-              }
-            ],
-            "groups": [
-              {
-                "profile": "p0",
-                "path": "Imported",
-                "pinned": false,
-                "members": [
-                  "https://today.example/"
-                ]
-              }
-            ],
-            "windows": [
-              {
-                "incognito": false,
-                "isSmall": false
-              }
-            ],
-            "bookmarks": [
-              []
-            ],
-            "history": [
-              []
-            ],
-            "cachePages": [
-              []
-            ],
-            "nativeIconPages": [
-              []
-            ],
-            "live": [],
-            "adoption": false,
-            "parked": [
-              []
-            ]
-          }
         }
       }
     },
     {
       "name": "Zen-modern-private-flag",
-      "oracle": "strict",
       "source": {
         "browser": "zen",
         "spaces": [
@@ -2398,108 +1669,11 @@
               []
             ]
           }
-        },
-        "script": {
-          "outcome": {
-            "cancelled": false,
-            "status": {
-              "tabs": "done",
-              "spaces": "done",
-              "pinnedTabs": "done"
-            },
-            "counts": {
-              "bookmarks": 0,
-              "history": 0,
-              "tabs": 2,
-              "passwords": 0,
-              "cookies": 0,
-              "addresses": 0,
-              "cards": 0
-            },
-            "failures": [],
-            "notes": [],
-            "extensionsProfile": "default",
-            "extensions": []
-          },
-          "state": {
-            "profiles": [
-              {
-                "name": "Target",
-                "color": "blue",
-                "icon": null,
-                "dataClass": 0,
-                "theme": null,
-                "fileTheme": null
-              }
-            ],
-            "tabs": [
-              {
-                "profile": "p0",
-                "url": "https://calendar.example/",
-                "title": "Calendar",
-                "customTitle": "Row label",
-                "pinned": true,
-                "row": true,
-                "pinnedUrl": "https://calendar.example/",
-                "unloaded": true,
-                "navigation": null,
-                "groups": []
-              },
-              {
-                "profile": "p0",
-                "url": "https://today.example/",
-                "title": "Today",
-                "customTitle": "Open label",
-                "pinned": false,
-                "row": false,
-                "pinnedUrl": null,
-                "unloaded": true,
-                "navigation": null,
-                "groups": [
-                  "Imported"
-                ]
-              }
-            ],
-            "groups": [
-              {
-                "profile": "p0",
-                "path": "Imported",
-                "pinned": false,
-                "members": [
-                  "https://today.example/"
-                ]
-              }
-            ],
-            "windows": [
-              {
-                "incognito": false,
-                "isSmall": false
-              }
-            ],
-            "bookmarks": [
-              []
-            ],
-            "history": [
-              []
-            ],
-            "cachePages": [
-              []
-            ],
-            "nativeIconPages": [
-              []
-            ],
-            "live": [],
-            "adoption": false,
-            "parked": [
-              []
-            ]
-          }
         }
       }
     },
     {
       "name": "Refused",
-      "oracle": "route-specific",
       "source": {
         "browser": "arc",
         "spaces": [
@@ -2638,73 +1812,11 @@
               []
             ]
           }
-        },
-        "script": {
-          "outcome": {
-            "cancelled": false,
-            "status": {
-              "tabs": "done",
-              "spaces": "done",
-              "pinnedTabs": "done"
-            },
-            "counts": {
-              "bookmarks": 0,
-              "history": 0,
-              "tabs": 0,
-              "passwords": 0,
-              "cookies": 0,
-              "addresses": 0,
-              "cards": 0
-            },
-            "failures": [],
-            "notes": [],
-            "extensionsProfile": "default",
-            "extensions": []
-          },
-          "state": {
-            "profiles": [
-              {
-                "name": "Target",
-                "color": "blue",
-                "icon": null,
-                "dataClass": 0,
-                "theme": null,
-                "fileTheme": null
-              }
-            ],
-            "tabs": [],
-            "groups": [],
-            "windows": [
-              {
-                "incognito": false,
-                "isSmall": false
-              }
-            ],
-            "bookmarks": [
-              []
-            ],
-            "history": [
-              []
-            ],
-            "cachePages": [
-              []
-            ],
-            "nativeIconPages": [
-              []
-            ],
-            "live": [],
-            "adoption": false,
-            "parked": [
-              []
-            ]
-          }
         }
-      },
-      "difference": "Script records done with zero tabs when the native workspace command refuses; Swift fails the three requested kinds and explains the refusal."
+      }
     },
     {
       "name": "Theme-rejection",
-      "oracle": "route-specific",
       "source": {
         "browser": "arc",
         "spaces": [
@@ -3204,137 +2316,11 @@
               []
             ]
           }
-        },
-        "script": {
-          "outcome": {
-            "cancelled": false,
-            "status": {
-              "tabs": "done",
-              "spaces": "done",
-              "pinnedTabs": "done"
-            },
-            "counts": {
-              "bookmarks": 0,
-              "history": 0,
-              "tabs": 2,
-              "passwords": 0,
-              "cookies": 0,
-              "addresses": 0,
-              "cards": 0
-            },
-            "failures": [],
-            "notes": [],
-            "extensionsProfile": "default",
-            "extensions": []
-          },
-          "state": {
-            "profiles": [
-              {
-                "name": "Target",
-                "color": "blue",
-                "icon": null,
-                "dataClass": 0,
-                "theme": {
-                  "stops": [
-                    {
-                      "color": {
-                        "r": 0.23537377450980398,
-                        "g": 0.7010600490196077,
-                        "b": 0.3885600490196079,
-                        "a": 1
-                      },
-                      "x": 0.31026006967667397,
-                      "y": 0.6607015235543412
-                    },
-                    {
-                      "color": {
-                        "r": 0.7562071078431373,
-                        "g": 0.020912990196078528,
-                        "b": 0.48659926470588233,
-                        "a": 1
-                      },
-                      "x": 0.8727993094192305,
-                      "y": 0.20873725797912507
-                    }
-                  ],
-                  "intensity": 0.8,
-                  "grain": 0.45,
-                  "texture": "grain",
-                  "translucency": 1,
-                  "mode": "light"
-                },
-                "fileTheme": null
-              }
-            ],
-            "tabs": [
-              {
-                "profile": "p0",
-                "url": "https://calendar.example/",
-                "title": "Calendar",
-                "customTitle": "Row label",
-                "pinned": true,
-                "row": true,
-                "pinnedUrl": "https://calendar.example/",
-                "unloaded": true,
-                "navigation": null,
-                "groups": []
-              },
-              {
-                "profile": "p0",
-                "url": "https://today.example/",
-                "title": "Today",
-                "customTitle": "Open label",
-                "pinned": false,
-                "row": false,
-                "pinnedUrl": null,
-                "unloaded": true,
-                "navigation": null,
-                "groups": [
-                  "Imported"
-                ]
-              }
-            ],
-            "groups": [
-              {
-                "profile": "p0",
-                "path": "Imported",
-                "pinned": false,
-                "members": [
-                  "https://today.example/"
-                ]
-              }
-            ],
-            "windows": [
-              {
-                "incognito": false,
-                "isSmall": false
-              }
-            ],
-            "bookmarks": [
-              []
-            ],
-            "history": [
-              []
-            ],
-            "cachePages": [
-              []
-            ],
-            "nativeIconPages": [
-              []
-            ],
-            "live": [],
-            "adoption": false,
-            "parked": [
-              []
-            ]
-          }
         }
-      },
-      "difference": "The acknowledgement is a Swift-only operation. Its handler persists adoption metadata before the injected rejection; Swift keeps the old theme and imports two tabs. Script imports the valid source theme and finishes done."
+      }
     },
     {
       "name": "Unavailable-prompt",
-      "oracle": "route-specific",
       "source": {
         "browser": "arc",
         "spaces": [
@@ -3513,111 +2499,11 @@
               []
             ]
           }
-        },
-        "script": {
-          "outcome": {
-            "cancelled": false,
-            "status": {
-              "tabs": "done",
-              "spaces": "done",
-              "pinnedTabs": "done"
-            },
-            "counts": {
-              "bookmarks": 0,
-              "history": 0,
-              "tabs": 2,
-              "passwords": 0,
-              "cookies": 0,
-              "addresses": 0,
-              "cards": 0
-            },
-            "failures": [],
-            "notes": [],
-            "extensionsProfile": "default",
-            "extensions": []
-          },
-          "state": {
-            "profiles": [
-              {
-                "name": "Target",
-                "color": "blue",
-                "icon": null,
-                "dataClass": 0,
-                "theme": null,
-                "fileTheme": null
-              },
-              {
-                "name": "Clash",
-                "color": "green",
-                "icon": null,
-                "dataClass": 1,
-                "theme": null,
-                "fileTheme": null
-              }
-            ],
-            "tabs": [
-              {
-                "profile": "p0",
-                "url": "https://calendar.example/",
-                "title": "Calendar",
-                "customTitle": "Row label",
-                "pinned": true,
-                "row": true,
-                "pinnedUrl": "https://calendar.example/",
-                "unloaded": true,
-                "navigation": null,
-                "groups": []
-              },
-              {
-                "profile": "p1",
-                "url": "https://clash.example/",
-                "title": "Calendar",
-                "customTitle": null,
-                "pinned": true,
-                "row": true,
-                "pinnedUrl": "https://clash.example/",
-                "unloaded": true,
-                "navigation": null,
-                "groups": []
-              }
-            ],
-            "groups": [],
-            "windows": [
-              {
-                "incognito": false,
-                "isSmall": false
-              }
-            ],
-            "bookmarks": [
-              [],
-              []
-            ],
-            "history": [
-              [],
-              []
-            ],
-            "cachePages": [
-              [],
-              []
-            ],
-            "nativeIconPages": [
-              [],
-              []
-            ],
-            "live": [],
-            "adoption": false,
-            "parked": [
-              [],
-              []
-            ]
-          }
         }
-      },
-      "difference": "Native nil prompt is an unavailable destination. The legacy shell abort is confirmed=false and merges into the existing Clash profile without opening a modal alert."
+      }
     },
     {
       "name": "Cancel-after-adoption",
-      "oracle": "route-specific",
       "source": {
         "browser": "arc",
         "spaces": [
@@ -3830,124 +2716,11 @@
               []
             ]
           }
-        },
-        "script": {
-          "outcome": {
-            "cancelled": true,
-            "status": {},
-            "counts": {
-              "bookmarks": 0,
-              "history": 0,
-              "tabs": 0,
-              "passwords": 0,
-              "cookies": 0,
-              "addresses": 0,
-              "cards": 0
-            },
-            "failures": [],
-            "notes": [],
-            "extensionsProfile": "",
-            "extensions": []
-          },
-          "state": {
-            "profiles": [
-              {
-                "name": "Target",
-                "color": "blue",
-                "icon": null,
-                "dataClass": 0,
-                "theme": null,
-                "fileTheme": null
-              },
-              {
-                "name": "Clash",
-                "color": "green",
-                "icon": null,
-                "dataClass": 1,
-                "theme": null,
-                "fileTheme": null
-              }
-            ],
-            "tabs": [
-              {
-                "profile": "p0",
-                "url": "https://calendar.example/",
-                "title": "Calendar",
-                "customTitle": "Row label",
-                "pinned": true,
-                "row": true,
-                "pinnedUrl": "https://calendar.example/",
-                "unloaded": true,
-                "navigation": null,
-                "groups": []
-              },
-              {
-                "profile": "p0",
-                "url": "https://today.example/",
-                "title": "Today",
-                "customTitle": "Open label",
-                "pinned": false,
-                "row": false,
-                "pinnedUrl": null,
-                "unloaded": true,
-                "navigation": null,
-                "groups": [
-                  "Imported"
-                ]
-              }
-            ],
-            "groups": [
-              {
-                "profile": "p0",
-                "path": "Imported",
-                "pinned": false,
-                "members": [
-                  "https://today.example/"
-                ]
-              }
-            ],
-            "windows": [
-              {
-                "incognito": false,
-                "isSmall": false
-              }
-            ],
-            "bookmarks": [
-              [],
-              []
-            ],
-            "history": [
-              [],
-              []
-            ],
-            "cachePages": [
-              [
-                "https://calendar.example/",
-                "https://today.example/"
-              ],
-              []
-            ],
-            "nativeIconPages": [
-              [
-                "https://calendar.example/",
-                "https://today.example/"
-              ],
-              []
-            ],
-            "live": [],
-            "adoption": false,
-            "parked": [
-              [],
-              []
-            ]
-          }
         }
-      },
-      "difference": "Only bridge acknowledgements are paused after their handlers: Swift favicon adoption, or the script route confirm-abort acknowledgement for the second-space clash. Script has committed the first two tabs; Swift has committed no tabs. Cancel/dispose aborts the script run signal and stops the Swift control before either can write the later destination."
+      }
     },
     {
       "name": "Arc-sharing-across-sources",
-      "oracle": "strict",
       "source": {
         "browser": "arc",
         "spaces": [
@@ -4157,135 +2930,11 @@
               []
             ]
           }
-        },
-        "script": {
-          "outcome": {
-            "cancelled": false,
-            "status": {
-              "tabs": "done",
-              "spaces": "done",
-              "pinnedTabs": "done"
-            },
-            "counts": {
-              "bookmarks": 0,
-              "history": 0,
-              "tabs": 3,
-              "passwords": 0,
-              "cookies": 0,
-              "addresses": 0,
-              "cards": 0
-            },
-            "failures": [],
-            "notes": [],
-            "extensionsProfile": "default",
-            "extensions": []
-          },
-          "state": {
-            "profiles": [
-              {
-                "name": "Target",
-                "color": "blue",
-                "icon": null,
-                "dataClass": 0,
-                "theme": null,
-                "fileTheme": null
-              },
-              {
-                "name": "Second",
-                "color": "green",
-                "icon": null,
-                "dataClass": 0,
-                "theme": null,
-                "fileTheme": null
-              },
-              {
-                "name": "Third",
-                "color": "orange",
-                "icon": null,
-                "dataClass": 2,
-                "theme": null,
-                "fileTheme": null
-              }
-            ],
-            "tabs": [
-              {
-                "profile": "p0",
-                "url": "https://calendar.example/",
-                "title": "Calendar",
-                "customTitle": "Row label",
-                "pinned": true,
-                "row": true,
-                "pinnedUrl": "https://calendar.example/",
-                "unloaded": true,
-                "navigation": null,
-                "groups": []
-              },
-              {
-                "profile": "p1",
-                "url": "https://calendar.example/",
-                "title": "Calendar",
-                "customTitle": "Row label",
-                "pinned": true,
-                "row": true,
-                "pinnedUrl": "https://calendar.example/",
-                "unloaded": true,
-                "navigation": null,
-                "groups": []
-              },
-              {
-                "profile": "p2",
-                "url": "https://calendar.example/",
-                "title": "Calendar",
-                "customTitle": "Row label",
-                "pinned": true,
-                "row": true,
-                "pinnedUrl": "https://calendar.example/",
-                "unloaded": true,
-                "navigation": null,
-                "groups": []
-              }
-            ],
-            "groups": [],
-            "windows": [
-              {
-                "incognito": false,
-                "isSmall": false
-              }
-            ],
-            "bookmarks": [
-              [],
-              [],
-              []
-            ],
-            "history": [
-              [],
-              [],
-              []
-            ],
-            "cachePages": [
-              [],
-              [],
-              []
-            ],
-            "nativeIconPages": [
-              [],
-              [],
-              []
-            ],
-            "live": [],
-            "adoption": false,
-            "parked": [
-              [],
-              [],
-              []
-            ]
-          }
         }
       }
     },
     {
       "name": "Arc-icons-live-common-and-cache-precedence",
-      "oracle": "strict",
       "source": {
         "browser": "arc",
         "spaces": [
@@ -4556,179 +3205,11 @@
               []
             ]
           }
-        },
-        "script": {
-          "outcome": {
-            "cancelled": false,
-            "status": {
-              "bookmarks": "done",
-              "history": "done",
-              "tabs": "done",
-              "spaces": "done",
-              "pinnedTabs": "done",
-              "favorites": "done"
-            },
-            "counts": {
-              "bookmarks": 1,
-              "history": 1,
-              "tabs": 4,
-              "passwords": 0,
-              "cookies": 0,
-              "addresses": 0,
-              "cards": 0
-            },
-            "failures": [],
-            "notes": [],
-            "extensionsProfile": "default",
-            "extensions": []
-          },
-          "state": {
-            "profiles": [
-              {
-                "name": "Target",
-                "color": "blue",
-                "icon": null,
-                "dataClass": 0,
-                "theme": null,
-                "fileTheme": null
-              }
-            ],
-            "tabs": [
-              {
-                "profile": "p0",
-                "url": "https://calendar.example/",
-                "title": "Calendar",
-                "customTitle": "Row label",
-                "pinned": true,
-                "row": true,
-                "pinnedUrl": "https://calendar.example/",
-                "unloaded": true,
-                "navigation": null,
-                "groups": []
-              },
-              {
-                "profile": "p0",
-                "url": "https://later.example/",
-                "title": "Nested",
-                "customTitle": null,
-                "pinned": false,
-                "row": false,
-                "pinnedUrl": "https://later.example/",
-                "unloaded": true,
-                "navigation": null,
-                "groups": [
-                  "Outer",
-                  "Outer/Inner"
-                ]
-              },
-              {
-                "profile": "p0",
-                "url": "https://mail.example.com/",
-                "title": "Mail",
-                "customTitle": null,
-                "pinned": true,
-                "row": false,
-                "pinnedUrl": "https://mail.example.com/",
-                "unloaded": true,
-                "navigation": null,
-                "groups": []
-              },
-              {
-                "profile": "p0",
-                "url": "https://today.example/",
-                "title": "Today",
-                "customTitle": "Open label",
-                "pinned": false,
-                "row": false,
-                "pinnedUrl": null,
-                "unloaded": true,
-                "navigation": null,
-                "groups": [
-                  "Imported"
-                ]
-              }
-            ],
-            "groups": [
-              {
-                "profile": "p0",
-                "path": "Outer",
-                "pinned": true,
-                "members": [
-                  "https://later.example/"
-                ]
-              },
-              {
-                "profile": "p0",
-                "path": "Outer/Inner",
-                "pinned": true,
-                "members": [
-                  "https://later.example/"
-                ]
-              },
-              {
-                "profile": "p0",
-                "path": "Imported",
-                "pinned": false,
-                "members": [
-                  "https://today.example/"
-                ]
-              }
-            ],
-            "windows": [
-              {
-                "incognito": false,
-                "isSmall": false
-              }
-            ],
-            "bookmarks": [
-              [
-                {
-                  "title": "Arc personal bookmark",
-                  "url": "https://arc-bookmark.example/"
-                }
-              ]
-            ],
-            "history": [
-              [
-                "https://arc-history.example/"
-              ]
-            ],
-            "cachePages": [
-              [
-                "https://calendar.example/",
-                "https://later.example/",
-                "https://mail.example.com/",
-                "https://today.example/"
-              ]
-            ],
-            "nativeIconPages": [
-              [
-                "https://calendar.example/",
-                "https://later.example/",
-                "https://mail.example.com/",
-                "https://today.example/"
-              ]
-            ],
-            "live": [
-              {
-                "profile": "p0",
-                "kind": "pullRequests",
-                "sources": [
-                  "github"
-                ]
-              }
-            ],
-            "adoption": false,
-            "parked": [
-              []
-            ]
-          }
         }
       }
     },
     {
       "name": "Create-refusal",
-      "oracle": "route-specific",
       "source": {
         "browser": "arc",
         "spaces": [
@@ -4888,107 +3369,11 @@
               []
             ]
           }
-        },
-        "script": {
-          "outcome": {
-            "cancelled": false,
-            "status": {
-              "tabs": "failed",
-              "spaces": "failed",
-              "pinnedTabs": "failed"
-            },
-            "counts": {
-              "bookmarks": 0,
-              "history": 0,
-              "tabs": 1,
-              "passwords": 0,
-              "cookies": 0,
-              "addresses": 0,
-              "cards": 0
-            },
-            "failures": [
-              {
-                "kind": "tabs",
-                "profiles": [
-                  "Default"
-                ]
-              },
-              {
-                "kind": "spaces",
-                "profiles": [
-                  "Default"
-                ]
-              },
-              {
-                "kind": "pinnedTabs",
-                "profiles": [
-                  "Default"
-                ]
-              }
-            ],
-            "notes": [
-              "Fixture profile refusal"
-            ],
-            "extensionsProfile": "",
-            "extensions": []
-          },
-          "state": {
-            "profiles": [
-              {
-                "name": "Target",
-                "color": "blue",
-                "icon": null,
-                "dataClass": 0,
-                "theme": null,
-                "fileTheme": null
-              }
-            ],
-            "tabs": [
-              {
-                "profile": "p0",
-                "url": "https://calendar.example/",
-                "title": "Calendar",
-                "customTitle": "Row label",
-                "pinned": true,
-                "row": true,
-                "pinnedUrl": "https://calendar.example/",
-                "unloaded": true,
-                "navigation": null,
-                "groups": []
-              }
-            ],
-            "groups": [],
-            "windows": [
-              {
-                "incognito": false,
-                "isSmall": false
-              }
-            ],
-            "bookmarks": [
-              []
-            ],
-            "history": [
-              []
-            ],
-            "cachePages": [
-              []
-            ],
-            "nativeIconPages": [
-              []
-            ],
-            "live": [],
-            "adoption": false,
-            "parked": [
-              []
-            ]
-          }
         }
-      },
-      "difference": "Swift reports an unavailable new destination; script surfaces the native createProfile error and attributes the source profile even with a single selected source."
+      }
     },
     {
       "name": "Arc-parked-and-home-dedupe",
-      "oracle": "strict",
       "source": {
         "browser": "arc",
         "spaces": [
@@ -5088,88 +3473,6 @@
       "event": {},
       "expected": {
         "swift": {
-          "outcome": {
-            "cancelled": false,
-            "status": {
-              "tabs": "done",
-              "spaces": "done",
-              "pinnedTabs": "done"
-            },
-            "counts": {
-              "bookmarks": 0,
-              "history": 0,
-              "tabs": 0,
-              "passwords": 0,
-              "cookies": 0,
-              "addresses": 0,
-              "cards": 0
-            },
-            "failures": [],
-            "notes": [],
-            "extensionsProfile": "default",
-            "extensions": []
-          },
-          "state": {
-            "profiles": [
-              {
-                "name": "Target",
-                "color": "blue",
-                "icon": null,
-                "dataClass": 0,
-                "theme": null,
-                "fileTheme": null
-              }
-            ],
-            "tabs": [
-              {
-                "profile": "p0",
-                "url": "https://away.example/",
-                "title": "Existing",
-                "customTitle": null,
-                "pinned": true,
-                "row": true,
-                "pinnedUrl": "https://calendar.example/",
-                "unloaded": true,
-                "navigation": null,
-                "groups": []
-              }
-            ],
-            "groups": [],
-            "windows": [
-              {
-                "incognito": false,
-                "isSmall": false
-              }
-            ],
-            "bookmarks": [
-              []
-            ],
-            "history": [
-              []
-            ],
-            "cachePages": [
-              []
-            ],
-            "nativeIconPages": [
-              []
-            ],
-            "live": [],
-            "adoption": false,
-            "parked": [
-              [
-                {
-                  "url": "https://today.example/",
-                  "title": "Parked",
-                  "profile": "p0",
-                  "pinned": true,
-                  "row": true,
-                  "pinnedUrl": "https://today.example/"
-                }
-              ]
-            ]
-          }
-        },
-        "script": {
           "outcome": {
             "cancelled": false,
             "status": {

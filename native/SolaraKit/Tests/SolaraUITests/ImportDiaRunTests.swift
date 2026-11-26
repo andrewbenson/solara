@@ -130,7 +130,7 @@ struct ImportDiaRunTests {
   @Test func disposeForgetsTheRead() async {
     let (runs, engine, _) = setup()
     runs.dia = Self.read
-    runs.dispose(engine: engine, script: FakeScriptPath())
+    runs.dispose(engine: engine)
     #expect(runs.dia == nil)
   }
 }

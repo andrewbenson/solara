@@ -1,6 +1,6 @@
 import { persistenceRefused } from "./persistLatch";
 import { nativeSafeMode } from "../store/nativeStore";
-import { ensureProfile, faviconsFor, fetchFavicon, onHistoryChanged } from "@solara/solaracore";
+import { faviconsFor, fetchFavicon, onHistoryChanged } from "@solara/solaracore";
 import { nativeStoreFavicon } from "@solara/settings";
 import { iconTheme, readDocument, removeDocument, type IconTheme } from "@solara/shell";
 import { useEffect } from "react";
@@ -203,17 +203,6 @@ export function adoptFaviconCache(profileId: string, known: KnownFavicon[]): Map
     return { ...icons, pages };
   }, true);
   return found;
-}
-
-export function adoptFavicons(profileId: string, known: KnownFavicon[], onPending?: (pending: Promise<unknown>) => void) {
-  const found = adoptFaviconCache(profileId, known);
-  if (!found) return;
-  const key = cacheKey(profileId);
-  const pending = (async () => {
-    if (!engineProfileLoaded(key) && !(await ensureProfile(key))) return;
-    for (const [page, f] of found) await nativeStoreFavicon(key, page, f.icon, f.png).catch(() => null);
-  })();
-  onPending?.(pending);
 }
 
 const failedFetches = new Set<string>();

@@ -566,7 +566,7 @@ rely on the date: detection is by ledger and stamping by the sync clock.
 | History view (`lib/history.ts setView`): cap eviction and Chrome's 90-day expiry | not journaled; the adapter's ignore rule; `is_from_expiration` passed through |
 | History apply echo | `fromSync` update before the engine calls |
 | NativeStore replica revs | per-key tags; journal on the Swift side |
-| Imports (`components/import/apply.ts`) | commands are journaled; passwords through the ledger |
+| Imports (`SolaraUI/Import` (E7a draft; formerly `components/import/apply.ts`)) | commands are journaled; passwords through the ledger |
 | `tabs:` of this device, pin page title and favicon | observations: published by diff, never journaled |
 | `bookmarksReady`, `historyReady` and other flags | no sync key, ignored |
 

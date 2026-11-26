@@ -5,54 +5,35 @@ import SolaraEngine
 import SolaraImportAdapter
 import SolaraModel
 import SolaraStore
+import SolaraShell
+import SolaraSyncAdapter
 import SolaraUI
 
 @MainActor
-final class ImportAdapter: ImportServices, ImportScriptPath {
-  static let progressTopic = "import.progress"
-  static let targetsTopic = "import.targets"
-  var session = 0
+final class ImportAdapter: ImportServices {
   var swiftSession = 0
-  let direct = SettingsDirectWrites.store != nil
-  private var service: ImportService? { direct ? ImportService.shared : nil }
-  private var diaRoute: ImportRoute = .js
+  private var service: ImportService { ImportService.shared }
   private var diaLaunched = Date.distantPast
 
   func open() async -> ImportOpening {
-    if direct { swiftSession = ImportRuns.shared.open() }
-    let opened = await SettingsAdapters.js("import.open") as? [String: Any] ?? [:]
-    session = opened.int("session") ?? 0
-    if direct, let store = SettingsDirectWrites.store {
-      let state = store.state
-      return ImportOpening(
-        available: (opened.bool("available") ?? false) && ImportRuns.shared.admitted(swiftSession),
-        preferredSource: ImportPreferredSource.shared.take(),
-        targets: ImportTargets.list(state).map { SolaraUI.ImportTarget(id: $0.id, name: $0.name) },
-        defaultTarget: ImportTargets.defaultTarget(state)
-      )
+    swiftSession = ImportRuns.shared.open()
+    guard let store = ImportRunEngine.store else {
+      return ImportOpening(available: false, preferredSource: ImportPreferredSource.shared.take(), targets: [], defaultTarget: "")
     }
-    return ImportOpening(
-      available: opened.bool("available") ?? false,
-      preferredSource: opened.string("preferred"),
-      targets: Self.targets(opened["targets"]),
-      defaultTarget: opened.string("defaultTarget") ?? ""
-    )
+    return ImportOpening(available: ImportRuns.shared.admitted(swiftSession), preferredSource: ImportPreferredSource.shared.take(),
+      targets: ImportTargets.list(store.state).map { SolaraUI.ImportTarget(id: $0.id, name: $0.name) }, defaultTarget: ImportTargets.defaultTarget(store.state))
   }
 
   func listBrowsers() async -> [ImportBrowser]? {
-    guard let service else {
-      guard let list = await SettingsAdapters.js("import.listBrowsers") as? [[String: Any]] else { return nil }
-      return list.compactMap(Self.browser)
-    }
-    guard let json = await service.browsersJSON() else { return nil }
-    guard let list = await SettingsJS.shared.adoptBrowsers(json) else { return nil }
+    guard let json = await service.browsersJSON(),
+      let list = try? JSONSerialization.jsonObject(with: Data(json.utf8)) as? [[String: Any]] else { return nil }
     let browsers = list.compactMap(Self.browser)
     ImportRuns.shared.browsers = browsers
     return browsers
   }
 
   func targetUpdates() -> AsyncStream<[ImportTarget]> {
-    guard direct, let store = SettingsDirectWrites.store else { return SettingsJS.shared.stream(Self.targetsTopic) { Self.targets($0) } }
+    guard let store = ImportRunEngine.store else { return AsyncStream { $0.finish() } }
     return AsyncStream { continuation in
       let feed = ImportTargetsFeed(store.state)
       let listener = store.subscribe { commit in
@@ -63,109 +44,46 @@ final class ImportAdapter: ImportServices, ImportScriptPath {
     }
   }
 
-  func progressUpdates() -> AsyncStream<ImportProgressUpdate> {
-    SettingsJS.shared.stream(Self.progressTopic) { value in
-      guard let dict = value as? [String: Any], let runId = dict.string("runId") else { return nil }
-      return ImportProgressUpdate(runId: runId, preparing: dict.int("preparing") ?? 1, status: Self.statuses(dict["status"]))
-    }
-  }
+  func progressUpdates() -> AsyncStream<ImportProgressUpdate> { ImportProgressFeed.shared.stream() }
 
   func safariHasFullDiskAccess() async -> Bool {
-    guard let service else { return await SettingsAdapters.js("import.safariFullDiskAccess") as? Bool ?? false }
     return await service.safariHasFullDiskAccess()
   }
 
   func isBrowserUnlocked(_ browserId: String) async -> Bool {
-    guard let service else { return await SettingsAdapters.js("import.isUnlocked", browserId) as? Bool ?? false }
     return service.isUnlocked(browserId)
   }
 
   func unlockBrowser(_ browserId: String) async -> Bool {
-    guard let service else { return await SettingsAdapters.js("import.unlock", browserId) as? Bool ?? false }
     return await service.unlock(browserId)
   }
 
-  static func runOutcome(_ value: Any?, kinds: [SolaraUI.ImportKind]) -> ImportRunOutcome {
-    guard let result = value as? [String: Any] else {
-      return ImportRunOutcome(
-        status: Dictionary(uniqueKeysWithValues: kinds.map { ($0, ImportStatus.failed) }),
-        failures: kinds.map { ImportFailure(kind: $0) },
-        notes: ["Import couldn't finish. Try again."]
-      )
-    }
-    if result.bool("cancelled") == true { return .cancelledRun }
-    let extensions = result.dict("extensions") ?? [:]
-    return ImportRunOutcome(
-      status: Self.statuses(result["status"]),
-      failures: result.list("failures").compactMap { f in
-        f.string("kind").flatMap(SolaraUI.ImportKind.init(rawValue:)).map { ImportFailure(kind: $0, profiles: f.strings("profiles")) }
-      },
-      counts: Self.counts(result.dict("counts")),
-      notes: result.strings("notes"),
-      extensionsProfile: extensions.string("profileId") ?? "",
-      extensions: extensions.list("list").compactMap { e in
-        guard let id = e.string("id") else { return nil }
-        return SolaraUI.ImportedExtension(id: id, name: e.string("name") ?? id, webStoreUrl: e.string("webStoreUrl") ?? "")
-      }
-    )
-  }
+  func cancel() { ImportRuns.shared.cancel(engine: ImportRunEngine.shared) }
 
-  func cancel() {
-    guard direct else { return scriptCancel() }
-    ImportRuns.shared.cancel(engine: ImportRunEngine.shared, script: self)
-  }
-
-  func dispose() {
-    guard direct else { return scriptDispose() }
-    ImportRuns.shared.dispose(engine: ImportRunEngine.shared, script: self)
-  }
-
-  func scriptCancel() { SettingsJS.shared.fire("import.cancel") }
-
-  func scriptDispose() { SettingsJS.shared.fire("import.dispose") }
+  func dispose() { ImportRuns.shared.dispose(engine: ImportRunEngine.shared) }
 
   #if DEBUG
   static var devVaultCount: Int { ImportService.shared.devVaultCount }
   #endif
 
   static func drainSwift() async {
-    guard SettingsDirectWrites.store != nil else { return }
     await ImportRuns.shared.drain(engine: ImportRunEngine.shared)
   }
 
   func diaAutomationStatus() async -> DiaStatus {
-    guard let service else { return Self.dia(await SettingsAdapters.js("import.diaStatus")) }
     return Self.dia(await service.diaStatus(ask: false))
   }
 
   func requestDiaAutomation() async -> DiaStatus {
-    guard let service else { return Self.dia(await SettingsAdapters.js("import.requestDia")) }
     return Self.dia(await service.diaStatus(ask: ProcessInfo.processInfo.environment["SOLARA_BACKGROUND"] != "1"))
   }
 
   func openDia() async -> Bool {
-    guard direct, ImportRuns.shared.diaRoute(engine: ImportRunEngine.shared) == .swift else { return await SettingsAdapters.js("import.openDia") as? Bool ?? false }
     diaLaunched = Date()
     return await ImportService.openDia()
   }
 
   func readDiaTabs() async -> DiaRead {
-    diaRoute = direct ? ImportRuns.shared.diaRoute(engine: ImportRunEngine.shared) : .js
-    guard diaRoute == .js else { return await readDiaTabsDirectly() }
-    guard let result = await SettingsAdapters.js("import.readDia") as? [String: Any] else {
-      return .failed(code: "unreadable", message: "Couldn't read Dia's tabs")
-    }
-    if let error = result.dict("error") {
-      return .failed(code: error.string("code") ?? "unreadable", message: error.string("message") ?? "Couldn't read Dia's tabs")
-    }
-    let profiles = result.list("profiles").compactMap { p -> DiaProfileSummary? in
-      guard let id = p.string("id") else { return nil }
-      return DiaProfileSummary(id: id, name: p.string("name") ?? id, pinnedCount: p.int("pinned") ?? 0, tabCount: p.int("tabs") ?? 0)
-    }
-    return .read(profiles: profiles, windowCount: result.int("windowCount") ?? 0)
-  }
-
-  private func readDiaTabsDirectly() async -> DiaRead {
     do {
       var result = try await ImportService.shared.readDiaTabs()
       var tries = 0
@@ -193,99 +111,55 @@ final class ImportAdapter: ImportServices, ImportScriptPath {
   }
 
   func runDia(profileIds: [String], target: String, pinned: Bool, open: Bool) async -> ImportRunOutcome {
-    if diaRoute == .swift {
-      return await ImportRuns.shared.importDia(profileIds: profileIds, target: target, pinned: pinned, open: open, session: swiftSession, engine: ImportRunEngine.shared)
-    }
-    let kinds: [SolaraUI.ImportKind] = (open ? [.tabs] : []) + (pinned ? [.pinnedTabs] : [])
-    return Self.runOutcome(await SettingsAdapters.js("import.runDia", ["profileIds": profileIds, "target": target, "pinned": pinned, "open": open], session), kinds: kinds)
+    await ImportRuns.shared.importDia(profileIds: profileIds, target: target, pinned: pinned, open: open, session: swiftSession, engine: ImportRunEngine.shared)
   }
 
   func importSafariExport(path: String, target: String) async -> ImportFileOutcome {
-    guard direct else { return await scriptSafari(.export(path: path), target: target, cookies: false, session: session) }
-    return await ImportRuns.shared.importSafari(.export(path: path), target: target, cookies: false, session: swiftSession, engine: ImportRunEngine.shared, script: self, scriptSession: session)
+    await ImportRuns.shared.importSafari(.export(path: path), target: target, cookies: false, session: swiftSession, engine: ImportRunEngine.shared)
   }
 
   func importSafariDirect(target: String, cookies: Bool) async -> ImportFileOutcome {
-    guard direct else { return await scriptSafari(.direct, target: target, cookies: cookies, session: session) }
-    return await ImportRuns.shared.importSafari(.direct, target: target, cookies: cookies, session: swiftSession, engine: ImportRunEngine.shared, script: self, scriptSession: session)
-  }
-
-  func scriptSafari(_ source: ImportSafariSource, target: String, cookies: Bool, session: Int) async -> ImportFileOutcome {
-    switch source {
-    case .export(let path): Self.fileOutcome(await SettingsAdapters.js("import.safariExport", path, target, session))
-    case .direct: Self.fileOutcome(await SettingsAdapters.js("import.safariDirect", target, cookies, session))
-    }
+    await ImportRuns.shared.importSafari(.direct, target: target, cookies: cookies, session: swiftSession, engine: ImportRunEngine.shared)
   }
 
   func importBookmarksHTML(target: String) async -> ImportFileOutcome {
-    guard direct else { return await scriptBookmarksHTML(target: target, session: session) }
-    return await ImportRuns.shared.importBookmarksFile(target: target, session: swiftSession, engine: ImportRunEngine.shared, script: self, scriptSession: session)
-  }
-
-  func scriptBookmarksHTML(target: String, session: Int) async -> ImportFileOutcome {
-    Self.fileOutcome(await SettingsAdapters.js("import.bookmarksHtml", target, session))
+    await ImportRuns.shared.importBookmarksFile(target: target, session: swiftSession, engine: ImportRunEngine.shared)
   }
 
   func chooseImportFile(_ kind: ImportFileKind) async -> String? {
-    guard direct else { return await SettingsAdapters.js("import.chooseFile", kind.rawValue) as? String }
     return await ImportService.chooseFile(kind.rawValue)
   }
 
   func openFullDiskAccessSettings() {
-    guard direct else { return SettingsJS.shared.fire("import.openFullDiskAccessSettings") }
     ImportService.openPrivacySettings("Privacy_AllFiles")
   }
 
   func openAutomationSettings() {
-    guard direct else { return SettingsJS.shared.fire("import.openAutomationSettings") }
     ImportService.openPrivacySettings("Privacy_Automation")
   }
 
-  func openInWebStore(profileId: String, urls: [String]) { SettingsJS.shared.fire("import.openInWebStore", profileId, urls, session) }
-
-  func arcHolderCount() async -> Int { await SettingsAdapters.js("import.arcHolders") as? Int ?? 0 }
-
-  func restoreArcFolders() async -> Int { await SettingsAdapters.js("import.restoreArcFolders", session) as? Int ?? 0 }
-
-  func isOnboarding() async -> Bool { await SettingsAdapters.js("import.onboarding") as? Bool ?? false }
-
-  func close() { SettingsJS.shared.fire("import.close") }
-
-  static func targets(_ value: Any?) -> [ImportTarget] {
-    (value as? [[String: Any]] ?? []).compactMap { t in
-      guard let id = t.string("id") else { return nil }
-      return ImportTarget(id: id, name: t.string("name") ?? id)
+  func openInWebStore(profileId: String, urls: [String]) {
+    guard !urls.isEmpty, let store = SettingsDirectWrites.store, store.state.profiles[profileId] != nil, !Ids.isIncognitoProfile(profileId) else { return }
+    let state = store.state
+    let regular = { (id: String) in state.windows[id].map { !$0.incognito } ?? false }
+    let window = state.ui.focusOrder.first(where: regular) ?? state.windowOrder.first(where: regular)
+      ?? SettingsDirectWrites.write(store, Command("createWindow", [["profileId": .string(profileId)]]))?.result?.string
+    guard let window else { return }
+    for (index, url) in urls.enumerated() {
+      SettingsDirectWrites.write(store, Command("newTab", [.string(window), ["url": .string(url), "profileId": .string(profileId), "background": .bool(index > 0)]]))
     }
   }
 
-  static func statuses(_ value: Any?) -> [SolaraUI.ImportKind: ImportStatus] {
-    var out: [SolaraUI.ImportKind: ImportStatus] = [:]
-    for (key, raw) in value as? [String: Any] ?? [:] {
-      if let kind = SolaraUI.ImportKind(rawValue: key), let status = (raw as? String).flatMap(ImportStatus.init(rawValue:)) { out[kind] = status }
-    }
-    return out
+  func arcHolderCount() async -> Int { await SettingsAdapters.js("bookmarks.arcHolders") as? Int ?? 0 }
+
+  func restoreArcFolders() async -> Int {
+    guard ImportRuns.shared.admitted(swiftSession) else { return await arcHolderCount() }
+    return await SettingsAdapters.js("bookmarks.restoreArcFolders") as? Int ?? 0
   }
 
-  static func counts(_ dict: [String: Any]?) -> ImportCounts {
-    guard let dict else { return ImportCounts() }
-    return ImportCounts(
-      bookmarks: dict.int("bookmarks") ?? 0,
-      history: dict.int("history") ?? 0,
-      tabs: dict.int("tabs") ?? 0,
-      passwords: dict.int("passwords") ?? 0,
-      cookies: dict.int("cookies") ?? 0,
-      addresses: dict.int("addresses") ?? 0,
-      cards: dict.int("cards") ?? 0
-    )
-  }
+  func isOnboarding() async -> Bool { NativeOnboarding.isActive }
 
-  static func fileOutcome(_ value: Any?) -> ImportFileOutcome {
-    guard let dict = value as? [String: Any] else { return .failed(code: "unreadable") }
-    if dict.bool("cancelled") == true { return .cancelled }
-    if let code = dict.string("error") { return .failed(code: code) }
-    let failed = dict.strings("failed").compactMap(SolaraUI.ImportKind.init(rawValue:))
-    return .imported(counts(dict.dict("counts")), failed: failed)
-  }
+  func close() { WindowHost.closeBrowserWindow("import") }
 
   static func dia(_ value: Any?) -> DiaStatus {
     (value as? String).flatMap(DiaStatus.init(rawValue:)) ?? .denied
@@ -331,7 +205,12 @@ final class ImportRunEngine: ImportEngine {
   static let shared = ImportRunEngine()
   private var openAlert: (alert: NSAlert, window: NSWindow)?
 
-  var safeMode: Bool { SolaraCoreHost.safeMode || SettingsDirectWrites.store == nil }
+  static var store: Store? {
+    guard !NativeStoreHandle.frozen, NativeStoreHandle.ownsWorkspace else { return nil }
+    return NativeStoreHandle.store
+  }
+
+  var safeMode: Bool { SolaraCoreHost.safeMode || Self.store == nil || Self.store?.config.safeMode == true }
 
   func transientImportRefused() {
     guard let window = Self.importWindow() else { return }
@@ -392,7 +271,7 @@ final class ImportRunEngine: ImportEngine {
   }
 
   func adoptHistory(profile: String, rows: [ImportHistoryRow], deadline: TimeInterval) async -> Int? {
-    guard let reply = try? await SettingsJS.shared.invoke("import.adoptHistory", [profile, Self.historyPayload(rows)], timeout: Self.adoptTimeout(deadline)) else { return nil }
+    guard let reply = try? await SettingsJS.shared.invoke("replica.adoptHistory", [profile, Self.historyPayload(rows)], timeout: Self.adoptTimeout(deadline)) else { return nil }
     return (reply as? NSNumber)?.intValue
   }
 
@@ -406,7 +285,7 @@ final class ImportRunEngine: ImportEngine {
 
   func adoptFavicons(profile: String, favicons: [ImportFaviconRow]) async {
     let payload: [[String: Any]] = favicons.map { ["page": $0.page, "icon": $0.icon, "png": $0.png] }
-    _ = try? await SettingsJS.shared.invoke("import.adoptFavicons", [profile, payload], timeout: 10)
+    _ = try? await SettingsJS.shared.invoke("replica.adoptFavicons", [profile, payload], timeout: 10)
   }
 
   func storeFavicons(profile: String, engineProfile: String, favicons: [ImportFaviconRow]) async {
@@ -481,15 +360,15 @@ final class ImportRunEngine: ImportEngine {
   func forget() { ImportService.shared.forget() }
 
   func profiles() -> [SolaraUI.ImportTarget] {
-    guard let store = SettingsDirectWrites.store else { return [] }
+    guard let store = Self.store else { return [] }
     return ImportTargets.list(store.state).map { SolaraUI.ImportTarget(id: $0.id, name: $0.name) }
   }
 
-  func profileExists(_ id: String) -> Bool { SettingsDirectWrites.store?.state.profiles[id] != nil }
+  func profileExists(_ id: String) -> Bool { Self.store?.state.profiles[id] != nil }
 
   func isPrivateProfile(_ id: String) -> Bool { Ids.isIncognitoProfile(id) }
 
-  func engineProfile(_ id: String) -> String { SettingsDirectWrites.store?.state.engineProfile(id) ?? id }
+  func engineProfile(_ id: String) -> String { Self.store?.state.engineProfile(id) ?? id }
 
   func askImportAsNewProfile() async -> Bool? {
     #if DEBUG
@@ -525,18 +404,30 @@ final class ImportRunEngine: ImportEngine {
   }
 
   func publish(_ progress: ImportProgressUpdate) {
-    let body: [String: Any] = [
-      "runId": progress.runId,
-      "preparing": progress.preparing,
-      "status": Dictionary(uniqueKeysWithValues: progress.status.map { ($0.key.rawValue, $0.value.rawValue) }),
-    ]
-    guard let data = try? JSONSerialization.data(withJSONObject: body) else { return }
-    SettingsJS.shared.publish(ImportAdapter.progressTopic, json: String(decoding: data, as: UTF8.self))
+    ImportProgressFeed.shared.publish(progress)
   }
 
   func log(_ line: String) { NSLog("%@", line) }
 
   static func importWindow() -> NSWindow? {
     NativeImportWindow.hosting?.viewIfLoaded?.window ?? NSApp.windows.first { $0.contentViewController is ImportHostingController }
+  }
+}
+
+@MainActor
+private final class ImportProgressFeed {
+  static let shared = ImportProgressFeed()
+  private var listeners: [UUID: AsyncStream<ImportProgressUpdate>.Continuation] = [:]
+
+  func stream() -> AsyncStream<ImportProgressUpdate> {
+    AsyncStream { continuation in
+      let id = UUID()
+      listeners[id] = continuation
+      continuation.onTermination = { _ in Task { @MainActor in self.listeners[id] = nil } }
+    }
+  }
+
+  func publish(_ progress: ImportProgressUpdate) {
+    for continuation in listeners.values { continuation.yield(progress) }
   }
 }

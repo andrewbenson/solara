@@ -267,7 +267,6 @@ public final class Importer: @unchecked Sendable {
 public final class ImportEpoch: @unchecked Sendable {
   private let lock = NSLock()
   private var value = 0
-  private var owner = 0
 
   public init() {}
 
@@ -278,23 +277,7 @@ public final class ImportEpoch: @unchecked Sendable {
   @discardableResult
   public func advance() -> Int { lock.withLock { value += 1; return value } }
 
-  public func claim() -> (owner: Int, epoch: Int) {
-    lock.withLock {
-      owner += 1
-      value += 1
-      return (owner, value)
-    }
-  }
 
-  public func begin(owner claimed: Int) -> Int? { lock.withLock { owner == claimed ? value : nil } }
-
-  public func advance(owner claimed: Int) -> Int? {
-    lock.withLock {
-      guard owner == claimed else { return nil }
-      value += 1
-      return value
-    }
-  }
 }
 
 public final class ImportSession: @unchecked Sendable {
@@ -302,37 +285,10 @@ public final class ImportSession: @unchecked Sendable {
   public let jobs = ImportJobs()
   public let vault = ImportVault()
   public let epoch = ImportEpoch()
-  #if DEBUG
-  let afterJobStart = DevHook()
-  #endif
 
   public init(importer: Importer) {
     self.importer = importer
   }
-
-  public func claim() -> Int {
-    let claimed = epoch.claim()
-    clear(before: claimed.epoch)
-    return claimed.owner
-  }
-
-  public func begin(owner: Int) -> Int? { epoch.begin(owner: owner) }
-
-  public func start(_ id: String, owner: Int) -> (started: Int, cancellation: Cancellation)? {
-    guard let started = epoch.begin(owner: owner) else { return nil }
-    let cancellation = jobs.start(id, epoch: started)
-    #if DEBUG
-    afterJobStart()
-    #endif
-    guard epoch.isCurrent(started) else {
-      cancellation.cancel()
-      jobs.finish(id, cancellation)
-      return nil
-    }
-    return (started, cancellation)
-  }
-
-  public func isCurrent(_ started: Int) -> Bool { epoch.isCurrent(started) }
 
   public func unlock(_ browserId: String, on queue: DispatchQueue, secret: @escaping Importer.SecretProvider) async -> Bool {
     let started = epoch.current
@@ -354,11 +310,6 @@ public final class ImportSession: @unchecked Sendable {
     let next = epoch.advance()
     clear(before: next)
     return next
-  }
-
-  public func forget(owner: Int) {
-    guard let next = epoch.advance(owner: owner) else { return }
-    clear(before: next)
   }
 
   public func keep(cookies: [Cookie], addresses: [ImportedAddress], cards: [ImportedCard], started: Int) -> String? {

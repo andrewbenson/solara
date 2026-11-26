@@ -3,7 +3,9 @@ import Foundation
 import SolaraCore
 import SolaraEngine
 import SolaraLive
+import SolaraModel
 import SolaraStore
+import SolaraShell
 import SolaraUI
 import SolaraSyncAdapter
 
@@ -13,6 +15,14 @@ public class SettingsModule: Module {
   private var bookmarkStateTask: Task<Void, Never>?
   public func definition() -> ModuleDefinition {
     Name("SolaraSettings")
+
+    AsyncFunction("benchmarkImportBookmarks") { (path: String, promise: Promise) in
+      nonisolated(unsafe) let reply = promise
+      MainActor.assumeIsolated {
+        guard !LaunchSwitches.shared.distribution, NativeImportWindow.drivable, ProcessInfo.processInfo.environment["AC_BENCH_BOOKMARKS"] == "1" else { return reply.resolve(0) }
+        Task { @MainActor in reply.resolve(await NativeImportWindow.benchmarkImportBookmarks(path)) }
+      }
+    }.runOnQueue(.main)
 
     Events("onPanePopoversChanged", "onBookmarkProjectionChanged", "onAppIntegrationPresentation", "onSettingsCall", "onLiveReplica", "onLiveAuthRequest", "onLiveCloseGroup", "onBookmarkWriterState")
 

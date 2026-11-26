@@ -18,7 +18,7 @@ fs.mkdirSync(scratch, { recursive: true });
 const manifest = JSON.parse(fs.readFileSync(new URL("./sidebar-parity-cases.json", import.meta.url), "utf8"));
 const chosen = process.argv.slice(4).find((argument) => argument.startsWith("--case="))?.slice(7);
 const cases = chosen ? manifest.cases.filter((entry) => entry.name === chosen) : manifest.cases;
-if (!cases.length) throw new Error("unknown parity case");
+if (!cases.length) throw new Error("unknown acceptance case");
 const started = Date.now();
 
 function sourceHash(root) {
@@ -38,7 +38,7 @@ async function bounded(inst, work, predicate, label, milliseconds = 45000) {
   const end = Date.now() + milliseconds;
   let value;
   while (Date.now() < end) {
-    if (Date.now() - started > 30 * 60 * 1000) throw new Error("parity driver exceeded thirty minutes");
+    if (Date.now() - started > 30 * 60 * 1000) throw new Error("acceptance driver exceeded thirty minutes");
     try { process.kill(inst.pid, 0); } catch { throw new Error(`instance exited while waiting for ${label}`); }
     value = await work();
     if (predicate(value)) return value;
@@ -94,7 +94,8 @@ async function snapshot(inst, testCase) {
   return canonical(raw);
 }
 
-async function leg(testCase, route) {
+async function acceptance(testCase) {
+  const route = "swift";
   const directory = path.join(scratch, testCase.name, route);
   fs.mkdirSync(directory, { recursive: true });
   const sourceFile = path.join(directory, "source.json");
@@ -114,7 +115,6 @@ async function leg(testCase, route) {
     let state = await bounded(inst, () => drive("state"), (s) => s.step === "choose", "import window");
     assert.equal(typeof state.pendingWrites, "number", "Debug app required");
     assert.ok(state.browsers.includes(testCase.source.browser));
-    await drive("storedRoute", route === "script" ? "script" : null);
     state = await drive("select", testCase.source.browser);
     assert.deepEqual(state.profileIds, testCase.discovered.profiles);
     assert.deepEqual(state.profileSpaces, testCase.discovered.spaces);
@@ -155,9 +155,8 @@ async function leg(testCase, route) {
       await drive("ackRelease");
     }
     await finishRun();
-    state = await bounded(inst, () => drive("state"), (s) => Object.keys(s.outcome ?? {}).length > 0 && s.pendingWrites === 0 && s.pendingScript === 0, "outcome and writes");
-    assert.equal(state.forceScript, false);
-    assert.equal(state.route, route === "script" ? "js" : "swift");
+    state = await bounded(inst, () => drive("state"), (s) => Object.keys(s.outcome ?? {}).length > 0 && s.pendingWrites === 0, "outcome and writes");
+    assert.equal(state.route, "swift");
     outcome = state.outcome;
     fs.writeFileSync(path.join(directory, "outcome.json"), JSON.stringify(state, null, 2));
     before = await snapshot(inst, testCase);
@@ -168,7 +167,6 @@ async function leg(testCase, route) {
     compare(outcome, testCase.expected[route].outcome, `${testCase.name}.${route}.outcome`);
     compare(facts(before), testCase.expected[route].state, `${testCase.name}.${route}.state`);
     if (testCase.repeat) {
-      await drive("storedRoute", route === "script" ? "script" : null);
       await inst.eval('return expo.modules.SolaraSettings.devImport("select", ' + JSON.stringify(testCase.source.browser) + ')');
       await drive("kinds", testCase.request.kinds.join(","));
       await drive("profiles", testCase.request.profiles.join(","));
@@ -176,7 +174,7 @@ async function leg(testCase, route) {
       await drive("target", testCase.request.target);
       await run();
       await finishRun();
-      const repeated = await bounded(inst, () => drive("state"), (s) => Object.keys(s.outcome ?? {}).length > 0 && s.pendingWrites === 0 && s.pendingScript === 0, "repeat");
+      const repeated = await bounded(inst, () => drive("state"), (s) => Object.keys(s.outcome ?? {}).length > 0 && s.pendingWrites === 0, "repeat");
       repeatOutcome = repeated.outcome;
       compare(repeatOutcome, testCase.expected[route].repeat, "dedupe outcome");
       compare(await snapshot(inst, testCase), before, "dedupe state");
@@ -207,22 +205,14 @@ for (const testCase of cases) {
     fs.writeFileSync(path.join(evidence, "diff.json"), JSON.stringify({ error: "total runtime deadline" }));
     break;
   }
-  const results = {}, errors = {};
-  for (const route of ["swift", "script"]) {
-    try { results[route] = await leg(testCase, route); }
-    catch (error) { errors[route] = { message: error.message, actual: error.actual ?? null, expected: error.expected ?? null, stack: error.stack }; }
-  }
   try {
-    assert.deepEqual(Object.keys(errors), [], "route oracle failures");
-    if (testCase.oracle === "strict") compare(results.swift, results.script, `${testCase.name}.route equivalence`);
-    else assert.equal(testCase.oracle, "route-specific");
-    fs.writeFileSync(path.join(evidence, "diff.json"), JSON.stringify({ equivalent: testCase.oracle === "strict", declaredDifference: testCase.difference ?? null }));
+    await acceptance(testCase);
+    fs.writeFileSync(path.join(evidence, "diff.json"), JSON.stringify({ accepted: true }));
     console.log(`ok ${testCase.name}`);
   } catch (error) {
     failures++;
-    fs.writeFileSync(path.join(evidence, "diff.json"), JSON.stringify({ routes: errors, message: error.message, actual: error.actual ?? null, expected: error.expected ?? null, stack: error.stack }, null, 2));
+    fs.writeFileSync(path.join(evidence, "diff.json"), JSON.stringify({ message: error.message, actual: error.actual ?? null, expected: error.expected ?? null, stack: error.stack }, null, 2));
     console.error(`FAIL ${testCase.name}: ${error.message}`);
-    for (const [route, failure] of Object.entries(errors)) console.error(`  ${route}: ${failure.message}`);
   }
 }
 process.exitCode = failures ? 1 : 0;

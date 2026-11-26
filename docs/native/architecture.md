@@ -644,7 +644,7 @@ All of these become commands, or move into the Swift transaction, in the sub-pha
 | `useBrowser.setState` in `sync/adapters.ts`, `sync/pinned.ts` | A `sync.apply(records)` command; Swift keeps the invariants (group contiguity, pinned-first) |
 | `lib/chromeTabs.ts` (`chromeChanged`) | Swift's reducer, fed natively; deleted from JS (1b) |
 | `lib/history.ts`, `lib/bookmarks.ts`, `lib/bookmarkGroups.ts`, `lib/launchLook.ts` | Their own JS-owned slices stay JS until their surface ports; the bookmark-to-group action becomes a command |
-| `components/import/apply.ts`, `onboarding/state.ts`, `littleSolara/actions.ts`, `sidebar/tidyPinsUi.ts`, `sidebar/tileFolderUi.ts`, `store/pinOrderChoices.ts` | Commands |
+| `SolaraUI/Import` (E7a draft; formerly `components/import/apply.ts`), `onboarding/state.ts`, `littleSolara/actions.ts`, `sidebar/tidyPinsUi.ts`, `sidebar/tileFolderUi.ts`, `store/pinOrderChoices.ts` | Commands |
 
 That covers 29 `setState` sites in 14 files (test fixtures excluded). A Debug-build guard wraps `setState`: writing a Swift-owned key outside
 the patch applier throws, with the call site, so a missed writer fails the first test that hits it.

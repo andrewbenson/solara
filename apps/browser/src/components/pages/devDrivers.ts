@@ -1,5 +1,3 @@
-import { applyResult, applySafari, importArcSpace, importBookmarks, importTabs } from "../import/apply";
-import { importModule } from "../import/module";
 import { openImport, openSettings } from "../settings/windows";
 import { useBookmarkDialog } from "../bookmarks/actions";
 import { useBookmarkEditor } from "../bookmarks/edit";
@@ -26,7 +24,6 @@ export const pagesDrivers = {
   openInternalPage,
   openSettings,
   openImport,
-  importModule,
   bookmarkDialog: useBookmarkDialog,
   bookmarkEditor: useBookmarkEditor,
   clearDataRequest: useClearDataRequest,
@@ -35,9 +32,4 @@ export const pagesDrivers = {
   engineOffers: useEngineOffers,
   setSidebarUi,
   tileFolders: { make: makeTileFolder, panel: useFolderPanel, measure: measureRow },
-  applyResult,
-  applySafari,
-  importArcSpace,
-  importBookmarks,
-  importTabs,
 };

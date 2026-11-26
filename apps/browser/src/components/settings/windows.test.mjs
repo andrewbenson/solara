@@ -28,14 +28,11 @@ test("openImport hands the preferred source to Swift before it opens the window"
   const { windows, calls } = windowsModule();
   windows.openImport("chrome");
   assert.deepEqual(calls, [["setPreferred", "chrome"], ["openWindow", "import", "import"]]);
-  assert.equal(windows.takePreferredImportSource(), "chrome");
-  assert.equal(windows.takePreferredImportSource(), null);
 });
 
-test("openImport with no source clears the preferred source on both sides", () => {
+test("openImport with no source clears the native preferred source", () => {
   const { windows, calls } = windowsModule();
   windows.openImport("arc");
   windows.openImport();
   assert.deepEqual(calls.filter(([name]) => name === "setPreferred"), [["setPreferred", "arc"], ["setPreferred", null]]);
-  assert.equal(windows.takePreferredImportSource(), null);
 });

@@ -233,7 +233,7 @@ final class OnboardingAdapter: OnboardingServices {
   func cancelOnboardingImport() {
     NativeImportWindow.current?.dispose()
     ImportAdapter().close()
-    enqueuePreview("import.cancelAndDrain", [], swiftDrain: true)
+    enqueuePreview("bookmarks.drainRestoration", [], swiftDrain: true)
   }
 
   var backgroundInstance: Bool { ProcessInfo.processInfo.environment["SOLARA_BACKGROUND"] == "1" }

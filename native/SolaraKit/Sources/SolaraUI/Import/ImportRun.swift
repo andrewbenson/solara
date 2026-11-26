@@ -185,31 +185,6 @@ public protocol ImportEngine: AnyObject {
   func log(_ line: String)
 }
 
-@MainActor
-public protocol ImportScriptPath: AnyObject {
-  func scriptRun(_ request: ImportRunRequest, session: Int) async -> ImportRunOutcome
-  func scriptCancel()
-  func scriptDispose()
-  func scriptBookmarksHTML(target: String, session: Int) async -> ImportFileOutcome
-  func scriptSafari(_ source: ImportSafariSource, target: String, cookies: Bool, session: Int) async -> ImportFileOutcome
-}
-
-public enum ImportRoute: String, Sendable {
-  case swift
-  case js
-
-  static let swiftKinds: Set<ImportKind> = [.passwords, .cookies, .autofill, .bookmarks, .history, .tabs, .favorites]
-  static let scriptRouteKey = "ImportRoute"
-
-  public static func of(_ source: ImportBrowser?, kinds: [ImportKind]) -> ImportRoute {
-    guard let source, [.chromium, .firefox, .arc].contains(source.family) else { return .js }
-    let sidebar = (source.family == .arc && source.sidebar == .arc) || (source.family == .firefox && source.sidebar == .zen)
-    let supported = sidebar ? swiftKinds.union([.spaces, .pinnedTabs]) : swiftKinds
-    guard !kinds.isEmpty, kinds.allSatisfy(supported.contains) else { return .js }
-    return .swift
-  }
-}
-
 public enum ImportOrigin {
   nonisolated(unsafe) static let pattern = try! NSRegularExpression(pattern: "^([A-Za-z][A-Za-z0-9+.-]*://[^/?#]+)")
 
@@ -287,14 +262,11 @@ public final class ImportRuns {
   private var active = 0
   private var idle: [CheckedContinuation<Void, Never>] = []
   var current: ImportRunControl?
-  private var routes: [String: ImportRoute] = [:]
   let bookmarkQueue = ImportBookmarkQueue()
   private var writes: [UUID: Task<Void, Never>] = [:]
-  var scriptRouteDefault: () -> String? = { UserDefaults.standard.string(forKey: ImportRoute.scriptRouteKey) }
   var writeDeadline: Duration = .seconds(10)
   var drainDeadline: Duration = .seconds(10)
   #if DEBUG
-  public var forceScript = false
   public var devTrace: [String] = []
   public var themeAdoptionDeadline: Duration = .seconds(10)
   #endif
@@ -352,59 +324,37 @@ public final class ImportRuns {
     return id > revoked && id <= session
   }
 
-  public func route(of runId: String) -> ImportRoute? { routes[runId] }
-
-  public func run(_ request: ImportRunRequest, session id: Int, engine: ImportEngine, script: ImportScriptPath, scriptSession: Int) async -> ImportRunOutcome {
+  public func run(_ request: ImportRunRequest, session id: Int, engine: ImportEngine) async -> ImportRunOutcome {
     let source = browsers.first { $0.id == request.browserId }
-    let route = preferred(ImportRoute.of(source, kinds: request.kinds), engine: engine)
-    routes[request.runId] = route
-    engine.log("[import] run \(request.runId) route=\(route.rawValue) family=\(source?.family.rawValue ?? "unknown")")
-    guard route == .swift else { return await script.scriptRun(request, session: scriptSession) }
+    engine.log("[import] run \(request.runId) route=swift family=\(source?.family.rawValue ?? "unknown")")
     guard admitted(id) else { return .cancelledRun }
     return await whileActive { await ImportRunner(runs: self, engine: engine, session: id).run(request) }
   }
 
-  public func importBookmarksFile(target: String, session id: Int, engine: ImportEngine, script: ImportScriptPath, scriptSession: Int) async -> ImportFileOutcome {
-    let route = preferred(.swift, engine: engine)
-    engine.log("[import] file bookmarksHTML route=\(route.rawValue)")
-    guard route == .swift else { return await script.scriptBookmarksHTML(target: target, session: scriptSession) }
+  public func importBookmarksFile(target: String, session id: Int, engine: ImportEngine) async -> ImportFileOutcome {
+    engine.log("[import] file bookmarksHTML route=swift")
     let runner = ImportRunner(runs: self, engine: engine, session: id)
     guard !runner.cancelled(), let path = await engine.chooseImportFile(.bookmarksHTML), !runner.cancelled() else { return .cancelled }
     return await whileActive { await runner.placeBookmarksFile(path: path, target: target) }
   }
 
-  public func importSafari(_ source: ImportSafariSource, target: String, cookies: Bool, session id: Int, engine: ImportEngine, script: ImportScriptPath, scriptSession: Int) async -> ImportFileOutcome {
-    let route = preferred(.swift, engine: engine)
-    engine.log("[import] file \(source.logName) route=\(route.rawValue)")
-    guard route == .swift else { return await script.scriptSafari(source, target: target, cookies: cookies, session: scriptSession) }
+  public func importBookmarksFile(path: String, target: String, session id: Int, engine: ImportEngine) async -> ImportFileOutcome {
+    guard admitted(id) else { return .cancelled }
+    return await whileActive { await ImportRunner(runs: self, engine: engine, session: id).placeBookmarksFile(path: path, target: target) }
+  }
+
+  public func importSafari(_ source: ImportSafariSource, target: String, cookies: Bool, session id: Int, engine: ImportEngine) async -> ImportFileOutcome {
+    engine.log("[import] file \(source.logName) route=swift")
     guard admitted(id) else { return .cancelled }
     return await whileActive { await ImportRunner(runs: self, engine: engine, session: id).importSafari(source, target: target, cookies: cookies) }
   }
 
   public var dia: ImportDiaRead?
 
-  public func diaRoute(engine: ImportEngine) -> ImportRoute {
-    let route = preferred(.swift, engine: engine)
-    engine.log("[import] dia route=\(route.rawValue)")
-    return route
-  }
-
   public func importDia(profileIds: [String], target: String, pinned: Bool, open: Bool, session id: Int, engine: ImportEngine) async -> ImportRunOutcome {
     guard admitted(id) else { return .cancelledRun }
     let read = dia
     return await whileActive { await ImportRunner(runs: self, engine: engine, session: id).importDia(read, profileIds: profileIds, target: target, pinned: pinned, open: open) }
-  }
-
-  private func preferred(_ route: ImportRoute, engine: ImportEngine) -> ImportRoute {
-    var route = route
-    if route == .swift, scriptRouteDefault() == "script" {
-      route = .js
-      engine.log("[import] route=js reason=defaults")
-    }
-    #if DEBUG
-    if forceScript { route = .js }
-    #endif
-    return route
   }
 
   private func whileActive<T>(_ work: () async -> T) async -> T {
@@ -420,15 +370,13 @@ public final class ImportRuns {
     return await work()
   }
 
-  public func cancel(engine: ImportEngine, script: ImportScriptPath) {
+  public func cancel(engine: ImportEngine) {
     current?.stop()
-    script.scriptCancel()
   }
 
-  public func dispose(engine: ImportEngine, script: ImportScriptPath) {
+  public func dispose(engine: ImportEngine) {
     stop(engine)
     dia = nil
-    script.scriptDispose()
   }
 
   public func drain(engine: ImportEngine) async {

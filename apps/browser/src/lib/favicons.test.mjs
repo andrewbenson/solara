@@ -18,12 +18,12 @@ registerHooks({
     return next(specifier, context);
   },
 });
-const { adoptFaviconCache, adoptFavicons, adoptIconPage, dropOutlivedFavicon, faviconOutlived, noteIconPage, resolveFavicon, useFavicon } = await import("./favicons.ts");
+const { adoptFaviconCache, adoptIconPage, dropOutlivedFavicon, faviconOutlived, noteIconPage, resolveFavicon, useFavicon } = await import("./favicons.ts");
 const { useBrowser } = await import("../store/browser.ts");
 const { engineProfile } = await import("../store/model.ts");
 const { refreshLoadedProfiles, startProfileLoading } = await import("./lazyProfiles.ts");
 const { startFavicons } = await import("./favicons.ts");
-const { loadedEngineProfiles, loadEngineProfile, profileLoadRequests } = await import("../test-native/solaracore.ts");
+const { loadedEngineProfiles, loadEngineProfile } = await import("../test-native/solaracore.ts");
 await refreshLoadedProfiles();
 
 const waitFor = async (check) => {
@@ -40,13 +40,12 @@ test("an empty lookup that started before an import doesn't wipe the imported ic
   const row = mount(() => useFavicon(page, null, "default"));
   try {
     await waitFor(() => lookups.some((l) => l.pages.some((p) => p === page)));
-    adoptFavicons("default", [{ page, icon: `${page}favicon.png`, png: "AAAA" }]);
+    adoptFaviconCache("default", [{ page, icon: `${page}favicon.png`, png: "AAAA" }]);
     assert.equal(resolveFavicon(page, null, "default")?.uri, "data:image/png;base64,AAAA");
     for (const l of lookups) l.answer();
     await new Promise((resolve) => setTimeout(resolve, 40));
     assert.equal(resolveFavicon(page, null, "default")?.uri, "data:image/png;base64,AAAA");
-    await waitFor(() => globalThis.storedFavicons.length === 1);
-    assert.deepEqual(globalThis.storedFavicons[0], [engineProfile("default"), page, `${page}favicon.png`, "AAAA"]);
+    assert.deepEqual(globalThis.storedFavicons, []);
   } finally {
     row.unmount();
     delete globalThis.faviconsForTest;
@@ -126,21 +125,6 @@ test("passive icons for an unopened profile query only after its load event", as
   }
 });
 
-
-test("explicit favicon import loads its cold target before writing imported image data", async () => {
-  useBrowser.getState().hydrate({});
-  const id = useBrowser.getState().createProfile({ name: "Import target", color: "green" });
-  const key = engineProfile(id);
-  loadedEngineProfiles.delete(key);
-  profileLoadRequests.length = 0;
-  globalThis.storedFavicons = [];
-  let pending;
-  adoptFavicons(id, [{ page: "https://import-cold.test/", icon: "https://import-cold.test/icon.png", png: "AAAA" }], (write) => { pending = write; });
-  await pending;
-  assert.deepEqual(profileLoadRequests, [key]);
-  assert.equal(loadedEngineProfiles.has(key), true);
-  assert.deepEqual(globalThis.storedFavicons, [[key, "https://import-cold.test/", "https://import-cold.test/icon.png", "AAAA"]]);
-});
 
 test("the import cache adoption fills the icon cache and stores nothing in the engine", async () => {
   useBrowser.getState().hydrate({});

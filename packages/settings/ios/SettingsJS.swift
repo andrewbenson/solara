@@ -72,7 +72,7 @@ public final class SettingsJS {
     let environment = ProcessInfo.processInfo.environment
     if !releasingImportReply, !(environment["SOLARA_DATA_DIR"] ?? "").isEmpty {
       let name = importReplyNames[id]
-      if environment["SOLARA_IMPORT_TEST_ACK"] == "holdAdoption", name == "import.adoptFavicons" {
+      if environment["SOLARA_IMPORT_TEST_ACK"] == "holdAdoption", name == "replica.adoptFavicons" {
         heldImportReply = (id, resultJSON, error)
         return
       }
@@ -128,14 +128,5 @@ public final class SettingsJS {
         Task { @MainActor in SettingsJS.shared.stopObserving(topic, id) }
       }
     }
-  }
-}
-
-extension SettingsJS {
-  nonisolated static let adoptBrowsersDeadline: TimeInterval = 5
-
-  func adoptBrowsers(_ json: String, deadline: TimeInterval = SettingsJS.adoptBrowsersDeadline) async -> [[String: Any]]? {
-    guard (try? await invoke("import.adoptBrowsers", [json], timeout: deadline)) as? Bool == true else { return nil }
-    return (try? JSONSerialization.jsonObject(with: Data(json.utf8))) as? [[String: Any]]
   }
 }

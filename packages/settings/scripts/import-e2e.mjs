@@ -51,6 +51,7 @@ try {
   for (const deadline = Date.now() + 60000; state.step !== "done" && Date.now() < deadline; await sleep(500)) state = await drive("state");
   console.log("done:", JSON.stringify(state));
   ok(state.step === "done", "reached done");
+  ok(state.route === "swift", "import ran in Swift");
   ok(state.counts.cookies === 5, `5 cookies (${state.counts.cookies})`);
   ok(state.counts.addresses === 1 && state.counts.cards === 1, `1 address, 1 card (${state.counts.addresses}, ${state.counts.cards})`);
   ok(state.failures.length === 0, `no failures (${JSON.stringify(state.failures)})`);

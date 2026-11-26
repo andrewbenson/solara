@@ -110,7 +110,7 @@ const start = async (seed = false) => {
 try {
   await start(true);
   await evaluate("return typeof H.bookmarkScale === 'function' && typeof P.bookmarkScale === 'function';").then((ok) => assert.ok(ok, "matching benchmark hooks required"));
-  await measured("import-2500", `const started = performance.now(); return ac.pages.importModule().importBookmarksHTML(${JSON.stringify(importFile)}).then((root) => ac.pages.importBookmarks("default", root, "Scale fixture")).then((count) => until(() => bar(), (state) => state && state.items >= 2500).then((state) => ({ ms: performance.now() - started, imported: count, bar: state })));`);
+  await measured("import-2500", `const started = performance.now(); return globalThis.expo.modules.SolaraSettings.benchmarkImportBookmarks(${JSON.stringify(importFile)}).then((count) => until(() => bar(), (state) => state && state.items >= 2500).then((state) => ({ ms: performance.now() - started, imported: count, bar: state })));`);
   result.importMemory = memory(); save();
   await evaluate(`const roots = S().bookmarks.roots.default; return ac.bookmarks.removeBookmarks("default", [...S().bookmarks.nodes[roots.bar].children, ...S().bookmarks.nodes[roots.other].children]).then(() => ac.bookmarks.addBookmarkTree("default", [...${JSON.stringify(drafts(300, "bar"))}, {title: "Large folder", children: ${JSON.stringify(drafts(3000, "page"))}}, {title: "Other folder", children: ${JSON.stringify(drafts(1700, "other"))}}], roots.bar)).then(() => { const state = S(); const ids = state.bookmarks.nodes[roots.bar].children; globalThis.bookmarkScaleIds = { roots, first: ids[0], folder: ids[300], other: ids[301] }; return bookmarkScaleIds; });`, 120000);
   result.seedMemory = memory(); save();

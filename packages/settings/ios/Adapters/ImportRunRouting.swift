@@ -3,32 +3,14 @@ import SolaraUI
 
 extension ImportAdapter {
   func run(_ request: ImportRunRequest) async -> ImportRunOutcome {
-    let outcome: ImportRunOutcome
-    if direct {
-      outcome = await ImportRuns.shared.run(request, session: swiftSession, engine: ImportRunEngine.shared, script: self, scriptSession: session)
-    } else {
-      outcome = await scriptRun(request, session: session)
-    }
+    let outcome = await ImportRuns.shared.run(request, session: swiftSession, engine: ImportRunEngine.shared)
     #if DEBUG
     if !(ProcessInfo.processInfo.environment["SOLARA_DATA_DIR"] ?? "").isEmpty {
       ImportRoutingDebug.outcome = outcome
-      ImportRoutingDebug.route = direct ? ImportRuns.shared.route(of: request.runId)?.rawValue : "js"
+      ImportRoutingDebug.route = "swift"
     }
     #endif
     return outcome
-  }
-
-  func scriptRun(_ request: ImportRunRequest, session: Int) async -> ImportRunOutcome {
-    let arg: [String: Any] = [
-      "runId": request.runId,
-      "browserId": request.browserId,
-      "profileIds": request.profileIds,
-      "spaceIds": request.spaceIds,
-      "kinds": request.kinds.map(\.rawValue),
-      "target": request.target,
-      "withoutKey": request.withoutKey,
-    ]
-    return Self.runOutcome(await SettingsAdapters.js("import.run", arg, session), kinds: request.kinds)
   }
 
 }

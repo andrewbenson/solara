@@ -16,7 +16,6 @@ import Testing
 
   func setup() -> (ImportRuns, FakeImportEngine, ImportRunner, ImportRunControl) {
     let runs = ImportRuns()
-    runs.scriptRouteDefault = { nil }
     let engine = FakeImportEngine()
     let runner = ImportRunner(runs: runs, engine: engine, session: runs.open())
     return (runs, engine, runner, ImportRunControl(engine: engine))

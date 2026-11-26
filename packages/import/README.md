@@ -1,8 +1,8 @@
 # @solara/import
 
 Imports another browser's data into Solara. The native code lives in `ios/`; `ios/Core/` is plain Swift with no
-Expo dependency, so `Package.swift` builds and tests it on its own. `src/index.ts` is the typed JS wrapper and the UI
-is `apps/browser/src/components/import/`. Every test reads fixtures. Never point anything at a real profile.
+Expo dependency, so `Package.swift` builds and tests it on its own. `src/index.ts` retains the typed bridge for password CSV and the profile theme picker. The Import UI
+is `native/SolaraKit/Sources/SolaraUI/Import/`. Every test reads fixtures. Never point anything at a real profile.
 
 ## Which file reads what
 
@@ -41,20 +41,19 @@ Shared code: `Model.swift` (`ImportKind`, `ImportResult` and the other result ty
    above. A failed kind becomes a warning plus an entry in `failed`, and the other kinds still run. Safari, Dia tabs,
    HTML and CSV have their own module functions (`importSafariDirect`, `importSafariExport`, `readDiaTabs`,
    `importBookmarksHTML`, `importPasswordsCSV`).
-3. `ios/ImportModule.swift` (Expo module `SolaraImportAdapter`) encodes the result as a JSON string for JS. It keeps
-   cookies, addresses and cards back in `ImportVault` (`ios/ImportWriter.swift`) and returns only their counts and
-   a one-time `vaultToken`. History can stream in chunks (`onImportEvent`).
-4. `ios/ImportWriter.swift`: `writeImported(token, engineProfile, kinds)` takes the vault entry and sends it to the
-   engine with `SolaraCoreEngineBridge.callWithSecret` as `ac_cookies_import` and `ac_autofill_import`, in batches of 500
-   (`engine/chromium/src/chrome/browser/solara/ac_cookies.cc`, `ac_autofill.cc`).
-5. The native Import window (`native/SolaraKit/Sources/SolaraUI/Import`, hosted by
-   `packages/settings/ios/NativeImportWindow.swift`) is the wizard: choose, then profiles, then unlock, then progress,
-   then done. `apply.ts` writes the JS-side kinds into the store (bookmarks, history, tabs, Arc spaces,
-   Dia profiles) and saves passwords with `savePassword` (`@solara/solaracore`). For cookies and autofill it calls
-   `importNative`, which calls `writeImported`. Before any tab is made, the result's `favicons` for the pages that
-   profile gets go to `adoptFavicons` (`apps/browser/src/lib/favicons.ts`): into the sidebar's icon cache at once, and
-   into the profile's Chrome favicon database with `ac_favicons_set`, so they survive a relaunch without a page load.
-   `module.ts` loads the package lazily.
+3. `ios/ImportModule.swift` exposes `ImportService` to the native Settings adapter. Cookies, addresses and cards
+   stay in `ImportVault`; only their counts and a one-time token leave the service. Passwords stay on the Swift path.
+4. `ios/ImportWriter.swift` takes the vault entry and sends it to the engine with `SolaraCoreEngineBridge.callWithSecret`
+   as `ac_cookies_import` and `ac_autofill_import`, in batches of 500.
+5. The native Import window (`SolaraUI/Import`, hosted by `packages/settings/ios/NativeImportWindow.swift`) runs
+   every source through `ImportRuns` and `ImportRunEngine`: bookmarks, history, tabs, favorites, Arc/Zen spaces,
+   Dia, Safari, HTML and passwords. Discovery, targets and progress stay in Swift. No script route remains.
+   History and favicon cache adoption still use the acknowledged `replica.adoptHistory` and `replica.adoptFavicons`
+   boundaries while JS sync/cache consumers remain. These handlers cannot discover, read or apply an import.
+   Swift waits for `import.adoptProfileTheme` to call the JS sync engine’s existing
+   `adoptProfileThemeForImport` before applying an imported theme. The sync engine retains ownership of
+   `themeAdopting` and its persisted acknowledgement, exactly as in E6d.
+   A missing native store makes Import unavailable; safe mode still permits common data in one existing profile.
 
 ## Secrets and the Keychain
 
@@ -66,8 +65,8 @@ Shared code: `Model.swift` (`ImportKind`, `ImportResult` and the other result ty
   `unlockBrowser(id, { primaryPassword })`.
 - Cookie values, addresses and card numbers never reach JS. `ImportResult` and `SafariExport` leave them out of their
   `CodingKeys` and encode only the counts. They're held in `SecretBytes`; `Wire.swift` serializes them into
-  `SecretBytes` too, and `ImportWriter` copies that once into the buffer the bridge zeroes after the call. Vault entries expire after 10 minutes. JS drops the token for a private profile.
-- Passwords do reach JS (`credentials`), because `savePassword` takes them from there.
+  `SecretBytes` too, and `ImportWriter` copies that once into the buffer the bridge zeroes after the call. Vault entries expire after 10 minutes. Swift discards the token for a private or missing profile.
+- Import runs save passwords directly from Swift through the engine. The retained legacy Expo wrapper is not used by the Import window.
 - `forgetUnlockedKeys` drops the derived keys and the whole vault.
 
 ## Fixtures
@@ -111,9 +110,11 @@ These overrides are compiled only in Debug and require a nonempty isolated `SOLA
 | `SOLARA_IMPORT_TEST_SECRET` | `unlockBrowser` uses this as every browser's Safe Storage secret and never touches the Keychain |
 | `SOLARA_IMPORT_DIA_BUNDLE_ID` | The Dia tabs functions talk to this bundle ID instead of `company.thebrowser.dia` |
 
-The stored production escape hatch remains `defaults write network.benson.solara ImportRoute script`; removing that key restores Swift for Arc and Zen spaces/tabs. The parity driver sets this key only through an isolated instance's defaults, with `forceScript=false`.
-
-`node packages/settings/scripts/sidebar-parity.mjs <Debug.app> <fresh scratch>` drives both routes from synthetic source files, checks the frozen strict or route-specific manifest, drains writes and checks relaunch state. Its output retains each route's snapshot and a per-case diff. The Debug fixture override behavior and ignored Release overrides are checked without browser or keychain reads by `python3 packages/import/tests/environment-host/run.py --scratch <scratch>`.
+`node packages/settings/scripts/sidebar-parity.mjs <Debug.app> <fresh scratch>` is now a Swift acceptance driver.
+It keeps the frozen Swift oracle, including exact outcomes, repeat dedupe, cache precedence, source immutability and
+relaunch state. There is no script leg or route override. Its output retains Swift snapshots and a per-case diff.
+The Debug fixture override behavior and ignored Release overrides remain covered by
+`python3 packages/import/tests/environment-host/run.py --scratch <scratch>`.
 
 ## Adding a source or a kind
 
@@ -128,6 +129,6 @@ The stored production escape hatch remains `defaults write network.benson.solara
 4. Add a fixture: a `build_*` function in `fixtures/generate.py`, or a branch of an existing one. Run
    `pnpm --filter @solara/import fixtures` and write a test in `tests/`.
 5. Apply it in the app. Add the kind to the native Import window's kinds (`SolaraUI/Import`, in `ImportKind.encrypted` if it
-   is), and write it in `apply.ts`. A secret kind goes through `ImportWriter` and a new engine call instead.
+   is), and implement its placement in `SolaraUI/Import` and `ImportRunEngine`. A secret kind goes through `ImportWriter` and an engine call.
 6. Run `test`, `typecheck` and `pnpm -w typecheck`. For anything that reaches the engine, also run
    `packages/settings/scripts/import-e2e.mjs` against a fresh build.

@@ -13,7 +13,7 @@ const unrelated = {
   "../../store/model": ["engineProfile"], "../extensions/store": ["extensionsProfileId"],
   "../pages/urls": ["openInternalPage"], "./windows": ["openImport", "openSettings"],
   "./native/autofill": ["autofillHandlers"], "./native/extensions": ["extensionsHandlers", "publishExtensions"],
-  "./native/import": ["importHandlers", "publishImport"], "./native/live": ["liveHandlers"],
+  "./native/bookmarks": ["bookmarkRestorationHandlers"], "./native/replica": ["replicaHandlers"], "./native/live": ["liveHandlers"],
   "./native/onboarding": ["onboardingHandlers", "publishOnboarding"], "./native/passwords": ["passwordsHandlers", "publishPasswords"],
   "./native/privacy": ["privacyHandlers", "publishPrivacy"], "./native/profiles": ["profilesHandlers", "publishProfiles"],
   "./native/shortcuts": ["shortcutsHandlers"], "./native/sync": ["syncHandlers", "publishSync"],

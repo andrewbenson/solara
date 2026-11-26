@@ -1,5 +1,6 @@
 import AppKit
 import Foundation
+import Observation
 import SolaraModel
 import SwiftUI
 import Testing
@@ -32,6 +33,14 @@ final class FakeCalendarServices: CalendarServices {
 
 @MainActor
 enum LiveSettingsWait {
+  static func change<Value>(_ read: () -> Value, after action: () -> Void) async throws {
+    let (changes, continuation) = AsyncStream<Void>.makeStream()
+    _ = withObservationTracking(read, onChange: { continuation.yield(()) })
+    action()
+    var iterator = changes.makeAsyncIterator()
+    try #require(await iterator.next() != nil)
+  }
+
   static func until(_ condition: () -> Bool) async {
     let deadline = ContinuousClock.now + .seconds(5)
     while !condition(), ContinuousClock.now < deadline {
@@ -117,13 +126,15 @@ struct CalendarPaneTests {
     #expect(CalendarAlertLeads.options.filter(\.separatorBefore).map(\.value) == ["start"])
   }
 
-  @Test func engineChangesReplaceTheState() async {
+  @Test(.timeLimit(.minutes(1))) func engineChangesReplaceTheState() async throws {
     let (_, _, model, services) = await Self.loaded()
     var next = services.state
     next.access = .denied
     next.calendars = []
-    services.changes.continuation.yield(next)
-    await LiveSettingsWait.until { model.denied }
+    defer { services.changes.continuation.finish() }
+    try await LiveSettingsWait.change({ model.state }) {
+      services.changes.continuation.yield(next)
+    }
     #expect(model.denied)
     #expect(model.calendars.isEmpty)
   }

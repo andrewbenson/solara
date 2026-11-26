@@ -21,6 +21,7 @@ final class FakeSyncServices: SyncServices {
   var calls: [String] = []
   var folderInfoRequests: [String?] = []
   private var continuation: AsyncStream<SyncState>.Continuation?
+  private(set) var stateUpdateRequests = 0
 
   init(state: SyncState, folders: [String: SyncFolderInfo] = [:]) {
     self.state = state
@@ -32,9 +33,12 @@ final class FakeSyncServices: SyncServices {
     continuation?.yield(next)
   }
 
+  func finishUpdates() { continuation?.finish() }
+
   func currentSyncState() async -> SyncState { state }
 
   func syncStateUpdates() -> AsyncStream<SyncState> {
+    stateUpdateRequests += 1
     let (stream, continuation) = AsyncStream<SyncState>.makeStream()
     self.continuation = continuation
     return stream
@@ -159,16 +163,6 @@ enum SyncFixture {
     )
   }
 
-  struct Timeout: Error {}
-
-  static func waitUntil(_ condition: () -> Bool) async throws {
-    let deadline = Date().addingTimeInterval(5)
-    while !condition() {
-      guard Date() < deadline else { throw Timeout() }
-      try await Task.sleep(for: .milliseconds(10))
-    }
-  }
-
   static func model(_ state: SyncState, folder: SyncFolderInfo = folder()) async -> (SyncPaneModel, FakeSyncServices) {
     let services = FakeSyncServices(state: state, folders: [folder.path: folder])
     let model = SyncPaneModel(services: services)
@@ -266,25 +260,33 @@ struct SyncPaneModelTests {
     #expect(SyncPhraseResult.interrupted.message == "Sync was turned off or on again while this phrase was checked. Enter it again.")
   }
 
-  @Test func stateUpdatesReloadFolderInfoOnlyWhenTheyMatter() async throws {
+  @Test(.timeLimit(.minutes(1))) func stateUpdatesReloadFolderInfoOnlyWhenTheyMatter() async throws {
     let (model, services) = await SyncFixture.model(SyncFixture.offState())
-    #expect(services.folderInfoRequests.count == 1)
+    defer { services.finishUpdates() }
+    #expect(services.folderInfoRequests == [nil])
     var next = SyncFixture.offState()
     next.pending = 2
-    services.push(next)
-    try await SyncFixture.waitUntil { model.state?.pending == 2 }
-    #expect(services.folderInfoRequests.count == 1)
-    services.push(SyncFixture.onState(status: .starting))
-    try await SyncFixture.waitUntil { services.folderInfoRequests.count == 2 }
+    try await LiveSettingsWait.change({ model.state }) { services.push(next) }
+    #expect(model.state?.pending == 2)
+    #expect(services.folderInfoRequests == [nil])
+
+    let updatedFolder = SyncFixture.folder(hasData: true)
+    services.folders[updatedFolder.path] = updatedFolder
+    try await LiveSettingsWait.change({ model.info }) {
+      services.push(SyncFixture.onState(status: .starting))
+    }
     #expect(model.state?.enabled == true)
-    #expect(services.folderInfoRequests.last == SyncFixture.iCloudFolder)
+    #expect(model.info == updatedFolder)
+    #expect(services.folderInfoRequests == [nil, SyncFixture.iCloudFolder])
   }
 
-  @Test func preparingTwiceListensOnce() async throws {
+  @Test(.timeLimit(.minutes(1))) func preparingTwiceListensOnce() async throws {
     let (model, services) = await SyncFixture.model(SyncFixture.offState())
+    defer { services.finishUpdates() }
     await model.prepare(SettingsPlace(pane: .sync))
-    services.push(SyncFixture.onState())
-    try await SyncFixture.waitUntil { model.state?.enabled == true }
+    try #require(services.stateUpdateRequests == 1)
+    try await LiveSettingsWait.change({ model.state }) { services.push(SyncFixture.onState()) }
+    #expect(model.state?.enabled == true)
   }
 
   @Test func togglesCallTheEngineAndUpdateAtOnce() async {

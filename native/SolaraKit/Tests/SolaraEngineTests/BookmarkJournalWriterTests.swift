@@ -129,30 +129,41 @@ struct BookmarkJournalWriterTests {
     #expect(requests.first { $0["id"] == "second" }?["delivered"] == false)
   }
 
-  @Test func cancellingQueuedQuitKeepsDeliveryMaintenanceEnabled() async throws {
+  @Test(.timeLimit(.minutes(1))) func cancellingQueuedQuitKeepsDeliveryMaintenanceEnabled() async throws {
     let directory = try directory()
     defer { try? FileManager.default.removeItem(at: directory) }
     let probe = JournalWriterProbe()
     var operations = BookmarkPendingFileOperations.live
     let write = operations.writeNew
-    operations.writeNew = { url, data in probe.wrote(); try write(url, data) }
+    let writes = JournalWriterSignal()
+    operations.writeNew = { url, data in
+      try write(url, data)
+      probe.wrote()
+      writes.signal()
+    }
     let coordinator = BookmarkCoordinator(profiles: ["p": ""], defaultProfile: "p", pendingStore: BookmarkPendingStore(directory: directory, fileOperations: operations))
     coordinator.seed(engine: "", document: BookmarkCoordinatorTests().document(["https://a.test"]), ready: true)
     try coordinator.submit(profile: "p", mutations: [], requestID: "first")
-    let entered = DispatchSemaphore(value: 0)
+    try await writes.wait()
+    let entered = JournalWriterSignal()
     let release = DispatchSemaphore(value: 0)
-    let blocker = Task { await coordinator.offMain { entered.signal(); _ = release.wait(timeout: .now() + 5); return true } }
-    #expect(journalWriterWait(entered) == .success)
-    let done = DispatchSemaphore(value: 0)
+    defer { release.signal() }
+    let blocker = Task {
+      await coordinator.offMain {
+        entered.signal()
+        release.wait()
+      }
+    }
+    try await entered.wait()
+    let done = JournalWriterSignal()
     coordinator.beginJournalQuit { _ in done.signal() }
     coordinator.cancelJournalQuit()
     release.signal()
-    _ = await blocker.value
-    #expect(journalWriterWait(done) == .success)
+    await blocker.value
+    try await done.wait()
     let before = probe.writes
     #expect(try coordinator.acknowledgeReceipt(requestID: "first", engine: ""))
-    let deadline = ContinuousClock.now + .seconds(5)
-    while probe.writes == before, ContinuousClock.now < deadline { try await Task.sleep(for: .milliseconds(5)) }
+    try await writes.wait()
     #expect(probe.writes > before)
     try await coordinator.flushJournalForQuit()
     let requests = try #require(BookmarkPendingStore(directory: directory).load().payload?["requests"]?.array)
@@ -178,7 +189,7 @@ struct BookmarkJournalWriterTests {
     #expect(replay.view.revision == first.view.revision)
   }
 
-  @Test func queuedEditsShareCheckpointAndKeepOriginalReceipts() async throws {
+  @Test(.timeLimit(.minutes(1))) func queuedEditsShareCheckpointAndKeepOriginalReceipts() async throws {
     let directory = URL(fileURLWithPath: #filePath).deletingLastPathComponent().appendingPathComponent("BookmarkWriterScratch-\(UUID().uuidString)")
     try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
     defer { try? FileManager.default.removeItem(at: directory) }
@@ -188,11 +199,17 @@ struct BookmarkJournalWriterTests {
     operations.syncFile = { fd in probe.wrote(); try sync(fd) }
     let coordinator = BookmarkCoordinator(profiles: ["p": ""], defaultProfile: "p", pendingStore: BookmarkPendingStore(directory: directory, fileOperations: operations))
     coordinator.seed(engine: "", document: BookmarkCoordinatorTests().document(["https://a.test"]), ready: true)
-    let entered = DispatchSemaphore(value: 0)
+    let entered = JournalWriterSignal()
     let release = DispatchSemaphore(value: 0)
-    let blocker = Task { await coordinator.offMain { entered.signal(); _ = release.wait(timeout: .now() + 5); return true } }
-    #expect(journalWriterWait(entered) == .success)
-    let done = DispatchSemaphore(value: 0)
+    defer { release.signal() }
+    let blocker = Task {
+      await coordinator.offMain {
+        entered.signal()
+        release.wait()
+      }
+    }
+    try await entered.wait()
+    let done = JournalWriterSignal()
     for title in ["First", "Second", "Third"] {
       coordinator.enqueueJournalWrite({ staged in
         try staged.submit(profile: "p", mutations: [.init(method: "updateBookmark", args: ["b0", ["title": .string(title)]])], requestID: title)
@@ -206,8 +223,8 @@ struct BookmarkJournalWriterTests {
     }, completion: { result in probe.finished("conflict", result); done.signal() })
     #expect(probe.count == 0)
     release.signal()
-    _ = await blocker.value
-    for _ in 0..<5 { #expect(journalWriterWait(done) == .success) }
+    await blocker.value
+    try await done.wait(for: 5)
     #expect(probe.writes == 1)
     #expect(probe.count == 5)
     #expect(probe.receipt("replay") == probe.receipt("First"))
@@ -238,6 +255,19 @@ private final class JournalWriterProbe: @unchecked Sendable {
   func finished(_ title: String, _ result: Result<BookmarkReceipt, Error>) { lock.lock(); defer { lock.unlock() }; results[title] = result }
   func failure(_ title: String) -> Error? { lock.lock(); defer { lock.unlock() }; if case let .failure(error)? = results[title] { return error }; return nil }
   func receipt(_ title: String) -> BookmarkReceipt? { lock.lock(); defer { lock.unlock() }; return try? results[title]?.get() }
+}
+
+private struct JournalWriterSignal: Sendable {
+  private let event = AsyncStream<Void>.makeStream()
+
+  func signal() { event.continuation.yield(()) }
+
+  func wait(for count: Int = 1) async throws {
+    var iterator = event.stream.makeAsyncIterator()
+    for _ in 0..<count {
+      try #require(await iterator.next() != nil)
+    }
+  }
 }
 
 private func journalWriterWait(_ semaphore: DispatchSemaphore) -> DispatchTimeoutResult { semaphore.wait(timeout: .now() + 5) }

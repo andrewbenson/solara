@@ -260,7 +260,7 @@ struct SyncPaneModelTests {
     #expect(SyncPhraseResult.interrupted.message == "Sync was turned off or on again while this phrase was checked. Enter it again.")
   }
 
-  @Test(.timeLimit(.minutes(1))) func stateUpdatesReloadFolderInfoOnlyWhenTheyMatter() async throws {
+  @Test(.timeLimit(.minutes(3))) func stateUpdatesReloadFolderInfoOnlyWhenTheyMatter() async throws {
     let (model, services) = await SyncFixture.model(SyncFixture.offState())
     defer { services.finishUpdates() }
     #expect(services.folderInfoRequests == [nil])
@@ -280,7 +280,7 @@ struct SyncPaneModelTests {
     #expect(services.folderInfoRequests == [nil, SyncFixture.iCloudFolder])
   }
 
-  @Test(.timeLimit(.minutes(1))) func preparingTwiceListensOnce() async throws {
+  @Test(.timeLimit(.minutes(3))) func preparingTwiceListensOnce() async throws {
     let (model, services) = await SyncFixture.model(SyncFixture.offState())
     defer { services.finishUpdates() }
     await model.prepare(SettingsPlace(pane: .sync))

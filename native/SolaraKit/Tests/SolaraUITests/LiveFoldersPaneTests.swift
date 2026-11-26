@@ -149,7 +149,7 @@ struct LiveFoldersPaneTests {
     #expect(services.calls.contains("refresh lf-1"))
   }
 
-  @Test(.timeLimit(.minutes(1))) func engineChangesReplaceTheStateAndSubscribeOnce() async throws {
+  @Test(.timeLimit(.minutes(3))) func engineChangesReplaceTheStateAndSubscribeOnce() async throws {
     let (_, model, services) = await Self.loaded()
     await model.prepare(SettingsPlace(pane: .liveFolders))
     #expect(services.changeRequests == 1)

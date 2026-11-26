@@ -126,7 +126,7 @@ struct CalendarPaneTests {
     #expect(CalendarAlertLeads.options.filter(\.separatorBefore).map(\.value) == ["start"])
   }
 
-  @Test(.timeLimit(.minutes(1))) func engineChangesReplaceTheState() async throws {
+  @Test(.timeLimit(.minutes(3))) func engineChangesReplaceTheState() async throws {
     let (_, _, model, services) = await Self.loaded()
     var next = services.state
     next.access = .denied

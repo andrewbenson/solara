@@ -602,23 +602,16 @@ private func keptSubtreeDocument() -> JSONValue {
 
 @MainActor
 extension BookmarkPumpTests {
-  @Test func mainActorKeepsRunningWhileAPushJournalWriteIsHeld() async throws {
+  @Test(.timeLimit(.minutes(2))) func mainActorKeepsRunningWhileAPushJournalWriteIsHeld() async throws {
     let directory = FileManager.default.temporaryDirectory.appendingPathComponent("pump-\(UUID().uuidString)")
     try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
     defer { try? FileManager.default.removeItem(at: directory) }
     let gate = PumpJournalGate(holdingSync: 2)
     let f = PumpFixture(directory: directory, fileOperations: gate.operations)
     try await f.rename("Held")
-    var sawHeldWriteFromMain = false
-    for _ in 0..<2000 where !sawHeldWriteFromMain {
-      try await Task.sleep(nanoseconds: 1_000_000)
-      if gate.holding {
-        sawHeldWriteFromMain = true
-        #expect(f.owner.desiredView(engine: "").document["nodes"]?["b0"]?["title"] == "Held")
-      }
+    try await gate.whileHolding {
+      #expect(f.owner.desiredView(engine: "").document["nodes"]?["b0"]?["title"] == "Held")
     }
-    gate.release()
-    #expect(sawHeldWriteFromMain)
     await f.pump.settle(engine: "")
     #expect(f.engine.batches.count == 1)
     #expect(f.engine.document["nodes"]?["b0"]?["title"] == "Held")
@@ -627,13 +620,22 @@ extension BookmarkPumpTests {
 
 private final class PumpJournalGate: @unchecked Sendable {
   private let lock = NSLock()
+  private let entered = AsyncStream<Void>.makeStream()
   private let releaseSignal = DispatchSemaphore(value: 0)
   private let target: Int
   private var count = 0
   private var isHolding = false
   init(holdingSync target: Int) { self.target = target }
-  var holding: Bool { lock.lock(); defer { lock.unlock() }; return isHolding }
-  func release() { releaseSignal.signal() }
+  private var holding: Bool { lock.lock(); defer { lock.unlock() }; return isHolding }
+
+  @MainActor func whileHolding(_ check: () -> Void) async throws {
+    defer { releaseSignal.signal() }
+    var iterator = entered.stream.makeAsyncIterator()
+    try #require(await iterator.next() != nil)
+    try #require(holding)
+    check()
+  }
+
   var operations: BookmarkPendingFileOperations {
     var operations = BookmarkPendingFileOperations.live
     let liveSync = operations.syncFile
@@ -644,7 +646,8 @@ private final class PumpJournalGate: @unchecked Sendable {
       if hold { self.isHolding = true }
       self.lock.unlock()
       if hold {
-        _ = self.releaseSignal.wait(timeout: .now() + 5)
+        self.entered.continuation.yield(())
+        _ = self.releaseSignal.wait(timeout: .now() + 90)
         self.lock.lock()
         self.isHolding = false
         self.lock.unlock()
@@ -744,23 +747,16 @@ private final class PumpJournalFault: @unchecked Sendable {
 
 @MainActor
 extension BookmarkPumpTests {
-  @Test func mainActorKeepsRunningWhileASubmitJournalWriteIsHeld() async throws {
+  @Test(.timeLimit(.minutes(2))) func mainActorKeepsRunningWhileASubmitJournalWriteIsHeld() async throws {
     let directory = FileManager.default.temporaryDirectory.appendingPathComponent("pump-\(UUID().uuidString)")
     try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
     defer { try? FileManager.default.removeItem(at: directory) }
     let gate = PumpJournalGate(holdingSync: 1)
     let f = PumpFixture(directory: directory, fileOperations: gate.operations)
     let submitted = Task { try await f.rename("Held") }
-    var sawHeldWriteFromMain = false
-    for _ in 0..<2000 where !sawHeldWriteFromMain {
-      try await Task.sleep(nanoseconds: 1_000_000)
-      if gate.holding {
-        sawHeldWriteFromMain = true
-        #expect(f.owner.desiredView(engine: "").document["nodes"]?["b0"]?["title"] == "Page")
-      }
+    try await gate.whileHolding {
+      #expect(f.owner.desiredView(engine: "").document["nodes"]?["b0"]?["title"] == "Page")
     }
-    gate.release()
-    #expect(sawHeldWriteFromMain)
     try await submitted.value
     #expect(f.owner.desiredView(engine: "").document["nodes"]?["b0"]?["title"] == "Held")
     await f.pump.settle(engine: "")

@@ -174,6 +174,34 @@ async function nativeChecks() {
   check("native current page registration accepts scrolling", reported === true);
   const collapsed = await waitShell("native scrolling collapses", (layout) => layout.toolbarModes.c === "collapsed" && Math.abs(layout.presentationFacts.c.top - 20) <= 0.5);
   check("native scrolling collapses the shown toolbar", collapsed.layout.toolbarModes.c === "collapsed");
+  const stripHost = () => ac('return expo.modules.SolaraAutoHide.devStripHost("w1","c");');
+  check("collapsed strip shows the original host", await stripHost() === "example.com");
+  await ac(`
+    const module = expo.modules.SolaraAutoHide;
+    globalThis.originalAutoHideStyle = module.setStyle;
+    const suppress = () => Promise.resolve();
+    module.setStyle = suppress;
+    if (module.setStyle !== suppress) throw new Error("could not suppress JS auto-hide styling");
+    return true;
+  `);
+  try {
+    const url = "https://example.net/c";
+    const report = await ac(`
+      const state = ac.store.getState();
+      const facts = ac.nativePages.facts("c");
+      if (!facts) throw new Error("missing native page facts");
+      return ac.nativePages.report("c", { type:"navigation", generation:facts.generation, eventSeq:facts.newestEventSeq+1,
+        url:${JSON.stringify(url)}, title:state.tabs.c.title, themeColor:state.live.c?.themeColor,
+        isLoading:false, canGoBack:false, canGoForward:false });
+    `);
+    if (!report || report.error) throw new Error(`native navigation report failed: ${JSON.stringify(report)}`);
+    await untilSnapshot("navigation committed with the new collapsed strip host", async (value) =>
+      value.tabs.some((tab) => tab.id === "c" && tab.url === url) && await stripHost() === "example.net");
+    await waitShell("strip stayed collapsed after the navigation report", (layout) => layout.toolbarModes.c === "collapsed");
+    check("collapsed strip updates after navigation with JS styling suppressed", true);
+  } finally {
+    await ac('expo.modules.SolaraAutoHide.setStyle = globalThis.originalAutoHideStyle; delete globalThis.originalAutoHideStyle; return true;');
+  }
   await activate("d");
   check("native next tab has a shown toolbar", (await snapshot("native next tab", ["d"], "d")).shell.layout.toolbarModes.d === "shown");
   await activate("c");

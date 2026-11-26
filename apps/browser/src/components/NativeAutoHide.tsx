@@ -24,7 +24,6 @@ const native = requireOptionalNativeModule<AutoHideNative>("SolaraAutoHide");
 
 export function NativeAutoHideStyleFeed({ windowId, tabId }: { windowId: string; tabId: string }) {
   const theme = useTheme();
-  const url = useBrowser((s) => s.tabs[tabId]?.url ?? "");
   const palette = toolbarPalette(theme, useToolbarSiteColor(tabId));
   const developer = useTabDeveloperMode(tabId);
   const popover = usePages((s) => !!s.popover[tabId]);
@@ -34,7 +33,6 @@ export function NativeAutoHideStyleFeed({ windowId, tabId }: { windowId: string;
   const json = JSON.stringify({
     held: popover || history || extension || editing,
     card: theme.card, band: palette.background, divider: palette.divider, secondary: palette.secondary,
-    host: url.startsWith("file:") ? "File" : breadcrumb(url).host, hasPage: !!url,
     stripes: developer ? stripesUri(palette) : null,
   });
   useEffect(() => {

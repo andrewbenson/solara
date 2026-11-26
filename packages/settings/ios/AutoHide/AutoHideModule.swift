@@ -1,6 +1,7 @@
 import AppKit
 import ExpoModulesCore
 import Foundation
+import SolaraCore
 import SolaraModel
 import SolaraStore
 import SolaraUI
@@ -30,6 +31,15 @@ public class AutoHideModule: Module {
       }
     }.runOnQueue(.main)
 
+    #if DEBUG
+    AsyncFunction("devStripHost") { (windowId: String, tabId: String) -> String? in
+      MainActor.assumeIsolated {
+        guard SolaraCoreTestHooksAllowed() else { return nil }
+        return AutoHideHost.devStripHost(windowId: windowId, tabId: tabId)
+      }
+    }.runOnQueue(.main)
+    #endif
+
     AsyncFunction("remove") { (windowId: String, tabId: String) in
       MainActor.assumeIsolated { AutoHideHost.remove(windowId: windowId, tabId: tabId) }
     }.runOnQueue(.main)
@@ -42,14 +52,12 @@ struct AutoHideStyleState: Decodable {
   let band: String?
   let divider: String
   let secondary: String
-  let host: String
-  let hasPage: Bool
   let stripes: String?
 
   var style: AutoHideStripStyle {
     AutoHideStripStyle(card: CSSColor(card) ?? CSSColor("#FFFFFF")!, band: band.flatMap { CSSColor($0) },
       divider: CSSColor(divider) ?? CSSColor("#00000019")!, secondary: CSSColor(secondary) ?? CSSColor("#00000080")!,
-      host: host, hasPage: hasPage, stripes: stripes)
+      host: "", hasPage: true, stripes: stripes)
   }
 }
 
@@ -131,6 +139,7 @@ enum AutoHideHost {
   static func install(_ snapshot: WindowLayoutSnapshot) {
     let windowId = snapshot.input.windowId
     snapshots[windowId] = snapshot
+    let state = NativeWindowShell.nativeLayoutActive(windowId) ? NativeStoreHandle.store?.state : nil
     let visible = Set(snapshot.toolbarModes.keys.filter { snapshot.input.hideToolbarWhileScrolling && (snapshot.toolbars[$0]?.height ?? 0) > 0 })
     for entry in strips.keys.filter({ $0.hasPrefix(windowId + "\u{1}") }) {
       let tabId = String(entry.dropFirst(windowId.count + 1))
@@ -153,8 +162,12 @@ enum AutoHideHost {
           opacity: CGFloat(frame.controlsOpacity), scale: CGFloat(frame.toolbarScale), lift: CGFloat(-frame.toolbarLift), interactive: frame.interactive)
         NativeWindowShell.host(windowId)?.scheduleLayoutProjection()
       }
-      let style = styles[entry] ?? AutoHideStripStyle(card: CSSColor("#FFFFFF")!, band: nil,
+      var style = styles[entry] ?? AutoHideStripStyle(card: CSSColor("#FFFFFF")!, band: nil,
         divider: CSSColor("#00000019")!, secondary: CSSColor("#00000080")!, host: "", hasPage: true)
+      if let state, let identity = ToolbarPageIdentity.resolve(windowId: windowId, tabId: tabId, state: state) {
+        style.host = identity.host
+        style.hasPage = identity.hasPage
+      }
       keepUnderToolbar(strip, windowId: windowId, tabId: tabId)
       strip.set(style: style, mode: mode, shownTop: Double(top))
       if created { NativeWindowShell.host(windowId)?.scheduleLayoutProjection() }
@@ -168,6 +181,13 @@ enum AutoHideHost {
     }
     styles = styles.filter { !$0.key.hasPrefix(windowId + "\u{1}") }
   }
+
+  #if DEBUG
+  static func devStripHost(windowId: String, tabId: String) -> String? {
+    guard let strip = strips[key(windowId, tabId)], strip.window != nil else { return nil }
+    return strip.devLabelText
+  }
+  #endif
 
   static func layoutTop(windowId: String, tabId: String) -> CGFloat? {
     strips[key(windowId, tabId)].map { CGFloat($0.presentationTop) }

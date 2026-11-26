@@ -162,6 +162,10 @@ public final class AutoHideStripView: NSView {
     band.add(animation, forKey: "backgroundColor")
   }
 
+  #if DEBUG
+  public var devLabelText: String { label.stringValue }
+  #endif
+
   public var showsToolTip: Bool { label.toolTip != nil }
 
   private func setMode(_ next: ToolbarAutoHideMode) {

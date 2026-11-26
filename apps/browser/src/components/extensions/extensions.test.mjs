@@ -4,7 +4,6 @@ const native = await import("../../test-native/index.ts");
 const { useBrowser } = await import("../../store/browser.ts");
 const { usePages } = await import("../layout/pageState.ts");
 const { useExtensions } = await import("./store.ts");
-const { refreshActionStates } = await import("./actions.ts");
 const panels = await import("./sidePanels.ts");
 
 const S = () => useBrowser.getState();
@@ -28,22 +27,6 @@ function setup() {
   };
   return { w, a, b, asked, answer };
 }
-
-test("a tab switch while a tab's states are on their way gets its own states right after, with no timer", async () => {
-  const { a, b, asked, answer } = setup();
-  S().activate(a);
-  const first = refreshActionStates();
-  assert.deepEqual(asked.map((x) => x.browserId), [1]);
-  S().activate(b);
-  const second = refreshActionStates();
-  assert.equal(asked.length, 1, "one pass at a time");
-  await answer(0, { ext: { badgeText: "A" } });
-  assert.deepEqual(asked.map((x) => x.browserId), [1, 2], "the switch ran a pass as soon as the first ended");
-  await answer(1, { ext: { badgeText: "B" } });
-  await Promise.all([first, second]);
-  assert.equal(E().actions[1].ext.badgeText, "A");
-  assert.equal(E().actions[2].ext.badgeText, "B");
-});
 
 test("A→B→A shows A's side panel whatever order Chrome answers in", async () => {
   const { w, a, b, asked, answer } = setup();

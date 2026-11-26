@@ -665,14 +665,20 @@ and removes it, and checks that another profile's rows survive. Native ownership
 store replacement and delayed engine callbacks still require host-level verification.
 No runtime verification claimed.
 
-Lifecycle slice 3 uses SelectionLifecycleTests, ZoomLifecycleTests and
-SelectionBarTests. Coverage includes the 150 ms delay, stale-page admission,
-disable/re-enable, ECMAScript whitespace, modifier precedence, native focus
-retention, clamped SelectionBarView placement, stale dismissal and Escape
-consumption before JS page-event delivery. Run PageIssuerTests alongside them,
-then the full SolaraKit suite. The Expo adapters still require typecheck-pod
-SolaraSettingsAdapter and the selection-popover, native-find-commands and
-acceptance zoom-levels drivers in both window layouts before landing.
+### Lifecycles slice 3: selection search and zoom popover
+
+`SelectionLifecycleTests`, `ZoomLifecycleTests` and `SelectionBarTests` cover the 150 ms delay, stale pages,
+disable and re-enable, whitespace, modifier precedence, focus retention, bar placement, stale dismissal and Escape
+handled before the page sees it. Run `PageIssuerTests` with them, then the full SolaraKit suite and
+`typecheck-pod SolaraSettingsAdapter`. Drivers, in both layouts: selection-popover, zoom-popover,
+native-find-commands and acceptance `zoom-levels`.
+
+### Lifecycles slice 4a: extension catalog and action states
+
+`ExtensionCatalogLifecycleTests` cover profile loads, shared reads with one trailing reread, removal, private split
+eligibility, error and ownership fences, and coalesced engine events. Then the full SolaraKit suite and
+`typecheck-pod SolaraSettingsAdapter`. Drivers, in both layouts: extension-menu (also with
+`SOLARA_EXTENSION_ACTION_POLL=on`), webkit-pill, extension-search-refresh, side-panel and acceptance `extensions`.
 
 ### Slice 7: shared pinned pages
 

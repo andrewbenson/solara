@@ -1,8 +1,10 @@
+import { nativeExtensionContext } from "@solara/settings";
 import { extensionSidePanelUrl } from "@solara/solaracore";
 import { useBrowser } from "../../store/browser";
 import { shownBrowserId, extensionProfile, isPrivate, pageProfile, shownIn, useExtensions } from "./store";
 
 const wanted = new Map<string, string>();
+const publishWanted = () => void nativeExtensionContext(useExtensions.getState().popup?.extensionId ?? null, Object.fromEntries(wanted));
 const fetches = new Map<string, number>();
 let opens = 0;
 
@@ -17,6 +19,7 @@ export const wantedSidePanels = () => [...wanted];
 export function openSidePanel(windowId: string, extensionId: string): Promise<void> {
   if (!shownIn(windowId, extensionId)) return Promise.resolve();
   wanted.set(windowId, extensionId);
+  publishWanted();
   return syncSidePanel(windowId);
 }
 
@@ -24,6 +27,7 @@ export function closeSidePanel(windowId: string, extensionId?: string) {
   const id = wanted.get(windowId);
   if (!id || (extensionId && id !== extensionId)) return;
   wanted.delete(windowId);
+  publishWanted();
   nextFetch(windowId);
   if (!useExtensions.getState().sidePanels[windowId]) return;
   useExtensions.setState((e) => {

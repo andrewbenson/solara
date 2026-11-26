@@ -107,6 +107,8 @@ void (^gExtensionsHandler)(NSString *, NSDictionary *);
 BOOL (^gCloseCancelledHandler)(NSDictionary *);
 
 void Changed(NSString *profile, NSString *extensionId, NSString *event) {
+  [NSNotificationCenter.defaultCenter postNotificationName:@"SolaraExtensionsChanged" object:nil
+    userInfo:@{@"profile" : solaracore_host::OriginalProfileName(profile), @"id" : extensionId, @"event" : event}];
   if (gExtensionsHandler && extensionId.length)
     gExtensionsHandler(@"changed", @{@"profile" : solaracore_host::OriginalProfileName(profile), @"id" : extensionId, @"event" : event});
 }

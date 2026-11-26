@@ -30,6 +30,18 @@ public class ToolbarModule: Module {
       } }
     }
 
+    AsyncFunction("refreshExtensionCatalog") { (profile: String, afterChange: Bool) async -> String in
+      await NativeExtensionCatalog.refreshAndWait(profile, afterChange: afterChange)
+    }
+
+    AsyncFunction("extensionContext") { (popup: String?, panels: [String: String]) in
+      MainActor.assumeIsolated {
+        NativeExtensionCatalog.legacyPopup = popup
+        NativeExtensionCatalog.legacyPanels = panels
+        NativeExtensionCatalog.refreshActions()
+      }
+    }.runOnQueue(.main)
+
     Function("available") { () -> Bool in ToolbarModule.available }
 
     AsyncFunction("showExtensionPopup") { (json: String) -> Bool in

@@ -35,6 +35,8 @@ export type ExtensionPopupOpenWindow = {
 
 type NativeToolbarModule = {
   available(): boolean;
+  refreshExtensionCatalog(profile: string, afterChange: boolean): Promise<string>;
+  extensionContext(popup: string | null, panels: Record<string, string>): Promise<void>;
   showExtensionPopup(requestJSON: string): Promise<boolean>;
   closeExtensionPopup(windowId: string | null): Promise<void>;
   addListener(event: "onExtensionPopupChanged", listener: (event: ExtensionPopupChange) => void): EventSubscription;
@@ -105,3 +107,7 @@ export function NativeSidebarAddressBarView(props: ViewProps & { windowId: strin
   SidebarAddressHost ??= requireNativeViewManager<ViewProps & { windowId: string }>("SolaraSidebarAddressBar") as ComponentType<ViewProps & { windowId: string }>;
   return <SidebarAddressHost {...props} />;
 }
+
+export const refreshNativeExtensionCatalog = (profile: string, afterChange = false) => native?.refreshExtensionCatalog(profile, afterChange) ?? Promise.resolve("[]");
+
+export const nativeExtensionContext = (popup: string | null, panels: Record<string, string>) => native?.extensionContext(popup, panels);

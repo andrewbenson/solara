@@ -5,7 +5,6 @@ import {
   extensionActionStates,
   inspectUnpackedExtension,
   installExtension,
-  listExtensions,
   resolveExtensionInstallPrompt,
   setExtensionEnabled,
   uninstallExtension,
@@ -16,7 +15,7 @@ import {
   type InstalledExtension,
 } from "@solara/solaracore";
 import { confirm, showMenu } from "@solara/shell";
-import { closeNativeExtensionPopup, showNativeExtensionPopup, type ExtensionPopupChange } from "@solara/settings";
+import { refreshNativeExtensionCatalog, closeNativeExtensionPopup, showNativeExtensionPopup, type ExtensionPopupChange } from "@solara/settings";
 import { openWindow } from "../../lib/actions";
 import { webviews } from "../../lib/webviews";
 import { useBrowser, type BrowserState } from "../../store/browser";
@@ -32,40 +31,16 @@ export * from "./store";
 
 const EMPTY: InstalledExtension[] = [];
 
-const loading = new Map<string, Promise<InstalledExtension[]>>();
-
-export function refreshExtensions(profile: string): Promise<InstalledExtension[]> {
-  const running = loading.get(profile);
-  if (running) return running;
-  const job = listExtensions(profile)
-    .then((list) => {
-      list.sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: "base" }));
-      useExtensions.setState((e) => ({ lists: { ...e.lists, [profile]: list } }));
-      return list;
-    })
-    .catch((error) => {
-      console.warn("[extensions] list failed", error);
-      return useExtensions.getState().lists[profile] ?? EMPTY;
-    })
-    .finally(() => loading.delete(profile));
-  loading.set(profile, job);
-  return job;
+export async function refreshExtensions(profile: string): Promise<InstalledExtension[]> {
+  const list: InstalledExtension[] = JSON.parse(await refreshNativeExtensionCatalog(profile));
+  useExtensions.setState((e) => ({ lists: { ...e.lists, [profile]: list } }));
+  return list;
 }
 
-const trailing = new Map<string, Promise<InstalledExtension[]>>();
-
-export function refreshExtensionsAfterChange(profile: string): Promise<InstalledExtension[]> {
-  const running = loading.get(profile);
-  if (!running) return refreshExtensions(profile);
-  let next = trailing.get(profile);
-  if (!next) {
-    next = running.then(() => {
-      trailing.delete(profile);
-      return refreshExtensions(profile);
-    });
-    trailing.set(profile, next);
-  }
-  return next;
+export async function refreshExtensionsAfterChange(profile: string): Promise<InstalledExtension[]> {
+  const list: InstalledExtension[] = JSON.parse(await refreshNativeExtensionCatalog(profile, true));
+  useExtensions.setState((e) => ({ lists: { ...e.lists, [profile]: list } }));
+  return list;
 }
 
 export const findExtension = (profile: string, id: string) => useExtensions.getState().lists[profile]?.find((x) => x.id === id);

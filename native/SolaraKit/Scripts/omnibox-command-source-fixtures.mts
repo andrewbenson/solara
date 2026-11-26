@@ -133,7 +133,8 @@ let listAnswer: () => Promise<any> = async () => ({ extensions: rawExtensions })
 let mutationAnswer: () => Promise<any> = async () => ({ ok: true });
 native.list = async () => clone(await listAnswer());
 native.setEnabled = () => mutationAnswer();
-const { refreshExtensions, refreshExtensionsAfterChange, setEnabled } = await import(source("apps/browser/src/components/extensions/state.ts"));
+const { extensionCatalogFixture } = await import("./extension-catalog-fixture.mts");
+const { refreshExtensions, refreshExtensionsAfterChange, setEnabled } = extensionCatalogFixture(native, useExtensions);
 apply();
 rawExtensions = names.map((name, i) => ({ ...extension, id: `sort-${i}`, name }));
 await refreshExtensions("");

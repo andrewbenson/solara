@@ -1,21 +1,16 @@
 import {
   onExtensionInstallPrompt,
   onExtensionInstallPromptClosed,
-  onExtensionActionChanged,
   onExtensionActionPopup,
   onExtensionActionShortcut,
   onExtensionSidePanel,
-  onEngineEvent,
-  onExtensionsChanged,
   onExtensionTabsRequest,
   resolveExtensionInstallPrompt,
-  watchExtensionActions,
   webStoreExtensionId,
   type TabsRequest,
   type CloseCancelledTab,
 } from "@solara/solaracore";
-import { killSwitchEnvironment } from "@solara/shell";
-import { onNativeExtensionPopupChanged, onNativeExtensionPopupOpenWindow } from "@solara/settings";
+import { nativeExtensionContext, onNativeExtensionPopupChanged, onNativeExtensionPopupOpenWindow } from "@solara/settings";
 import { AppState } from "react-native";
 import { openWindow } from "../../lib/actions";
 import { webviews } from "../../lib/webviews";
@@ -28,7 +23,6 @@ import { activeTabId, engineProfile, incognitoOriginal } from "../../store/model
 import { shownPageId } from "../../store/peek";
 import { openFromPage, pageProfileId } from "../layout/openFromPage";
 import { tabForBrowser, usePages } from "../layout/pageState";
-import { refreshActionStates } from "./actions";
 import * as state from "./state";
 import {
   activateExtension,
@@ -41,8 +35,6 @@ import {
   findExtension,
   installRequesterGone,
   openSidePanel,
-  refreshExtensions,
-  refreshExtensionsAfterChange,
   showInstallPrompt,
   wantedSidePanels,
   syncSidePanel,
@@ -54,25 +46,13 @@ import { PRODUCT } from "../../lib/productName";
 
 export function startExtensionsBridge() {
   onExtensionTabsRequest(openRequestedTab);
-  onExtensionsChanged(({ profile }) => void refreshExtensions(profile));
-  onEngineEvent("extensions.changed", ({ profile }) => void refreshExtensionsAfterChange(profile));
-
-  const loadProfiles = (s: BrowserState) => {
-    for (const id of s.windowOrder) {
-      const profile = extensionProfile(s, id);
-      if (loadedProfiles.has(profile)) continue;
-      loadedProfiles.add(profile);
-      void refreshExtensions(profile);
-      watchActionsOf(profile);
-    }
-  };
-  loadProfiles(useBrowser.getState());
   useBrowser.subscribe((s, prev) => {
-    if (s.windows !== prev.windows) loadProfiles(s);
     if (toolbarAnchors.size && (s.windows !== prev.windows || s.tabs !== prev.tabs)) pruneToolbarAnchors(s);
   });
-
-  startActionStates();
+  usePages.subscribe(keepAlivePagesChanged);
+  useExtensions.subscribe((e, prev) => {
+    if (e.popup !== prev.popup || e.sidePanels !== prev.sidePanels) void nativeExtensionContext(e.popup?.extensionId ?? null, Object.fromEntries(wantedSidePanels()));
+  });
   startSidePanels();
   startActionPopups();
   startWebStoreIntegration();
@@ -254,91 +234,6 @@ function toolbarAnchor(windowId: string, extensionId: string, tabId?: string): A
     if (entry) return entry.anchor;
   }
   return { x: 100_000, y: 13, width: 28, height: 28 };
-}
-
-const ACTION_POLL_MS = 1500;
-const ACTION_EVENT_COALESCE_MS = 150;
-
-function refreshActionsAndPanels() {
-  void refreshActionStates();
-  for (const [windowId] of wantedSidePanels()) void syncSidePanel(windowId);
-}
-
-let actionPoll: ReturnType<typeof setInterval> | null = null;
-function pollActionStates() {
-  actionPoll ??= setInterval(() => {
-    if (AppState.currentState === "active") refreshActionsAndPanels();
-  }, ACTION_POLL_MS);
-}
-
-const pollsActions = () => killSwitchEnvironment("SOLARA_EXTENSION_ACTION_POLL") === "on";
-
-function watchActionsOf(profile: string) {
-  if (pollsActions()) return pollActionStates();
-  void watchExtensionActions(profile).then((watching) => watching || pollActionStates());
-}
-
-const loadedProfiles = new Set<string>();
-const dirtyActions = new Set<string>();
-const dirtyLists = new Set<string>();
-let flushTimer: ReturnType<typeof setTimeout> | null = null;
-
-const windowsOf = (s: BrowserState, profile: string) => s.windowOrder.filter((windowId) => extensionProfile(s, windowId) === profile);
-
-function showsAction(profile: string, extensionId: string) {
-  const s = useBrowser.getState();
-  const popup = useExtensions.getState().popup;
-  const windows = windowsOf(s, profile);
-  if (wantedSidePanels().some(([windowId, id]) => id === extensionId && windows.includes(windowId))) return true;
-  return windows.some((windowId) => windowExtensions(s, windowId).some((x) => x.id === extensionId && (x.pinned || popup?.extensionId === x.id)));
-}
-
-function flushActionChanges() {
-  flushTimer = null;
-  if (AppState.currentState !== "active") return;
-  for (const profile of dirtyLists) if (loadedProfiles.has(profile)) void refreshExtensionsAfterChange(profile);
-  dirtyLists.clear();
-  if (dirtyActions.size) {
-    const profiles = [...dirtyActions];
-    dirtyActions.clear();
-    void refreshActionStates(profiles);
-    const s = useBrowser.getState();
-    for (const [windowId] of wantedSidePanels()) if (profiles.includes(extensionProfile(s, windowId))) void syncSidePanel(windowId);
-  }
-}
-
-function flushSoon() {
-  if (AppState.currentState !== "active" || (!dirtyActions.size && !dirtyLists.size)) return;
-  flushTimer ??= setTimeout(flushActionChanges, ACTION_EVENT_COALESCE_MS);
-}
-
-function startActionStates() {
-  onExtensionActionChanged(({ profile, id, kind }) => {
-    if (kind === "registry") dirtyLists.add(profile);
-    else if (showsAction(profile, id)) dirtyActions.add(profile);
-    else return;
-    flushSoon();
-  });
-  AppState.addEventListener("change", (state) => state === "active" && flushSoon());
-  useBrowser.subscribe((s, prev) => {
-    if (s.windows !== prev.windows || s.ui.focusedWindowId !== prev.ui.focusedWindowId) return void refreshActionStates();
-    if (s.tabs === prev.tabs) return;
-    if (s.windowOrder.some((id) => { const active = activeTabId(s, id); return !!active && s.tabs[active] !== prev.tabs[active]; })) void refreshActionStates();
-  });
-  useExtensions.subscribe((e, prev) => {
-    if (e.lists !== prev.lists || e.popup !== prev.popup) void refreshActionStates();
-  });
-  usePages.subscribe((p, prev) => {
-    keepAlivePagesChanged(p, prev);
-    if (p.browsers === prev.browsers) return;
-    void refreshActionStates();
-    const actions = useExtensions.getState().actions;
-    const gone = Object.keys(actions).filter((id) => !p.browsers[Number(id)]);
-    if (!gone.length) return;
-    const next = { ...actions };
-    for (const id of gone) delete next[Number(id)];
-    useExtensions.setState({ actions: next });
-  });
 }
 
 function startActionPopups() {

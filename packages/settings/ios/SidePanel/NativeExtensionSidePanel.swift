@@ -40,6 +40,8 @@ enum NativeExtensionSidePanel {
   private static var panels: [String: OwnedPanel] = [:]
   private static var lifecycleListener: Int?
 
+  static func extensionId(windowId: String) -> String? { panels[windowId]?.extensionId }
+
   static func owns(_ windowId: String) -> Bool { panels[windowId] != nil }
 
   static func preferredJSON(_ windowId: String, fallback: String?) -> String? {

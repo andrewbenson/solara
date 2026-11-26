@@ -12,7 +12,7 @@ import { fixturePage } from "../../../scripts/lib/fixture-html.mjs";
 const args = process.argv.slice(2);
 const appArg = args.find((a) => !a.startsWith("--"));
 if (!appArg) {
-  console.error(`usage: node side-panel-test.mjs <Debug Solara.app> [--keep-data] [--legs native,pool,split]
+  console.error(`usage: node side-panel-test.mjs <Debug Solara.app> [--keep-data] [--legs native,pool,split,safe]
 
 An extension's side panel in the native shell, with the page pool off, on and in a split. A fixture MV3 extension
 opens its panel in window w1 and the test checks the native card against the saved width and shell geometry, both
@@ -23,7 +23,8 @@ closes it. Focus: with the panel page focused, closing it by the ✕, by the too
 another extension's panel leaves page A focused. Lifetime: twelve open and close cycles leave no panel page alive
 (DevTools targets) and no more renderer processes than before; a replaced panel, a JS reload, a closed window and a
 turned-off extension each leave at most the one panel page that should be there, and no live SolaraCoreWebView with
-extensionHost "sidePanel" once closed (C.devLiveExtensionViews).`);
+extensionHost "sidePanel" once closed (C.devLiveExtensionViews). The pool leg checks Peek, private and Little Solara
+windows. The safe leg checks that an installed extension cannot mount its panel in safe mode.`);
   process.exit(2);
 }
 const keep = args.includes("--keep-data");
@@ -73,7 +74,8 @@ const click = (n, p, count) => act(n, "mouse:moved:" + at(p)).then(() => settle(
 const drag = (n, from, dx) => act(n, "mouse:moved:" + at(from)).then(() => settle(40)).then(() => act(n, "mouse:down:" + at(from)))
   .then(() => [1, 2, 3, 4, 5].reduce((p, i) => p.then(() => settle(30)).then(() => act(n, "mouse:dragged:" + at([from[0] + dx * i / 5, from[1]]))), Promise.resolve()))
   .then(() => settle(40)).then(() => act(n, "mouse:up:" + at([from[0] + dx, from[1]])));
-const shown = (w) => ac.extensions.useExtensions.getState().sidePanels[w] || null;
+const panelCommand = (windowId, action, id = null) => expo.modules.SolaraToolbar.devSidePanel(windowId, action, id);
+const shown = (w) => panelCommand(w, "read");
 const width = () => ac.store.getState().windows.w1?.sidePanelWidth ?? ac.store.getState().settings.extensionSidePanelWidth ?? 360;
 `;
 let app = null;
@@ -278,6 +280,7 @@ const LEGS = [
   { tag: "native", env: { SOLARA_NATIVE_SHELL: "1", SOLARA_NATIVE_PAGES_POOL: "0" } },
   { tag: "pool", env: { SOLARA_NATIVE_SHELL: "1", SOLARA_NATIVE_PAGES_POOL: "1", SOLARA_SHELL_PANES: "1", SOLARA_TAB_POOL: "1" } },
   { tag: "split", env: { SOLARA_NATIVE_SHELL: "1", SOLARA_NATIVE_PAGES_POOL: "1", SOLARA_SHELL_PANES: "1", SOLARA_TAB_POOL: "1" } },
+  { tag: "safe", env: { SOLARA_NATIVE_SHELL: "1" } },
 ].filter((l) => !legsArg || legsArg.split(",").includes(l.tag));
 
 try {
@@ -286,6 +289,28 @@ try {
       data: join(scratch, `data-${tag}`), fresh: true, session: fixture, onboarded: true, probe: true, env,
       ready: "return !!ac.store.getState().windows.w1",
     });
+    if (tag === "safe") {
+      await rep.check("safe-mode-panel-refused", async () => {
+        const { id, error } = await run(`return X.install(${JSON.stringify(extA)}, "");`);
+        assert.ok(id, error ?? "a fixture extension installed");
+        await run('return ac.extensions.refreshExtensions("");');
+        await app.quit();
+        app = await launch(resolve(appArg), {
+          data: join(scratch, "data-safe"), onboarded: true, probe: true,
+          env: { ...env, SOLARA_LAUNCH_SWITCHES_DEFAULTS: `solara-side-panel-${randomUUID()}`, SOLARA_LAUNCH_SWITCHES_OPTION: "1" },
+          ready: "return Object.keys(ac.store.getState().windows).length > 0",
+        });
+        const safeWindow = await run("return Object.keys(ac.store.getState().windows)[0];");
+        const status = await run('return expo.modules.SolaraStoreAdapter.status();');
+        assert.equal(status.safeMode, "option");
+        assert.equal(await run(`return panelCommand(${JSON.stringify(safeWindow)}, "open", ${JSON.stringify(id)});`), null);
+        assert.equal((await app.snapshot({ fields: ["root.sidePanelLiveViews"] })).sidePanelLiveViews, 0);
+        return true;
+      });
+      await app?.quit();
+      app = null;
+      continue;
+    }
     await until("page A", `return ac.store.getState().tabs.a?.title === "A" || null;`, 15000);
     const number = await until("window w1", `const id = Object.entries(ac.pageState.getState().browsers ?? {}).find(([, t]) => t === "a")?.[0]; return id ? C.devWindowNumber(Number(id)) : null;`, 15000);
     const identity = await untilSnapshot("native page A and owning window", (s) => s.tabs.some((t) => t.id === "a" && t.title === "A") && nativeWindow(s)?.chromeWindowNumber === number);
@@ -307,7 +332,7 @@ try {
     const b = await run(`return X.install(${JSON.stringify(extB)}, "");`);
     const c = await run(`return X.install(${JSON.stringify(extC)}, "");`);
     await run(`return ac.extensions.refreshExtensions("").then(() => true);`);
-    const open = (id, w = "w1", timeout = 2500) => run(`return ac.extensions.openSidePanel(${JSON.stringify(w)}, ${JSON.stringify(id)}).then(() => shown(${JSON.stringify(w)}));`, timeout);
+    const open = (id, w = "w1", timeout = 2500) => run(`return panelCommand(${JSON.stringify(w)}, "open", ${JSON.stringify(id)});`, timeout);
     const loadedPanel = async (id, w = "w1", old = null) => {
       const url = `chrome-extension://${id}/panel.html`;
       const title = new Map([[a.id, "Side panel A"], [b.id, "Side panel B"], [c.id, "Side panel C"]]).get(id);
@@ -351,7 +376,7 @@ try {
       return loadedPanel(id, w);
     };
     const closedWithFocusOnA = async (how) => {
-      await until(`${how}: the panel closes`, `return !shown("w1") || null;`, 4000);
+      await until(`${how}: the panel closes`, `return shown("w1").then((panel) => !panel || null);`, 4000);
       const onA = await until(`${how}: page A has focus`, async () => (await focused(`${origin}/a`)) || null, 3000);
       await nativeClosed(`${how}: native panel closes`);
       return onA;
@@ -489,7 +514,7 @@ try {
     await rep.check(`${tag}-focus-toolbar-toggle`, async () => {
       await openAndLoad(a.id);
       await focusPanel(a.id);
-      await run(`return Promise.resolve(ac.extensions.toggleSidePanel("w1", ${JSON.stringify(a.id)})).then(() => true);`);
+      await run(`return panelCommand("w1", "toggle", ${JSON.stringify(a.id)});`);
       return closedWithFocusOnA("toggle");
     });
 
@@ -508,7 +533,7 @@ try {
       assert.deepEqual(nativeWindow(replaced).sidePanel.pages.map((p) => p.extensionId), [b.id]);
       assert.equal(replacementViews, 1);
       assert.equal(replaced.sidePanelLiveViews, 1);
-      await run(`ac.extensions.closeSidePanel("w1"); return true;`);
+      await run(`return panelCommand("w1", "close");`);
       await until("B's panel page goes", async () => (await panelTargets(b.id)).length === 0 || null, 4000);
       await nativeClosed("native replacement closes");
       return onA;
@@ -517,8 +542,8 @@ try {
     await rep.check(`${tag}-cycles`, async () => {
       for (let i = 0; i < 12; i++) {
         await openAndLoad(i % 2 ? b.id : a.id);
-        await run(`ac.extensions.closeSidePanel("w1"); return true;`);
-        await until("the panel closes", `return !shown("w1") || null;`, 4000);
+        await run(`return panelCommand("w1", "close");`);
+        await until("the panel closes", `return shown("w1").then((panel) => !panel || null);`, 4000);
         await nativeClosed(`native cycle ${i + 1}/12 closes`);
       }
       await until("no panel page is left", async () => (await panelTargets(a.id)).length + (await panelTargets(b.id)).length === 0 || null, 5000);
@@ -550,7 +575,7 @@ try {
       if (views > 1) throw new Error(`${views} live side panel views after a JS reload`);
       assert.equal(reload.sidePanelLiveViews, views);
       assert.ok(reload.sidePanelLiveViews <= 1);
-      await run(`ac.extensions.closeSidePanel("w1"); return true;`);
+      await run(`return panelCommand("w1", "close");`);
       await until("no panel page after closing", async () => (await panelTargets(b.id)).length === 0 || null, 5000);
       await nativeClosed("native closing after a JS reload");
       await noLiveViews("closing after a JS reload");
@@ -576,7 +601,7 @@ try {
           if (!shownPanel) break;
           await sleep(Math.min(25, Math.max(0, end - Date.now())));
         }
-        assert.equal(shownPanel, null, "window.close(): JS did not observe the panel close");
+        assert.equal(shownPanel, null, "window.close(): native ownership remained after closing");
       } catch (e) {
         throw new Error(`${e.message}; window.close elapsed ${Date.now() - closing}ms; old ${JSON.stringify(old)}; last shown ${JSON.stringify(shownPanel)}`, { cause: e });
       } finally {
@@ -589,27 +614,59 @@ try {
         requestResult = await open(c.id);
         reopened = await loadedPanel(c.id, "w1", old);
       } catch (e) {
-        throw new Error(`${e.message}; old ${JSON.stringify(old)}; reopen result ${JSON.stringify(requestResult)}; close to JS ${closed - closing}ms; JS close to reopen request ${reopening - closed}ms; reopen elapsed ${Date.now() - reopening}ms`, { cause: e });
+        throw new Error(`${e.message}; old ${JSON.stringify(old)}; reopen result ${JSON.stringify(requestResult)}; close to native observation ${closed - closing}ms; native close to reopen request ${reopening - closed}ms; reopen elapsed ${Date.now() - reopening}ms`, { cause: e });
       }
       assert.notEqual(reopened.targetId, old.targetId);
       assert.notEqual(reopened.nonce, old.nonce);
-      await run(`ac.extensions.closeSidePanel("w1"); return true;`);
+      await run(`return panelCommand("w1", "close");`);
       await until("the reopened panel closes", async () => (await panelTargets(c.id)).length === 0 || null, 5000);
       await nativeClosed("native window.close and reopened panel close drop panel");
       await noLiveViews("the reopened panel closes");
-      return { reopened: true, old, replacement: reopened, closeToJS: closed - closing, closeToReopen: reopening - closed };
+      return { reopened: true, old, replacement: reopened, closeToObservation: closed - closing, closeToReopen: reopening - closed };
     });
 
     await rep.check(`${tag}-turned-off`, async () => {
       await openAndLoad(b.id);
       await run(`return ac.extensions.setEnabled("", ${JSON.stringify(b.id)}, false).then(() => true);`);
-      await until("the panel closes", `return !shown("w1") || null;`, 5000);
+      await until("the panel closes", `return shown("w1").then((panel) => !panel || null);`, 5000);
       await until("its page goes", async () => (await panelTargets(b.id)).length === 0 || null, 5000);
       await nativeClosed("native turned-off extension closes");
       await noLiveViews("a turned-off extension");
       await run(`return ac.extensions.setEnabled("", ${JSON.stringify(b.id)}, true).then(() => true);`);
       return true;
     });
+
+    if (tag === "pool") {
+      await rep.check("pool-peek-keeps-panel", async () => {
+        await openAndLoad(a.id);
+        const peek = await run(`return ac.store.getState().openPeek("a", ${JSON.stringify(`${origin}/peek`)});`);
+        assert.ok(peek, "Peek opens");
+        try {
+          await until("Peek page is ready", `return ac.store.getState().tabs[${JSON.stringify(peek)}]?.title === "PEEK" || null;`, 5000);
+          await loadedPanel(a.id);
+        } finally {
+          await run('ac.store.getState().closePeek("w1"); return panelCommand("w1", "close");');
+        }
+        await nativeClosed("Peek panel closes");
+        return true;
+      });
+      for (const [kind, options] of [["private", { incognito: true }], ["little", { small: true }]]) {
+        await rep.check(`pool-${kind}-panel-refused`, async () => {
+          const id = await run(`return ac.store.getState().createWindow(${JSON.stringify({ ...options, url: `${origin}/${kind}` })});`);
+          assert.ok(id, `the ${kind} window opens`);
+          try {
+            await until(`${kind} page is ready`, `return Object.values(ac.store.getState().tabs).some((tab) => tab.windowId === ${JSON.stringify(id)} && tab.title === ${JSON.stringify(kind.toUpperCase())}) || null;`, 10000);
+            assert.equal(await open(a.id, id), null);
+            const s = await app.snapshot({ fields: ["windows.sidePanel", "root.sidePanelLiveViews"] });
+            assert.equal(s.sidePanelLiveViews, 0);
+            assert.equal(nativeWindow(s, id)?.sidePanel?.pages.length ?? 0, 0);
+          } finally {
+            await run(`ac.store.getState().closeWindow(${JSON.stringify(id)}); return true;`);
+          }
+          return true;
+        });
+      }
+    }
 
     await rep.check(`${tag}-hidden-haptics`, async () => {
       assert.ok(app?.alive, "hidden haptics: the owned app exited");

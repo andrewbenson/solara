@@ -129,7 +129,7 @@ enum NativeExtensionCommands {
         anchor: rect, requiresActive: input["requiresActive"]?.truthy == true)
     case "menu":
       guard let ext else { return }
-      let panel = NativeExtensionCatalog.legacyPanels[window] == id || NativeExtensionSidePanel.extensionId(windowId: window) == id
+      let panel = NativeExtensionSidePanel.extensionId(windowId: window) == id
       choose(ExtensionToolbarProjection.menu(ext, panelOpen: panel), window: window) { choice, context in
         var next = input.object ?? [:]
         next["command"] = .string(choice == "pin" ? "setPinned" : choice == "enable" ? "setEnabled" : choice == "manage" ? "manageExtensions" : choice)
@@ -145,7 +145,7 @@ enum NativeExtensionCommands {
         run(.object(next), menu: context)
       }
     case "sidePanel":
-      SettingsJS.shared.fire("extensions.togglePanel", window, id, menu.map { $0.profileId as Any } ?? NSNull(), menu.map { $0.engineProfile as Any } ?? NSNull())
+      if profile == NativeExtensionCatalog.profile(window) { NativeExtensionSidePanel.toggle(window, id) }
     case "setPinned", "setEnabled", "configure":
       let options: JSONObject = command == "setPinned" ? ["pinned": input["pinned"] ?? false] : command == "setEnabled" ? ["enabled": input["enabled"] ?? false, "state": input["enabled"]?.truthy == true ? "ENABLED" : "DISABLED"] : input["options"]?.object ?? [:]
       if command != "configure" { NativeExtensionCatalog.catalog.patch(profile, id: id, values: options); NativeExtensionCatalog.publish() }
@@ -176,7 +176,7 @@ enum NativeExtensionCommands {
           NativeStoreHandle.ownershipGeneration == generation, menu?.matches(state: state) != false,
           ExtensionPresentation.WindowContext.profileExists(state: state, engineProfile: profile) else { completion?(nil); return }
         NativeExtensionActionPopup.extensionRemoved(id, profile: profile)
-        SettingsJS.shared.fire("extensions.closeSurfaces", id)
+        NativeExtensionSidePanel.extensionRemoved(id, profile: profile)
         SolaraCoreServices.uninstallExtension(id, profile: profile) { result in
           let error = ExtensionsAdapter.engineError(result)
           Task { @MainActor in

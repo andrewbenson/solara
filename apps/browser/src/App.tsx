@@ -7,7 +7,6 @@ import { ContentCard } from "./components/ContentCard";
 import { BookmarkDialog } from "./components/bookmarks/BookmarkDialog";
 import { EditBookmarkDialog } from "./components/bookmarks/EditBookmarkDialog";
 import { ExtensionOverlays } from "./components/extensions/ExtensionOverlays";
-import { ExtensionSidePanel } from "./components/extensions/SidePanel";
 import { DownloadMagnet, DownloadsPopover } from "./components/Downloads";
 import { isUtilityWindowId } from "./components/settings/windows";
 import { OnboardingOverlay } from "./components/onboarding";
@@ -61,7 +60,6 @@ function NativeBrowserWindow() {
     <View testID={`solara-window-guest.${windowId}`} pointerEvents="box-none" style={StyleSheet.absoluteFill}>
       <ShellBackdrop shell />
       <WindowProfile />
-      <ExtensionSidePanel fullscreen={false} />
       <NativeLayoutGuests topTabs={topTabs} />
       <CommandPanel windowWidth={width} />
       <DownloadsPopover />

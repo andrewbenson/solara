@@ -741,7 +741,7 @@ static void StartEarlyWindow() {
 - (void)engine:(SolaraCoreEngine *)engine extensionSidePanel:(NSDictionary *)panel tab:(SolaraCoreTab *)tab {
   NSMutableDictionary *payload = [panel mutableCopy];
   payload[@"browserId"] = @(tab ? solaracore_host::BrowserId(tab) : 0);
-  if (gChromeUIHandler) gChromeUIHandler(@"sidePanel", payload);
+  [NSNotificationCenter.defaultCenter postNotificationName:@"SolaraExtensionSidePanel" object:nil userInfo:payload];
 }
 
 - (BOOL)engine:(SolaraCoreEngine *)engine extensionActionPopup:(NSDictionary *)popup tab:(SolaraCoreTab *)tab {

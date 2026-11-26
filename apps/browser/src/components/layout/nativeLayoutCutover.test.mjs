@@ -6,7 +6,7 @@ const source = (path) => readFileSync(new URL(path, import.meta.url), "utf8");
 
 test("the default window root has no RN layout measurement or legacy layout host", () => {
   const app = source("../../App.tsx");
-  for (const name of ["onLayout=", "DockedLayout", "TopTabStrip", "SidePanelRoom", "useFullscreenTab", "ProfileTint"]) {
+  for (const name of ["onLayout=", "DockedLayout", "TopTabStrip", "SidePanelSpacer", "useFullscreenTab", "ProfileTint"]) {
     assert.equal(app.includes(name), false, name);
   }
   assert.match(app, /pointerEvents="box-none"/);
@@ -26,7 +26,7 @@ test("native content guests never import a renderer or RN pane geometry", () => 
 test("the legacy path retains its own composition and renderer", () => {
   const legacy = source("../../LegacyWindow.tsx");
   assert.match(legacy, /<DockedLayout/);
-  assert.match(legacy, /<SidePanelRoom/);
+  assert.match(legacy, /<SidePanelSpacer/);
   assert.match(legacy, /onLayout=/);
   const card = source("../LegacyContentCard.tsx");
   assert.match(card, /<WebView/);

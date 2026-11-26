@@ -248,7 +248,6 @@ export const revealedTabs: string[] = [];
 export const linkRoute: { next: LinkRoute } = { next: {} };
 export const extensionAnswers = {
   actionStates: async (_browserId: number, _ids: string[]): Promise<Record<string, ActionState>> => ({}),
-  sidePanelUrl: async (_browserId: number, _extensionId: string): Promise<string | null> => null,
 };
 
 const tabStripHost = () => testGlobals.acTestTabStrip!;
@@ -381,7 +380,6 @@ const chromeUI: Modules["SolaraChromeUI"] = {
   watchCastRoutes: () => Promise.resolve(),
   terminateCastRoute: () => Promise.resolve(),
   actionStates: (browserId, ids) => extensionAnswers.actionStates(browserId, ids),
-  sidePanelURL: (browserId, extensionId) => extensionAnswers.sidePanelUrl(browserId, extensionId),
   changeCaptureSource: () => Promise.resolve(false),
   stopCapture: () => Promise.resolve(false),
   showAutofillSuggestions: () => Promise.resolve(false),

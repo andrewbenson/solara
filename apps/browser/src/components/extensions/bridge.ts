@@ -1,7 +1,6 @@
 import {
   onExtensionInstallPrompt,
   onExtensionInstallPromptClosed,
-  onExtensionSidePanel,
   onExtensionTabsRequest,
   resolveExtensionInstallPrompt,
   webStoreExtensionId,
@@ -17,22 +16,16 @@ import { snapshotTabId, takeCloseSnapshot } from "../../lib/windowClose";
 import type { Tab, TabSnapshot } from "../../store/types";
 import { changedIds } from "../../store/changes";
 import { engineProfile, incognitoOriginal } from "../../store/model";
-import { shownPageId } from "../../store/peek";
 import { tabForBrowser, usePages } from "../layout/pageState";
 import * as state from "./state";
 import {
   cancelInstall,
   closeInstallPrompt,
-  closeSidePanel,
   extensionProfile,
   findExtension,
   installRequesterGone,
-  openSidePanel,
   showInstallPrompt,
-  wantedSidePanels,
-  syncSidePanel,
   useExtensions,
-  windowExtensions,
   type InstallRequester,
 } from "./state";
 import { PRODUCT } from "../../lib/productName";
@@ -40,7 +33,6 @@ import { PRODUCT } from "../../lib/productName";
 export function startExtensionsBridge() {
   onExtensionTabsRequest(openRequestedTab);
   usePages.subscribe(keepAlivePagesChanged);
-  startSidePanels();
   startWebStoreIntegration();
   if (__DEV__) Object.assign(globalThis, { acExtensionsApp: { ...state, bridge: { openExtensionFromMenu } } });
 }
@@ -192,32 +184,6 @@ function moveIntoChromeMadeWindow(request: TabsRequest, chromeWindow: string, ta
 
 export const openExtensionFromMenu = (windowId: string, extensionId: string, tabId?: string, requiresActive = false) =>
   nativeExtensionCommand({ command: "openExtension", windowId, id: extensionId, tabId, requiresActive });
-
-function startSidePanels() {
-  onExtensionSidePanel(({ browserId, extensionId, open }) => {
-    const tabId = tabForBrowser(browserId);
-    const windowId = tabId ? useBrowser.getState().tabs[tabId]?.windowId : undefined;
-    if (!windowId) return;
-    if (open) void openSidePanel(windowId, extensionId);
-    else closeSidePanel(windowId, extensionId);
-  });
-  const active = (s: BrowserState) => s.windowOrder.map((id) => `${id}:${shownPageId(s, id) ?? ""}`).join(",");
-  useBrowser.subscribe((s, prev) => {
-    if (s.windows === prev.windows && s.tabs === prev.tabs) return;
-    if (active(s) === active(prev)) return;
-    for (const [windowId] of wantedSidePanels()) {
-      if (!s.windows[windowId]) closeSidePanel(windowId);
-      else void syncSidePanel(windowId);
-    }
-  });
-  useExtensions.subscribe((e, prev) => {
-    if (e.lists === prev.lists) return;
-    const s = useBrowser.getState();
-    for (const [windowId, extensionId] of wantedSidePanels()) {
-      if (!windowExtensions(s, windowId).some((x) => x.id === extensionId)) closeSidePanel(windowId);
-    }
-  });
-}
 
 const STORE_SCRIPT = `
 const g = window;

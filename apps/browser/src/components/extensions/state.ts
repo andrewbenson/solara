@@ -10,7 +10,6 @@ import {
 import { nativeExtensionCommand, refreshNativeExtensionCatalog, closeNativeExtensionPopup } from "@solara/settings";
 import { useExtensions, type Anchor } from "./store";
 
-export * from "./sidePanels";
 export * from "./store";
 
 export async function refreshExtensions(profile: string): Promise<InstalledExtension[]> {
@@ -93,7 +92,6 @@ export const activateExtension = (windowId: string, ext: Pick<InstalledExtension
 
 export const closeExtensionPopup = (windowId: string | null = null) => closeNativeExtensionPopup(windowId);
 
-export const showExtensionMenu = (windowId: string, ext: InstalledExtension) => nativeExtensionCommand({ command: "menu", windowId, id: ext.id });
 
 function message(error: unknown): string {
   if (error instanceof ExtensionError) return error.message;

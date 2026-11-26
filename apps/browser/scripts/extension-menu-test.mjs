@@ -123,10 +123,10 @@ try {
   });
   await rep.check("context-side-panel-toggle", async () => {
     await context(id, "sidePanel");
-    await until("side panel", `return E.useExtensions.getState().sidePanels.w1?.extensionId === ${JSON.stringify(id)};`);
+    await until("side panel", `return T.devSidePanel("w1", "read", null).then((panel) => panel?.extensionId === ${JSON.stringify(id)});`);
     const model = await context(id, "sidePanel");
     assert.equal(model.items.find((item) => item.id === "sidePanel").title, "Close Side Panel");
-    await until("side panel closed", 'return !E.useExtensions.getState().sidePanels.w1;');
+    await until("side panel closed", 'return T.devSidePanel("w1", "read", null).then((panel) => !panel);');
     return { toggled: true };
   });
   await rep.check("context-options", async () => {
@@ -185,7 +185,7 @@ try {
 } finally {
   if (app) {
     await run('return D.devContextMenu("clear", null);').catch(() => null);
-    await run('E.closeExtensionPopup(); E.closeSidePanel("w1"); E.useExtensions.setState({ pinDialog: null }); return true;').catch(() => null);
+    await run('E.closeExtensionPopup(); E.useExtensions.setState({ pinDialog: null }); return T.devSidePanel("w1", "close", null);').catch(() => null);
     for (const id of installed) await run(`return X.uninstall(${JSON.stringify(id)}, "");`).catch(() => null);
     await app.quit();
   }

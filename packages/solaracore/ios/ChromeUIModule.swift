@@ -3,13 +3,12 @@ import ExpoModulesCore
 public class ChromeUIModule: Module {
   public func definition() -> ModuleDefinition {
     Name("SolaraChromeUI")
-    Events("onDeviceChooser", "onCastDialog", "onCastRoutes", "onSidePanel", "onActionPopup", "onActionShortcut")
+    Events("onDeviceChooser", "onCastDialog", "onCastRoutes", "onActionPopup", "onActionShortcut")
 
     OnCreate {
       SolaraCoreHost.chromeUIHandler = { [weak self] name, payload in
         SolaraCoreEventTaps.send(name, payload)
         switch name {
-        case "sidePanel": self?.sendEvent("onSidePanel", payload)
         case "actionPopup": self?.sendEvent("onActionPopup", payload)
         case "actionShortcut": self?.sendEvent("onActionShortcut", payload)
         case "deviceChooser": self?.sendEvent("onDeviceChooser", payload)

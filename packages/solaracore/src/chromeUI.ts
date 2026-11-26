@@ -44,14 +44,12 @@ export type CastDialog = {
 
 export type CastRoute = { id: string; sink: string; description: string; source: string };
 
-export type SidePanelRequest = { browserId: number; extensionId: string; open: boolean };
 export type ActionPopupRequest = { browserId: number; extensionId: string };
 
 export type NativeChromeUI = {
   addListener(name: "onDeviceChooser", listener: (e: DeviceChooser) => void): EventSubscription;
   addListener(name: "onCastDialog", listener: (e: CastDialog) => void): EventSubscription;
   addListener(name: "onCastRoutes", listener: (e: { profile: string; routes: CastRoute[] }) => void): EventSubscription;
-  addListener(name: "onSidePanel", listener: (e: SidePanelRequest) => void): EventSubscription;
   addListener(name: "onActionPopup" | "onActionShortcut", listener: (e: ActionPopupRequest) => void): EventSubscription;
   selectDevice(id: number, index: number): Promise<void>;
   cancelDeviceChooser(id: number): Promise<void>;
@@ -64,7 +62,6 @@ export type NativeChromeUI = {
   watchCastRoutes(profile: string): Promise<void>;
   terminateCastRoute(route: string): Promise<void>;
   actionStates(browserId: number, ids: string[]): Promise<Record<string, NativeActionState>>;
-  sidePanelURL(browserId: number, extensionId: string): Promise<string | null>;
   changeCaptureSource(capturer: number, target: number): Promise<boolean>;
   stopCapture(capturer: number): Promise<boolean>;
   showAutofillSuggestions(browserId: number, passwords: boolean): Promise<boolean>;
@@ -103,8 +100,6 @@ export function preferredCastMode(modes: number): number {
   return 0;
 }
 
-export const onExtensionSidePanel = (listener: (e: SidePanelRequest) => void) => ChromeUI.addListener("onSidePanel", listener);
-export const extensionSidePanelUrl = (browserId: number, extensionId: string) => ChromeUI.sidePanelURL(browserId, extensionId);
 export const onExtensionActionPopup = (listener: (e: ActionPopupRequest) => void) => ChromeUI.addListener("onActionPopup", listener);
 export const onExtensionActionShortcut = (listener: (e: ActionPopupRequest) => void) => ChromeUI.addListener("onActionShortcut", listener);
 

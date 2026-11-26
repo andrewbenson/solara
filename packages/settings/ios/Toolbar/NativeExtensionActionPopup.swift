@@ -103,7 +103,7 @@ enum NativeExtensionActionPopup {
     dismissInvalidHost()
   }
 
-  static func activate(windowId: String, extensionId: String, tabId: String? = nil, anchor: CGRect? = nil, requiresActive: Bool = false, popupOnly: Bool = false, nativeSidePanel: Bool = false) {
+  static func activate(windowId: String, extensionId: String, tabId: String? = nil, anchor: CGRect? = nil, requiresActive: Bool = false, popupOnly: Bool = false) {
     install()
     reconcile()
     guard let snapshot = observed?.snapshot, let source = source(windowId, state: snapshot.state),
@@ -125,16 +125,7 @@ enum NativeExtensionActionPopup {
     let result = popupOnly ? "popup" : web?.executeExtensionAction(extensionId)
     guard lifecycle.pending == request, self.source(windowId) == source else { return }
     if result == "none" || result == "sidePanel" {
-      if result == "sidePanel" {
-        if nativeSidePanel, let web, let store = NativeStoreHandle.store,
-          let url = SolaraCoreHost.sidePanelURL(browserId: web.browserId, extension: extensionId),
-          ExtensionPopupLifecycle.validURL(url, extensionId: extensionId) {
-          NativeExtensionSidePanel.open(windowId: windowId, profileId: source.profile, extensionId: extensionId,
-            url: url, title: ext["name"]?.string ?? "", icon: ext["icon"]?.string ?? "", optionsUrl: ext["optionsUrl"]?.string, store: store)
-        } else {
-          SettingsJS.shared.fire("extensions.togglePanel", windowId, extensionId, source.profile, NativeExtensionCatalog.profile(windowId))
-        }
-      }
+      if result == "sidePanel" { NativeExtensionSidePanel.toggle(windowId, extensionId) }
       return
     }
     let states = web.map { SolaraCoreHost.actionStates(browserId: $0.browserId, extensions: [extensionId]) }
@@ -263,41 +254,6 @@ enum NativeExtensionActionPopup {
     settleHeldFieldBlurs(window: host.window)
     emit?("onExtensionPopupChanged", ["windowId": host.intent.windowId, "extensionId": NSNull(), "tabId": NSNull(), "reason": reason.rawValue])
     NativeExtensionCatalog.refreshActions()
-  }
-
-  static func openWindow(_ request: [String: Any], intent: ExtensionActionPopupIntent) {
-    guard NativeStoreHandle.ownsWorkspace, let store = NativeStoreHandle.store,
-      let window = store.state.windows[intent.windowId], let url = request["url"] as? String else { return }
-    let state = store.state
-    let profile = state.engineProfile(window.profileId) == intent.profile ? window.profileId
-      : state.profileOrder.first { state.engineProfile($0) == intent.profile } ?? window.profileId
-    let disposition = request["disposition"] as? String ?? "foreground"
-    let adopt = request["adoptId"] as? String
-    var options: JSONObject = ["url": .string(url), "profileId": .string(profile)]
-    if let adopt { options["adoptId"] = .string(adopt) }
-    if disposition == "current" || disposition == "peek" { return }
-    if window.isSmall, disposition == "foreground", adopt != nil, state.settings["littleSolaraKeepsNewTabLinks"]?.truthy == true {
-      options["small"] = true
-      _ = try? store.dispatch(Command("createWindow", [.object(options)]), origin: .native)
-    } else if window.isSmall, disposition != "window", disposition != "incognito" {
-      options["background"] = true
-      _ = try? store.dispatch(Command("newTab", [.string(window.id), .object(options)]), origin: .native)
-    } else if disposition == "split" {
-      _ = try? store.dispatch(Command("openSplitPane", [.string(window.id), .object(options)]), origin: .native)
-    } else if disposition == "window" || disposition == "incognito" {
-      if disposition == "incognito" || window.incognito {
-        options["incognito"] = true
-        let named = (request["profile"] as? String).flatMap { name in state.profileOrder.first { state.engineProfile($0) == name } }
-        let original = window.incognito ? window.originalProfileId : window.profileId
-        if let own = disposition == "incognito" ? named ?? original : original, state.profiles[own] != nil { options["profileId"] = .string(own) }
-        else { options.removeValue(forKey: "profileId") }
-        if disposition == "window" || adopt?.hasPrefix("tab:") != true { options.removeValue(forKey: "adoptId") }
-      }
-      _ = try? store.dispatch(Command("createWindow", [.object(options)]), origin: .native)
-    } else {
-      options["background"] = .bool(disposition == "background" || profile != window.profileId)
-      _ = try? store.dispatch(Command("newTab", [.string(window.id), .object(options)]), origin: .native)
-    }
   }
 
   static func anchorsChanged(window: NSWindow?, tabId: String?, anchors: [String: CGRect]) {
@@ -562,7 +518,7 @@ final class ExtensionActionPopupHost: NSObject, SolaraCoreWebViewDelegate {
         }
       case "windowClose": NativeExtensionActionPopup.close(windowId: intent.windowId)
       case "openWindow":
-        NativeExtensionActionPopup.openWindow(body, intent: intent)
+        NativeExtensionPageNavigation.openWindow(body, windowId: intent.windowId, pageProfile: intent.profile)
         if body["disposition"] as? String != "background" { NativeExtensionActionPopup.close(windowId: intent.windowId) }
       default: break
       }

@@ -25,7 +25,6 @@ enum NativeExtensionCatalog {
   private static var epoch = 0
   private static var waiters: [String: [() -> Void]] = [:]
   private static var nextWaiters: [String: [() -> Void]] = [:]
-  static var legacyPanels: [String: String] = [:]
   private static weak var pageIssuer: PageIssuer?
 
   static var current: Bool { NativeStoreHandle.ownsWorkspace && NativeStoreHandle.store === observed && observed != nil }
@@ -34,6 +33,7 @@ enum NativeExtensionCatalog {
 
   static func start() {
     guard lifecycle == nil else { return }
+    NativeExtensionSidePanel.install()
     for topic in ["extensions.changed", "extensions.action"] {
       SolaraCoreEngineBridge.observe(topic) { payload in
         let profile = payload["profile"] as? String ?? ""
@@ -115,7 +115,9 @@ enum NativeExtensionCatalog {
         guard current, generation == epoch, let issuer, PageIssuer.shared === issuer,
           let registration = binding.registration else { return }
         let state = issuer.store.state
-        guard let window = state.tabs[binding.tabId]?.windowId, state.activeTabId(window) == binding.tabId else { return }
+        guard let window = state.tabs[binding.tabId]?.windowId else { return }
+        if (state.peeks[window]?.tabId ?? state.activeTabId(window)) == binding.tabId { NativeExtensionSidePanel.refresh(window, resolveURL: true) }
+        guard state.activeTabId(window) == binding.tabId else { return }
         refreshAction(window) { (registration, browserId) }
         publish()
       }
@@ -218,7 +220,7 @@ enum NativeExtensionCatalog {
       MainActor.assumeIsolated {
         guard current, active else { return }
         refreshActions()
-        SettingsJS.shared.fire("extensions.syncPanels", NSNull())
+        NativeExtensionSidePanel.sync()
       }
     }
     if let timer { RunLoop.main.add(timer, forMode: .common) }
@@ -230,7 +232,7 @@ enum NativeExtensionCatalog {
       guard self.profile(window) == profile else { return false }
       return visible(window).contains { $0["id"]?.string == id && ($0["pinned"]?.truthy == true) }
         || popupId(window) == id
-        || NativeExtensionSidePanel.extensionId(windowId: window) == id || legacyPanels[window] == id
+        || NativeExtensionSidePanel.extensionId(windowId: window) == id
     }
   }
 
@@ -242,7 +244,7 @@ enum NativeExtensionCatalog {
       for profile in batch.lists { refresh(profile, afterChange: true) }
       if !batch.actions.isEmpty {
         refreshActions(batch.actions)
-        SettingsJS.shared.fire("extensions.syncPanels", Array(batch.actions))
+        NativeExtensionSidePanel.sync(batch.actions)
       }
     } }
     flush = work
@@ -284,6 +286,7 @@ enum NativeExtensionCatalog {
 
   static func publish(force: Bool = false) {
     NativeExtensionActionPopup.validateLifecycle()
+    NativeExtensionSidePanel.sync(resolveURL: false)
     let changes = presentation.publish(store: current ? observed : nil, lists: catalog.lists, states: actionCache.states,
       popup: popupId, sources: NewTabSources.shared, force: force)
     if changes.toolbar || changes.windows { emit?(changes.toolbar, changes.catalog || changes.windows) }

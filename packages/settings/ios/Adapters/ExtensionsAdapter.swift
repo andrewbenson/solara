@@ -127,7 +127,7 @@ final class ExtensionsAdapter: ExtensionsServices {
     }
   }
 
-  func closeExtensionSurfaces(_ id: String) { SettingsJS.shared.fire("extensions.closeSurfaces", id) }
+  func closeExtensionSurfaces(_ id: String, profile: String) { NativeExtensionSidePanel.extensionRemoved(id, profile: profile) }
 
   func openWebStoreDetail(_ url: String, profile: String) { NativeExtensionCommands.run(["command": "webStoreDetail", "url": .string(url), "profile": .string(profile), "windowId": "settings"]) }
 

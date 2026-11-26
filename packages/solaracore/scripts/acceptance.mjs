@@ -3630,12 +3630,12 @@ try {
       }, 8000);
       await evalApp(`ac.extensions.closeExtensionPopup(); return true`);
       await until("the popup gone", async () => !(await targets()).some((t) => t.url.includes(`${installed.id}/popup.html`)), 8000);
-      await evalApp(`return ac.extensions.openSidePanel(${JSON.stringify(mainWindow)}, "${installed.id}").then(() => !!ac.extensions.useExtensions.getState().sidePanels[${JSON.stringify(mainWindow)}])`);
+      await evalApp(`return expo.modules.SolaraToolbar.devSidePanel(${JSON.stringify(mainWindow)}, "open", "${installed.id}")`);
       const panelTarget = await until("the side panel page", async () => (await targets()).find((t) => t.type === "page" && t.url.includes(`${installed.id}/panel.html`)), 10000);
       const panelVisible = (await cdp(panelTarget, "Runtime.evaluate", { expression: "document.visibilityState", returnByValue: true })).result.value;
       const stripsWithPanel = await cef(`tabStrips()`);
       const panelInStrip = stripsWithPanel.strips.some((st) => st.tabs.length !== strips.strips.find((x) => x.strip === st.strip)?.tabs.length);
-      await evalApp(`ac.extensions.closeSidePanel(${JSON.stringify(mainWindow)}); return true`);
+      await evalApp(`return expo.modules.SolaraToolbar.devSidePanel(${JSON.stringify(mainWindow)}, "close", null)`);
       await until("the panel gone", async () => !(await targets()).some((t) => t.url.includes(`${installed.id}/panel.html`)), 8000);
       const windowsAfter = await until("the standalone window closed", async () => {
         const n = (await cef(`chromeWindows()`)).length;
@@ -3645,7 +3645,7 @@ try {
       if (popupVisible !== "visible" || panelVisible !== "visible") throw new Error(`popup ${popupVisible}, panel ${panelVisible}`);
       return { popup: popupVisible, panel: panelVisible, popupSize: `${grown.join("x")} → ${shrunk.join("x")}`, openPopup: opened, windowsBefore, windowsAfter };
     } finally {
-      await evalApp(`ac.extensions.closeExtensionPopup(); ac.extensions.closeSidePanel(${JSON.stringify(mainWindow)}); return true`).catch(() => null);
+      await evalApp(`ac.extensions.closeExtensionPopup(); return expo.modules.SolaraToolbar.devSidePanel(${JSON.stringify(mainWindow)}, "close", null)`).catch(() => null);
       await exts(`uninstall("${installed.id}", "")`);
     }
   });
@@ -3685,10 +3685,10 @@ try {
       await sleep(300);
       await activate();
       const panel = await until("the side panel", async () => (await targets()).find((t) => t.type === "page" && t.url.includes(`${installed.id}/panel.html`)), 10000);
-      const shown = await evalApp(`return !!ac.extensions.useExtensions.getState().sidePanels[${JSON.stringify(mainWindow)}]`);
+      const shown = await evalApp(`return expo.modules.SolaraToolbar.devSidePanel(${JSON.stringify(mainWindow)}, "read", null).then(Boolean)`);
       return { prompt: request.type ?? request.prompt?.type ?? Object.keys(request), granted, panel: !!panel, shown };
     } finally {
-      await evalApp(`ac.extensions.closeExtensionPopup(); ac.extensions.closeSidePanel(${JSON.stringify(mainWindow)}); return true`).catch(() => null);
+      await evalApp(`ac.extensions.closeExtensionPopup(); return expo.modules.SolaraToolbar.devSidePanel(${JSON.stringify(mainWindow)}, "close", null)`).catch(() => null);
       await exts(`uninstall("${installed.id}", "")`);
     }
   });

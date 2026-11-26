@@ -203,7 +203,7 @@ try {
     writeFileSync(join(ext, "panel.html"), "<!doctype html><title>Right panel</title><body>Right panel</body>");
     const extension = await shell.app.eval(`return globalThis.expo.modules.SolaraExtensions.install(${JSON.stringify(ext)}, "");`);
     assert.ok(extension?.id, "the scratch extension installs");
-    await shell.app.eval(`return ac.extensions.refreshExtensions("").then(() => ac.extensions.openSidePanel(${JSON.stringify(windowId)}, ${JSON.stringify(extension.id)}));`);
+    await shell.app.eval(`return ac.extensions.refreshExtensions("").then(() => expo.modules.SolaraToolbar.devSidePanel(${JSON.stringify(windowId)}, "open", ${JSON.stringify(extension.id)}));`);
     try {
       let frames;
       await shell.untilSnapshot("right sidebar beside the extension panel", { fields: ["windows.sidePanel", "windows.shell", "windows.sidebarShell"] }, async (window) => {
@@ -265,7 +265,7 @@ try {
       return { ...frames, peek, rowPoint, panelIdentity: identity };
     } finally {
       await shell.app.eval(`return ac.shell.devLeftEdgePointer(${JSON.stringify(windowId)}, null);`).catch(() => {});
-      await shell.app.eval(`ac.extensions.closeSidePanel(${JSON.stringify(windowId)}); return true;`);
+      await shell.app.eval(`return expo.modules.SolaraToolbar.devSidePanel(${JSON.stringify(windowId)}, "close", null);`);
     }
   });
   await shell.app.quit();

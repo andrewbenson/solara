@@ -7,7 +7,7 @@ import { ContentCard } from "./components/ContentCard";
 import { BookmarkDialog } from "./components/bookmarks/BookmarkDialog";
 import { EditBookmarkDialog } from "./components/bookmarks/EditBookmarkDialog";
 import { ExtensionOverlays } from "./components/extensions/ExtensionOverlays";
-import { ExtensionSidePanel, SidePanelRoom } from "./components/extensions/SidePanel";
+import { requireNativeViewManager } from "expo-modules-core";
 import { DownloadMagnet, DownloadsPopover } from "./components/Downloads";
 import { OnboardingOverlay } from "./components/onboarding";
 import { CreateProfileHost } from "./components/profiles/CreateProfile";
@@ -23,6 +23,8 @@ import { layout, useTheme } from "./lib/theme";
 import { useWindowId } from "./store/hooks";
 
 
+const SidePanelSpacer = requireNativeViewManager<{ windowId: string; pointerEvents: "none" }>("SolaraWindowShell");
+
 export function LegacyWindow() {
   const theme = useTheme();
   const windowId = useWindowId();
@@ -31,18 +33,10 @@ export function LegacyWindow() {
   const [width, setWidth] = useState(0);
   const shell = useWindowShell();
   const [onTop] = useState(() => windowMainOnTop(windowId));
-  const card = (
-    <>
-      <ContentCard />
-      <SidePanelRoom fullscreen={fullscreen} />
-    </>
-  );
-
   return (
     <View testID={`solara-window-guest.${windowId}`} pointerEvents={onTop ? "box-none" : "auto"} style={{ flex: 1, flexDirection: "row" }} onLayout={(e) => setWidth(e.nativeEvent.layout.width)}>
       <ShellBackdrop shell={shell} />
       <WindowProfile />
-      <ExtensionSidePanel fullscreen={fullscreen} />
       <ProfileTint />
       {<DockedLayout
         fullscreen={fullscreen}
@@ -54,7 +48,8 @@ export function LegacyWindow() {
             : undefined
         }
       >
-        {card}
+        <ContentCard />
+        <SidePanelSpacer windowId={windowId} pointerEvents="none" />
       </DockedLayout>}
       <CommandPanel windowWidth={width} />
       <DownloadsPopover />

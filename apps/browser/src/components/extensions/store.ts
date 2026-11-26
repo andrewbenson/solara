@@ -3,7 +3,6 @@ import { useMemo } from "react";
 import { create } from "zustand";
 import { useBrowser, type BrowserState } from "../../store/browser";
 import { activeTabId, engineProfile, incognitoOriginal, isIncognitoProfile, privateSession } from "../../store/model";
-import { shownPageId } from "../../store/peek";
 import { usePages } from "../layout/pageState";
 
 export type Anchor = { x: number; y: number; width: number; height: number };
@@ -22,18 +21,9 @@ type ExtensionsStore = {
   lists: Record<string, InstalledExtension[]>;
   install: InstallRequest | null;
   pinDialog: { windowId: string } | null;
-  sidePanels: Record<string, SidePanel>;
 };
 
-export type SidePanel = {
-  extensionId: string;
-  profile: string;
-  pageProfile: string;
-  url: string;
-  opened: number;
-};
-
-export const useExtensions = create<ExtensionsStore>()(() => ({ lists: {}, install: null, pinDialog: null, sidePanels: {} }));
+export const useExtensions = create<ExtensionsStore>()(() => ({ lists: {}, install: null, pinDialog: null }));
 
 const EMPTY: InstalledExtension[] = [];
 
@@ -60,9 +50,6 @@ export const settingsProfileFor = (pane: string, current: { pane: string; profil
   pane === "extensions" ? extensionsProfileId(current.pane === "extensions" ? current.profileId : null) : null;
 
 export const isPrivate = (s: BrowserState, windowId: string) => !!s.windows[windowId]?.incognito;
-
-export const pageProfile = (s: BrowserState, windowId: string) =>
-  isPrivate(s, windowId) ? engineProfile(s.windows[windowId]!.profileId) : extensionProfile(s, windowId);
 
 const showsExtension = (priv: boolean, ext: InstalledExtension) => ext.enabled && (!priv || (ext.incognito && !!ext.incognitoSplit));
 
@@ -91,7 +78,6 @@ export function browserIdOf(tabId: string | undefined): number {
   return 0;
 }
 
-export const shownBrowserId = (windowId: string) => browserIdOf(shownPageId(useBrowser.getState(), windowId));
 
 export function closeInstallPrompt(requestId: string) {
   if (useExtensions.getState().install?.prompt?.requestId === requestId) useExtensions.setState({ install: null });

@@ -25,6 +25,8 @@ public enum SidePanelMetrics {
     return width
   }
 
+  public static func presentationWidth(_ savedWidth: Double) -> Double { Double(clamp(CGFloat(savedWidth))) }
+
   public static func clamp(_ width: CGFloat) -> CGFloat { min(maxWidth, max(minWidth, width)) }
 }
 

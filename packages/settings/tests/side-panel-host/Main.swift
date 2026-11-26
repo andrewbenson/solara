@@ -12,11 +12,17 @@ final class SidePanelFixture {
   let host: SidePanelHost
   var failures: [String] = []
 
-  init(width: Double = 360) {
+  init(width: Double = 360, native: Bool = false) {
     HostedViews.events.removeAll()
     shell = WindowShellView(windowId: windowId)
     shell.frame = CGRect(x: 0, y: 0, width: 1200, height: 800)
-    host = SidePanelHost(windowId: windowId, shell: shell)
+    let id = windowId
+    host = SidePanelHost(windowId: id, shell: shell, onEvent: native ? nil : { key, name, payload in
+      var body = payload
+      body["key"] = key
+      HostedViews.send(NativeExtensionSidePanel.kind, windowId: id, name, body)
+    })
+    if native { return }
     apply(width)
     expect(host.view.superview === shell.sidePanelClip, "the real shell must mount the side panel")
     expect(host.view.onResize != nil, "the host must install the resize callback")
@@ -24,26 +30,10 @@ final class SidePanelFixture {
   }
 
   func apply(_ width: Double, key: String = "K", url: String = "https://example.invalid/side-panel", card: String = "#ffffff") {
-    let state: [String: Any] = [
-      "key": key,
-      "pageProfile": "fixture-profile",
-      "url": url,
-      "title": "Side Panel Fixture",
-      "icon": NSNull(),
-      "width": width,
-      "room": width + 6,
-      "look": [
-        "card": card,
-        "text": "#111111",
-        "icon": "#333333",
-        "hover": "#eeeeee",
-        "pressed": "#dddddd",
-        "hairline": "#cccccc",
-        "radius": 8,
-      ],
-    ]
-    let data = try! JSONSerialization.data(withJSONObject: state)
-    host.apply(String(data: data, encoding: .utf8)!)
+    let look = SidePanelState.Look(card: card, text: "#111111", icon: "#333333", hover: "#eeeeee",
+      pressed: "#dddddd", hairline: "#cccccc", radius: 8)
+    host.apply(SidePanelState(key: key, pageProfile: "fixture-profile", url: url,
+      title: "Side Panel Fixture", icon: nil, width: width, room: CGFloat(width) + 6, look: look))
   }
 
   func expect(_ condition: @autoclosure () -> Bool, _ message: String) {
@@ -70,7 +60,7 @@ final class SidePanelFixture {
 
 @MainActor
 final class NativeSidePanelFixture {
-  let base = SidePanelFixture()
+  let base = SidePanelFixture(native: true)
   let store: Store
   let previousResolver = NativeStoreHandle.resolve
   let previousOwnership = NativeStoreHandle.ownsWorkspace
@@ -87,14 +77,13 @@ final class NativeSidePanelFixture {
     NativeWindowShell.hosts[base.windowId] = SidePanelHarnessShell(base.host, shell: base.shell)
     NativeStoreHandle.resolve = { [store] in store }
     NativeStoreHandle.ownsWorkspace = true
-    NativeExtensionSidePanel.open(windowId: base.windowId, profileId: "default", extensionId: "fixture",
-      url: "chrome-extension://fixture/panel.html", title: "Fixture", icon: "", optionsUrl: "chrome-extension://fixture/options.html", store: store)
+    NativeExtensionCatalog.path = "panel.html"
+    NativeExtensionSidePanel.open(base.windowId, "fixture")
     HostedViews.events.removeAll()
   }
 
   func stop() {
-    base.host.stop()
-    NativeWindowShell.hosts.removeValue(forKey: base.windowId)
+    NativeWindowShell.hosts.removeValue(forKey: base.windowId)?.stop()
     NativeStoreHandle.resolve = previousResolver
     NativeStoreHandle.ownsWorkspace = previousOwnership
   }
@@ -106,9 +95,7 @@ struct SidePanelHostTests {
   static func nativeResizeAndCloseAvoidJavaScript() -> [String] {
     let fixture = NativeSidePanelFixture()
     defer { fixture.stop() }
-    fixture.base.expect(NativeExtensionSidePanel.owns(fixture.base.windowId), "native opening must own the panel")
-    fixture.base.host.apply(nil)
-    fixture.base.expect(fixture.base.host.view.superview != nil, "a legacy nil echo must not dismiss a native panel")
+    fixture.base.expect((NativeExtensionSidePanel.extensionId(windowId: fixture.base.windowId) != nil), "native opening must own the panel")
     fixture.base.host.view.onResize?(480, true)
     fixture.base.settle()
     fixture.base.expect(fixture.store.state.windows[fixture.base.windowId]?.sidePanelWidth == 480, "native resize must persist in the store")
@@ -117,7 +104,7 @@ struct SidePanelHostTests {
     fixture.base.expect(fixture.store.state.windows[fixture.base.windowId]?.sidePanelWidth == 360, "native reset must persist in the store")
     fixture.base.host.view.onClose?()
     fixture.base.settle()
-    fixture.base.expect(!NativeExtensionSidePanel.owns(fixture.base.windowId), "close must release native ownership")
+    fixture.base.expect(!(NativeExtensionSidePanel.extensionId(windowId: fixture.base.windowId) != nil), "close must release native ownership")
     fixture.base.expect(fixture.base.host.view.superview == nil, "close must remove the native side panel")
     fixture.base.expect(HostedViews.events.isEmpty, "native resize/reset/close must emit no JavaScript semantic events")
     return fixture.base.failures
@@ -129,7 +116,7 @@ struct SidePanelHostTests {
     defer { fixture.stop() }
     NativeStoreHandle.ownsWorkspace = false
     fixture.base.settle()
-    fixture.base.expect(!NativeExtensionSidePanel.owns(fixture.base.windowId), "ownership loss must release the native record")
+    fixture.base.expect(!(NativeExtensionSidePanel.extensionId(windowId: fixture.base.windowId) != nil), "ownership loss must release the native record")
     fixture.base.expect(fixture.base.host.view.superview == nil, "ownership loss must remove the panel page")
     fixture.base.expect(HostedViews.events.isEmpty, "native teardown must emit no JavaScript semantic events")
     return fixture.base.failures
@@ -139,12 +126,8 @@ struct SidePanelHostTests {
   static func nativeOpenWindowUsesStore() -> [String] {
     let fixture = NativeSidePanelFixture()
     defer { fixture.stop() }
-    guard let json = NativeExtensionSidePanel.preferredJSON(fixture.base.windowId, fallback: nil), let state = SidePanelState.decode(json) else {
-      return ["native side panel must publish its state"]
-    }
-    let accepted = NativeExtensionSidePanel.handle(windowId: fixture.base.windowId, key: state.key, name: "openWindow",
-      payload: ["request": ["url": "https://opened.example/", "disposition": "foreground"]], view: fixture.base.host.view)
-    fixture.base.expect(accepted, "native panel must own its openWindow event")
+    guard let page = fixture.base.page else { return ["native side panel must own its page"] }
+    fixture.base.host.webView(page, event: "openWindow", payload: ["url": "https://opened.example/", "disposition": "foreground"])
     fixture.base.expect(fixture.store.state.tabs.values.contains { $0.url == "https://opened.example/" }, "the store must open the requested tab")
     fixture.base.expect(HostedViews.events.isEmpty, "native links must emit no JavaScript semantic events")
     return fixture.base.failures
@@ -154,8 +137,8 @@ struct SidePanelHostTests {
   static func nativeHostStopReleasesOwnership() -> [String] {
     let fixture = NativeSidePanelFixture()
     defer { fixture.stop() }
-    fixture.base.host.stop()
-    fixture.base.expect(!NativeExtensionSidePanel.owns(fixture.base.windowId), "host stop must release the native record and listener")
+    NativeWindowShell.host(fixture.base.windowId)?.stop()
+    fixture.base.expect(!(NativeExtensionSidePanel.extensionId(windowId: fixture.base.windowId) != nil), "host stop must release the native record and listener")
     fixture.base.expect(fixture.base.host.view.superview == nil, "host stop must remove its extension page")
     fixture.base.expect(HostedViews.events.isEmpty, "host stop must emit no JavaScript semantic events")
     return fixture.base.failures
@@ -168,19 +151,18 @@ struct SidePanelHostTests {
     do {
       let created = try fixture.store.dispatch(Command("createProfile", [["name": "Replacement"]]))
       guard let profileId = created.result?.string else { return ["the replacement profile must be created"] }
-      let oldJSON = NativeExtensionSidePanel.preferredJSON(fixture.base.windowId, fallback: nil)
-      let oldKey = oldJSON.flatMap(SidePanelState.decode)?.key
+      let oldPage = fixture.base.page
       _ = try fixture.store.dispatch(Command("switchProfile", [.string(fixture.base.windowId), .string(profileId)]))
-      NativeExtensionSidePanel.open(windowId: fixture.base.windowId, profileId: profileId, extensionId: "fixture",
-        url: "chrome-extension://fixture/replacement.html", title: "Replacement", icon: "", optionsUrl: nil, store: fixture.store)
-      fixture.base.expect(NativeExtensionSidePanel.owns(fixture.base.windowId), "the same extension must replace its previous-profile panel before queued teardown")
+      NativeExtensionCatalog.path = "replacement.html"
+      NativeExtensionSidePanel.open(fixture.base.windowId, "fixture")
+      fixture.base.expect((NativeExtensionSidePanel.extensionId(windowId: fixture.base.windowId) != nil), "the same extension must replace its previous-profile panel before queued teardown")
       fixture.base.settle()
-      guard let json = NativeExtensionSidePanel.preferredJSON(fixture.base.windowId, fallback: nil), let state = SidePanelState.decode(json) else {
+      guard let page = fixture.base.page else {
         return fixture.base.failures + ["queued previous-profile tasks must not close the replacement panel"]
       }
-      fixture.base.expect(state.key != oldKey, "the replacement panel must have a new lifetime key")
-      fixture.base.expect(state.pageProfile == fixture.store.state.engineProfile(profileId), "the replacement page must use the selected profile")
-      fixture.base.expect(state.url == "chrome-extension://fixture/replacement.html", "the replacement page must keep its requested URL")
+      fixture.base.expect(page !== oldPage && oldPage?.closeCount == 1, "the replacement panel must release its previous page")
+      fixture.base.expect(page.profile == fixture.store.state.engineProfile(profileId), "the replacement page must use the selected profile")
+      fixture.base.expect(page.initialURL == "chrome-extension://fixture/replacement.html", "the replacement page must keep its requested URL")
       fixture.base.expect(fixture.base.host.view.superview === fixture.base.shell.sidePanelClip, "the replacement panel must remain mounted")
       fixture.base.expect(HostedViews.events.isEmpty, "profile replacement must need no JavaScript semantic event")
     } catch {

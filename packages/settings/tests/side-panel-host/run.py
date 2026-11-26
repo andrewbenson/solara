@@ -32,7 +32,7 @@ for name in ['SolaraCore', 'SolaraShell']:
     subprocess.run(command, env=environment, check=True, timeout=120)
 objects = [build / (name + '.o') for name in ['SolaraUI', 'SolaraModel', 'SolaraStore', 'SolaraOmnibox', 'SolaraEngine', 'SolaraLive', 'SolaraProbes']]
 objects += [output / 'SolaraCore.o', output / 'SolaraShell.o']
-files = [source / 'packages/settings/ios/SidePanel/NativeExtensionSidePanel.swift', here / 'Stubs.swift', here / 'Main.swift']
+files = [source / 'packages/settings/ios/SidePanel/NativeExtensionSidePanel.swift', source / 'packages/settings/ios/SidePanel/NativeExtensionPageNavigation.swift', here / 'Stubs.swift', here / 'Main.swift']
 subprocess.run(base + ['-o', str(output / 'host-tests')] + [str(item) for item in files + objects], env=environment, check=True, timeout=120)
 failed = False
 for case in args.cases or ['settleWithoutEchoFinishes', 'staleEchoDoesNotCancelSettle', 'outsideWidthWinsOverDrag', 'droppedEchoFallsBack', 'echoQueueIsBounded', 'keyChangeClearsQueue', 'closeClearsQueue', 'resetWidthEchoes', 'nativeResizeAndCloseAvoidJavaScript', 'nativeOwnershipLossClosesAndUnsubscribes', 'nativeOpenWindowUsesStore', 'nativeHostStopReleasesOwnership', 'nativeProfileSwitchReplacesSameExtensionBeforeQueuedTeardown', 'nativePageSurvivesWidthAndThemeChanges', 'replacementClosesTheOldPageAndRejectsItsEvents', 'closingWaitsForNativeExitAndReleasesThePage', 'emptyPageKeepsNativeControlsAndCurrentIdentity']:

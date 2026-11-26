@@ -254,13 +254,13 @@ try {
   await rep.check(`${prefix}pool-side-panel-swipe-stays`, async () => {
     const { id } = await run(`return globalThis.expo.modules.SolaraExtensions.install(${JSON.stringify(ext)}, "");`);
     await run(`return ac.extensions.refreshExtensions("").then(() => true);`);
-    await until("the side panel opens", `return ac.extensions.openSidePanel("w1", ${JSON.stringify(id)}).then(() => !!ac.extensions.useExtensions.getState().sidePanels.w1 || null);`);
+    await until("the side panel opens", `return expo.modules.SolaraToolbar.devSidePanel("w1", "open", ${JSON.stringify(id)});`);
     await sleep(1200);
     const width = await run(`return ac.store.getState().settings.extensionSidePanelWidth ?? 360;`);
     const state = await app.snapshot({ windowId: "w1" });
     const bounds = state.windows.find((window) => window.id === "w1").shell.contract.bounds;
     const where = await stays("side panel", bounds[2] - width / 2, bounds[3] / 2);
-    await run(`ac.extensions.closeSidePanel("w1"); return true;`);
+    await run(`return expo.modules.SolaraToolbar.devSidePanel("w1", "close", null);`);
     await sleep(600);
     return where;
   });

@@ -14,7 +14,7 @@ public protocol ExtensionsServices: AnyObject {
   func inspectUnpackedExtension(path: String) async throws -> ExtensionPackage
   func installExtension(path: String, profile: String) async throws
   func extensionChanges() -> AsyncStream<ExtensionsChange>
-  func closeExtensionSurfaces(_ id: String)
+  func closeExtensionSurfaces(_ id: String, profile: String)
   func openWebStoreDetail(_ url: String, profile: String)
   func openInNewTab(_ url: String)
 }
@@ -168,7 +168,7 @@ public final class ExtensionsPaneModel: SettingsPaneProvider {
   func confirmRemoval() async {
     guard let removal else { return }
     self.removal = nil
-    services.closeExtensionSurfaces(removal.ext.id)
+    services.closeExtensionSurfaces(removal.ext.id, profile: removal.profile)
     try? await services.uninstallExtension(removal.ext.id, profile: removal.profile)
     await refresh(removal.profile)
   }

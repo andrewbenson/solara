@@ -1,4 +1,7 @@
 import AppKit
+import SolaraCore
+import SolaraModel
+import SolaraStore
 import SolaraShell
 import SolaraUI
 
@@ -40,5 +43,32 @@ final class SidePanelHarnessShell {
   let panel: SidePanelHost
   let shell: WindowShellView
   init(_ panel: SidePanelHost, shell: WindowShellView) { self.panel = panel; self.shell = shell }
-  func setSidePanel(_ json: String?) { panel.apply(json) }
+  func setSidePanel(_ state: SidePanelState?) { panel.apply(state) }
+
+  func stop() {
+    NativeExtensionSidePanel.close(shell.windowId)
+    panel.stop()
+  }
+}
+
+
+@MainActor
+enum NativeExtensionCatalog {
+  static var path = "panel.html"
+
+  static func profile(_ windowId: String) -> String {
+    guard let state = NativeStoreHandle.store?.state, let window = state.windows[windowId] else { return "" }
+    return state.engineProfile(window.profileId)
+  }
+
+  static func page(_ tabId: String) -> SolaraCoreWebView? { nil }
+
+  static func visible(_ windowId: String) -> [JSONObject] {
+    [["id": "fixture", "name": "Fixture", "sidePanel": .string(path)]]
+  }
+}
+
+@MainActor
+enum NativeExtensionCommands {
+  static func run(_ command: JSONValue) {}
 }

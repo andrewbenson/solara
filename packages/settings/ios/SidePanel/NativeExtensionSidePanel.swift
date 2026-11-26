@@ -9,185 +9,205 @@ import SolaraUI
 @MainActor
 enum NativeExtensionSidePanel {
   nonisolated static let kind = "extensionSidePanel"
+  static let roomDidChange = Notification.Name("SolaraSidePanelRoomChanged")
+
+  private struct Source: Equatable {
+    let id: String
+    let tabId: String?
+    let browserId: Int32
+    let catalogProfile: String
+    let pageProfile: String
+  }
+
   @MainActor
   private final class OwnedPanel {
     let store: Store
     let generation: Int
-    let profileId: String
-    let extensionId: String
-    let title: String
-    let icon: String
-    let optionsUrl: String?
-    let key = UUID().uuidString
-    var url: String
-    var json = ""
+    let lifecycle = ExtensionSidePanelLifecycle()
     var listener: Int?
-    var suspended = false
-    var shownKey: String { "\(key)|\(url)" }
+    var state: SidePanelState?
+    var source: Source?
+    var resolvedURL: String?
+    var room: CGFloat = 0
+    var fullscreen = false
 
-    init(store: Store, profileId: String, extensionId: String, url: String, title: String, icon: String, optionsUrl: String?) {
+    @MainActor init(store: Store) {
       self.store = store
       generation = NativeStoreHandle.ownershipGeneration
-      self.profileId = profileId
-      self.extensionId = extensionId
-      self.url = url
-      self.title = title
-      self.icon = icon
-      self.optionsUrl = optionsUrl
     }
   }
 
   private static var panels: [String: OwnedPanel] = [:]
-  private static var lifecycleListener: Int?
+  private static var installed = false
 
-  static func extensionId(windowId: String) -> String? { panels[windowId]?.extensionId }
+  static func extensionId(windowId: String) -> String? { panels[windowId]?.lifecycle.extensionId }
+  static func room(_ windowId: String) -> CGFloat { panels[windowId]?.room ?? 0 }
 
-  static func owns(_ windowId: String) -> Bool { panels[windowId] != nil }
-
-  static func preferredJSON(_ windowId: String, fallback: String?) -> String? {
-    guard let panel = panels[windowId] else { return fallback }
-    return panel.suspended ? nil : panel.json
-  }
-
-  static func open(windowId: String, profileId: String, extensionId: String, url: String, title: String, icon: String, optionsUrl: String?, store: Store) {
-    guard NativeStoreHandle.ownsWorkspace, NativeStoreHandle.store === store,
-      store.state.windows[windowId]?.profileId == profileId, NativeWindowShell.host(windowId) != nil,
-      let parsed = URLComponents(string: url), parsed.scheme == "chrome-extension", parsed.host == extensionId else { return }
-    if let existing = panels[windowId], existing.extensionId == extensionId,
-      existing.profileId == profileId, existing.store === store, valid(windowId, panel: existing) { return close(windowId) }
-    close(windowId)
-    let panel = OwnedPanel(store: store, profileId: profileId, extensionId: extensionId, url: url, title: title, icon: icon, optionsUrl: optionsUrl)
-    panels[windowId] = panel
-    panel.listener = store.subscribe { [weak panel] _ in
-      Task { @MainActor in
-        guard let panel, panels[windowId] === panel else { return }
-        refresh(windowId, panel: panel, state: panel.store.state)
+  static func install() {
+    guard !installed else { return }
+    installed = true
+    _ = NativeStoreHandle.subscribeLifecycle {
+      for (id, panel) in Array(panels) where !valid(id, panel) { close(id) }
+    }
+    _ = NotificationCenter.default.addObserver(forName: Notification.Name("SolaraExtensionSidePanel"), object: nil, queue: .main) { note in
+      guard let browserId = note.userInfo?["browserId"] as? Int, browserId != 0,
+        let id = note.userInfo?["extensionId"] as? String, let opens = note.userInfo?["open"] as? Bool else { return }
+      MainActor.assumeIsolated {
+        guard let state = NativeStoreHandle.store?.state,
+          let page = PageRegistry.shared.descriptors.first(where: { $0.ready?.browserId == browserId }),
+          let windowId = state.tabs[page.tabID]?.windowId else { return }
+        if opens { open(windowId, id) }
+        else if extensionId(windowId: windowId) == id { close(windowId) }
       }
     }
-    if lifecycleListener == nil {
-      lifecycleListener = NativeStoreHandle.subscribeLifecycle {
-        for (id, panel) in Array(panels) {
-          if !valid(id, panel: panel) { close(id) }
+  }
+
+  static func toggle(_ windowId: String, _ id: String) {
+    if extensionId(windowId: windowId) == id { close(windowId) }
+    else { open(windowId, id) }
+  }
+
+  static func open(_ windowId: String, _ id: String) {
+    guard let store = NativeStoreHandle.store, NativeStoreHandle.ownsWorkspace,
+      store.state.windows[windowId] != nil, NativeWindowShell.host(windowId) != nil,
+      row(windowId, id) != nil else { return }
+    install()
+    let panel: OwnedPanel
+    if let existing = panels[windowId], valid(windowId, existing) {
+      panel = existing
+    } else {
+      close(windowId)
+      panel = OwnedPanel(store: store)
+      panels[windowId] = panel
+      panel.listener = store.subscribe { [weak panel] _ in
+        DispatchQueue.main.async {
+          guard let panel, panels[windowId] === panel else { return }
+          refresh(windowId)
         }
       }
     }
-    refresh(windowId, panel: panel, state: store.state)
+    panel.lifecycle.request(id)
+    refresh(windowId, resolveURL: true)
   }
 
-  private static func valid(_ windowId: String, panel: OwnedPanel) -> Bool {
-    NativeStoreHandle.ownsWorkspace && NativeStoreHandle.store === panel.store
-      && NativeStoreHandle.ownershipGeneration == panel.generation && panel.store.state.windows[windowId]?.profileId == panel.profileId
-  }
-
-  private static func refresh(_ windowId: String, panel: OwnedPanel, state: BrowserState) {
-    guard valid(windowId, panel: panel), let window = state.windows[windowId] else { return close(windowId) }
-    if let tabId = state.activeTabId(windowId), let page = page(in: TabPoolHost.shared.pageView(tabId)), page.browserId != 0 {
-      guard let url = SolaraCoreHost.sidePanelURL(browserId: page.browserId, extension: panel.extensionId),
-        let parsed = URLComponents(string: url), parsed.scheme == "chrome-extension", parsed.host == panel.extensionId else { return close(windowId) }
-      panel.url = url
+  static func sync(_ profiles: Set<String>? = nil, resolveURL: Bool = true) {
+    for windowId in Array(panels.keys) {
+      if let profiles, !profiles.contains(NativeExtensionCatalog.profile(windowId)) { continue }
+      refresh(windowId, resolveURL: resolveURL)
     }
-    let dark = state.ui.appDark
-    let width = Double(SidePanelMetrics.clamp(CGFloat(window.effectiveSidePanelWidth(state.settings))))
-    let payload: [String: Any] = [
-      "key": panel.shownKey, "pageProfile": state.engineProfile(panel.profileId), "url": panel.url,
-      "title": panel.title, "icon": panel.icon, "width": width, "room": width + 6,
-      "look": ["card": dark ? "rgba(18,18,18,0.5)" : "rgba(255,255,255,0.7)", "text": dark ? "#FFFFFF" : "#000000",
-        "icon": dark ? "#F7F5FFC6" : "#000000C6", "hover": dark ? "rgba(255,255,255,0.1)" : "rgba(0,0,0,0.05)",
-        "pressed": dark ? "rgba(255,255,255,0.18)" : "rgba(0,0,0,0.1)",
-        "hairline": dark ? "rgba(255,255,255,0.1)" : "rgba(0,0,0,0.08)", "radius": 10],
-    ]
-    guard let data = try? JSONSerialization.data(withJSONObject: payload) else { return }
-    let json = String(decoding: data, as: UTF8.self)
-    let suspended = NativeWindowShell.host(windowId)?.shell.input.fullscreen == true
-    let changedSuspension = suspended != panel.suspended
-    panel.suspended = suspended
-    guard panel.json != json || changedSuspension else { return }
-    panel.json = json
-    NativeWindowShell.host(windowId)?.setSidePanel(suspended ? nil : json)
   }
 
-  private static func close(_ windowId: String) {
+  static func fullscreenChanged(_ windowId: String, fullscreen: Bool) {
+    guard let panel = panels[windowId], panel.fullscreen != fullscreen else { return }
+    refresh(windowId)
+  }
+
+  private static func row(_ windowId: String, _ id: String) -> JSONObject? {
+    NativeExtensionCatalog.visible(windowId).first { $0["id"]?.string == id }
+  }
+
+  private static func valid(_ windowId: String, _ panel: OwnedPanel) -> Bool {
+    NativeStoreHandle.ownsWorkspace && NativeStoreHandle.store === panel.store &&
+      NativeStoreHandle.ownershipGeneration == panel.generation && panel.store.state.windows[windowId] != nil
+  }
+
+  static func refresh(_ windowId: String, resolveURL: Bool = false) {
+    guard let panel = panels[windowId], let id = panel.lifecycle.extensionId else { return }
+    let state = panel.store.state
+    guard valid(windowId, panel), let window = state.windows[windowId],
+      let host = NativeWindowShell.host(windowId) else { return close(windowId) }
+    let ext = row(windowId, id)
+    let tabId = state.peeks[windowId]?.tabId ?? state.activeTabId(windowId)
+    let engine = tabId.flatMap { PageEngine(rawValue: panel.store.pageEngine($0, in: state)) }
+    let browserId = engine == .chromium ? tabId.flatMap { NativeExtensionCatalog.page($0) }?.browserId ?? 0 : 0
+    let fallback = window.incognito ? nil : ext?["sidePanel"]?.string.flatMap { path -> String? in
+      guard !path.isEmpty else { return nil }
+      return "chrome-extension://\(id)/\(path.hasPrefix("/") ? String(path.dropFirst()) : path)"
+    }
+    panel.fullscreen = host.shell.input.fullscreen
+    let catalogProfile = NativeExtensionCatalog.profile(windowId)
+    let pageProfile = window.incognito ? state.engineProfile(window.profileId) : catalogProfile
+    let source = Source(id: id, tabId: tabId, browserId: browserId, catalogProfile: catalogProfile, pageProfile: pageProfile)
+    if panel.source != source || resolveURL {
+      panel.source = source
+      panel.resolvedURL = browserId == 0 || ext == nil ? nil : SolaraCoreHost.sidePanelURL(browserId: browserId, extension: id)
+    }
+    let url = ExtensionSidePanelLifecycle.URLSource(engine: engine, browserId: browserId, fallback: fallback, resolved: panel.resolvedURL)
+    let shown = panel.lifecycle.reconcile(eligible: ext != nil, pageProfile: pageProfile, url: url, fullscreen: panel.fullscreen)
+    guard panel.lifecycle.extensionId != nil else { return close(windowId) }
+    guard let shown, let ext else { return apply(nil, windowId: windowId, panel: panel) }
+    let width = SidePanelMetrics.presentationWidth(window.effectiveSidePanelWidth(state.settings))
+    let room = shown.room(width: width)
+    let custom = state.profiles[window.profileId]?.theme.flatMap {
+      try? JSONDecoder().decode(ProfileThemeValue.self, from: Data($0.text().utf8))
+    }
+    let dark = window.incognito || (custom.map {
+      ThemeMath.shown($0, appDark: state.ui.appDark, source: state.settings.bool("spacesFollowAppearance") ? .app : .own).dark
+    } ?? state.ui.appDark)
+    let title = ext["actionTitle"]?.truthy == true ? ext["actionTitle"]?.string : ext["name"]?.string
+    let icon = ext["actionIcon"]?.truthy == true ? ext["actionIcon"]?.string : ext["icon"]?.string
+    let look = SidePanelState.Look(
+      card: dark ? "rgba(18,18,18,0.5)" : "rgba(255,255,255,0.7)", text: dark ? "#FFFFFF" : "#000000",
+      icon: dark ? "#F7F5FFC6" : "#000000C6", hover: dark ? "rgba(255,255,255,0.1)" : "rgba(0,0,0,0.06)",
+      pressed: dark ? "rgba(255,255,255,0.18)" : "rgba(0,0,0,0.1)",
+      hairline: dark ? "rgba(255,255,255,0.1)" : "rgba(0,0,0,0.08)", radius: 10)
+    let next = SidePanelState(key: shown.key, pageProfile: shown.pageProfile, url: shown.url,
+      title: title.flatMap { $0.isEmpty ? nil : $0 } ?? "Extension", icon: icon, width: width, room: room, look: look)
+    apply(next, windowId: windowId, panel: panel)
+  }
+
+  private static func apply(_ state: SidePanelState?, windowId: String, panel: OwnedPanel) {
+    guard panel.state != state else { return }
+    panel.state = state
+    let room = state?.room ?? 0
+    let roomChanged = panel.room != room
+    panel.room = room
+    NativeWindowShell.host(windowId)?.setSidePanel(state)
+    if roomChanged { NotificationCenter.default.post(name: roomDidChange, object: windowId) }
+  }
+
+  static func close(_ windowId: String) {
     guard let panel = panels.removeValue(forKey: windowId) else { return }
     if let listener = panel.listener { panel.store.unsubscribe(listener) }
-    NativeWindowShell.host(windowId)?.setSidePanel(nil)
+    apply(nil, windowId: windowId, panel: panel)
   }
 
-  private static func page(in view: NSView?) -> SolaraCoreWebView? {
-    guard let view else { return nil }
-    if let web = view as? SolaraCoreWebView { return web }
-    for child in view.subviews { if let found = page(in: child) { return found } }
-    return nil
+  static func closeAll() {
+    for windowId in Array(panels.keys) { close(windowId) }
   }
 
-  static func windowEnded(_ windowId: String, key: String?) {
-    guard let panel = panels[windowId], panel.shownKey == key || (key == nil && panel.suspended) else { return }
-    panels.removeValue(forKey: windowId)
-    if let listener = panel.listener { panel.store.unsubscribe(listener) }
+  static func extensionRemoved(_ id: String, profile: String) {
+    for (windowId, panel) in Array(panels) {
+      guard let catalogProfile = panel.source?.catalogProfile,
+        panel.lifecycle.matchesRemoval(id, profile: profile, catalogProfile: catalogProfile) else { continue }
+      close(windowId)
+    }
   }
 
-  static func handle(windowId: String, key: String, name: String, payload: [String: Any], view: NSView) -> Bool {
-    guard let panel = panels[windowId], panel.shownKey == key else { return false }
-    guard valid(windowId, panel: panel) else { close(windowId); return true }
+  static func handle(windowId: String, key: String, name: String, payload: [String: Any]) {
+    guard let panel = panels[windowId], valid(windowId, panel), panel.lifecycle.accepts(key: key),
+      let id = panel.lifecycle.extensionId else { return }
     switch name {
-    case "close", "windowClose": close(windowId)
-    case "resize", "resetWidth":
-      let width = name == "resetWidth" ? Double(SidePanelMetrics.defaultWidth) : payload["width"] as? Double
-      if let width, width.isFinite {
-        _ = try? panel.store.dispatch(Command("setWindowSidebar", [.string(windowId), ["sidePanelWidth": .number(Double(SidePanelMetrics.clamp(CGFloat(width))))]]), origin: .native)
+    case "close", "windowClose":
+      if panel.lifecycle.close(key: key) { close(windowId) }
+    case "resize":
+      if payload["ended"] as? Bool == true, let width = payload["width"] as? Double {
+        _ = panel.lifecycle.saveWidth(width, key: key, windowId: windowId, store: panel.store)
       }
+    case "resetWidth":
+      _ = panel.lifecycle.saveWidth(nil, key: key, windowId: windowId, store: panel.store)
     case "menu":
-      let target = SidePanelMenuTarget { choice in
-        guard panels[windowId] === panel, valid(windowId, panel: panel) else { return }
-        if choice == "close" { close(windowId) }
-        if choice == "options", let url = panel.optionsUrl {
-          _ = try? panel.store.dispatch(Command("newTab", [.string(windowId), ["url": .string(url), "profileId": .string(panel.profileId)]]), origin: .native)
-        }
-      }
-      let menu = NSMenu()
-      menu.autoenablesItems = false
-      for (id, title, enabled) in [("options", "Extension Options", panel.optionsUrl != nil), ("close", "Close Side Panel", true)] {
-        let item = NSMenuItem(title: title, action: #selector(SidePanelMenuTarget.choose(_:)), keyEquivalent: "")
-        item.target = target
-        item.representedObject = id
-        item.isEnabled = enabled
-        menu.addItem(item)
-      }
-      withExtendedLifetime(target) { menu.popUp(positioning: nil, at: CGPoint(x: 12, y: 32), in: view) }
+      NativeExtensionCommands.run(["command": "menu", "windowId": .string(windowId), "id": .string(id)])
     case "openWindow":
-      guard let request = payload["request"] as? [String: Any], let url = request["url"] as? String,
-        let window = panel.store.state.windows[windowId] else { return true }
-      let disposition = request["disposition"] as? String ?? "foreground"
-      let adopt = request["adoptId"] as? String
-      var options: JSONObject = ["url": .string(url), "profileId": .string(panel.profileId)]
-      if let adopt { options["adoptId"] = .string(adopt) }
-      if disposition == "window" || disposition == "incognito" {
-        if window.incognito || disposition == "incognito" {
-          options["incognito"] = true
-          options["profileId"] = .string(window.originalProfileId ?? Ids.incognitoOriginal(panel.profileId))
-          if adopt?.hasPrefix("tab:") != true { options.removeValue(forKey: "adoptId") }
-        }
-        _ = try? panel.store.dispatch(Command("createWindow", [.object(options)]), origin: .native)
-      } else if disposition == "split" {
-        _ = try? panel.store.dispatch(Command("openSplitPane", [.string(windowId), .object(options)]), origin: .native)
-      } else if disposition != "current" && disposition != "peek" {
-        options["background"] = .bool(disposition == "background")
-        _ = try? panel.store.dispatch(Command("newTab", [.string(windowId), .object(options)]), origin: .native)
-      }
+      guard let request = payload["request"] as? [String: Any], let pageProfile = panel.lifecycle.presentation?.pageProfile else { return }
+      NativeExtensionPageNavigation.openWindow(request, windowId: windowId, pageProfile: pageProfile)
     default: break
     }
-    return true
   }
 }
 
-@MainActor
-private final class SidePanelMenuTarget: NSObject {
-  let action: (String) -> Void
-  init(_ action: @escaping (String) -> Void) { self.action = action }
-  @objc func choose(_ item: NSMenuItem) { if let id = item.representedObject as? String { action(id) } }
-}
-
-struct SidePanelState: Decodable {
-  struct Look: Decodable {
+struct SidePanelState: Equatable {
+  struct Look: Equatable {
     let card: String
     let text: String
     let icon: String
@@ -203,12 +223,9 @@ struct SidePanelState: Decodable {
   let title: String
   let icon: String?
   let width: Double
-  let room: Double
+  let room: CGFloat
   let look: Look
 
-  static func decode(_ json: String) -> SidePanelState? {
-    json.data(using: .utf8).flatMap { try? JSONDecoder().decode(SidePanelState.self, from: $0) }
-  }
 }
 
 @MainActor
@@ -229,14 +246,18 @@ final class SidePanelHost: NSObject, SolaraCoreWebViewDelegate {
   private var roomInset: CGFloat = 0
   private var opened = false
   private var keepsLocalWidth = false
-  private var page: SolaraCoreWebView?
+  private let pages = ExtensionSidePanelPageSlot<SolaraCoreWebView>()
+  private var page: SolaraCoreWebView? { pages.page }
   private var key: String?
   private var iconSource: String?
   private var icon: NSImage?
   private var focusedWindowOnLeave: NSWindow?
-  private var nativeOwned = false
+  private let onEvent: (String, String, [String: Any]) -> Void
 
-  init(windowId: String, shell: WindowShellView) {
+  init(windowId: String, shell: WindowShellView, onEvent: ((String, String, [String: Any]) -> Void)? = nil) {
+    self.onEvent = onEvent ?? { key, name, payload in
+      NativeExtensionSidePanel.handle(windowId: windowId, key: key, name: name, payload: payload)
+    }
     self.windowId = windowId
     self.shell = shell
     super.init()
@@ -258,9 +279,8 @@ final class SidePanelHost: NSObject, SolaraCoreWebViewDelegate {
     }
   }
 
-  func apply(_ json: String?) {
-    let json = NativeExtensionSidePanel.preferredJSON(windowId, fallback: json)
-    guard let json, !json.isEmpty else {
+  func apply(_ next: SidePanelState?) {
+    guard let next else {
       guard opened else { return }
       noteLeaving()
       opened = false
@@ -271,8 +291,7 @@ final class SidePanelHost: NSObject, SolaraCoreWebViewDelegate {
       shell?.setSidePanelRoom(room, open: false, animated: true)
       return
     }
-    guard let next = SidePanelState.decode(json), next.width.isFinite, next.room.isFinite, next.width > 0, next.room > 0, let shell else { return }
-    nativeOwned = NativeExtensionSidePanel.owns(windowId)
+    guard next.width.isFinite, next.room.isFinite, next.width > 0, next.room > 0, let shell else { return }
     let wasOpen = opened
     if !wasOpen { focusedWindowOnLeave = nil }
     let changedPage = next.key != key
@@ -289,7 +308,7 @@ final class SidePanelHost: NSObject, SolaraCoreWebViewDelegate {
     }
     state = next
     opened = true
-    roomInset = CGFloat(next.room - next.width)
+    roomInset = next.room - CGFloat(next.width)
     if iconSource != next.icon {
       iconSource = next.icon
       icon = next.icon.flatMap(Self.dataImage)
@@ -305,8 +324,8 @@ final class SidePanelHost: NSObject, SolaraCoreWebViewDelegate {
       shell.sidePanelClip.addSubview(view)
     }
     place()
-    if changedPage { open(next) }
     shell.setSidePanelRoom(room, open: true, animated: true)
+    if changedPage { open(next) }
   }
 
   func place() {
@@ -316,12 +335,7 @@ final class SidePanelHost: NSObject, SolaraCoreWebViewDelegate {
     view.layoutSubtreeIfNeeded()
   }
 
-  func windowChanged(_ window: NSWindow?) {
-    if window == nil { stop() }
-  }
-
   func stop() {
-    NativeExtensionSidePanel.windowEnded(windowId, key: key)
     opened = false
     resizeAnimator.stop()
     shell?.setSidePanelRoom(0, open: false, animated: false)
@@ -384,27 +398,20 @@ final class SidePanelHost: NSObject, SolaraCoreWebViewDelegate {
     unacknowledgedWidths = []
   }
 
-  private func noteLeaving() {
-    guard let page, let window = page.window, window.isVisible, Self.holdsFocus(page, in: window) else { return }
+  private func noteLeaving(rendererHeldFocus: Bool = false) {
+    guard let page, let window = page.window, window.isVisible,
+      ExtensionSidePanelFocus.holdsFocus(window.firstResponder, in: page, beforeDetach: rendererHeldFocus) else { return }
     focusedWindowOnLeave = window
   }
 
   private func refocus(_ window: NSWindow) {
     let windowId = windowId
-    let key = key
-    let nativeOwned = nativeOwned
     DispatchQueue.main.async { [weak window] in
-      guard let window, window.isVisible, window.firstResponder === window else { return }
-      if nativeOwned, let tabId = NativeStoreHandle.store?.state.activeTabId(windowId) {
-        _ = SidePanelFocus.focus(windowId: windowId, tabId: tabId)
-        return
-      }
-      HostedViews.send(NativeExtensionSidePanel.kind, windowId: windowId, "focusLost", ["key": key ?? ""])
+      guard let window, window.isVisible, window.firstResponder === window,
+        let state = NativeStoreHandle.store?.state,
+        let tabId = state.peeks[windowId]?.tabId ?? state.activeTabId(windowId) else { return }
+      _ = SidePanelFocus.focus(windowId: windowId, tabId: tabId)
     }
-  }
-
-  private static func holdsFocus(_ page: NSView, in window: NSWindow) -> Bool {
-    (window.firstResponder as? NSView).map { $0 === page || $0.isDescendant(of: page) } ?? false
   }
 
   private static func dataImage(_ source: String) -> NSImage? {
@@ -429,18 +436,19 @@ final class SidePanelHost: NSObject, SolaraCoreWebViewDelegate {
     web.pageBackgroundColor = .white
     web.autoresizingMask = [.width, .height]
     web.delegate = self
+    pages.page = web
     view.content.addSubview(web)
-    page = web
   }
 
   @discardableResult
   private func close() -> Bool {
     guard let page else { return false }
-    let hadFocus = page.window.map { Self.holdsFocus(page, in: $0) } ?? false
-    self.page = nil
-    page.delegate = nil
-    page.closeBrowser()
-    page.removeFromSuperview()
+    let hadFocus = ExtensionSidePanelFocus.holdsFocus(page.window?.firstResponder, in: page)
+    pages.remove { page in
+      page.delegate = nil
+      page.closeBrowser()
+      page.removeFromSuperview()
+    }
     return hadFocus
   }
 
@@ -449,17 +457,17 @@ final class SidePanelHost: NSObject, SolaraCoreWebViewDelegate {
     nonisolated(unsafe) let body = payload
     MainActor.assumeIsolated {
       guard page.map(ObjectIdentifier.init) == identity else { return }
-      if name == "windowClose" { send("windowClose") }
+      if name == "windowClose", opened {
+        noteLeaving(rendererHeldFocus: body["rendererHeldFocus"] as? Bool == true)
+        send("windowClose")
+      }
       if name == "openWindow" { send("openWindow", ["request": body]) }
     }
   }
 
   private func send(_ name: String, _ payload: [String: Any] = [:]) {
-    guard let key else { return }
-    if NativeExtensionSidePanel.handle(windowId: windowId, key: key, name: name, payload: payload, view: view) { return }
-    var body = payload
-    body["key"] = key
-    HostedViews.send(NativeExtensionSidePanel.kind, windowId: windowId, name, body)
+    guard opened, let key else { return }
+    onEvent(key, name, payload)
   }
 
   static func color(_ css: String) -> NSColor { CSSColor(css)?.ns ?? .clear }

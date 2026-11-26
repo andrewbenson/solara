@@ -259,7 +259,10 @@ final class ShellHost {
     shell.onWindow = { [weak self] window in
       self?.watchClose(of: window)
       self?.profilePager?.windowChanged()
-      self?.sidePanel?.windowChanged(window)
+      if let self, window == nil {
+        NativeExtensionSidePanel.close(windowId)
+        self.sidePanel?.stop()
+      }
       self?.scheduleLayoutProjection()
       if let self, window != nil {
         NativeTabPickers.prepare(windowId, in: self.shell.overlay)
@@ -273,9 +276,11 @@ final class ShellHost {
     panes = NativePaneRoots.start(windowId, prepareSelected: !ownsNativeLayout)
     profilePager = NativeProfilePager.start(shell)
     shell.onFrames = { [weak self] _ in
-      self?.profilePager?.place()
-      self?.sidePanel?.place()
-      self?.scheduleLayoutProjection()
+      guard let self else { return }
+      NativeExtensionSidePanel.fullscreenChanged(windowId, fullscreen: self.shell.input.fullscreen)
+      self.profilePager?.place()
+      self.sidePanel?.place()
+      self.scheduleLayoutProjection()
     }
     if ownsNativeLayout, let store = NativeStoreHandle.store {
       layoutChrome = NativeLayoutChrome(windowId: windowId, shell: shell, generation: generation)
@@ -361,6 +366,7 @@ final class ShellHost {
     #if SOLARA_PROBES
     probeStopped = true
     #endif
+    NativeExtensionSidePanel.close(shell.windowId)
     sidePanel?.stop()
     sidePanel = nil
     NativePeek.windowEnded(shell.windowId)
@@ -409,12 +415,12 @@ final class ShellHost {
     }
   }
 
-  func setSidePanel(_ json: String?) {
+  func setSidePanel(_ state: SidePanelState?) {
     if sidePanel == nil {
-      guard let json, !json.isEmpty, SidePanelState.decode(json) != nil else { return }
+      guard state != nil else { return }
       sidePanel = SidePanelHost(windowId: shell.windowId, shell: shell)
     }
-    sidePanel?.apply(json)
+    sidePanel?.apply(state)
   }
 
   func setBackdrop(_ json: String) {
@@ -992,7 +998,6 @@ enum ShellLayoutPush {
     let flag = { (key: String) in (given[key] as? NSNumber)?.boolValue }
     if let dock = number("dock") { input.dock = dock }
     if !keepWidth, let width = number("sidebarWidth") { input.sidebarWidth = width }
-    if let room = number("sidePanel") { input.sidePanel = max(0, room) }
     if let topTabs = flag("topTabs") { input.topTabs = topTabs }
     if let fullscreen = flag("fullscreen") { input.fullscreen = fullscreen }
     if let addressBar = flag("addressBarInSidebar") { input.addressBarInSidebar = addressBar }
@@ -1061,6 +1066,10 @@ public class WindowShellModule: Module {
       }
     }
 
+    View(NativeSidePanelSpacer.self) {
+      Prop("windowId") { (view: NativeSidePanelSpacer, id: String) in view.windowId = id }
+    }
+
     Function("active") { (windowId: String) -> Bool in
       NativeWindowShell.enabled && NativeWindowShell.active(windowId)
     }
@@ -1090,10 +1099,6 @@ public class WindowShellModule: Module {
 
     AsyncFunction("setBackdrop") { (windowId: String, json: String) in
       FrameUpdates.readOnMain { NativeWindowShell.setBackdrop(windowId, json) }
-    }.runOnQueue(.main)
-
-    AsyncFunction("setSidePanel") { (windowId: String, json: String?) in
-      FrameUpdates.readOnMain { NativeWindowShell.host(windowId)?.setSidePanel(json) }
     }.runOnQueue(.main)
 
     AsyncFunction("setSheet") { (windowId: String, json: String?) in

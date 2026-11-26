@@ -20,7 +20,7 @@ enum NativeOmniboxExtensionActions {
       NativeStoreHandle.ownsWorkspace, let store = NativeStoreHandle.store,
       let window = store.state.windows[model.windowId], current(model, store: store) else { return }
     if mode != .options {
-      NativeExtensionActionPopup.activate(windowId: model.windowId, extensionId: id, tabId: model.tabId, anchor: anchor(view, windowId: model.windowId), nativeSidePanel: true)
+      NativeExtensionActionPopup.activate(windowId: model.windowId, extensionId: id, tabId: model.tabId, anchor: anchor(view, windowId: model.windowId))
       return
     }
     let generation = NativeStoreHandle.ownershipGeneration

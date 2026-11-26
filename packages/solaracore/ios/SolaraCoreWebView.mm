@@ -3032,8 +3032,18 @@ static NSString *LinkKeyAction(NSString *key) {
   [SolaraCoreEarlyWindow dropPage:tab];
   if (_closing || tab != _tab) return;
   const BOOL withWindow = [tab respondsToSelector:@selector(closingWithWindow)] && tab.closingWithWindow;
+  NSMutableDictionary *payload = [NSMutableDictionary dictionary];
+  if (withWindow) payload[@"withWindow"] = @YES;
+  if ([_extensionHost isEqualToString:@"sidePanel"]) {
+    NSView *renderer = tab.view;
+    NSResponder *responder = self.window.firstResponder;
+    if (renderer && [responder isKindOfClass:NSView.class] &&
+        (responder == renderer || [(NSView *)responder isDescendantOf:renderer])) {
+      payload[@"rendererHeldFocus"] = @YES;
+    }
+  }
   [self detach];
-  [self emit:@"windowClose" payload:withWindow ? @{@"withWindow" : @YES} : @{}];
+  [self emit:@"windowClose" payload:payload];
 }
 
 - (void)resetPageMedia {

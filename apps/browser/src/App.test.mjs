@@ -43,7 +43,7 @@ test("opening and closing a native modal updates shell ownership without redrawi
   for (const [module, names] of [
     ["./components/CommandPanel", ["CommandPanel"]], ["./components/ContentCard", ["ContentCard"]],
     ["./components/bookmarks/BookmarkDialog", ["BookmarkDialog"]], ["./components/bookmarks/EditBookmarkDialog", ["EditBookmarkDialog"]],
-    ["./components/extensions/ExtensionOverlays", ["ExtensionOverlays"]], ["./components/extensions/SidePanel", ["ExtensionSidePanel"]],
+    ["./components/extensions/ExtensionOverlays", ["ExtensionOverlays"]],
     ["./components/Downloads", ["DownloadMagnet", "DownloadsPopover"]], ["./components/onboarding", ["OnboardingOverlay"]],
     ["./components/profiles/CreateProfile", ["CreateProfileHost"]], ["./components/layout/WindowProfile", ["WindowProfile"]],
     ["./components/sidebar/NativeSidebar", ["NativeSidebar"]], ["./components/sidebar/FolderPanel", ["FolderPanel"]],

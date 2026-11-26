@@ -34,6 +34,7 @@ public class ToolbarModule: Module {
     OnDestroy {
       DispatchQueue.main.async { MainActor.assumeIsolated {
         NativeExtensionActionPopup.close()
+        NativeExtensionSidePanel.closeAll()
         NativeExtensionActionPopup.emit = nil
         NativeExtensionCatalog.emit = nil
       } }
@@ -42,13 +43,6 @@ public class ToolbarModule: Module {
     AsyncFunction("refreshExtensionCatalog") { (profile: String, afterChange: Bool) async -> String in
       await NativeExtensionCatalog.refreshAndWait(profile, afterChange: afterChange)
     }
-
-    AsyncFunction("extensionContext") { (panels: [String: String]) in
-      MainActor.assumeIsolated {
-        NativeExtensionCatalog.legacyPanels = panels
-        NativeExtensionCatalog.refreshActions()
-      }
-    }.runOnQueue(.main)
 
     AsyncFunction("extensionToolbar") { (json: String) -> String in
       MainActor.assumeIsolated {
@@ -78,6 +72,19 @@ public class ToolbarModule: Module {
     }.runOnQueue(.main)
 
     #if DEBUG
+    AsyncFunction("devSidePanel") { (windowId: String, action: String, id: String?) -> [String: String]? in
+      MainActor.assumeIsolated {
+        guard SolaraCoreTestHooksAllowed() else { return nil }
+        switch action {
+        case "open": if let id { NativeExtensionSidePanel.open(windowId, id) }
+        case "toggle": if let id { NativeExtensionSidePanel.toggle(windowId, id) }
+        case "close": NativeExtensionSidePanel.close(windowId)
+        default: break
+        }
+        return NativeExtensionSidePanel.extensionId(windowId: windowId).map { ["extensionId": $0] }
+      }
+    }.runOnQueue(.main)
+
     AsyncFunction("devExtensionCatalog") { () -> [String: Any] in
       let snapshot: JSONValue = MainActor.assumeIsolated {
         guard SolaraCoreTestHooksAllowed() else { return [:] }

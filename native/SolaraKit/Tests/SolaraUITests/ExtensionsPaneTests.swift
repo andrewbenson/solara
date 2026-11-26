@@ -55,7 +55,7 @@ final class FakeExtensionsServices: ExtensionsServices {
     return stream
   }
 
-  func closeExtensionSurfaces(_ id: String) { calls.append("close \(id)") }
+  func closeExtensionSurfaces(_ id: String, profile: String) { calls.append("close \(id) \(profile)") }
   func openWebStoreDetail(_ url: String, profile: String) { calls.append("store \(url) \(profile)") }
   func openInNewTab(_ url: String) { calls.append("tab \(url)") }
 }
@@ -256,7 +256,7 @@ struct ExtensionsPaneTests {
     #expect(ExtensionRemoval(profile: "default", ext: ExtensionsFixture.installed[2]).message == "The extension's folder stays on your Mac.")
     services.calls = []
     await model.confirmRemoval()
-    #expect(services.calls == ["close cjpalhdlnbpafiamejdnhcphjbkeiagm", "uninstall cjpalhdlnbpafiamejdnhcphjbkeiagm default", "list default"])
+    #expect(services.calls == ["close cjpalhdlnbpafiamejdnhcphjbkeiagm default", "uninstall cjpalhdlnbpafiamejdnhcphjbkeiagm default", "list default"])
     #expect(model.lists["default"]?.count == 2)
     #expect(model.removal == nil)
   }

@@ -1,53 +1,141 @@
 import AppKit
 import Foundation
 import SolaraUI
+import SolaraStore
 
 @MainActor
 enum HostedPersonalize {
   nonisolated static let kind = "personalize"
-  #if DEBUG
-    private static var entries: [UUID: Entry] = [:]
-  #endif
+  private static var entries: [UUID: Entry] = [:]
+  private static var openWindowId: String?
 
-  private final class Entry {
+  private static var workspaceStore: Store? {
+    guard NativeStoreHandle.ownsWorkspace, !NativeStoreHandle.frozen else { return nil }
+    return NativeStoreHandle.store
+  }
+
+  @MainActor private final class Entry {
     let windowId: String
     weak var view: PersonalizeView?
     var ended = false
+    var appearance: PersonalizeAppearance?
+    var store: Store?
+    var subscription: Int?
+    var lifecycle: Int?
+
     init(windowId: String, view: PersonalizeView) { self.windowId = windowId; self.view = view }
+
+    func bind() {
+      let next = HostedPersonalize.workspaceStore
+      if store !== next {
+        update(nil)
+        if openWindowId == windowId { setOpen(nil) }
+        if let subscription { store?.unsubscribe(subscription) }
+        subscription = nil
+        store = next
+        if let next {
+          let windowId = self.windowId
+          subscription = next.subscribe { [weak self] commit in
+            let changes = commit.changes
+            let profileId = commit.state.windows[windowId]?.profileId
+            guard changes.windows.upserted.contains(windowId) || changes.windows.removed.contains(windowId)
+              || changes.settingsChanged.contains("tabLayout") || changes.settingsRemoved.contains("tabLayout")
+              || profileId.map({ changes.profiles.upserted.contains($0) || changes.profiles.removed.contains($0) }) == true else { return }
+            DispatchQueue.main.async { self?.refresh() }
+          }
+        }
+      }
+      refresh()
+    }
+
+    func refresh() {
+      guard !ended else { return }
+      guard let store, store === HostedPersonalize.workspaceStore, let appearance else {
+        update(nil)
+        return
+      }
+      let projected = PersonalizeBehavior.project(store.displayState, windowId: windowId,
+        open: openWindowId == windowId, appearance: appearance)
+      update(projected)
+      if projected == nil && openWindowId == windowId { setOpen(nil) }
+    }
+
+    private func update(_ projected: PersonalizeState?) {
+      guard let view, view.state != projected else { return }
+      view.update(projected)
+    }
+
+    func perform(_ action: String, value: String) {
+      guard let store else { return }
+      do {
+        let dispatched = try store.sequence {
+          guard !ended, store === HostedPersonalize.workspaceStore,
+            let command = PersonalizeBehavior.command(action, value: value, presented: view?.state,
+              state: store.state, windowId: windowId, closing: store.memory.closingWindows) else { return false }
+          try store.dispatch(command, origin: .native)
+          return true
+        }
+        if dispatched { refresh() }
+      } catch let refusal as CommandError where action == "color" && store.config.safeMode {
+        let alert = NSAlert()
+        alert.messageText = "Safe Mode"
+        alert.informativeText = refusal.description
+        alert.addButton(withTitle: "OK")
+        guard !ended, store === HostedPersonalize.workspaceStore, store.state.windows[windowId] != nil,
+          !store.memory.closingWindows.contains(windowId), let window = view?.window,
+          window.alphaValue > 0, window.isVisible, !window.isMiniaturized, window.attachedSheet == nil else { return }
+        alert.beginSheetModal(for: window)
+      } catch { NSLog("[new-tab] Personalize action failed: %@", String(describing: error)) }
+    }
+
+    func end() {
+      ended = true
+      if let subscription { store?.unsubscribe(subscription) }
+      if let lifecycle { NativeStoreHandle.unsubscribeLifecycle(lifecycle) }
+      store = nil
+      subscription = nil
+      lifecycle = nil
+      update(nil)
+      if openWindowId == windowId { setOpen(nil) }
+    }
+  }
+
+  static func setOpen(_ windowId: String?) {
+    if let windowId {
+      guard let store = workspaceStore, let window = store.state.windows[windowId],
+        !window.incognito, !store.memory.closingWindows.contains(windowId),
+        entries.values.contains(where: { !$0.ended && $0.windowId == windowId && $0.appearance != nil }) else { return }
+    }
+    openWindowId = windowId
+    for entry in entries.values { entry.refresh() }
   }
 
   static func register() {
     HostedViews.register(kind) { windowId in
       let view = PersonalizeView(frame: .zero)
       let entry = Entry(windowId: windowId, view: view)
-      #if DEBUG
-        let id = UUID()
-        entries[id] = entry
-      #endif
+      let id = UUID()
+      entries[id] = entry
+      entry.lifecycle = NativeStoreHandle.subscribeLifecycle { [weak entry] in entry?.bind() }
       view.onOpen = { [weak entry] open in
-        guard let entry, !entry.ended, entry.view?.state != nil else { return }
-        HostedViews.send(kind, windowId: entry.windowId, "open", ["open": open])
+        guard let entry, !entry.ended, let store = entry.store, store === workspaceStore,
+          !store.memory.closingWindows.contains(entry.windowId), entry.view?.state != nil else { return }
+        if open { setOpen(entry.windowId) }
+        else if openWindowId == entry.windowId { setOpen(nil) }
       }
-      view.onColor = { [weak entry] color in
-        guard let entry, !entry.ended, let state = entry.view?.state, state.open, state.canPickColor else { return }
-        HostedViews.send(kind, windowId: entry.windowId, "color", ["color": color, "profileId": state.profileId as Any? ?? NSNull()])
-      }
-      view.onLayout = { [weak entry] layout in
-        guard let entry, !entry.ended, let state = entry.view?.state, state.open, state.layout != layout else { return }
-        HostedViews.send(kind, windowId: entry.windowId, "layout", ["layout": layout, "profileId": state.profileId as Any? ?? NSNull()])
-      }
+      view.onColor = { [weak entry] in entry?.perform("color", value: $0) }
+      view.onLayout = { [weak entry] in entry?.perform("layout", value: $0) }
       return HostedContent(view: view, onUnmount: {
-        entry.ended = true
-        view.update(nil)
+        entry.end()
         view.onOpen = { _ in }
         view.onColor = { _ in }
         view.onLayout = { _ in }
-        #if DEBUG
-          entries[id] = nil
-        #endif
-      }, takesFocus: false, onState: { [weak view] json in
+        entries[id] = nil
+      }, takesFocus: false, onState: { json in
         guard !entry.ended else { return }
-        view?.update(PersonalizeState.decode(json))
+        entry.appearance = PersonalizeAppearance.decode(json)
+        if entry.appearance == nil && openWindowId == entry.windowId { setOpen(nil) }
+        entry.bind()
       })
     }
   }

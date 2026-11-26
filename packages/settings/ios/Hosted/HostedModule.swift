@@ -53,6 +53,14 @@ public class HostedModule: Module {
     }
 
     #if DEBUG
+      Function("setPersonalizeOpen") { (windowId: String?) in
+        if Thread.isMainThread {
+          FrameUpdates.readOnMain { HostedPersonalize.setOpen(windowId) }
+        } else {
+          DispatchQueue.main.sync { FrameUpdates.readOnMain { HostedPersonalize.setOpen(windowId) } }
+        }
+      }
+
       AsyncFunction("devGroupPanel") { (windowId: String, action: String, argument: String?) -> String in
         FrameUpdates.readOnMain {
           let data = (try? JSONSerialization.data(withJSONObject: HostedGroupPanel.drive(windowId, action, argument))) ?? Data("{}".utf8)

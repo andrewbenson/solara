@@ -165,10 +165,12 @@ public protocol ImportEngine: AnyObject {
   func readBookmarksFile(path: String) async -> ImportBookmarkNode?
   func readSafari(jobId: String, from source: ImportSafariSource) async throws -> ImportRead
   func importWorkspace(profile: String, windows: [JSONValue]) -> Int?
+  func placeWorkspace(profile: String, windows: [JSONValue], theme: JSONValue?) -> ImportWorkspaceWritten?
+  func importPullRequestsFolder(profile: String, source: String) async
   func adoptHistory(profile: String, rows: [ImportHistoryRow], deadline: TimeInterval) async -> Int?
   func importHistory(engineProfile: String, rows: [ImportHistoryRow]) async
   func adoptFavicons(profile: String, favicons: [ImportFaviconRow]) async
-  func storeFavicons(engineProfile: String, favicons: [ImportFaviconRow]) async
+  func storeFavicons(profile: String, engineProfile: String, favicons: [ImportFaviconRow]) async
   func extensions(browserId: String, profileId: String) async -> [ImportedExtension]
   func forget()
   func profiles() -> [ImportTarget]
@@ -503,6 +505,7 @@ final class ImportRunner {
   func run(_ request: ImportRunRequest) async -> ImportRunOutcome {
     guard let source = runs.browsers.first(where: { $0.id == request.browserId }) else { return .cancelledRun }
     let bySpaces = source.sidebar != nil
+    let protectsSidebar = bySpaces && !engine.safeMode
     let selected = source.profiles.filter { p in request.profileIds.contains(p.id) || (bySpaces && p.spaces.contains { request.spaceIds.contains($0.id) }) }
     let transient: Set<ImportKind> = [.tabs, .spaces, .pinnedTabs, .favorites]
     let refused = engine.safeMode ? request.kinds.filter { selected.count > 1 || transient.contains($0) } : []
@@ -515,7 +518,10 @@ final class ImportRunner {
       )
     }
     let tabsLocked = { (p: ImportSourceProfile) in request.withoutKey && p.tabsNeedKey }
-    let requested = request.kinds.filter { !refused.contains($0) }.filter { $0 != .tabs || !selected.allSatisfy(tabsLocked) }
+    var requested = request.kinds.filter { !refused.contains($0) }.filter { $0 != .tabs || !selected.allSatisfy(tabsLocked) }
+    if bySpaces, requested.contains(.tabs) {
+      for kind in [ImportKind.spaces, .pinnedTabs] where !requested.contains(kind) { requested.append(kind) }
+    }
     let order = Self.kindOrder.filter(requested.contains)
     runId = request.runId
     preparing = bySpaces ? max(1, request.spaceIds.count) : selected.count
@@ -582,99 +588,140 @@ final class ImportRunner {
       for w in read.warnings where ["undecryptable", "skipped", "locked"].contains(w.code) && !(w.kind.map(read.failed.contains) ?? false) {
         notes.append("\(w.message).")
       }
-      let index = destinationIndex
-      destinationIndex += 1
-      let destinationName = read.profileName ?? profile.name
-      let destination: String
-      switch await self.destination(request.target, index, destinationName, bySpaces ? read.profileColor : read.profileColor ?? profile.color, stopped: { control.stopped }) {
-      case .profile(let id) where !cancelled():
-        destination = id
-      case .unavailable where !cancelled() && !control.stopped:
-        for kind in profileKinds { fail(kind, profile.name) }
-        notes.append(Self.noDestinationNote(destinationName))
-        continue
-      default:
-        return halted()
-      }
-
-      let browserName = source.name
-      runs.traceStep("favicons")
-      let chosen = ImportFavicons.chosen(read)
-      if !chosen.isEmpty, !engine.isPrivateProfile(destination) {
-        await engine.adoptFavicons(profile: destination, favicons: chosen)
-        let faviconEngine = engine.engineProfile(destination)
-        runs.track { [engine] in await engine.storeFavicons(engineProfile: faviconEngine, favicons: chosen) }
-      }
-      runs.traceStep("bookmarks")
-      let placed = await runs.bookmarkQueue.run {
-        await self.placeBookmarks(profile: destination, root: read.bookmarks, browserName: browserName, stopped: { control.stopped })
-      }
-      if let placed { total.bookmarks += placed } else { engine.reportBookmarkFailure(); fail(.bookmarks, profile.name) }
-      if cancelled() || control.stopped { return halted() }
-
-      if !read.history.isEmpty {
-        guard let added = await addHistory(read.history, to: destination, control: control) else { return halted() }
-        total.history += added
-        if cancelled() || control.stopped { return halted() }
-      }
-
-      runs.traceStep("native")
-      let native = ["cookies", "autofill"].filter { name in profileKinds.contains { $0.rawValue == name } }
-      if let taken = token {
-        token = nil
-        if native.isEmpty || engine.isPrivateProfile(destination) || !engine.profileExists(destination) {
-          engine.discard(token: taken)
-        } else if let written = await engine.writeNative(token: taken, engineProfile: engine.engineProfile(destination), kinds: native) {
-          if written.cookiesFailed { fail(.cookies, profile.name) }
-          if written.autofillFailed { fail(.autofill, profile.name) }
-          total.cookies += written.cookies
-          total.addresses += written.addresses
-          total.cards += written.cards
-        } else {
-          for name in native { if let kind = ImportKind(rawValue: name) { fail(kind, profile.name) } }
-        }
-      }
-      if cancelled() || control.stopped { return halted() }
-      let tabs = !read.tabs.isEmpty && !read.hasSpaces
-      let favorites = !read.favorites.isEmpty
-      if (tabs || favorites) && engine.safeMode {
-        engine.transientImportRefused()
-        if tabs { fail(.tabs, profile.name) }
-        if favorites { fail(.favorites, profile.name) }
-      } else {
-        var windows: [JSONValue] = []
-        if tabs { windows.append(.object(["tabs": .array(read.tabs.map { $0.json() }), "group": "Imported"])) }
-        if favorites { windows.append(.object(["tabs": .array(read.favorites.map { $0.json(pinned: true) }), "pinnedAgainst": "tiles"])) }
-        if !windows.isEmpty {
-          runs.traceStep("workspace")
-          if let added = engine.importWorkspace(profile: destination, windows: windows) {
-            total.tabs += added
-          } else {
-            if tabs { fail(.tabs, profile.name) }
-            if favorites { fail(.favorites, profile.name) }
+      do {
+        var firstDestination: String?
+        if bySpaces {
+          for space in read.spaces {
+            let name = space.name.isEmpty ? "Space" : space.name
+            let index = destinationIndex
+            destinationIndex += 1
+            let destination: String
+            switch await self.destination(request.target, index, name, space.color, emoji: space.emoji, shareWith: firstDestination, transient: true, stopped: { control.stopped }) {
+            case .profile(let id): destination = id
+            case .unavailable: throw ImportSidebarFailure.unavailable(name)
+            case .halted: throw ImportSidebarFailure.halted
+            }
+            try requireDestination(destination, name: name, control: control)
+            if firstDestination == nil { firstDestination = destination }
+            guard let written = await placeSidebarSpace(space, profile: destination, favicons: read.favicons, control: control) else {
+              try requireDestination(destination, name: name, control: control)
+              throw ImportSidebarFailure.workspace(name)
+            }
+            total.tabs += written.tabs
+            if written.skipped > 0 { notes.append(ImportSidebarPlacement.skippedNote(written.skipped, name: name)) }
+            try requireDestination(destination, name: name, control: control)
           }
         }
-      }
+        let destinationName = read.profileName ?? profile.name
+        let destination: String
+        if let firstDestination {
+          destination = firstDestination
+        } else {
+          let index = destinationIndex
+          destinationIndex += 1
+          switch await self.destination(request.target, index, destinationName, bySpaces ? read.profileColor : read.profileColor ?? profile.color, transient: bySpaces && !engine.safeMode, stopped: { control.stopped }) {
+          case .profile(let id) where !cancelled(): destination = id
+          case .unavailable where !cancelled() && !control.stopped: throw ImportSidebarFailure.unavailable(destinationName)
+          default: throw ImportSidebarFailure.halted
+          }
+        }
+        func revalidate() throws {
+          if protectsSidebar { try requireDestination(destination, name: destinationName, control: control) }
+        }
+        try revalidate()
 
-      let credentials = read.credentials
-      read.credentials = []
-      if !credentials.isEmpty { runs.traceStep("passwords") }
-      for credential in credentials {
+        let browserName = source.name
+        runs.traceStep("favicons")
+        let chosen = ImportFavicons.chosen(read)
+        await placeFavicons(chosen, profile: destination, control: control)
+        try revalidate()
+        runs.traceStep("bookmarks")
+        let placed = await runs.bookmarkQueue.run {
+          if protectsSidebar && !self.admitsDestination(destination, control: control) { return Optional<Int>.none }
+          return await self.placeBookmarks(profile: destination, root: read.bookmarks, browserName: browserName, stopped: { control.stopped || (protectsSidebar && !self.admitsDestination(destination, control: control)) })
+        }
+        try revalidate()
+        if let placed { total.bookmarks += placed } else { engine.reportBookmarkFailure(); fail(.bookmarks, profile.name) }
+        if cancelled() || control.stopped { return halted() }
+
+        if !read.history.isEmpty {
+          let added = await addHistory(read.history, to: destination, control: control, requiresAdmission: protectsSidebar)
+          try revalidate()
+          guard let added else { return halted() }
+          total.history += added
+          if cancelled() || control.stopped { return halted() }
+        }
+
+        runs.traceStep("native")
+        let native = ["cookies", "autofill"].filter { name in profileKinds.contains { $0.rawValue == name } }
+        if let taken = token {
+          token = nil
+          if native.isEmpty || engine.isPrivateProfile(destination) || !engine.profileExists(destination) {
+            engine.discard(token: taken)
+          } else if let written = await engine.writeNative(token: taken, engineProfile: engine.engineProfile(destination), kinds: native) {
+            try revalidate()
+            if written.cookiesFailed { fail(.cookies, profile.name) }
+            if written.autofillFailed { fail(.autofill, profile.name) }
+            total.cookies += written.cookies
+            total.addresses += written.addresses
+            total.cards += written.cards
+          } else {
+            for name in native { if let kind = ImportKind(rawValue: name) { fail(kind, profile.name) } }
+          }
+        }
+        if cancelled() || control.stopped { return halted() }
+        try revalidate()
+        let tabs = !read.tabs.isEmpty && !read.hasSpaces
+        let favorites = !read.favorites.isEmpty
+        if (tabs || favorites) && engine.safeMode {
+          engine.transientImportRefused()
+          if tabs { fail(.tabs, profile.name) }
+          if favorites { fail(.favorites, profile.name) }
+        } else {
+          var windows: [JSONValue] = []
+          if tabs { windows.append(.object(["tabs": .array(read.tabs.map { $0.json() }), "group": "Imported"])) }
+          if favorites { windows.append(.object(["tabs": .array(read.favorites.map { $0.json(pinned: true) }), "pinnedAgainst": "tiles"])) }
+          if !windows.isEmpty {
+            runs.traceStep("workspace")
+            if let added = engine.importWorkspace(profile: destination, windows: windows) {
+              total.tabs += added
+            } else {
+              if tabs { fail(.tabs, profile.name) }
+              if favorites { fail(.favorites, profile.name) }
+            }
+          }
+        }
+
+        let credentials = read.credentials
+        read.credentials = []
+        if !credentials.isEmpty { runs.traceStep("passwords") }
+        for credential in credentials {
+          if control.stopped { return stoppedOutcome(total, order) }
+          guard !credential.password.isEmpty, let origin = ImportOrigin.of(url: credential.url, realm: credential.realm) else { continue }
+          try revalidate()
+          let saved = await engine.savePassword(engineProfile: engine.engineProfile(destination), origin: origin, username: credential.username, password: credential.password)
+          try revalidate()
+          if saved { total.passwords += 1 }
+        }
         if control.stopped { return stoppedOutcome(total, order) }
-        guard !credential.password.isEmpty, let origin = ImportOrigin.of(url: credential.url, realm: credential.realm) else { continue }
-        if await engine.savePassword(engineProfile: engine.engineProfile(destination), origin: origin, username: credential.username, password: credential.password) {
-          total.passwords += 1
-        }
-      }
-      if control.stopped { return stoppedOutcome(total, order) }
-      if cancelled() { return .cancelledRun }
-      if extensionsProfile.isEmpty { extensionsProfile = destination }
-      if source.family == .chromium || source.family == .arc {
-        let listed = await engine.extensions(browserId: source.id, profileId: profile.id)
         if cancelled() { return .cancelledRun }
-        for e in listed {
-          if let i = found.firstIndex(where: { $0.id == e.id }) { found[i] = e } else { found.append(e) }
+        if extensionsProfile.isEmpty { extensionsProfile = destination }
+        if source.family == .chromium || source.family == .arc {
+          let listed = await engine.extensions(browserId: source.id, profileId: profile.id)
+          try revalidate()
+          if cancelled() { return .cancelledRun }
+          for e in listed {
+            if let i = found.firstIndex(where: { $0.id == e.id }) { found[i] = e } else { found.append(e) }
+          }
         }
+      } catch ImportSidebarFailure.unavailable(let name) {
+        for kind in profileKinds { fail(kind, profile.name) }
+        notes.append(Self.noDestinationNote(name))
+      } catch ImportSidebarFailure.workspace(let name) {
+        for kind in profileKinds { fail(kind, profile.name) }
+        notes.append("Nothing from \(name) was imported, because Solara couldn't save its workspace.")
+      } catch {
+        return halted()
       }
     }
     var final: [ImportKind: ImportStatus] = [:]
@@ -700,6 +747,7 @@ final class ImportRunner {
       if cancelled() || stopped() { return 0 }
       let (toolbar, other) = ImportBookmarks.split(root)
       for attempt in 1... {
+        if cancelled() || stopped() { return 0 }
         guard let parents = engine.bookmarkParents(profile) else { throw ImportBookmarkWriteFailure.noRoots }
         let edits = ImportBookmarks.edits(profile: profile, toolbar: toolbar, other: other, parents: parents, browserName: browserName)
         if edits.isEmpty { break }
@@ -716,16 +764,21 @@ final class ImportRunner {
     }
   }
 
-  func addHistory(_ history: [ImportHistoryRow], to destination: String, control: ImportRunControl, haltsOnCancel: Bool = true) async -> Int? {
+  func addHistory(_ history: [ImportHistoryRow], to destination: String, control: ImportRunControl, haltsOnCancel: Bool = true, requiresAdmission: Bool = false) async -> Int? {
     runs.traceStep("history")
     guard !engine.isPrivateProfile(destination) else { return 0 }
+    if requiresAdmission && !admitsDestination(destination, control: control) { return nil }
     let rows = ImportHistory.usable(history)
     if !rows.isEmpty {
       let historyEngine = engine.engineProfile(destination)
-      let write = runs.track { [engine] in await engine.importHistory(engineProfile: historyEngine, rows: rows) }
+      let write = runs.track { [self] in
+        if requiresAdmission && !admitsDestination(destination, control: control) { return }
+        await engine.importHistory(engineProfile: historyEngine, rows: rows)
+      }
       if !(await runs.settle(write, within: runs.writeDeadline, until: control)) { engine.log("[import] history write still running profile=\(destination)") }
       if haltsOnCancel, cancelled() || control.stopped { return nil }
     }
+    if requiresAdmission && !admitsDestination(destination, control: control) { return nil }
     #if DEBUG
     let adoptStarted = ContinuousClock.now
     #endif
@@ -844,15 +897,21 @@ final class ImportRunner {
     )
   }
 
-  func destination(_ target: String, _ index: Int, _ name: String, _ color: String?, emoji: String? = nil, shareWith: String? = nil, stopped: () -> Bool) async -> ImportDestination {
+  func destination(_ target: String, _ index: Int, _ name: String, _ color: String?, emoji: String? = nil, shareWith: String? = nil, transient: Bool = false, stopped: () -> Bool) async -> ImportDestination {
     if cancelled() || stopped() { return .halted }
-    if index == 0 { return .profile(target) }
+    func admitted(_ id: String) -> ImportDestination {
+      if cancelled() || stopped() { return .halted }
+      if transient && (engine.safeMode || !engine.profileExists(id) || engine.isPrivateProfile(id)) { return .unavailable }
+      return .profile(id)
+    }
+    if index == 0 { return admitted(target) }
     if let clash = engine.profiles().first(where: { ImportProfileName.same($0.name, name) }) {
       guard let asNew = await engine.askImportAsNewProfile() else { return cancelled() || stopped() ? .halted : .unavailable }
       if cancelled() || stopped() { return .halted }
-      if !asNew { return .profile(clash.id) }
+      if !asNew { return admitted(clash.id) }
     }
     if cancelled() || stopped() { return .halted }
-    return engine.createProfile(name: name, color: ImportProfileColor.of(color), icon: emoji, shareWith: shareWith).map(ImportDestination.profile) ?? .unavailable
+    guard !transient || !engine.safeMode else { return .unavailable }
+    return engine.createProfile(name: name, color: ImportProfileColor.of(color), icon: emoji, shareWith: shareWith).map(admitted) ?? .unavailable
   }
 }

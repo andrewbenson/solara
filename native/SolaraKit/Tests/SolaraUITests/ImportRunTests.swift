@@ -39,6 +39,12 @@ final class FakeImportEngine: ImportEngine {
   var onBookmarkSubmit: (() -> Void)?
   var workspaces: [(String, [JSONValue])] = []
   var workspaceResult: Int? = 2
+  var workspaceSkipped = 0
+  var workspaceThemes: [JSONValue?] = []
+  var liveImports: [(String, String)] = []
+  var onLive: (() async -> Void)?
+  var onFaviconAdopt: (() async -> Void)?
+  var missingProfiles: Set<String> = []
   var steps: [String] = []
   var adoptHistoryAnswer: Int? = nil
   var adoptDeadlines: [TimeInterval] = []
@@ -194,17 +200,28 @@ final class FakeImportEngine: ImportEngine {
     steps.append("adoptFavicons")
     faviconAdoptions.append((profile, favicons))
     for _ in 0..<faviconAdoptionSuspensions { await Task.yield() }
+    await onFaviconAdopt?()
     faviconsAdopted = true
   }
 
-  func storeFavicons(engineProfile: String, favicons: [ImportFaviconRow]) async {
+  func storeFavicons(profile: String, engineProfile: String, favicons: [ImportFaviconRow]) async {
     faviconStores.append((engineProfile, favicons))
+  }
+
+  func placeWorkspace(profile: String, windows: [JSONValue], theme: JSONValue?) -> ImportWorkspaceWritten? {
+    workspaceThemes.append(theme)
+    return importWorkspace(profile: profile, windows: windows).map { ImportWorkspaceWritten(tabs: $0, skipped: workspaceSkipped) }
+  }
+
+  func importPullRequestsFolder(profile: String, source: String) async {
+    liveImports.append((profile, source))
+    await onLive?()
   }
 
   func extensions(browserId: String, profileId: String) async -> [ImportedExtension] { listed }
   func forget() { forgets += 1 }
   func profiles() -> [ImportTarget] { profileList }
-  func profileExists(_ id: String) -> Bool { profileList.contains { $0.id == id } || created.contains { "new-\($0.0)" == id } }
+  func profileExists(_ id: String) -> Bool { !missingProfiles.contains(id) && (profileList.contains { $0.id == id } || created.contains { "new-\($0.0)" == id }) }
   func isPrivateProfile(_ id: String) -> Bool { id.hasPrefix("incognito:") }
   func engineProfile(_ id: String) -> String { "engine-\(id)" }
 

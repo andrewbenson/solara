@@ -427,14 +427,17 @@ final class ImportRunEngine: ImportEngine {
     _ = try? await SettingsJS.shared.invoke("import.adoptFavicons", [profile, payload], timeout: 10)
   }
 
-  func storeFavicons(engineProfile: String, favicons: [ImportFaviconRow]) async {
-    let loaded = await withCheckedContinuation { continuation in
-      SolaraCoreHost.ensureProfile(engineProfile) { continuation.resume(returning: $0) }
-    }
-    guard loaded else { return }
-    for entry in ImportFavicons.byPage(favicons) {
-      _ = try? await NativeHistoryCatalog.command(kind: "storeFavicon", engineProfile: engineProfile, payload: ["page": entry.page, "icon": entry.favicon.icon, "png": entry.favicon.png])
-    }
+  func storeFavicons(profile: String, engineProfile: String, favicons: [ImportFaviconRow]) async {
+    await ImportFaviconWrites.persist(profile: profile, engineProfile: engineProfile, favicons: favicons, binding: {
+      guard !self.safeMode, self.profileExists(profile), !self.isPrivateProfile(profile) else { return nil }
+      return self.engineProfile(profile)
+    }, load: { engineProfile in
+      await withCheckedContinuation { continuation in
+        SolaraCoreHost.ensureProfile(engineProfile) { continuation.resume(returning: $0) }
+      }
+    }, store: { engineProfile, page, favicon in
+      _ = try? await NativeHistoryCatalog.command(kind: "storeFavicon", engineProfile: engineProfile, payload: ["page": page, "icon": favicon.icon, "png": favicon.png])
+    })
   }
 
   func reportBookmarkFailure() {
@@ -448,9 +451,22 @@ final class ImportRunEngine: ImportEngine {
   }
 
   func importWorkspace(profile: String, windows: [JSONValue]) -> Int? {
-    guard let store = SettingsDirectWrites.store else { return nil }
-    let payload: JSONValue = ["profileId": .string(profile), "windows": .array(windows)]
-    return Int(SettingsDirectWrites.write(store, Command("importWorkspace", [payload]))?.result?["tabs"]?.number ?? 0)
+    placeWorkspace(profile: profile, windows: windows, theme: nil)?.tabs
+  }
+
+  func placeWorkspace(profile: String, windows: [JSONValue], theme: JSONValue?) -> ImportWorkspaceWritten? {
+    guard let store = SettingsDirectWrites.store, !safeMode, profileExists(profile), !isPrivateProfile(profile) else { return nil }
+    var payload: JSONObject = ["profileId": .string(profile), "windows": .array(windows)]
+    if let theme { payload["theme"] = theme }
+    guard let result = SettingsDirectWrites.write(store, Command("importWorkspace", [.object(payload)]))?.result,
+      let tabs = result["tabs"]?.number, let skipped = result["skipped"]?.number else { return nil }
+    return ImportWorkspaceWritten(tabs: Int(tabs), skipped: Int(skipped))
+  }
+
+  func importPullRequestsFolder(profile: String, source: String) async {
+    guard !safeMode, profileExists(profile), !isPrivateProfile(profile),
+      let payload = try? JSONSerialization.data(withJSONObject: ["profileId": profile, "kind": "pullRequests", "source": source]) else { return }
+    _ = try? await NativeLiveEngine.shared.command(name: "importFolder", payloadJSON: String(decoding: payload, as: UTF8.self))
   }
 
   func cancelRead(jobId: String) { ImportService.shared.cancelRead(jobId: jobId) }

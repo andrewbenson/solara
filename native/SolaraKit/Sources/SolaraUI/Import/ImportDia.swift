@@ -62,11 +62,9 @@ extension ImportRunner {
       let pinnedTabs = pinned ? profile.pinned : []
       runs.traceStep("favicons")
       let chosen = ImportFavicons.chosen(read.favicons, pages: (pinnedTabs + openTabs).map(\.url))
-      if !chosen.isEmpty, !engine.isPrivateProfile(destination) {
-        await engine.adoptFavicons(profile: destination, favicons: chosen)
-        let faviconEngine = engine.engineProfile(destination)
-        runs.track { [engine] in await engine.storeFavicons(engineProfile: faviconEngine, favicons: chosen) }
-      }
+      let control = ImportRunControl(engine: engine)
+      await placeFavicons(chosen, profile: destination, control: control)
+      if cancelled() { return .cancelledRun }
       var windows: [JSONValue] = []
       if pinned { windows.append(.object(["tabs": .array(pinnedTabs.map { $0.json() }), "skipExistingOpen": true])) }
       if open { windows.append(.object(["tabs": .array(openTabs.map { $0.json(pinned: false) }), "group": "Imported", "skipExistingOpen": true])) }

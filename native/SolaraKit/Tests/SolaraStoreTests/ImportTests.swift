@@ -207,4 +207,39 @@ import Testing
     #expect(store.state.settings == settings)
     #expect(throws: CommandError.self) { try store.dispatch(Command("setWindowLayout", [.string(window), "invalid"])) }
   }
+  @Test func sidebarRowsPrecedeOpensFoldersAndFavoriteTiles() throws {
+    let store = makeStore()
+    let windows: [JSONValue] = [
+      ["tabs": [["url": "https://row.example/", "title": "Row", "pinned": true, "row": true]]],
+      ["tabs": [["url": "https://row.example/", "title": "Duplicate"], ["url": "https://open.example/", "title": "Open"]], "group": "Imported", "drafts": [
+        ["title": "Outer", "children": [["title": "Inner", "children": [["title": "Folder page", "url": "https://open.example/"]]]]],
+        ["title": "Empty", "children": []]
+      ]]
+    ]
+    let written = try store.dispatch(command(windows))
+    #expect(written.result?["tabs"] == 3)
+    #expect(store.state.groups.values.map(\.name).sorted() == ["Imported", "Inner", "Outer"])
+    #expect(store.state.tabs.values.filter { $0.pinnedAsRow == true }.count == 1)
+    #expect(store.state.tabs.values.allSatisfy { $0.unloaded == true && $0.navigation == nil })
+    let favorite: [JSONValue] = [["tabs": [["url": "https://row.example/", "title": "Tile", "pinned": true]], "pinnedAgainst": "tiles"]]
+    #expect(try store.dispatch(command(favorite)).result?["tabs"] == 1)
+    #expect(try store.dispatch(command(windows)).result?["tabs"] == 0)
+    #expect(try store.dispatch(command(favorite)).result?["tabs"] == 0)
+    #expect(Invariants.violations(store.state).isEmpty)
+  }
+
+  @Test func sidebarCapCountsRepeatedFreshRejectedLinksPerRoot() throws {
+    let store = makeStore()
+    let links: [JSONValue] = (0..<5000).map { ["title": "Link", "url": .string("https://cap.example/\($0)")] }
+    let repeated: [JSONValue] = Array(repeating: ["title": "Overflow", "url": "https://cap.example/overflow"], count: 3)
+    let commit = try store.dispatch(command([["tabs": [], "drafts": [
+      ["title": "First", "children": .array(links + [["title": "Nested", "children": .array(repeated)]])],
+      ["title": "Second", "children": [["title": "Fresh", "url": "https://second.example/"]]]
+    ]]]))
+    #expect(commit.result?["tabs"] == 5001)
+    #expect(commit.result?["skipped"] == 3)
+    #expect(!store.state.tabs.values.contains { $0.url.hasSuffix("overflow") })
+    #expect(Invariants.violations(store.state).isEmpty)
+  }
+
 }

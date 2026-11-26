@@ -303,7 +303,9 @@ enum SettingsWritesDev {
     case "openInternalPage":
       if viaJS { _ = await SettingsAdapters.js("app.openInternalPage", args.string("page") ?? "") } else { AdvancedAdapter(model: model).openInternalPage(args.string("page") ?? "") }
     case "manageExtensions":
-      if viaJS { _ = await SettingsAdapters.js("search.manageExtensions", args.string("engine") ?? "") } else { SearchEngineAdapter(model: model).manageExtensions(profile: args.string("engine") ?? "") }
+      guard !viaJS else { return #"{"error":"Manage Extensions is native only"}"# }
+      out["direct"] = !NativeStoreHandle.frozen && NativeStoreHandle.ownsWorkspace && NativeStoreHandle.store != nil
+      SearchEngineAdapter(model: model).manageExtensions(profile: args.string("engine") ?? "")
       let deadline = Date(timeIntervalSinceNow: 3)
       while NativeSettingsWindow.existingContext?.navigation.pane != .extensions, Date() < deadline {
         try? await Task.sleep(nanoseconds: 50_000_000)

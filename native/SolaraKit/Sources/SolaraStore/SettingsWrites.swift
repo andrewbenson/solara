@@ -100,7 +100,10 @@ public struct SettingsOpening {
   }
 
   public func extensionsProfile(engine: String) -> String {
-    let s = state()
+    Self.extensionsProfile(engine: engine, in: state())
+  }
+
+  public static func extensionsProfile(engine: String, in s: BrowserState) -> String {
     if let found = s.profileOrder.first(where: { s.engineProfile($0) == engine }), s.profiles[found] != nil { return found }
     let focused = s.ui.focusOrder.first { s.windows[$0] != nil } ?? s.windowOrder.first { s.windows[$0] != nil }
     if let focused, let own = s.windows[focused]?.profileId {

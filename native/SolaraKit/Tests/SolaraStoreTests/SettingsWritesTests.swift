@@ -283,6 +283,28 @@ import Testing
     #expect(opening(s).extensionsProfile(engine: "missing") == work)
   }
 
+  @Test func extensionsProfileUsesProfileOrderForSharedEngineData() throws {
+    let s = store()
+    let owner = try s.dispatch(SettingsWrites.createProfile(name: "Work", color: "blue", shareWith: nil)).result!.string!
+    let shared = try s.dispatch(SettingsWrites.createProfile(name: "Shared", color: "blue", shareWith: owner)).result!.string!
+    let engine = s.state.engineProfile(owner)
+    #expect(s.state.engineProfile(shared) == engine)
+    #expect(SettingsOpening.extensionsProfile(engine: engine, in: s.state) == owner)
+    try s.dispatch(SettingsWrites.reorderProfiles([shared, owner, Settings.defaultProfileID]))
+    #expect(SettingsOpening.extensionsProfile(engine: engine, in: s.state) == shared)
+  }
+
+  @Test func extensionsProfileReadsCurrentNativeWindowState() throws {
+    let s = store()
+    let work = try s.dispatch(SettingsWrites.createProfile(name: "Work", color: "blue", shareWith: nil)).result!.string!
+    let resolver = opening(s)
+    #expect(resolver.extensionsProfile(engine: "missing") == Settings.defaultProfileID)
+    let window = try s.dispatch(Command("createWindow", [["profileId": .string(work), "incognito": true]])).result!.string!
+    try s.dispatch(Command("setFocusedWindow", [.string(window)]))
+    #expect(resolver.extensionsProfile(engine: "missing") == work)
+    #expect(SettingsOpening.extensionsProfile(engine: "missing", in: s.state) == work)
+  }
+
   @Test func extensionsProfileWithNoWindowsAndAnUnknownEngineFallsBackToTheDefaultProfile() throws {
     let s = store()
     let work = try s.dispatch(SettingsWrites.createProfile(name: "Work", color: "blue", shareWith: nil)).result!.string!

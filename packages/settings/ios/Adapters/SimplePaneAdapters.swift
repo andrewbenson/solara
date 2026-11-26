@@ -131,11 +131,9 @@ final class SearchEngineAdapter: SearchEngineServices {
   }
 
   func manageExtensions(profile: String) {
-    guard let opening = SettingsDirectWrites.opening else {
-      SettingsJS.shared.fire("search.manageExtensions", profile)
-      return
-    }
-    NativeSettingsWindow.navigate(pane: "extensions", profileId: opening.extensionsProfile(engine: profile), detail: nil)
+    guard !NativeStoreHandle.frozen, NativeStoreHandle.ownsWorkspace, let store = NativeStoreHandle.store else { return }
+    let profileId = SettingsOpening.extensionsProfile(engine: profile, in: store.state)
+    NativeSettingsWindow.navigate(pane: "extensions", profileId: profileId, detail: nil)
     WindowHost.openAuxiliary(id: NativeSettingsWindow.windowId, kind: "settings", title: "Settings")
   }
 

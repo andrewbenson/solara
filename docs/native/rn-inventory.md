@@ -866,3 +866,32 @@ popover choice so existing toolbar readers receive a projection; zoom scrim and
 Escape dismissal call no JS action adapter. Find field scripts run through
 PageIssuer. Find's forwarding API, shared popover readers and unrelated prompt,
 site, media and extension behavior remain for their later slices.
+
+## E8 handoff: native consumers of JS Settings topics
+
+Baseline: `6bb147297ddd128d25735ab2c4ce2490a5b6ba20` (E7a). These 18 files and their owner rows are transcribed from `e7a-notes.md`, “Settings mirror-reader audit”. The line references are the historical E7 inventory references retained by E7a, not fresh E8 line numbers. Search by topic when locating a consumer.
+
+E8 owns the seven Settings JS action/publisher files named in its plan. The topic consumers below stay with their existing owners; this table does not assign their migration to E8. E8 slice 1 removes only Search’s Manage Extensions JS action and changes no topic subscription. A producer must remain until its consumer owner has landed the native replacement. Auxiliary service state and native events are distinguished from browser-mirror projections.
+
+| Location | Topic provenance and owner / row |
+| --- | --- |
+| `packages/settings/ios/Adapters/ExtensionsAdapter.swift`:14, 15, 82 | extensions.defaultProfile is a browser-mirror focus projection; extensions.changed is an engine event, not a browser mirror. Owner: Extensions / Settings direct and lifecycle rows. |
+| `packages/settings/ios/Adapters/PasswordsAdapter.swift`:24, 25 | passwords.importAvailable is only an import-module capability, not browser-store data. Owner: Settings Password CSV / Settings direct row. |
+| `packages/settings/ios/Adapters/ProfilesAdapter.swift`:24, 25, 26, 27 | profiles.appDark and profiles.stats are JS browser-mirror projections. Native model.profiles itself is native. Owner: Settings Profiles / Settings direct row. |
+| `packages/settings/ios/Adapters/SimplePaneAdapters.swift`:224, 225, 342 | advanced.cli is CLI service state; about.updateChecksNote is currently null. Neither is browser-store data. Owner: Advanced/About service integration. |
+| `packages/settings/ios/Adapters/SyncAdapter.swift`:13, 18 | sync.state includes localProfiles built from the browser mirror, alongside JS sync coordinator metadata. Owner: native sync and Settings Sync / Settings direct row. |
+| `packages/settings/ios/Downloads/NativeDownloadsPanel.swift`:46, 47 | downloads.panel projection combines download/selected-profile state. Owner: Downloads projection cleanup / JS mirror removal row. |
+| `packages/settings/ios/Media/NativeShareBand.swift`:76, 77 | media.shareBand JS projection combines browser window/tab and sharing state. Owner: media lifecycle / media-extension-prompt-translation row. |
+| `packages/settings/ios/NativeSettingsWindow.swift`:166 | extensions.defaultProfile fallback when resolving the Settings profile. StoreSettingsSource reads native SettingsModel, not a JS mirror. Owner: Settings Extensions / Settings direct row. |
+| `packages/settings/ios/Onboarding/OnboardingAdapter.swift`:121, 122 | onboarding.window mirrors profile/window/layout/pinned/history facts. Owner: Onboarding personalization / JS mirror removal row. |
+| `packages/settings/ios/PaneOverlays/NativePaneOverlays.swift`:20, 22, 27, 48 | pane.overlays, pane.navigation and pane.navigationMenu guest feature/navigation projections. Owner: pane/media/extension overlays and JS mirror removal row. |
+| `packages/settings/ios/PaneOverlays/PanePrompts.swift`:51, 52 | pane.prompts projection feeds pane/window prompts. Owner: permission/prompt lifecycle / media-extension-prompt-translation row. |
+| `packages/settings/ios/Sidebar/NativeSidebar.swift`:363, 364 | sidebar.live projection (Live rows). Owner: Live Folders / JS mirror removal row. |
+| `packages/settings/ios/Sidebar/NativeSidebarDock.swift`:20, 21 | sidebar.dock legacy/fallback projection. Owner: Sidebar layout / JS mirror removal row. |
+| `packages/settings/ios/Sidebar/NativeSidebarHoverCard.swift`:17, 18, 408, 409 | sidebar.hoverCard and sidebar.iconPicker projections. Owner: Sidebar hover/icon features / JS mirror removal row. |
+| `packages/settings/ios/Sidebar/NativeSidebarShell.swift`:23, 26, 28, 946 | sidebar.shell and sidebar.nativeFeed/topStrip.nativeFeed guest projections, including fallback branches. Owner: Sidebar/top-strip actions and JS mirror removal rows. |
+| `packages/settings/ios/Sidebar/NativeTabPickers.swift`:27, 28, 29, 30 | sidebar.tabSearch and sidebar.switcher projections. Owner: tab search/switcher actions / JS mirror removal row. |
+| `packages/settings/ios/Split/NativeSplitChrome.swift`:35, 36, 37, 38, 39, 40, 42, 48, 191 | split.theme/drag/toast/notice/toolbar/frozen and Debug split.dev projections. Owner: split/pane presentation and lifecycles / JS mirror removal row. |
+| `packages/settings/ios/WindowShell/NativePeek.swift`:26, 27 | peek.state projection. Owner: Peek lifecycle / JS mirror removal row. |
+
+`SettingsJS.swift` is the transport/cache, not a browser-slice selector. `packages/settings/src/index.ts` has no browser mirror reader. Native `Store`, `SettingsModel` and injected `SettingsStoreSource` reads are native reads. `native/replica.ts`, including retained import theme acknowledgement, belongs to the 0.4.10 mirror-removal/native data-layer owners and is outside E8. Neither this inventory nor slice 1 completes the Settings direct or mirror-removal roadmap rows.

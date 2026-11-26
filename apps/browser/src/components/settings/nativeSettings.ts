@@ -3,7 +3,6 @@ import { openUrls } from "../../lib/actions";
 import { installCliInBackground, useCli } from "../../lib/cliControl";
 import { compactMemory } from "../../lib/memoryTrim";
 import { useBrowser } from "../../store/browser";
-import { engineProfile } from "../../store/model";
 import { extensionsProfileId } from "../extensions/store";
 import { openInternalPage } from "../pages/urls";
 import { autofillHandlers } from "./native/autofill";
@@ -17,7 +16,7 @@ import { privacyHandlers, publishPrivacy } from "./native/privacy";
 import { profilesHandlers, publishProfiles } from "./native/profiles";
 import { shortcutsHandlers } from "./native/shortcuts";
 import { publishSync, syncHandlers } from "./native/sync";
-import { openImport, openSettings } from "./windows";
+import { openImport } from "./windows";
 
 const handlers: Record<string, SettingsHandler> = {};
 const publishers: (() => void)[] = [];
@@ -40,11 +39,6 @@ function chooseTabLayout(layout: "sidebar" | "top") {
   useBrowser.getState().updateSettings({ tabLayout: layout });
 }
 
-function manageExtensionsOf(profile: string) {
-  const profileId = useBrowser.getState().profileOrder.find((id) => engineProfile(id) === profile);
-  openSettings("extensions", extensionsProfileId(profileId));
-}
-
 const coreHandlers: Record<string, SettingsHandler> = {
   "app.openInternalPage": (page: Parameters<typeof openInternalPage>[0]) => openInternalPage(page),
   "app.openUrls": (urls: string[]) => openUrls(urls),
@@ -52,8 +46,6 @@ const coreHandlers: Record<string, SettingsHandler> = {
   "general.openImport": () => openImport(),
 
   "tabs.chooseLayout": (layout: "sidebar" | "top") => chooseTabLayout(layout),
-
-  "search.manageExtensions": (profile: string) => manageExtensionsOf(profile),
 
   "advanced.installCli": () => installCliInBackground("settings"),
 

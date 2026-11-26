@@ -686,3 +686,20 @@ eligibility, error and ownership fences, and coalesced engine events. Then the f
 Pinned reload/home and activation capture a native family, ownership generation, interaction serial and exact page registration. Capture, paint and arrival are bounded; the pool must retain the physical page before a deferred reload. Frozen presentation is native in both layouts. The shared JS history adapter still imports livePage until slice 9.
 
 Verified: `PinnedPageCommandTests` (compile-red on the preceding slice) and `PageMenuCommandTests`; pin-handoff, pinned-links, native-page-commands, native-tab-commands, pool-e2e and shortcuts matrix/presses/precedence in layouts 0 and 1.
+
+## E8 Settings Search navigation source slice
+
+Search's Manage Extensions action resolves the engine profile against the owned,
+unfrozen native Store and navigates the native Settings window directly, including
+safe mode. It no longer calls `search.manageExtensions` in JavaScript. The default
+Extensions-profile topic and its consumers remain with their existing owners.
+
+`packages/settings/scripts/manage-extensions-test.mjs <Debug app>` drives the action through the
+Debug-only `devSettingsWrites("manageExtensions", argument)`: a profile's own engine, two profiles
+sharing one engine before and after a reorder (the first in the native order wins), an unknown
+engine (the focused window's profile), and `viaJS: true`, which now returns a retirement error at once.
+
+Verified: `SettingsWritesTests` (including shared-engine profile order and current native window
+state), `SettingsNavigationTests`, `SettingsSearchTests`; manage-extensions and settings-reopen in
+layouts 0 and 1. settings-shift's six search legs fail identically on main ff5f7f2b and with this
+slice ("⌘F didn't focus the search field"); its pane legs pass.

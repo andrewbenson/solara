@@ -36,7 +36,7 @@ enum NativeSplitChrome {
     _ = SettingsJS.shared.observe(dragTopic) { value in applyDrag(value) }
     _ = SettingsJS.shared.observe(toastTopic) { value in applyToast(value) }
     _ = SettingsJS.shared.observe(noticeTopic) { value in applyNotice(value) }
-    _ = SettingsJS.shared.observe("split.frozen") { value in applyFrozen(value) }
+
     if panesEnabled { _ = SettingsJS.shared.observe(toolbarTopic) { value in applyToolbars(value) } }
     #if DEBUG
     _ = SettingsJS.shared.observe("split.dev") { value in SplitChromeDevRun.start(value, views) }
@@ -225,13 +225,8 @@ enum NativeSplitChrome {
     }
   }
 
-  private static func applyFrozen(_ value: Any?) {
-    guard let all = windows(value) else { return }
-    for (id, owner) in owners {
-      guard let entry = all[id], let generation = entry["generation"] as? NSNumber,
-        generation.uint64Value == owner.generation else { continue }
-      owner.setFrozen(entry["presentations"] as? [String: [String: Any]] ?? [:])
-    }
+  static func refreshPinnedPages() {
+    for (id, owner) in owners { owner.setFrozen(NativePinnedPageCommands.presentations(windowId: id)) }
   }
 
   static func adopt(shell: WindowShellView, generation: UInt64) -> NativePaneLayoutHost? {
@@ -308,6 +303,8 @@ enum NativeSplitChrome {
   }
 
   static func bookmarksView(_ windowId: String) -> BookmarksBarView? { owners[windowId]?.bookmarksView }
+
+  static func frozenSnapshot(_ windowId: String) -> [String: Any]? { owners[windowId]?.describeFrozenPages() }
   #endif
 
   private static func applyDrag(_ value: Any?) {
@@ -441,7 +438,8 @@ final class NativePaneLayoutHost {
         #if DEBUG || SOLARA_PERF_TRACE
         let paneFrozenTrace = LayoutTrace.begin("paneFrozen", shell.windowId)
         #endif
-        placeFrozen()
+        frozenStates = NativePinnedPageCommands.presentations(windowId: shell.windowId)
+    placeFrozen()
         #if DEBUG || SOLARA_PERF_TRACE
         LayoutTrace.end(paneFrozenTrace)
         #endif
@@ -492,6 +490,7 @@ final class NativePaneLayoutHost {
   func setFrozen(_ next: [String: [String: Any]]) {
     guard !stopped else { return }
     frozenStates = next
+    frozenStates = NativePinnedPageCommands.presentations(windowId: shell.windowId)
     placeFrozen()
   }
 
@@ -501,11 +500,11 @@ final class NativePaneLayoutHost {
       guard snapshot.fullscreenTabId == nil, snapshot.pages[id] != nil,
         let copyId = entry["copyId"] as? String, state.tabs[copyId] != nil else { return false }
       return state.tabs[id]?.windowId == shell.windowId
-        && FrozenPageIdentity.admits(tabId: id, copyId: copyId, holder: state.tabs[id]?.pageIn, copyHolder: state.tabs[copyId]?.pageIn)
+        && FrozenPageIdentity.admits(tabId: id, copyId: copyId, holder: state.sharedPageHolder(id)?.id, copyHolder: state.sharedPageHolder(copyId)?.id)
     }
     for (id, view) in frozen where wanted[id] == nil { view.removeFromSuperview(); frozen[id] = nil; frozenURIs[id] = nil; paintedTokens[id] = nil }
     for (id, entry) in wanted {
-      guard let rect = snapshot.pages[id], let token = entry["token"] as? Int,
+      guard let rect = snapshot.pages[id], let token = PinnedPageCommand.token(in: entry),
         let copyId = entry["copyId"] as? String else { continue }
       let view = frozen[id] ?? FrozenPageView(frame: .zero)
       frozen[id] = view
@@ -514,15 +513,16 @@ final class NativePaneLayoutHost {
       view.dark = entry["dark"] as? Bool ?? theme.dark
       let send: (String) -> Void = { [weak self, weak view] name in
         guard let self, !self.stopped, self.frozen[id] === view,
-          self.frozenStates[id]?["token"] as? Int == token,
+          self.frozenStates[id].flatMap { PinnedPageCommand.token(in: $0) } == token,
           self.frozenStates[id]?["copyId"] as? String == copyId,
           let state = NativeStoreHandle.store?.state, state.tabs[id]?.windowId == self.shell.windowId,
-          FrozenPageIdentity.admits(tabId: id, copyId: copyId, holder: state.tabs[id]?.pageIn, copyHolder: state.tabs[copyId]?.pageIn) else { return }
+          FrozenPageIdentity.admits(tabId: id, copyId: copyId, holder: state.sharedPageHolder(id)?.id, copyHolder: state.sharedPageHolder(copyId)?.id) else { return }
         if name == "painted" {
           guard self.paintedTokens[id] != token else { return }
           self.paintedTokens[id] = token
         }
-        HostedViews.send("frozenPage", windowId: self.shell.windowId, name, ["token": token, "copyId": copyId])
+        if name == "painted" { NativePinnedPageCommands.didPaint(windowId: self.shell.windowId, tabId: id, copyId: copyId, token: token) }
+        if name == "press", id == copyId { NativePinnedPageCommands.request("handOffPin", tabId: copyId) }
       }
       view.onPress = { send("press") }
       view.onPainted = { send("painted") }
@@ -564,6 +564,24 @@ final class NativePaneLayoutHost {
     state = nil
     NativeSplitChrome.end(self)
   }
+
+  #if DEBUG
+  func describeFrozenPages() -> [String: Any]? {
+    guard !stopped else { return nil }
+    var tabs: [String: [String: Any]] = [:]
+    for (id, view) in frozen {
+      guard let entry = frozenStates[id], let token = PinnedPageCommand.token(in: entry),
+        let copyId = entry["copyId"] as? String else { continue }
+      let frame = view.convert(view.bounds, to: nil)
+      let height = view.window?.contentView?.bounds.height ?? 0
+      tabs[id] = ["frozenPage": [
+        "token": token, "copyId": copyId, "hasImage": view.image != nil, "dark": view.dark,
+        "frame": [frame.minX, height - frame.maxY, frame.width, frame.height],
+      ]]
+    }
+    return ["tabs": tabs]
+  }
+  #endif
 
   func describe() -> [String: Any] {
     ["generation": generation, "stopped": stopped, "identity": String(describing: ObjectIdentifier(self)),

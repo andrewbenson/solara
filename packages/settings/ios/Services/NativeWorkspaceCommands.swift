@@ -36,13 +36,15 @@ enum NativeWorkspaceCommands {
   private static var lastFindRequest = 0
 
   static func install() {
+    NativePinnedPageCommands.start()
     ToolbarView.commandURLFocusAllowed = { NativeCommandBarFocus.developerAllowed($0, field: $1) }
     ToolbarView.commandURLDidFocus = { NativeCommandBarFocus.developerDidFocus($0, field: $1) }
-    for command in WorkspaceMenuCommand.commands.union(ViewMenuCommand.commands).union(PageMenuCommand.commands).union(FindMenuCommand.commands).union(BookmarkMenuCommand.commands).union(CopyLinkCommand.commands).union(BrowserServiceCommand.commands).union(TabFocusCommand.commands).union(["focusCommandBar"]) {
+    for command in WorkspaceMenuCommand.commands.union(ViewMenuCommand.commands).union(PageMenuCommand.commands).union(FindMenuCommand.commands).union(BookmarkMenuCommand.commands).union(CopyLinkCommand.commands).union(BrowserServiceCommand.commands).union(TabFocusCommand.commands).union(PinnedPageCommand.commands).union(["focusCommandBar"]) {
       NativeMenuCommands.argumentHandlers[command] = { arg, windowId in perform(command, arg: arg, windowId: windowId) }
     }
     NativeMenuCommands.keepsMenuDispatch = ViewMenuCommand.commands.union(PageMenuCommand.commands).union(BookmarkMenuCommand.commands).union(CopyLinkCommand.commands).union(BrowserServiceCommand.commands).union(TabFocusCommand.commands)
     NativeMenuCommands.workspaceAvailability = { command, arg, windowId in
+      if command == "returnToPinnedUrl" { return NativePinnedPageCommands.available(windowId: windowId) }
       guard NativeStoreHandle.ownsWorkspace, let state = NativeStoreHandle.store?.state,
         WorkspaceMenuCommand.commands.contains(command) else { return nil }
       if command == "closeTab", windowId == nil, WindowHost.hasClosableForeignKeyWindow { return true }
@@ -263,6 +265,7 @@ enum NativeWorkspaceCommands {
     let timing = NewTabMainThreadTiming.begin("command.\(command)", windowId: windowId)
     defer { NewTabMainThreadTiming.end(timing) }
     #endif
+    if PinnedPageCommand.commands.contains(command) { return NativePinnedPageCommands.perform(command, arg: arg, windowId: windowId) }
     if TabFocusCommand.commands.contains(command) { return NativeTabFocusCommands.perform(command, arg: arg, windowId: windowId) }
     if BrowserServiceCommand.commands.contains(command) { return NativeBrowserServiceCommands.perform(command, arg: arg, windowId: windowId) }
     if BookmarkMenuCommand.commands.contains(command) { return NativeBookmarkCommands.perform(command, arg: arg, windowId: windowId) }

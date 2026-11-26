@@ -88,7 +88,7 @@ export function runEffects(effects: StoreEffect[] | undefined, get: () => Browse
         break;
       case "pinHandoff": {
         const id = effect.tabId as string;
-        runPinHandoff(id, () => get().handOffPin(id));
+        if (!nativeOwnsWorkspace()) runPinHandoff(id, () => get().handOffPin(id));
         break;
       }
       case "profileCreated": {

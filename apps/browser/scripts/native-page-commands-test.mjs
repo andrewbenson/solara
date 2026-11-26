@@ -184,6 +184,39 @@ try {
   await openBookmarkIn("w1", "a");
   await run(`ac.store.getState().navigate("a", ${JSON.stringify(`${base}/a`)}); return true;`);
   await until("bookmark leaves page ready for existing checks", (s) => s.tabs.a.url === `${base}/a`);
+  if (!baseline) {
+    await run('ac.store.getState().pinTabs(["a"], true); return true;');
+    const pinWindow = await run('return ac.store.getState().createWindow({url:"about:blank"});');
+    let shared;
+    await until("native shared copy", state => {
+      shared = Object.values(state.tabs).find(t => t.windowId === pinWindow && t.pinned && (t.pinKey ?? t.id) === (state.tabs.a.pinKey ?? "a") && !t.navigation && !t.adoptId)?.id;
+      return !!shared;
+    });
+    await run(`ac.store.getState().activate(${JSON.stringify(shared)}); return true;`);
+    await until("pin moves with the physical page", state => state.tabs.a.windowId === pinWindow);
+    await run(`ac.store.getState().navigate("a", ${JSON.stringify(`${base}/pin-history`)}); return true;`);
+    await until("shared holder has back history", state => state.tabs.a.url === `${base}/pin-history` && state.live?.a?.canGoBack === true);
+    await run("ac.commandHandlers.setEnabled(true); return true;");
+    try {
+      await menu("w1", "back");
+      await until("Back on a frozen copy moves then navigates", state => state.tabs.a.windowId === "w1" && state.tabs.a.url === `${base}/a` && state.live?.a?.canGoForward === true);
+      await menu(pinWindow, "forward");
+      await until("Forward on a frozen copy moves then navigates", state => state.tabs.a.windowId === pinWindow && state.tabs.a.url === `${base}/pin-history`);
+    } finally { await run("ac.commandHandlers.setEnabled(false); return true;"); }
+    await handledNatively("frozen Back and Forward");
+    pass("Back on a frozen copy moves then navigates");
+    pass("Forward on a frozen copy moves then navigates");
+    await run(`ac.store.getState().navigate("a", ${JSON.stringify(`${base}/a`)}); return true;`);
+    await until("pin history fixture restored", state => state.tabs.a.url === `${base}/a`);
+    await reloads("shared pin reload is native", "/a", () => menu("w1", "reload"));
+    await until("pin reload arrives back in the invoking window", state => state.tabs.a.windowId === "w1");
+    await run(`ac.store.getState().navigate("a", ${JSON.stringify(`${base}/pin-away`)}); return true;`);
+    await until("pin navigated away", state => state.tabs.a.url === `${base}/pin-away`);
+    await menu("w1", "returnToPinnedUrl");
+    await until("native pin home", state => state.tabs.a.url === `${base}/a`);
+    await handledNatively("shared pin home");
+    await run('ac.store.getState().pinTabs(["a"], false); return true;');
+  }
   await reloads("reload asks the page again", "/a", () => menu("w1", "reload"));
   await reloads("forceReload asks the page again", "/a", () => menu("w1", "forceReload"));
   await reloads("a real ⌘R reloads through the menu", "/a", () => press("r", 15, ["command"]));

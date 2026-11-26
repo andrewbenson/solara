@@ -1,7 +1,7 @@
 import type { BrowserCommand, MenuEntry } from "@solara/shell";
 import { useBrowser, type BrowserState } from "../../store/browser";
 import { activeTabId, pinSection, plural } from "../../store/model";
-import { awayFromPin, groupOf, selectedTabIds } from "../../store/organize";
+import { groupOf, selectedTabIds } from "../../store/organize";
 import { newGroupWithSelection, openIconPicker, startRename } from "./actions";
 import { closeAllTabs } from "./menus";
 import { toggleNewTabBar } from "../omnibox/newTabBar";
@@ -40,9 +40,6 @@ export function runSidebarCommand(command: BrowserCommand, arg: string | null, w
     case "togglePinnedRow":
       togglePinnedRows(windowId);
       return true;
-    case "returnToPinnedUrl":
-      if (tabId) s.returnToPinnedUrl(tabId);
-      return true;
   }
   return false;
 }
@@ -52,7 +49,6 @@ export function sidebarMenuState(s: BrowserState, windowId: string | undefined) 
   const titles: Record<string, string> = {};
   const tab = windowId ? s.tabs[activeTabId(s, windowId) ?? ""] : undefined;
   if (windowId) {
-    if (!tab || !awayFromPin(tab)) disabled.push("returnToPinnedUrl");
     titles.togglePinnedRow = movePinnedTitle(s, tab);
     const selected = selectedTabIds(s, windowId).filter((id) => pinSection(s.tabs[id]) !== "tile");
     if (!selected.length) disabled.push("newGroupWithTabs");

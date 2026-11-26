@@ -650,3 +650,9 @@ provider, reads native snapshots, rejects JS search-settings writes, disables/en
 and removes it, and checks that another profile's rows survive. Native ownership loss,
 store replacement and delayed engine callbacks still require host-level verification.
 No runtime verification claimed.
+
+### Slice 7: shared pinned pages
+
+Pinned reload/home and activation capture a native family, ownership generation, interaction serial and exact page registration. Capture, paint and arrival are bounded; the pool must retain the physical page before a deferred reload. Frozen presentation is native in both layouts. The shared JS history adapter still imports livePage until slice 9.
+
+Verified: `PinnedPageCommandTests` (compile-red on the preceding slice) and `PageMenuCommandTests`; pin-handoff, pinned-links, native-page-commands, native-tab-commands, pool-e2e and shortcuts matrix/presses/precedence in layouts 0 and 1.

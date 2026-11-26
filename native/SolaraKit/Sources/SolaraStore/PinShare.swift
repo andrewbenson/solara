@@ -260,3 +260,9 @@ extension Session {
     return next
   }
 }
+
+public extension BrowserState {
+  func sharedPageHolder(_ id: String) -> Tab? {
+    Session(state: self, memory: StoreMemory(), env: PlainWebAddressing(), config: StoreConfig(), now: 0).holderOf(self, id)
+  }
+}

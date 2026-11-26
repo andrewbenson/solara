@@ -1,6 +1,6 @@
 import { openModeFor, openUrl } from "../bookmarks/actions";
 import { openInternalPage } from "../pages/urls";
-import { windowNativeLayoutGeneration, publishSettingsTopic } from "@solara/settings";
+import { nativeWorkspaceCommand, windowNativeLayoutGeneration, publishSettingsTopic } from "@solara/settings";
 import { isPageCurrent, nativePageFacts } from "@solara/store";
 import { addNativeSettingsHandlers } from "../settings/nativeSettings";
 import { create } from "zustand";
@@ -62,6 +62,7 @@ export function useHistoryAvailability(tabId: string) {
 }
 
 export function goBack(tabId: string): void {
+  if (nativeWorkspaceCommand("back", JSON.stringify({ tabId }), null)) return;
   const { pageId, facts } = backFacts(store(), tabId);
   const action = backAction(facts);
   if (action === "opener") return closeToOpener(tabId, facts.opener!);
@@ -82,6 +83,7 @@ function closeToOpener(tabId: string, opener: string): void {
 }
 
 export function goForward(tabId: string): void {
+  if (nativeWorkspaceCommand("forward", JSON.stringify({ tabId }), null)) return;
   if (livePageId(tabId) !== tabId) return void withLivePage(tabId, (_, id) => goForward(id));
   if (pageOf(tabId).newTabShown) return hideNewTab(tabId);
   void webviews.get(tabId)?.goForward();

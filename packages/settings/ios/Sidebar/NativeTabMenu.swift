@@ -70,9 +70,11 @@ enum NativeTabMenu {
     switch action {
     case "tileDoubleClick":
       guard store.state.activeTabId(windowId) == tabId else { return true }
-      command = Command("returnToPinnedUrl", [.string(tabId)])
+      NativePinnedPageCommands.request("returnToPinnedUrl", tabId: tabId)
+      return true
     case "backToPinned":
-      command = Command("returnToPinnedUrl", [.string(tabId)])
+      NativePinnedPageCommands.request("returnToPinnedUrl", tabId: tabId)
+      return true
     case "toggleMute":
       command = Command("setSiteMuted", [.string(tabId), .bool(!tab.muted)])
     default:

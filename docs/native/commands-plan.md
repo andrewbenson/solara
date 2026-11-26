@@ -175,3 +175,9 @@ Copy links and share: Swift source delivered in slice 3; CopyLinkCommandTests an
 Open File and autofill: Swift source delivered in slice 4; BrowserServiceCommandTests, native-page-commands (picker/autofill legs), little-solara and shortcuts matrix/presses/precedence in layouts 0 and 1 remain VM gates. Real file panel, Chrome dropdown, ownership loss and page replacement require VM checks; no build or runtime verification claimed.
 
 Command Bar focus slice: `CommandBarFocusCommand` selects developer, page/small panel, empty-card bar, sidebar or hero from native state; `NativeCommandBarFocus` fences attachment and shell claims. JS command branches are removed; developer URL state is presentation-only, with Swift-issued negative request tokens. Generic Find/form focus claims and non-command New Tab helpers remain. Source delivered; Swift compilation and both-layout runtime acceptance are pending.
+
+### Slice 7 source draft
+
+Pinned reload/home and activation capture a native family, ownership generation, interaction serial and exact page registration. Capture, paint and arrival are bounded; the pool must retain the physical page before a deferred reload. Frozen presentation is native in both layouts. No VM result is claimed.
+
+Pending: tests-only transplant `PinnedPageCommandTests` (compile-red on the preceding slice), candidate filter and full SwiftPM suite; matching Debug build; pin-handoff, pinned-links, native-page/tab commands, pool-e2e, shortcuts matrix/presses/precedence and the full native lifetime/focus/window group in layouts 0 and 1. The shared JS history adapter still imports livePage until slice 9.

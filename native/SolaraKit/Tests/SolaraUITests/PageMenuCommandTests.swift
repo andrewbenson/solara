@@ -101,11 +101,11 @@ import Testing
     #expect(try plan("emailPageLocation", activating("b", fixture())) == PageMenuPlan(), "file pages aren't mailed")
   }
 
-  @Test func aSharedPinnedPageReloadStaysWithJavaScriptsHandOff() throws {
+  @Test func aSharedPinnedPageReloadIsRecognizedNatively() throws {
     var state = fixture()
     state.tabs["a"]?.pageIn = "elsewhere"
-    #expect(PageMenuCommand.plan("reload", arg: nil, windowId: "w", state: state, closing: []) == nil)
-    #expect(PageMenuCommand.plan("forceReload", arg: nil, windowId: "w", state: state, closing: []) == nil)
+    #expect(PageMenuCommand.plan("reload", arg: nil, windowId: "w", state: state, closing: [])?.page == .reload)
+    #expect(PageMenuCommand.plan("forceReload", arg: nil, windowId: "w", state: state, closing: [])?.page == .forceReload)
     #expect(try plan("zoomIn", state).page == .zoomStep(1))
   }
 

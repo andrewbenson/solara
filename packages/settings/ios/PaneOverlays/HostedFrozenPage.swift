@@ -26,19 +26,30 @@ enum HostedFrozenPage {
     private var pictureCopyId: String?
     private var pictureURI: String?
     private var paintedToken: Int?
+    private var tabId: String?
+    private var observer: NSObjectProtocol?
 
     init(windowId: String) {
       self.windowId = windowId
       view.onPress = { [weak self] in self?.send("press") }
       view.onPainted = { [weak self] in self?.painted() }
+      observer = NotificationCenter.default.addObserver(forName: NativePinnedPageCommands.changed, object: nil, queue: .main) { [weak self] _ in
+        MainActor.assumeIsolated { self?.refresh() }
+      }
     }
 
     func update(_ json: String) {
       guard !ended else { return }
-      guard let data = json.data(using: .utf8), let next = try? JSONDecoder().decode(State.self, from: data), !next.copyId.isEmpty else {
-        clear()
-        return
-      }
+      guard let data = json.data(using: .utf8), let value = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { clear(); return }
+      tabId = value["tabId"] as? String
+      refresh()
+    }
+
+    private func refresh() {
+      guard !ended, let tabId, let value = NativePinnedPageCommands.presentation(windowId: windowId, tabId: tabId),
+        let copy = value["copyId"] as? String else { clear(); return }
+      let next = State(token: PinnedPageCommand.token(in: value) ?? 0, tabId: tabId, copyId: copy, uri: value["uri"] as? String,
+        dark: view.effectiveAppearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua)
       state = next
       view.dark = next.dark
       view.isHidden = false
@@ -52,6 +63,8 @@ enum HostedFrozenPage {
 
     func end() {
       ended = true
+      if let observer { NotificationCenter.default.removeObserver(observer) }
+      observer = nil
       clear()
       view.onPress = nil
       view.onPainted = nil
@@ -67,8 +80,11 @@ enum HostedFrozenPage {
     }
 
     private func send(_ name: String) {
-      guard !ended, let state else { return }
-      HostedViews.send(kind, windowId: windowId, name, ["token": state.token, "copyId": state.copyId])
+      guard !ended, let state, let tabId = state.tabId,
+        let current = NativePinnedPageCommands.presentation(windowId: windowId, tabId: tabId),
+        PinnedPageCommand.token(in: current) == state.token, current["copyId"] as? String == state.copyId else { return }
+      if name == "press", tabId == state.copyId { NativePinnedPageCommands.request("handOffPin", tabId: state.copyId) }
+      if name == "painted" { NativePinnedPageCommands.didPaint(windowId: windowId, tabId: tabId, copyId: state.copyId, token: state.token) }
     }
 
     private func painted() {

@@ -32,7 +32,6 @@ import { closeNewTabBar, toggleNewTabBar } from "../components/omnibox/newTabBar
 import { NEW_TAB_BAR_POLICY } from "../store/newTabBar";
 import { addFolderToSidebar, restoreArcFolders } from "./bookmarkGroups";
 import { bookmarkWriter, reportBookmarkFailure } from "./bookmarkWriter";
-import { withLivePage } from "./livePage";
 import { webviews } from "./webviews";
 import { togglePageEngine } from "./engines";
 import { goBack, goForward } from "../components/layout/history";
@@ -70,7 +69,7 @@ export const commandHandlers = {
 };
 
 export function runCommand({ command, arg, windowId: requested }: CommandEvent) {
-  if (command === "openBookmark" || command === "jumpToSelection" || ["copyUrl", "copyUrlAsMarkdown", "copyQuoteLink", "share", "openFile", "autofill", "searchTabs", "tabSwitcher", "focusCommandBar"].includes(command)) return void nativeWorkspaceCommand(command, arg, requested);
+  if (command === "openBookmark" || command === "jumpToSelection" || ["copyUrl", "copyUrlAsMarkdown", "copyQuoteLink", "share", "openFile", "autofill", "searchTabs", "tabSwitcher", "focusCommandBar", "reload", "forceReload", "returnToPinnedUrl"].includes(command)) return void nativeWorkspaceCommand(command, arg, requested);
   if (nativeOwnsWorkspace() && nativeWorkspaceCommand(command, arg, requested)) return;
   if (__DEV__ && !commandHandlersEnabled) { commandHandlerBlocked++; return; }
   if (__DEV__) commandHandlerCalls++;
@@ -174,10 +173,6 @@ export function runCommand({ command, arg, windowId: requested }: CommandEvent) 
       if (!page) return;
       if (!find?.query) return s.setFind(page.id, { open: true });
       return void web?.find(find.query, command === "findNext", true);
-    case "reload":
-      return void (tabId && withLivePage(tabId, (page) => page.reload()));
-    case "forceReload":
-      return void (tabId && withLivePage(tabId, (page) => page.forceReload()));
     case "toggleTabLayout":
       return s.toggleTabLayout(windowId);
     case "openSplitPane":

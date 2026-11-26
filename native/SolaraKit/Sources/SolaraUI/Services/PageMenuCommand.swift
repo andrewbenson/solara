@@ -79,7 +79,6 @@ public enum PageMenuCommand {
     func on(_ action: PageCommand) -> PageMenuPlan { PageMenuPlan(tabId: tabId, page: action, focusWindow: route.focusWindow) }
     switch command {
     case "reload", "forceReload":
-      if let holder = tab.pageIn, !holder.isEmpty { return nil }
       return on(command == "reload" ? .reload : .forceReload)
     case "jumpToSelection":
       guard page != nil else { return none }

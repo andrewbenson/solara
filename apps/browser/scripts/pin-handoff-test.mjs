@@ -39,6 +39,7 @@ try {
     await rep.check(`${appearance}-handoff`, async () => {
       app = await launch(resolve(appArg), {
         data: join(scratch, appearance), fresh: true, onboarded: true, probe: true,
+        env: { SOLARA_NATIVE_WINDOW_LAYOUT: process.env.SOLARA_NATIVE_WINDOW_LAYOUT ?? "1" },
         session: session({
           windows: [{ id: "w1", activeTabIds: { default: "a" } }],
           tabs: [{ id: "a", url, title: "PIN" }],
@@ -46,6 +47,7 @@ try {
         }),
       });
       await until("page ready", 'return ac.store.getState().tabs.a?.title === "PIN" && !!ac.webviews.get("a");');
+      const handlers = await app.eval("ac.commandHandlers.setEnabled(false); return ac.commandHandlers.stats();");
       page = await app.page("/pin");
       await page.eval('globalThis.pinHandoffMarker = "same-document"; true');
       const originalTarget = await app.pageTarget("/pin");
@@ -80,6 +82,7 @@ try {
       await until("native cover goes away", `return ${overlays}.then(value => !Object.values(value?.tabs ?? {}).some(tab => tab.frozenPage) || null);`);
       assert.equal((await app.pageTarget("/pin"))?.id, originalTarget.id, "pullback retains the Chrome target");
       assert.deepEqual(await page.eval('[globalThis.pinHandoffMarker, document.querySelector("input").value]'), ["same-document", "kept"], "pullback retains the same document");
+      assert.deepEqual(await app.eval("return ac.commandHandlers.stats();"), handlers, "native handoffs never enter JS command handlers");
       writeFileSync(join(scratch, `${appearance}.json`), JSON.stringify({ target, copy, frozen, cover, snapshot, returned: await app.snapshot() }, null, 2));
       page.close();
       page = null;

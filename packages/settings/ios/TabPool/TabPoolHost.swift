@@ -16,6 +16,14 @@ final class TabPoolHost {
   var emit: (@MainActor (String, [String: Any]) -> UUID?)?
   var pageEventObservers: [@MainActor (String, String, [String: Any]) -> Void] = []
   var stateObservers: [@MainActor () -> Void] = []
+  private var placementCallbacks: [UUID: () -> Void] = [:]
+
+  func afterPlacement(_ callback: @escaping () -> Void) {
+    let id = UUID()
+    placementCallbacks[id] = callback
+    DispatchQueue.main.asyncAfter(deadline: .now() + 3) { self.placementCallbacks[id] = nil }
+  }
+
   private var pool: TabViewPool?
   private var preparingPlacement = false
   private var listener: Int?
@@ -49,6 +57,13 @@ final class TabPoolHost {
     pool.nativePlacement = { NativeWindowShell.nativeLayoutActive($0) }
     pool.hiddenContainer = { NativeWindowShell.hiddenPages($0) }
     pool.onPlaced = { [weak self] places in
+      #if DEBUG
+      for id in places.keys.sorted() {
+        guard let self, let page = self.pages[id], let windowId = self.windowOf(id) else { continue }
+        FocusMoves.trace("pinHandoff pool placed tab=\(id) target=\(windowId) place=\(places[id] ?? "nil") physical=\(ObjectIdentifier(page.view)) window=\(page.view.window?.windowNumber ?? -1)")
+      }
+      #endif
+      self?.placementCallbacks.values.forEach { $0() }
       PageIssuer.shared?.afterIngress { [weak self] in _ = self?.emit?("onPlaced", ["places": places]) }
     }
     pool.onReplace = { [weak self] tabId in

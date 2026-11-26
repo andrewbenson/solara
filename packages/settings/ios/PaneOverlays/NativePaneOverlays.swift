@@ -111,6 +111,7 @@ enum NativePaneOverlays {
         HostedSelectionBar.describe(windowId),
         HostedSwipeCapsule.describe(windowId),
         HostedFrozenPage.describe(windowId),
+        NativeSplitChrome.frozenSnapshot(windowId),
       ].compactMap { $0 }
       for entry in hosted {
         var tabs = value?["tabs"] as? [String: [String: Any]] ?? [:]

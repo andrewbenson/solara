@@ -1,0 +1,128 @@
+#!/usr/bin/env node
+import assert from "node:assert/strict";
+import { execFileSync } from "node:child_process";
+import { mkdirSync, mkdtempSync, realpathSync, writeFileSync } from "node:fs";
+import { join, resolve } from "node:path";
+import { launch, reporter } from "../../../scripts/lib/instance.mjs";
+
+const [appArg, scratchArg] = process.argv.slice(2);
+assert.ok(appArg && scratchArg, "usage: node settings-utilities-test.mjs <Debug app> <scratch directory>");
+const appPath = realpathSync(appArg);
+assert.ok(!appPath.startsWith("/Applications/") && !appPath.includes("/build-vista/"), "use an isolated Debug app");
+const bundleId = execFileSync("/usr/libexec/PlistBuddy", ["-c", "Print CFBundleIdentifier", join(appPath, "Contents/Info.plist")], { encoding: "utf8", timeout: 5000 }).trim();
+assert.equal(bundleId, "network.benson.solara.dev");
+
+const scratchRoot = resolve(scratchArg);
+mkdirSync(scratchRoot, { recursive: true });
+const scratch = mkdtempSync(join(scratchRoot, "ac-settings-utilities-"));
+const data = join(scratch, "data");
+const importSources = join(scratch, "import-sources");
+mkdirSync(importSources);
+const installer = join(scratch, "installer.sh");
+const installError = "Settings utility driver installer fixture";
+writeFileSync(installer, "printf '%s\\n' 'error Settings utility driver installer fixture'\nexit 1\n");
+const rep = reporter(join(scratch, "settings-utilities-test.log"), { name: "settings-utilities-test" });
+let app;
+
+const writesSource = (action, args = {}) =>
+  `globalThis.expo.modules.SolaraSettings.devSettingsWrites(${JSON.stringify(action)}, ${JSON.stringify(JSON.stringify(args))}).then(JSON.parse)`;
+const writes = (action, args) => app.eval(`return ${writesSource(action, args)}`);
+const fixtureURL = (name) => `data:text/plain,${name}`;
+const actions = [
+  ["openURLs", { urls: [fixtureURL("settings-a"), fixtureURL("settings-b")] }, "Open URLs"],
+  ["openInNewTab", { url: fixtureURL("extensions") }, "Open in New Tab"],
+  ["openInBrowser", { url: fixtureURL("live") }, "Open in Browser"],
+  ["openInternalPage", { page: "history" }, "Open Internal Page"],
+  ["openImport", {}, "Open Import"],
+  ["installCli", {}, "CLI control"],
+  ["cliStatus", {}, "CLI control"],
+];
+
+function assertNewTabs(before, after, window, expectedURLs) {
+  assert.equal(after.error, undefined);
+  assert.equal(after.direct, true);
+  assert.equal(after.opened, true);
+  assert.equal(after.windows.length, before.windows.length);
+  const priorIds = new Set(before.tabs.flat().map((tab) => tab.id));
+  const opened = after.tabs.flat().filter((tab) => !priorIds.has(tab.id));
+  assert.deepEqual(opened.map((tab) => tab.url).sort(), [...expectedURLs].sort());
+  for (const tab of opened) {
+    assert.equal(tab.window, window.id);
+    assert.equal(tab.profileId, window.profileId);
+  }
+  assert.equal(opened.find((tab) => tab.active)?.url, expectedURLs.at(-1));
+}
+
+try {
+  app = await launch(appPath, {
+    data,
+    onboarded: true,
+    env: {
+      SOLARA_CLI_HOME: join(scratch, "cli-home"),
+      SOLARA_CLI_BIN_DIR: join(scratch, "cli-bin"),
+      SOLARA_CLI_INSTALL_SCRIPT: installer,
+      SOLARA_IMPORT_SOURCE_DIR: importSources,
+      SOLARA_IMPORT_SAFARI_HOME: importSources,
+      SOLARA_IMPORT_DIA_BUNDLE_ID: "invalid.solara.acceptance.no-dia",
+    },
+  });
+  const initial = await app.ready({
+    test: `if (!globalThis.expo?.modules?.SolaraSettings?.devSettingsWrites) return false;
+      return ${writesSource("snapshot")}.then(state => state.direct && state.focusedWindow && state)`,
+  });
+  const window = initial.windows.find(({ id }) => id === initial.focusedWindow);
+  assert.ok(window && !window.incognito);
+
+  await rep.check("each retired JavaScript route returns a native-only error", async () => {
+    for (const [action, args, label] of actions) {
+      assert.deepEqual(await writes(action, { ...args, viaJS: true }), { error: `${label} is native only` });
+    }
+  });
+
+  for (const [action, args] of actions.slice(0, 3)) {
+    await rep.check(`${action} opens tabs in the native window and profile`, async () => {
+      const before = await writes("snapshot");
+      const out = await writes(action, args);
+      assertNewTabs(before, out, window, args.urls ?? [args.url]);
+      if (action === "openInBrowser") assert.equal(out.focusedWindow, window.id);
+    });
+  }
+
+  await rep.check("openInternalPage opens and reuses native History", async () => {
+    const before = await writes("snapshot");
+    const out = await writes("openInternalPage", { page: "history" });
+    const history = out.tabs.flat().find((tab) => tab.window === window.id && tab.active);
+    assert.match(history?.url ?? "", /^[a-z][a-z0-9+.-]*:\/\/history$/);
+    assertNewTabs(before, out, window, [history.url]);
+    const reopened = await writes("openInternalPage", { page: "history" });
+    assert.equal(reopened.opened, true);
+    assert.equal(reopened.tabs.flat().length, out.tabs.flat().length);
+    assert.equal(reopened.tabs.flat().find((tab) => tab.window === window.id && tab.active)?.id, history.id);
+  });
+
+  await rep.check("openImport opens the native Import window", async () => {
+    const out = await writes("openImport");
+    assert.equal(out.direct, true);
+    assert.equal(out.importOpen, true);
+    const state = await app.eval('return globalThis.expo.modules.SolaraSettings.devImport("state", null)');
+    assert.ok(["loading", "choose"].includes(state.step), JSON.stringify(state));
+  });
+
+  await rep.check("installCli updates native CLI status with the isolated installer's result", async () => {
+    const before = await writes("cliStatus");
+    assert.equal(before.direct, true);
+    assert.equal(before.cli.installing, false);
+    assert.equal(before.cli.error, undefined);
+    const started = await writes("installCli");
+    assert.equal(started.direct, true);
+    assert.equal(started.cli.installing, true);
+    const settled = await app.ready({
+      timeout: 10000,
+      test: `return ${writesSource("cliStatus")}.then(state => !state.cli.installing && state)`,
+    });
+    assert.equal(settled.cli.error, installError);
+  });
+} finally {
+  await app?.quit();
+}
+process.exit(rep.summary() ? 0 : 1);

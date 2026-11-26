@@ -128,7 +128,7 @@ import Testing
   }
 
   private func opening(_ s: Store, focused: @escaping (String) -> Void = { _ in }) -> SettingsOpening {
-    SettingsOpening(state: { s.state }, run: { try? s.dispatch($0).result }, focus: focused)
+    SettingsOpening(state: { s.state }, run: { try? s.dispatch($0) }, focus: focused)
   }
 
   private func urls(_ s: Store, _ window: String) -> [String] {
@@ -161,6 +161,57 @@ import Testing
     #expect(urls(s, s.state.windowOrder[0]).contains("https://a.test/"))
   }
 
+  @Test func openInNewTabUsesTheFocusedPrivateWindow() throws {
+    let s = store()
+    let regular = try s.dispatch(Command("createWindow", [[:]])).result!.string!
+    let secret = try s.dispatch(Command("createWindow", [["incognito": true]])).result!.string!
+    try s.dispatch(Command("setFocusedWindow", [.string(secret)]))
+    let calls = Box()
+    let url = "https://extension.test/"
+    #expect(recording(s, calls).openInNewTab(url))
+    #expect(s.state.activeTab(secret)?.url == url)
+    #expect(s.state.activeTab(secret)?.profileId == s.state.windows[secret]?.profileId)
+    #expect(!urls(s, regular).contains(url))
+    #expect(calls.items == ["newTab"])
+  }
+
+  @Test func openInNewTabWithNoWindowDoesNothing() {
+    let s = store()
+    let calls = Box()
+    #expect(!recording(s, calls).openInNewTab("https://extension.test/"))
+    #expect(s.state.windowOrder.isEmpty)
+    #expect(calls.items.isEmpty)
+  }
+
+  @Test func openInNewTabSkipsLittleSolara() throws {
+    let s = store()
+    let small = try s.dispatch(Command("createWindow", [["url": "https://small.test/", "small": true]])).result!.string!
+    let url = "https://extension.test/"
+    #expect(!opening(s).openInNewTab(url))
+    let window = try s.dispatch(Command("createWindow", [[:]])).result!.string!
+    try s.dispatch(Command("setFocusedWindow", [.string(small)]))
+    #expect(opening(s).openInNewTab(url))
+    #expect(s.state.activeTab(window)?.url == url)
+    #expect(urls(s, small) == ["https://small.test/"])
+  }
+
+  @Test func refusedOpenStopsTheBatchAndDoesNotFocus() throws {
+    let s = store()
+    _ = try s.dispatch(Command("createWindow", [[:]]))
+    var commands: [String] = []
+    var focused: [String] = []
+    let refused = SettingsOpening(state: { s.state }, run: { command in
+      commands.append(command.name)
+      return nil
+    }, focus: { focused.append($0) })
+    #expect(!refused.openURLs(["https://a.test/", "https://b.test/"]))
+    #expect(!refused.openInNewTab("https://extension.test/"))
+    #expect(!refused.openInBrowser("https://live.test/"))
+    #expect(!refused.openInternalPage("history", scheme: "solara", isAppScheme: { $0 == "solara" }))
+    #expect(commands == ["newTab", "newTab", "newTab", "setFocusedWindow"])
+    #expect(focused.isEmpty)
+  }
+
   @Test func openInBrowserSkipsPrivateWindowsAndFocuses() throws {
     let s = store()
     let regular = try s.dispatch(Command("createWindow", [[:]])).result!.string!
@@ -188,7 +239,7 @@ import Testing
       state: { s.state },
       run: { command in
         calls.items.append(command.name)
-        return try? s.dispatch(command).result
+        return try? s.dispatch(command)
       },
       focus: { calls.items.append("focus:" + $0) })
   }

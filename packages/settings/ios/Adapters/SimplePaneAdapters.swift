@@ -48,7 +48,7 @@ final class GeneralAdapter: GeneralServices {
     return response == .OK ? panel.url?.path : nil
   }
 
-  func openImport() { SettingsJS.shared.fire("general.openImport") }
+  func openImport() { NativeImportWindow.open() }
 
   nonisolated static func downloads(_ dict: [String: Any]) -> DownloadSettings? {
     guard let folder = dict.string("folder") else { return nil }
@@ -256,7 +256,7 @@ final class AdvancedAdapter: AdvancedServices {
   }
 
   func installCli() {
-    if NativeCliControl.active { NativeCliControl.shared.install(reason: "settings") } else { SettingsJS.shared.fire("advanced.installCli") }
+    NativeCliControl.shared.install(reason: "settings")
   }
 
   func hasDeveloperModeChanges(_ developerMode: JSONValue?) -> Bool {
@@ -289,16 +289,11 @@ final class AdvancedAdapter: AdvancedServices {
   }
 
   func openInternalPage(_ page: String) {
-    guard let opening = SettingsDirectWrites.opening else {
-      SettingsJS.shared.fire("app.openInternalPage", page)
-      return
-    }
-    opening.openInternalPage(page, scheme: appScheme(), isAppScheme: isAppScheme)
+    SettingsDirectWrites.opening?.openInternalPage(page, scheme: appScheme(), isAppScheme: isAppScheme)
   }
 
   func openURL(_ url: String) {
-    guard !SettingsDirectWrites.openURLs([url]) else { return }
-    SettingsJS.shared.fire("app.openUrls", [url])
+    SettingsDirectWrites.opening?.openURLs([url])
   }
 
   var systemInfo: AdvancedSystemInfo {
@@ -342,8 +337,7 @@ final class AboutAdapter: AboutServices {
   func copyText(_ text: String) { SettingsAdapters.copyText(text) }
 
   func openURL(_ url: String) {
-    guard !SettingsDirectWrites.openURLs([url]) else { return }
-    SettingsJS.shared.fire("app.openUrls", [url])
+    SettingsDirectWrites.opening?.openURLs([url])
   }
 
   func reportBug() { NativeBugReport.shared.report(windowId: "settings") }

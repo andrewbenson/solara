@@ -33,10 +33,10 @@ public enum SettingsWrites {
 
 public struct SettingsOpening {
   public let state: () -> BrowserState
-  public let run: (Command) -> JSONValue?
+  public let run: (Command) -> Commit?
   public let focus: (String) -> Void
 
-  public init(state: @escaping () -> BrowserState, run: @escaping (Command) -> JSONValue?, focus: @escaping (String) -> Void) {
+  public init(state: @escaping () -> BrowserState, run: @escaping (Command) -> Commit?, focus: @escaping (String) -> Void) {
     self.state = state
     self.run = run
     self.focus = focus
@@ -44,47 +44,58 @@ public struct SettingsOpening {
 
   public static let internalPages: Set<String> = ["history", "bookmarks", "downloads"]
 
-  public func openURLs(_ urls: [String]) {
+  @discardableResult
+  public func openURLs(_ urls: [String]) -> Bool {
+    guard !urls.isEmpty else { return false }
     var target = state().resolveWindowId(nil)
     for url in urls {
       if let window = target, state().windows[window]?.incognito != true {
-        _ = run(Command("newTab", [.string(window), ["url": .string(url)]]))
+        guard newTab(in: window, url: url) else { return false }
       } else {
-        target = run(Command("createWindow", [["url": .string(url)]]))?.string
+        guard let window = run(Command("createWindow", [["url": .string(url)]]))?.result?.string, !window.isEmpty else { return false }
+        target = window
       }
     }
+    return true
   }
 
-  public func openInNewTab(_ url: String) {
-    guard let window = state().resolveWindowId(nil) else { return }
-    _ = run(Command("newTab", [.string(window), ["url": .string(url)]]))
+  @discardableResult
+  public func openInNewTab(_ url: String) -> Bool {
+    guard let window = state().resolveWindowId(nil) else { return false }
+    return newTab(in: window, url: url)
   }
 
-  public func openInBrowser(_ url: String) {
+  @discardableResult
+  public func openInBrowser(_ url: String) -> Bool {
     let s = state()
     let regular = { (id: String) in s.windows[id].map { !$0.incognito } ?? false }
-    guard let window = s.ui.focusOrder.first(where: regular) ?? s.windowOrder.first(where: regular) else { return }
-    _ = run(Command("newTab", [.string(window), ["url": .string(url)]]))
+    guard let window = s.ui.focusOrder.first(where: regular) ?? s.windowOrder.first(where: regular),
+          newTab(in: window, url: url) else { return false }
     focus(window)
+    return true
   }
 
-  public func openInternalPage(_ page: String, scheme: String, isAppScheme: (String) -> Bool) {
+  @discardableResult
+  public func openInternalPage(_ page: String, scheme: String, isAppScheme: (String) -> Bool) -> Bool {
     let s = state()
-    guard let window = s.resolveWindowId(nil) else { return }
-    _ = run(Command("setFocusedWindow", [.string(window)]))
+    guard let window = s.resolveWindowId(nil),
+          run(Command("setFocusedWindow", [.string(window)])) != nil else { return false }
     focus(window)
     let url = "\(scheme)://\(page)"
     if let existing = s.viewTabIds(window).first(where: { id in
       s.tabs[id].map { Self.internalPage(of: $0.navigation?.url ?? $0.url, isAppScheme: isAppScheme) == page } ?? false
     }) {
-      _ = run(Command("activate", [.string(existing)]))
-      return
+      return run(Command("activate", [.string(existing)])) != nil
     }
     if let active = s.activeTabId(window), s.tabs[active]?.url.isEmpty == true {
-      _ = run(Command("navigate", [.string(active), .string(url)]))
-    } else {
-      _ = run(Command("newTab", [.string(window), ["url": .string(url)]]))
+      return run(Command("navigate", [.string(active), .string(url)])) != nil
     }
+    return newTab(in: window, url: url)
+  }
+
+  private func newTab(in window: String, url: String) -> Bool {
+    let tab = run(Command("newTab", [.string(window), ["url": .string(url)]]))?.result?.string
+    return tab?.isEmpty == false
   }
 
   public static func internalPage(of url: String, isAppScheme: (String) -> Bool) -> String? {

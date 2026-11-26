@@ -132,11 +132,7 @@ final class ExtensionsAdapter: ExtensionsServices {
   func openWebStoreDetail(_ url: String, profile: String) { NativeExtensionCommands.run(["command": "webStoreDetail", "url": .string(url), "profile": .string(profile), "windowId": "settings"]) }
 
   func openInNewTab(_ url: String) {
-    guard let opening = SettingsDirectWrites.opening else {
-      SettingsJS.shared.fire("extensions.openInNewTab", url)
-      return
-    }
-    opening.openInNewTab(url)
+    SettingsDirectWrites.opening?.openInNewTab(url)
   }
 
   private func changing(_ profile: String, _ start: (@escaping @Sendable ([String: Any]) -> Void) -> Void) async throws {

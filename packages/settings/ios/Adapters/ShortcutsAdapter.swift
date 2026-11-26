@@ -20,8 +20,7 @@ final class ShortcutsAdapter: ShortcutsServices {
   }
 
   func openURLs(_ urls: [String]) {
-    guard !SettingsDirectWrites.openURLs(urls) else { return }
-    SettingsJS.shared.fire("app.openUrls", urls)
+    SettingsDirectWrites.opening?.openURLs(urls)
   }
 
   static func item(_ dict: [String: Any]) -> MenuShortcutItem? {

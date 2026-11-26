@@ -716,3 +716,17 @@ planner and the posted unsaved-work answer. `native-page-commands-test <Debug ap
 consent leg on its own Chromium tab (cancel keeps page, engine and typed text; confirm switches; menu and bridge switch
 back) with JS handlers off. Run it, pool-e2e, pages, little-solara, focus-hold and shortcuts (matrix, presses,
 precedence) in both layouts.
+
+## E8 Settings utility actions
+
+`SettingsWritesTests` covers the Store commands for URL batches, extension tabs,
+Live links and internal pages, including private and Little Solara window selection,
+no-window behavior, page reuse and native refusal. Run it with `CliControlSyncTests`
+using the SolaraKit Swift test suite with `-DSOLARA_PROBES`.
+
+Run `node packages/settings/scripts/settings-utilities-test.mjs <Debug app> <scratch directory>`
+with a matching native and JS build. It calls the Debug-only `devSettingsWrites`
+actions for URL batches, extension tabs, Live links, internal pages, Import, CLI
+install and CLI status. Check each retired `viaJS` reply, the tab URLs and their
+native window and profile, History tab reuse, the native Import window and the
+CLI status transition from an isolated installer fixture.

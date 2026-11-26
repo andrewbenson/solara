@@ -5,6 +5,7 @@ import SolaraShell
 import Foundation
 import Observation
 import SolaraModel
+import SolaraOmnibox
 import SolaraStore
 import SolaraUI
 import SwiftUI
@@ -230,13 +231,7 @@ enum SettingsDirectWrites {
 
   static var opening: SettingsOpening? {
     guard let store else { return nil }
-    return SettingsOpening(state: { store.state }, run: { write(store, $0)?.result }, focus: { ShellScripting.showWindow($0) })
-  }
-
-  static func openURLs(_ urls: [String]) -> Bool {
-    guard let opening else { return false }
-    opening.openURLs(urls)
-    return true
+    return SettingsOpening(state: { store.state }, run: { write(store, $0) }, focus: { ShellScripting.showWindow($0) })
   }
 
   static func chooseTabLayout(_ layout: String) -> Bool {
@@ -296,13 +291,28 @@ enum SettingsWritesDev {
     case "layout":
       if viaJS { _ = await SettingsAdapters.js("tabs.chooseLayout", args.string("layout") ?? "sidebar") } else { source.chooseTabLayout(args.string("layout") ?? "sidebar") }
     case "openURLs":
-      if viaJS { _ = await SettingsAdapters.js("app.openUrls", args.strings("urls")) } else { ShortcutsAdapter().openURLs(args.strings("urls")) }
+      guard !viaJS else { return #"{"error":"Open URLs is native only"}"# }
+      out["opened"] = SettingsDirectWrites.opening?.openURLs(args.strings("urls")) ?? false
     case "openInNewTab":
-      if viaJS { _ = await SettingsAdapters.js("extensions.openInNewTab", args.string("url") ?? "") } else { ExtensionsAdapter().openInNewTab(args.string("url") ?? "") }
+      guard !viaJS else { return #"{"error":"Open in New Tab is native only"}"# }
+      out["opened"] = SettingsDirectWrites.opening?.openInNewTab(args.string("url") ?? "") ?? false
     case "openInBrowser":
-      if viaJS { _ = await SettingsAdapters.js("liveFolders.openInBrowser", args.string("url") ?? "") } else { LiveAdapter().openInBrowser(args.string("url") ?? "") }
+      guard !viaJS else { return #"{"error":"Open in Browser is native only"}"# }
+      out["opened"] = SettingsDirectWrites.opening?.openInBrowser(args.string("url") ?? "") ?? false
     case "openInternalPage":
-      if viaJS { _ = await SettingsAdapters.js("app.openInternalPage", args.string("page") ?? "") } else { AdvancedAdapter(model: model).openInternalPage(args.string("page") ?? "") }
+      guard !viaJS else { return #"{"error":"Open Internal Page is native only"}"# }
+      let page = args.string("page") ?? ""
+      out["opened"] = SettingsDirectWrites.opening?.openInternalPage(page, scheme: appScheme(), isAppScheme: isAppScheme) ?? false
+    case "openImport":
+      guard !viaJS else { return #"{"error":"Open Import is native only"}"# }
+      GeneralAdapter().openImport()
+      out["direct"] = true
+      out["importOpen"] = NativeImportWindow.hosting?.viewIfLoaded?.window != nil
+    case "installCli", "cliStatus":
+      guard !viaJS else { return #"{"error":"CLI control is native only"}"# }
+      if action == "installCli" { NativeCliControl.shared.install(reason: "settings") }
+      out["direct"] = true
+      out["cli"] = NativeCliControl.shared.topic
     case "manageExtensions":
       guard !viaJS else { return #"{"error":"Manage Extensions is native only"}"# }
       out["direct"] = !NativeStoreHandle.frozen && NativeStoreHandle.ownsWorkspace && NativeStoreHandle.store != nil
@@ -331,10 +341,15 @@ enum SettingsWritesDev {
         state.profiles[pid].map { ["id": pid, "name": $0.name, "color": $0.color, "icon": $0.icon ?? NSNull(), "dataId": $0.dataId ?? NSNull()] as [String: Any] }
       }
       out["tabLayout"] = state.settings.string("tabLayout") ?? NSNull()
-      out["windows"] = state.windows.values.map { ["id": $0.id, "tabLayout": $0.tabLayout ?? NSNull(), "incognito": $0.incognito] as [String: Any] }
+      out["windows"] = state.windows.values.map { window -> [String: Any] in
+        ["id": window.id, "tabLayout": window.tabLayout ?? NSNull(), "incognito": window.incognito, "profileId": window.profileId]
+      }
       out["focusedWindow"] = state.ui.focusedWindowId ?? NSNull()
       out["tabs"] = state.windowOrder.map { window in
-        state.viewTabIds(window).compactMap { id in state.tabs[id].map { ["window": window, "url": $0.navigation?.url ?? $0.url, "active": state.activeTabId(window) == id] as [String: Any] } }
+        state.viewTabIds(window).compactMap { id -> [String: Any]? in
+          guard let tab = state.tabs[id] else { return nil }
+          return ["id": id, "window": window, "profileId": tab.profileId, "url": tab.navigation?.url ?? tab.url, "active": state.activeTabId(window) == id]
+        }
       }
     }
     let data = (try? JSONSerialization.data(withJSONObject: out, options: [.sortedKeys])) ?? Data("{}".utf8)

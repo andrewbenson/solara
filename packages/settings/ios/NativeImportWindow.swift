@@ -3,6 +3,7 @@ import SolaraShell
 import Foundation
 import SolaraImportAdapter
 import SolaraModel
+import SolaraStore
 import SolaraUI
 import SwiftUI
 
@@ -12,6 +13,11 @@ enum NativeImportWindow {
 
   nonisolated static var enabled: Bool {
     NativeSettingsWindow.enabled
+  }
+
+  static func open() {
+    ImportPreferredSource.shared.set(nil)
+    WindowHost.openAuxiliary(id: kind, kind: kind, title: "Import from Another Browser")
   }
 
   static func makeController() -> NSViewController? {

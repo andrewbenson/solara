@@ -1,10 +1,8 @@
 import { nativeSettingsAvailable, publishSettingsTopic, serveNativeSettings, type SettingsHandler } from "@solara/settings";
-import { openUrls } from "../../lib/actions";
-import { installCliInBackground, useCli } from "../../lib/cliControl";
+import { useCli } from "../../lib/cliControl";
 import { compactMemory } from "../../lib/memoryTrim";
 import { useBrowser } from "../../store/browser";
 import { extensionsProfileId } from "../extensions/store";
-import { openInternalPage } from "../pages/urls";
 import { autofillHandlers } from "./native/autofill";
 import { extensionsHandlers } from "./native/extensions";
 import { replicaHandlers } from "./native/replica";
@@ -16,7 +14,6 @@ import { privacyHandlers, publishPrivacy } from "./native/privacy";
 import { profilesHandlers, publishProfiles } from "./native/profiles";
 import { shortcutsHandlers } from "./native/shortcuts";
 import { publishSync, syncHandlers } from "./native/sync";
-import { openImport } from "./windows";
 
 const handlers: Record<string, SettingsHandler> = {};
 const publishers: (() => void)[] = [];
@@ -40,14 +37,7 @@ function chooseTabLayout(layout: "sidebar" | "top") {
 }
 
 const coreHandlers: Record<string, SettingsHandler> = {
-  "app.openInternalPage": (page: Parameters<typeof openInternalPage>[0]) => openInternalPage(page),
-  "app.openUrls": (urls: string[]) => openUrls(urls),
-
-  "general.openImport": () => openImport(),
-
   "tabs.chooseLayout": (layout: "sidebar" | "top") => chooseTabLayout(layout),
-
-  "advanced.installCli": () => installCliInBackground("settings"),
 
   "memory.compact": () => compactMemory(),
 };

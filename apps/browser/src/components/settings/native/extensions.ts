@@ -1,15 +1,9 @@
 import type { InstalledExtension, ExtensionPackage } from "@solara/solaracore";
 import { type SettingsHandler } from "@solara/settings";
 import { useBrowser } from "../../../store/browser";
-import { resolveWindowId } from "../../../store/model";
 import { activateExtension, findExtension, openPinDialog, toggleSidePanel, addFromWebStore, closeExtensionPopup, closeSidePanelsOf, refreshExtensionsAfterChange, useExtensions, wantedSidePanels, syncSidePanel, extensionProfile } from "../../extensions/state";
 import { openExtensionFromMenu } from "../../extensions/bridge";
 import { SETTINGS_WINDOW_ID } from "../windows";
-
-function openInNewTab(url: string) {
-  const windowId = resolveWindowId(useBrowser.getState());
-  if (windowId) useBrowser.getState().newTab(windowId, { url });
-}
 
 function closeSurfaces(id: string) {
   if (useExtensions.getState().popup?.extensionId === id) closeExtensionPopup();
@@ -44,5 +38,4 @@ export const extensionsHandlers: Record<string, SettingsHandler> = {
   "extensions.refresh": (profile: string) => void refreshExtensionsAfterChange(profile),
   "extensions.closeSurfaces": (id: string) => closeSurfaces(id),
   "extensions.openWebStoreDetail": (url: string, profile: string) => addFromWebStore(SETTINGS_WINDOW_ID, url, profile),
-  "extensions.openInNewTab": (url: string) => openInNewTab(url),
 };

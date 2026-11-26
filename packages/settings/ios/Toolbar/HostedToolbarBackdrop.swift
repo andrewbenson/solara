@@ -1,9 +1,77 @@
 import AppKit
+import SolaraStore
 import SolaraUI
 
 @MainActor
 enum HostedToolbarBackdrop {
   nonisolated static let kind = "toolbarBackdrop"
+
+  @MainActor
+  private final class Mount {
+    private struct Input: Decodable {
+      let tabId: String
+      let dark: Bool
+    }
+
+    let windowId: String
+    let view = ToolbarBackdropView(frame: .zero)
+    private var input: Input?
+    private var store: Store?
+    private var listener: Int?
+    private var lifecycle: Int?
+
+    init(windowId: String, json: String) {
+      self.windowId = windowId
+      input = try? JSONDecoder().decode(Input.self, from: Data(json.utf8))
+      lifecycle = NativeStoreHandle.subscribeLifecycle { [weak self] in self?.reconcile() }
+    }
+
+    func update(_ json: String) {
+      let next = try? JSONDecoder().decode(Input.self, from: Data(json.utf8))
+      if input?.tabId != next?.tabId { unsubscribe() }
+      input = next
+      reconcile()
+    }
+
+    func end() {
+      if let lifecycle { NativeStoreHandle.unsubscribeLifecycle(lifecycle) }
+      lifecycle = nil
+      unsubscribe()
+      view.update(nil)
+    }
+
+    private func unsubscribe() {
+      if let listener { store?.unsubscribe(listener) }
+      listener = nil
+      store = nil
+    }
+
+    private func reconcile() {
+      let current = NativeStoreHandle.ownsWorkspace ? NativeStoreHandle.store : nil
+      if store !== current {
+        unsubscribe()
+        if let current, let tabId = input?.tabId {
+          store = current
+          listener = current.subscribe { [weak self, weak current] commit in
+            let changes = commit.changes
+            guard changes.settings || changes.tabs.upserted.contains(tabId) || changes.tabs.removed.contains(tabId)
+              || changes.live.upserted.contains(tabId) || changes.live.removed.contains(tabId) else { return }
+            Task { @MainActor in
+              guard let self, let current, self.store === current, self.input?.tabId == tabId else { return }
+              self.refresh()
+            }
+          }
+        }
+      }
+      refresh()
+    }
+
+    private func refresh() {
+      guard let store, let input else { view.update(nil); return }
+      view.update(ToolbarBackdropState.resolve(windowId: windowId, tabId: input.tabId, state: store.state, dark: input.dark))
+    }
+  }
+
   #if DEBUG
     private final class Entry {
       let windowId: String
@@ -15,20 +83,17 @@ enum HostedToolbarBackdrop {
 
   static func register() {
     HostedViews.register(kind) { windowId, json in
-      let view = ToolbarBackdropView(frame: .zero)
-      view.update(ToolbarBackdropState.decode(json))
+      let mount = Mount(windowId: windowId, json: json)
       #if DEBUG
         let id = UUID()
-        entries[id] = Entry(windowId: windowId, view: view)
+        entries[id] = Entry(windowId: windowId, view: mount.view)
       #endif
-      return HostedContent(view: view, onUnmount: {
-        view.update(nil)
+      return HostedContent(view: mount.view, onUnmount: {
+        mount.end()
         #if DEBUG
           entries[id] = nil
         #endif
-      }, takesFocus: false, onState: { json in
-        view.update(ToolbarBackdropState.decode(json))
-      })
+      }, takesFocus: false, onState: mount.update)
     }
   }
 

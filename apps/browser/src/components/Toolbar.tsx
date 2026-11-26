@@ -5,9 +5,7 @@ import { useBrowser } from "../store/browser";
 import type { Tab } from "../store/types";
 import type { ToolbarGeometry } from "./layout/geometry";
 import type { PageState } from "./layout/pageState";
-import { toolbarPalette } from "./layout/toolbarColors";
-import { useTabDeveloperMode, useToolbarSiteColor } from "./site/developerMode";
-import { NativeToolbar, stripesUri } from "./NativeToolbar";
+import { NativeToolbar } from "./NativeToolbar";
 
 type ToolbarTab = Pick<Tab, "id" | "url" | "title" | "windowId" | "zoom">;
 const toolbarTab = (t: Tab | undefined): ToolbarTab | undefined =>
@@ -41,18 +39,14 @@ export function Toolbar(props: ToolbarProps) {
   return <NativeToolbar {...props} />;
 }
 
-export function ToolbarBackdrop({ tabId }: { tabId: string }) {
-  const theme = useTheme();
-  const tab = useBrowser((s) => s.tabs[tabId]);
-  const palette = toolbarPalette(theme, useToolbarSiteColor(tabId));
-  const developer = useTabDeveloperMode(tabId);
-  if (!tab) return null;
+export function ToolbarBackdrop({ tabId, windowId }: { tabId: string; windowId: string }) {
+  const { dark } = useTheme();
   return (
     <SolaraHostedView
       kind="toolbarBackdrop"
-      windowId={tab.windowId}
+      windowId={windowId}
       pointerEvents="none"
-      state={JSON.stringify({ tabId, background: palette.background, divider: palette.divider, hairline: !!tab.url, stripes: developer ? stripesUri(palette) : null })}
+      state={JSON.stringify({ tabId, dark })}
       style={{ height: layout.toolbarHeight }}
     />
   );

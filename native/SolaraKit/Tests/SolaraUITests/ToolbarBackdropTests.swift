@@ -1,10 +1,57 @@
 import AppKit
 import QuartzCore
+import SolaraModel
 import Testing
 @testable import SolaraUI
 
 @MainActor
 struct ToolbarBackdropTests {
+  @Test func navigationAndRemovalReplaceTheMountedBackdrop() throws {
+    var browser = BrowserState(settings: Settings.hydrated(from: nil))
+    browser.tabs["a"] = Tab(id: "a", windowId: "w", profileId: "default", url: "", now: 0)
+    let view = ToolbarBackdropView(frame: CGRect(x: 0, y: 0, width: 640, height: 41))
+
+    view.update(ToolbarBackdropState.resolve(windowId: "w", tabId: "a", state: browser, dark: false))
+    #expect(view.state?.hairline == false)
+
+    browser.tabs["a"]?.url = "https://example.com/"
+    browser.live["a"] = PageLiveFacts(themeColor: "#2471A3")
+    view.update(ToolbarBackdropState.resolve(windowId: "w", tabId: "a", state: browser, dark: false))
+    #expect(view.state?.hairline == true)
+    #expect(view.state?.background == "#2471A3")
+    #expect(view.state?.divider == "rgba(255,255,255,0.025)")
+
+    browser.tabs["a"]?.windowId = "other"
+    view.update(ToolbarBackdropState.resolve(windowId: "w", tabId: "a", state: browser, dark: false))
+    #expect(view.state == nil)
+    #expect(ToolbarBackdropState.resolve(windowId: "other", tabId: "a", state: browser, dark: false)?.hairline == true)
+
+    browser.tabs["a"] = nil
+    #expect(ToolbarBackdropState.resolve(windowId: "other", tabId: "a", state: browser, dark: false) == nil)
+  }
+
+  @Test func developerModeAndColorPreferenceChangeTheBackdrop() {
+    var browser = BrowserState(settings: Settings.hydrated(from: nil))
+    browser.tabs["a"] = Tab(id: "a", windowId: "w", profileId: "default", url: "http://localhost/", now: 0)
+    browser.live["a"] = PageLiveFacts(themeColor: "#FFFFFF80")
+    func resolve(_ dark: Bool) -> ToolbarBackdropState? {
+      ToolbarBackdropState.resolve(windowId: "w", tabId: "a", state: browser, dark: dark)
+    }
+
+    #expect(resolve(false)?.background == nil)
+    #expect(resolve(false)?.stripes == "#00000005")
+    #expect(resolve(true)?.stripes == "#FFFFFF05")
+
+    browser.settings = browser.settings.updated(["developerMode": ["default": ["off": ["localhost"]]]], fromSync: false)
+    #expect(resolve(true)?.background == "#FFFFFF")
+    #expect(resolve(true)?.stripes == nil)
+    #expect(resolve(true)?.divider == "rgba(0,0,0,0.05)")
+
+    browser.settings = browser.settings.updated(["extendWebsiteColor": false], fromSync: false)
+    #expect(resolve(true)?.background == nil)
+    #expect(resolve(true)?.divider == "rgba(255,255,255,0.025)")
+  }
+
   @Test func backdropNeverInterceptsInputAndKeepsOnePointDivider() throws {
     let view = ToolbarBackdropView(frame: CGRect(x: 0, y: 0, width: 803, height: 41))
     view.update(ToolbarBackdropState(tabId: "a", background: "#2471A3", divider: "rgba(0,0,0,0.05)", hairline: true, stripes: nil))
@@ -45,9 +92,8 @@ struct ToolbarBackdropTests {
   }
 
   @Test func stripesUseExistingNativePatternAndDisappearWithState() throws {
-    let asset = URL(fileURLWithPath: #filePath).deletingLastPathComponent().appendingPathComponent("../../../../apps/browser/assets/developer-stripes-light.png").standardized
     let view = ToolbarBackdropView(frame: CGRect(x: 0, y: 0, width: 640, height: 41))
-    view.update(ToolbarBackdropState(tabId: "a", background: nil, divider: "rgba(255,255,255,0.025)", hairline: true, stripes: asset.path))
+    view.update(ToolbarBackdropState(tabId: "a", background: nil, divider: "rgba(255,255,255,0.025)", hairline: true, stripes: "#FFFFFF05"))
     view.layoutSubtreeIfNeeded()
     let stripes = try #require(view.layer?.sublayers?[1])
     #expect(!stripes.isHidden)

@@ -24,6 +24,12 @@ final class DeveloperStripes {
 
   var shown: Bool { !layer.isHidden }
 
+  func show(color: CGColor?) {
+    task?.cancel()
+    uri = nil
+    setInk(color)
+  }
+
   func show(_ next: String?) {
     guard next != uri else { return }
     task?.cancel()

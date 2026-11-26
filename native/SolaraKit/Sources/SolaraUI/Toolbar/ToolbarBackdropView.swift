@@ -1,7 +1,8 @@
 import AppKit
 import QuartzCore
+import SolaraModel
 
-public struct ToolbarBackdropState: Decodable, Equatable {
+public struct ToolbarBackdropState: Equatable {
   public var tabId: String
   public var background: String?
   public var divider: String
@@ -16,9 +17,31 @@ public struct ToolbarBackdropState: Decodable, Equatable {
     self.stripes = stripes
   }
 
-  public static func decode(_ json: String) -> Self? {
-    guard let data = json.data(using: .utf8) else { return nil }
-    return try? JSONDecoder().decode(Self.self, from: data)
+  public static func resolve(windowId: String, tabId: String, state: BrowserState, dark: Bool) -> Self? {
+    guard let tab = state.tabs[tabId], tab.windowId == windowId else { return nil }
+    let hasPage = !tab.url.isEmpty
+    let developer = OmniboxCommandSources.isDeveloperURL(tab.url, settings: state.settings, profileId: tab.profileId)
+    var background: String?
+    var darkDivider = dark
+    if hasPage, !developer, state.settings.bool("extendWebsiteColor"),
+      let reported = state.live[tabId]?.themeColor,
+      let (webColor, color) = siteColor(reported) {
+      background = webColor
+      let luminance = 0.2126 * linear(color.red) + 0.7152 * linear(color.green) + 0.0722 * linear(color.blue)
+      darkDivider = 1.05 / (luminance + 0.05) >= (luminance + 0.05) / 0.05
+    }
+    return Self(tabId: tabId, background: background, divider: darkDivider ? "rgba(255,255,255,0.025)" : "rgba(0,0,0,0.05)",
+      hairline: hasPage, stripes: developer ? (dark ? "#FFFFFF05" : "#00000005") : nil)
+  }
+
+  private static func siteColor(_ reported: String) -> (String, CSSColor)? {
+    let hex = String(reported.trimmingCharacters(in: .whitespacesAndNewlines).prefix(7))
+    guard hex.count == 7, hex.hasPrefix("#"), let color = CSSColor(hex) else { return nil }
+    return (hex, color)
+  }
+
+  private static func linear(_ channel: Double) -> Double {
+    channel <= 0.03928 ? channel / 12.92 : pow((channel + 0.055) / 1.055, 2.4)
   }
 }
 
@@ -47,6 +70,7 @@ public final class ToolbarBackdropView: NSView {
   public override func hitTest(_ point: NSPoint) -> NSView? { nil }
 
   public func update(_ next: ToolbarBackdropState?) {
+    guard next != state else { return }
     let animated = state != nil && next != nil
     state = next
     let color = next.flatMap { toolbarColor($0.background)?.cgColor }
@@ -72,7 +96,7 @@ public final class ToolbarBackdropView: NSView {
     hairline.isHidden = next?.hairline != true
     hairline.backgroundColor = next.flatMap { toolbarColor($0.divider)?.cgColor }
     CATransaction.commit()
-    stripes.show(next?.stripes)
+    stripes.show(color: toolbarColor(next?.stripes)?.cgColor)
     if next == nil { band.removeAllAnimations() }
     needsLayout = true
   }

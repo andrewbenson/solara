@@ -469,7 +469,7 @@ const TabPane = memo(function TabPane({
       ) : visible && !windowToolbar ? (
         <Toolbar tabId={tabId} geometry={geometry} windowId={windowId} inSplit={inSplit} focused={focused || !inSplit} />
       ) : visible && !nativeRailChrome ? (
-        windowToolbar && windowShellActive(windowId) && nativeToolbarAvailable() ? <View pointerEvents="none" style={{ height: layout.toolbarHeight }} /> : <ToolbarBackdrop tabId={tabId} />
+        windowToolbar && windowShellActive(windowId) && nativeToolbarAvailable() ? <View pointerEvents="none" style={{ height: layout.toolbarHeight }} /> : <ToolbarBackdrop tabId={tabId} windowId={windowId} />
       ) : (
         <View style={{ height: layout.toolbarHeight }} />
       )}

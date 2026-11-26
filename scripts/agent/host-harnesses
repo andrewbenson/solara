@@ -50,6 +50,7 @@ HARNESSES = {
     'pairing-joining': 'scratch',
     'pairing-model': 'scratch',
     'pairing-service': 'products',
+    'import-transport': 'host',
 }
 
 

@@ -47,10 +47,9 @@ export function SwipeOverlay(props: { tabId: string; windowId: string; nativeAll
 
 function NativeNavigationHistory({ tabId, windowId }: { tabId: string; windowId: string }) {
   const theme = useTheme();
-  const { pageId, action } = useBackState(tabId);
+  const { pageId, action, engineBack } = useBackState(tabId);
   const newTabShown = usePage(pageId, (page) => !!page.newTabShown);
   const backToNewTab = usePage(pageId, (page) => page.backToNewTab);
-  const engineBack = usePage(pageId, (page) => !!page.engineBack);
   const backToOpener = action === "opener";
   useNativeLayoutFeed(navigationFeed, windowId, { windowId, tabId, presentation: { newTabShown, backToNewTab, engineBack, backToOpener, theme: { dark: !!theme.dark, textPrimary: theme.textPrimary, textSecondary: theme.textSecondary } } }, `${windowId}:${tabId}`);
   return null;

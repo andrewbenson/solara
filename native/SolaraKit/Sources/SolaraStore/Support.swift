@@ -236,3 +236,9 @@ public extension Store {
     Session(state: s, memory: StoreMemory(), env: env, config: config, now: 0).tabEngine(s, tabId)
   }
 }
+
+public extension Store {
+  func chosenPageEngine(for url: String, in state: BrowserState) -> String? {
+    Session(state: state, memory: StoreMemory(), env: env, config: config, now: 0).chosenEngine(state, url)
+  }
+}

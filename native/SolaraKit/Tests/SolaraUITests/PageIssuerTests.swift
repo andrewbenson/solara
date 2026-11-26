@@ -170,6 +170,28 @@ private func heldPageAnswer(_ command: PageCommand = .livePage, incognito: Bool,
     #expect(ExtensionPresentation.affectsActions(tab))
   }
 
+  @Test(arguments: [PageEngine.chromium, .webKit], [PageHost.pooled, .reactNative])
+  func unsavedWorkProbeDeliversPostedJSON(engine: PageEngine, host: PageHost) throws {
+    let fixture = try IssuerFixture(engine: engine, host: host)
+    for dirty in [true, false] {
+      let posted = dirty ? "true" : "false"
+      fixture.producer.invoke = { command, completion in
+        #expect(command == .evaluate(EngineCommand.unsavedWork))
+        completion(.success(.string(posted)))
+      }
+      var results: [Result<PageValue, PageRegistryError>] = []
+      fixture.store.sequence {
+        fixture.issuer.issueInScope(tabId: fixture.id, identity: fixture.binding.identity,
+          command: .evaluate(EngineCommand.unsavedWork)) { results.append($0) }
+      }
+      #expect(results.count == 1)
+      let raw = try #require(results.first).get()
+      #expect(raw == .string(posted))
+      #expect(raw != .bool(dirty))
+      #expect(raw.postedJSON?.bool == dirty)
+    }
+  }
+
   @Test func runtimeIdentityIsSharedOnlyByTheSameContext() {
     let first = NSObject()
     let second = NSObject()

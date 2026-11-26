@@ -181,3 +181,9 @@ Command Bar focus slice: `CommandBarFocusCommand` selects developer, page/small 
 Pinned reload/home and activation capture a native family, ownership generation, interaction serial and exact page registration. Capture, paint and arrival are bounded; the pool must retain the physical page before a deferred reload. Frozen presentation is native in both layouts. No VM result is claimed.
 
 Pending: tests-only transplant `PinnedPageCommandTests` (compile-red on the preceding slice), candidate filter and full SwiftPM suite; matching Debug build; pin-handoff, pinned-links, native-page/tab commands, pool-e2e, shortcuts matrix/presses/precedence and the full native lifetime/focus/window group in layouts 0 and 1. The shared JS history adapter still imports livePage until slice 9.
+
+### Slice 8 source draft
+
+Engine changes use a native captured page/URL/navigation/ownership fence through unsaved-work evaluation, consent and optional sign-in carry. Canonical switchPageEngine allocates navigation through Session; native engine-back receipts are consumed once. JS openPageIn, toggle and cross-engine-back are explicit-ID requests. Protected-video offer rendering and WebKit visit recording remain separate JS dependencies.
+
+Pending: tests-only `EngineCommandTests` transplant (new API is compile-red), candidate/full SwiftPM, matching Debug build, native-page-commands consent-cancel/confirm and disabled-handler replacement legs, pool-e2e, pages, little-solara, focus-hold, K and sign-in/data isolation in both layouts. No runtime-red, compile-green or app result has been measured here.

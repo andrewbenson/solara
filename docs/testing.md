@@ -703,3 +703,16 @@ Verified: `SettingsWritesTests` (including shared-engine profile order and curre
 state), `SettingsNavigationTests`, `SettingsSearchTests`; manage-extensions and settings-reopen in
 layouts 0 and 1, and settings-shift's pane legs. Its six search legs pass again from 73521082 (⌘F in
 Settings).
+
+### Slice 8: page engine switching and Back across engines
+
+Open Page in WebKit / Chromium, a site's remembered engine and Back to a page that was open in the other engine run in
+Swift (`EngineCommand`, `NativeEngineCommands`). A request is fenced on the same tab, URL, navigation, profile, window
+and page identity through the unsaved-work check, the consent sheet and the optional sign-in carry; a changed request
+does nothing. The engine-back receipt is consumed once. JS keeps only the adapters to Swift.
+
+`EngineCommandTests` (compile-red without the slice) and `PageIssuerTests.unsavedWorkProbeDeliversPostedJSON` cover the
+planner and the posted unsaved-work answer. `native-page-commands-test <Debug app> <data dir>` gains an unsaved-input
+consent leg on its own Chromium tab (cancel keeps page, engine and typed text; confirm switches; menu and bridge switch
+back) with JS handlers off. Run it, pool-e2e, pages, little-solara, focus-hold and shortcuts (matrix, presses,
+precedence) in both layouts.

@@ -1,6 +1,7 @@
+import { useSyncExternalStore } from "react";
 import { openModeFor, openUrl } from "../bookmarks/actions";
 import { openInternalPage } from "../pages/urls";
-import { nativeWorkspaceCommand, windowNativeLayoutGeneration, publishSettingsTopic } from "@solara/settings";
+import { nativeEngineBackAvailable, onEngineBackChanged, nativeWorkspaceCommand, windowNativeLayoutGeneration, publishSettingsTopic } from "@solara/settings";
 import { isPageCurrent, nativePageFacts } from "@solara/store";
 import { addNativeSettingsHandlers } from "../settings/nativeSettings";
 import { create } from "zustand";
@@ -30,7 +31,7 @@ function backFacts(s: BrowserState, tabId: string): { pageId: string; facts: Bac
     facts: {
       newTabShown: !!page.newTabShown,
       canGoBack: !!live?.canGoBack,
-      engineBack: !!page.engineBack,
+      engineBack: nativeEngineBackAvailable(pageId),
       backToNewTab: !!page.backToNewTab,
       historyKnown: !!live && page.historyKnown,
       opener: backClosesToOpener(s, tabId),
@@ -46,13 +47,18 @@ export function canGoForward(tabId: string, live: Pick<TabLive, "canGoForward">)
   return !!pageOf(tabId).newTabShown || live.canGoForward;
 }
 
-export function useBackState(tabId: string): { pageId: string; action: BackAction; canGoForward: boolean } {
+const subscribeEngineBack = (notify: () => void) => {
+  const subscription = onEngineBackChanged(notify);
+  return () => subscription?.remove();
+};
+
+export function useBackState(tabId: string): { pageId: string; action: BackAction; canGoForward: boolean; engineBack: boolean } {
   const { pageId, opener, canGoBack, canGoForward, hasLive } = useBrowser(useShallow((s) => backSelection(s, tabId)));
   const newTabShown = usePage(pageId, (p) => !!p.newTabShown);
-  const engineBack = usePage(pageId, (p) => !!p.engineBack);
+  const engineBack = useSyncExternalStore(subscribeEngineBack, () => nativeEngineBackAvailable(pageId));
   const backToNewTab = usePage(pageId, (p) => p.backToNewTab);
   const historyKnown = usePage(pageId, knownHistoryFor(opener));
-  return { pageId, canGoForward, action: backAction({ newTabShown, canGoBack, engineBack, backToNewTab, historyKnown: hasLive && historyKnown, opener }) };
+  return { pageId, canGoForward, engineBack, action: backAction({ newTabShown, canGoBack, engineBack, backToNewTab, historyKnown: hasLive && historyKnown, opener }) };
 }
 
 export function useHistoryAvailability(tabId: string) {
@@ -74,7 +80,7 @@ export function goBack(tabId: string): void {
 function goBackInPage(tabId: string): void {
   if (pageOf(tabId).newTabShown) return;
   if (store().live[tabId]?.canGoBack) return void webviews.get(tabId)?.goBack();
-  if (pageOf(tabId).engineBack) return void goBackAcrossEngines(tabId);
+  if (nativeEngineBackAvailable(tabId)) return void goBackAcrossEngines(tabId);
   if (pageOf(tabId).backToNewTab) showNewTab(tabId);
 }
 

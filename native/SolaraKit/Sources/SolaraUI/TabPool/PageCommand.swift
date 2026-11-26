@@ -56,6 +56,11 @@ public extension PageValue {
     }
   }
 
+  var postedJSON: JSONValue? {
+    guard case .string(let text) = self else { return nil }
+    return try? JSONValue.parse(text)
+  }
+
   var json: JSONValue {
     switch self {
     case .null: .null

@@ -217,6 +217,51 @@ try {
     await handledNatively("shared pin home");
     await run('ac.store.getState().pinTabs(["a"], false); return true;');
   }
+  if (!baseline) {
+    const engineUrl = `${base}/engine-consent`;
+    const engineTab = await run(`return ac.store.getState().newTab("w1", { url: ${JSON.stringify(engineUrl)}, snapshot: { engine: "chromium" } });`);
+    let page;
+    try {
+      const ready = await until("clean Chromium consent fixture", state => state.tabs[engineTab]?.url === engineUrl
+        && state.tabs[engineTab]?.engine === "chromium" && state.windows.w1.activeTabIds[state.windows.w1.profileId] === engineTab
+        && state.live?.[engineTab]?.isLoading === false);
+      assert.equal(ready.tabs[engineTab].pinned, false);
+      assert.equal(ready.tabs[engineTab].pageIn, undefined);
+      assert.deepEqual(Object.values(ready.tabs).filter(t => t.url === engineUrl).map(t => t.id), [engineTab]);
+      page = await app.page(t => t.url === engineUrl);
+      assert.equal((await app.targets()).filter(t => t.type === "page" && t.url === engineUrl).length, 1);
+      await page.eval("document.body.innerHTML += '<input id=engine-consent value=original>'; document.querySelector('#engine-consent').value='unsaved'; true");
+      assert.equal(await page.eval("document.querySelector('#engine-consent').value"), "unsaved");
+      const before = await nativeState();
+      assert.equal(before.tabs[engineTab].engine, "chromium", "consent must start on Chromium");
+      assert.equal(before.windows.w1.activeTabIds[before.windows.w1.profileId], engineTab, "menu must toggle the edited tab");
+      pass("engine consent fixture", { tabId: engineTab, url: engineUrl, engine: before.tabs[engineTab].engine, priorEngine: before.tabs.a.engine });
+      const confirmations = await run('return expo.modules.SolaraSettings.devEngineCommands("cancel");');
+      await menu("w1", "togglePageEngine");
+      await handledNatively("engine consent dispatch");
+      const cancelled = await until("native engine consent cancellation", async () => (await run('return expo.modules.SolaraSettings.devEngineCommands("cancel");')) > confirmations);
+      assert.equal(cancelled.tabs[engineTab].engine, "chromium");
+      assert.deepEqual(cancelled.tabs[engineTab].navigation, before.tabs[engineTab].navigation);
+      assert.equal(await page.eval("document.querySelector('#engine-consent').value"), "unsaved");
+      await handledNatively("engine cancellation keeps the original document");
+      await run('return expo.modules.SolaraSettings.devEngineCommands("confirm");');
+      await menu("w1", "togglePageEngine");
+      await until("native engine replacement", state => state.tabs[engineTab].engine === "webkit");
+      await bridge("togglePageEngine");
+      await until("native engine return", state => state.tabs[engineTab].engine === "chromium");
+      await handledNatively("engine switch menu and bridge");
+    } catch (error) {
+      evidence.push({ label: "engine consent diagnostics", error: String(error), tabId: engineTab, state: await nativeState(),
+        trace: (await run('return expo.modules.SolaraApp.devFocusHandoffTrace();')).filter(line => /engine/.test(line)) });
+      writeFileSync(join(output, "evidence.json"), JSON.stringify(evidence, null, 2));
+      throw error;
+    } finally {
+      await run('return expo.modules.SolaraSettings.devEngineCommands("end");');
+      page?.close();
+      await run(`ac.store.getState().closeTab(${JSON.stringify(engineTab)}); ac.store.getState().activate("a"); return true;`);
+      await until("original page active after engine fixture", state => !state.tabs[engineTab] && state.windows.w1.activeTabIds[state.windows.w1.profileId] === "a");
+    }
+  }
   await reloads("reload asks the page again", "/a", () => menu("w1", "reload"));
   await reloads("forceReload asks the page again", "/a", () => menu("w1", "forceReload"));
   await reloads("a real ⌘R reloads through the menu", "/a", () => press("r", 15, ["command"]));

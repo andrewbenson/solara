@@ -1,41 +1,22 @@
 import { nativeSafeMode } from "../store/nativeStore";
 import type { PageEngine } from "@solara/solaracore";
-import { nativeAddHistoryVisits } from "@solara/settings";
-import { confirm } from "@solara/shell";
+import { nativeEngineCommand, nativeAddHistoryVisits } from "@solara/settings";
 import { create } from "zustand";
 import { useBrowser } from "../store/browser";
-import { pageOf, patchPage } from "../components/layout/pageState";
 import { hideKeyedToast, showToast } from "../components/layout/splitActions";
-import { canSwitchEngine, chosenEngine, ENGINE_NAMES, siteOf, tabEngine, visitRecorder, type WebKitPage } from "../store/engines";
-import { engineProfile, isIncognitoProfile, navigationTo } from "../store/model";
+import { chosenEngine, siteOf, tabEngine, visitRecorder, type WebKitPage } from "../store/engines";
+import { engineProfile, isIncognitoProfile } from "../store/model";
 import type { Tab } from "../store/types";
-import { carrySignInToWebKit, signInCarryOn } from "./engineSignIn";
-import { wantsPage } from "./tabPages";
-import { webviews } from "./webviews";
 
 export type EngineOffer = { site: string; host: string; keySystem: string; canRemember: boolean };
 
 export const useEngineOffers = create<Record<string, EngineOffer>>(() => ({}));
 
 const store = () => useBrowser.getState();
+const pageUrl = (tab: Tab | undefined) => tab?.url || tab?.navigation?.url || "";
 const declinedSites = new Set<string>();
 const movingTabs = new Set<string>();
-const siteMoves = new Map<string, number>();
-const SITE_MOVE_SPACING_MS = 10_000;
 const hostLabel = (site: string) => new URL(site).hostname.replace(/^www\./, "");
-
-const UNSAVED_WORK = `(() => {
-  const fields = Array.from(document.querySelectorAll("input:not([type=hidden]):not([type=password]):not([type=submit]):not([type=button]), textarea, select"));
-  const changed = (f) => f.type === "checkbox" || f.type === "radio" ? f.checked !== f.defaultChecked : f.tagName === "SELECT" ? Array.from(f.options).some((o) => o.selected !== o.defaultSelected) : f.value !== f.defaultValue;
-  const editing = document.activeElement && document.activeElement.isContentEditable;
-  post("result", JSON.stringify(fields.some(changed) || !!editing));
-})()`;
-
-async function hasUnsavedWork(tabId: string): Promise<boolean> {
-  const web = webviews.get(tabId);
-  if (!web) return false;
-  return (await Promise.race([web.evaluate<boolean>(UNSAVED_WORK), new Promise<null>((resolve) => setTimeout(() => resolve(null), 1500))])) === true;
-}
 
 export function setWebsiteEngine(url: string, engine: PageEngine | null) {
   const site = siteOf(url);
@@ -46,54 +27,13 @@ export function setWebsiteEngine(url: string, engine: PageEngine | null) {
   store().updateSettings({ websiteEngines: rules });
 }
 
-export function persistEngine(tabId: string, engine: PageEngine) {
-  const t = store().tabs[tabId];
-  if (t && !t.engine) store().updateTab(tabId, { engine });
-}
-
-async function mayLeavePage(t: Tab, title: string, message: string, confirmTitle: string): Promise<boolean> {
-  if (!wantsPage(t) || !(await hasUnsavedWork(t.id))) return true;
-  const { confirmed } = await confirm({ title, message, confirmTitle, cancelTitle: "Stay on Page", windowId: t.windowId });
-  return confirmed;
-}
-
-const pageUrl = (t: Tab | undefined) => t?.url || t?.navigation?.url || "";
-
-export async function goBackAcrossEngines(tabId: string): Promise<boolean> {
-  const back = pageOf(tabId).engineBack;
-  const t = store().tabs[tabId];
-  if (!back || !t) return false;
-  const from = pageUrl(t);
-  const leaving = await mayLeavePage(t, "Go back to the previous page?", `It opens in ${ENGINE_NAMES[back.engine]}, so changes you made on this page may not be saved.`, "Go Back");
-  const now = store().tabs[tabId];
-  if (!leaving || !now || pageUrl(now) !== from || pageOf(tabId).engineBack !== back) return false;
-  patchPage(tabId, { engineBack: null });
-  store().updateTab(tabId, { engine: back.engine, adoptId: undefined, navigation: navigationTo(back.url, true) });
-  return true;
-}
-
-export async function openPageIn(tabId: string, engine: PageEngine, options: { rule?: PageEngine | null; checkWork?: boolean } = {}): Promise<boolean> {
-  const t = store().tabs[tabId];
-  if (!t) return false;
-  const url = t.url || t.navigation?.url || "";
-  if (!canSwitchEngine(url)) return false;
-  const saveRule = () => options.rule !== undefined && !isIncognitoProfile(t.profileId) && setWebsiteEngine(url, options.rule);
+export const persistEngine = (tabId: string, engine: PageEngine) => { void nativeEngineCommand(tabId, "persist", { engine }); };
+export const goBackAcrossEngines = (tabId: string) => nativeEngineCommand(tabId, "back");
+export const openPageIn = (tabId: string, engine: PageEngine, options: { rule?: PageEngine | null; checkWork?: boolean } = {}) => {
   clearEngineOffer(tabId);
-  if (tabEngine(store(), tabId) === engine) {
-    saveRule();
-    return true;
-  }
-  if (options.checkWork !== false && !(await mayLeavePage(t, `Open this page in ${ENGINE_NAMES[engine]}?`, `The page reloads in ${ENGINE_NAMES[engine]}, so changes you made on it may not be saved.`, `Open in ${ENGINE_NAMES[engine]}`))) return false;
-  if (engine === "webkit" && signInCarryOn()) await carrySignInToWebKit(tabId, url);
-  const now = store().tabs[tabId];
-  if (!now || (now.url || now.navigation?.url || "") !== url) return false;
-  saveRule();
-  if (tabEngine(store(), tabId) === engine) return true;
-  store().updateTab(tabId, wantsPage(now) ? { engine, adoptId: undefined, navigation: navigationTo(now.url || url, true) } : { engine });
-  return true;
-}
-
-export const togglePageEngine = (tabId: string) => openPageIn(tabId, tabEngine(store(), tabId) === "webkit" ? "chromium" : "webkit");
+  return nativeEngineCommand(tabId, "open", { engine, ...options });
+};
+export const togglePageEngine = (tabId: string) => nativeEngineCommand(tabId, "toggle");
 
 export function offerWebKit(tabId: string, data: unknown) {
   const s = store();
@@ -154,19 +94,7 @@ async function moveForProtectedVideo(tabId: string, site: string) {
 }
 
 export function followSiteChoice(tabId: string, engine: PageEngine, url: string, previousUrl: string) {
-  const site = siteOf(url);
-  if (!site || site === siteOf(previousUrl)) return;
-  const s = store();
-  const t = s.tabs[tabId];
-  if (!t || t.openerId) return;
-  const chosen = chosenEngine(s, url);
-  if (!chosen || chosen === engine) return;
-  const now = Date.now();
-  if (now - (siteMoves.get(tabId) ?? 0) < SITE_MOVE_SPACING_MS) return;
-  siteMoves.set(tabId, now);
-  void openPageIn(tabId, chosen, { checkWork: false }).then((moved) => {
-    if (moved && canSwitchEngine(previousUrl)) patchPage(tabId, { engineBack: { engine, url: previousUrl } });
-  });
+  void nativeEngineCommand(tabId, "follow", { engine, url, previousUrl });
 }
 
 const visits = visitRecorder(

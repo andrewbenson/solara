@@ -9,6 +9,8 @@ type NativeSettingsModule = {
   panePopovers?(): Record<string, PanePopoverKind>;
   setPanePopover?(tabId: string, value: PanePopoverKind | null): Record<string, PanePopoverKind>;
   setPreferredImportSource?(browserId: string | null): void;
+  engineCommand?(tabId: string, action: string, options: string): Promise<boolean>;
+  engineBackAvailable?(tabId: string): boolean;
   workspaceCommand?(command: string, arg: string | null, windowId: string | null): boolean;
   presentStoreUnavailable?(detail: string): boolean;
   startAppStartup(optionsJSON: string): Promise<string>;
@@ -49,6 +51,7 @@ type NativeSettingsModule = {
   libraryCommand?(kind: string, engineProfile: string, payload: Record<string, unknown>): Promise<unknown>;
   reply(id: number, resultJSON: string | null, error: string | null): Promise<void>;
   publish(topic: string, json: string): Promise<void>;
+  addListener(event: "onEngineBackChanged", listener: () => void): EventSubscription;
   addListener(event: "onPanePopoversChanged", listener: (event: { values: Record<string, PanePopoverKind> }) => void): EventSubscription;
   addListener(event: "onAppIntegrationPresentation", listener: (event: AppIntegrationPresentation) => void): EventSubscription;
   addListener(event: "onBookmarkProjectionChanged", listener: (event: Record<string, never>) => void): EventSubscription;
@@ -504,3 +507,8 @@ export const panePopovers = () => native?.panePopovers?.() ?? {};
 export const setPanePopover = (tabId: string, value: PanePopoverKind | null) => native?.setPanePopover?.(tabId, value) ?? {};
 export const onPanePopoversChanged = (listener: (values: Record<string, PanePopoverKind>) => void) =>
   native?.addListener("onPanePopoversChanged", ({ values }) => listener(values)) ?? null;
+
+export const nativeEngineCommand = (tabId: string, action: string, options: object = {}): Promise<boolean> => native?.engineCommand?.(tabId, action, JSON.stringify(options)) ?? Promise.resolve(false);
+export const nativeEngineBackAvailable = (tabId: string): boolean => native?.engineBackAvailable?.(tabId) ?? false;
+
+export const onEngineBackChanged = (listener: () => void): EventSubscription | null => native?.addListener("onEngineBackChanged", listener) ?? null;

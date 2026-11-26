@@ -1,3 +1,4 @@
+import Foundation
 import SolaraModel
 
 public struct NewTabOptions: Sendable {
@@ -578,5 +579,16 @@ extension Session {
   func isUnopenedEmptyTab(_ s: BrowserState, _ tab: Tab?) -> Bool {
     guard let tab else { return false }
     return !tab.pinned && tab.url.isEmpty && tab.navigation == nil && !truthy(tab.adoptId) && Splits.splitOf(s, tab.id) == nil
+  }
+}
+
+extension Session {
+  public func switchPageEngine(_ id: String, engine: String, url: String?) {
+    guard ["chromium", "webkit"].contains(engine), let tab = state.tabs[id] else { return }
+    let destination = url ?? (tab.url.isEmpty ? tab.navigation?.url ?? "" : tab.url)
+    guard destination.range(of: "^(https?|file):", options: [.regularExpression, .caseInsensitive]) != nil else { return }
+    if hasPage(tab) {
+      updateTab(id, TabUpdate(set: ["engine": .string(engine), "navigation": navigationTo(destination, userInitiated: true).jsonValue], unset: ["adoptId"]))
+    } else { updateTab(id, TabUpdate(set: ["engine": .string(engine)])) }
   }
 }

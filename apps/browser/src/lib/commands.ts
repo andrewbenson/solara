@@ -33,7 +33,6 @@ import { NEW_TAB_BAR_POLICY } from "../store/newTabBar";
 import { addFolderToSidebar, restoreArcFolders } from "./bookmarkGroups";
 import { bookmarkWriter, reportBookmarkFailure } from "./bookmarkWriter";
 import { webviews } from "./webviews";
-import { togglePageEngine } from "./engines";
 import { goBack, goForward } from "../components/layout/history";
 import { openSplitPane } from "../components/layout/splitActions";
 import { commandRoute } from "./commandRoute";
@@ -67,7 +66,7 @@ export const commandHandlers = {
 };
 
 export function runCommand({ command, arg, windowId: requested }: CommandEvent) {
-  if (command === "openBookmark" || command === "jumpToSelection" || ["copyUrl", "copyUrlAsMarkdown", "copyQuoteLink", "share", "openFile", "autofill", "searchTabs", "tabSwitcher", "focusCommandBar", "reload", "forceReload", "returnToPinnedUrl", "openExtension", "addExtension", "pinExtensions", "manageExtensions"].includes(command)) return void nativeWorkspaceCommand(command, arg, requested);
+  if (command === "openBookmark" || command === "jumpToSelection" || ["copyUrl", "copyUrlAsMarkdown", "copyQuoteLink", "share", "openFile", "autofill", "searchTabs", "tabSwitcher", "focusCommandBar", "reload", "forceReload", "returnToPinnedUrl", "togglePageEngine", "openExtension", "addExtension", "pinExtensions", "manageExtensions"].includes(command)) return void nativeWorkspaceCommand(command, arg, requested);
   if (nativeOwnsWorkspace() && nativeWorkspaceCommand(command, arg, requested)) return;
   if (__DEV__ && !commandHandlersEnabled) { commandHandlerBlocked++; return; }
   if (__DEV__) commandHandlerCalls++;
@@ -238,8 +237,6 @@ export function runCommand({ command, arg, windowId: requested }: CommandEvent) 
       return page ? bookmarkTab(windowId, page.id) : undefined;
     case "addBookmarkToFolder":
       return page && arg ? void addBookmarkToFolder(windowId, page.id, arg) : undefined;
-    case "togglePageEngine":
-      return void (tabId && togglePageEngine(tabId));
     case "toggleMute":
       return page ? toggleMute(page.id) : undefined;
     case "downloads":

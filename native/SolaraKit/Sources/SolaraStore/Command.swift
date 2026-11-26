@@ -33,7 +33,7 @@ public struct Command: Sendable, Equatable {
   public static let known: Set<String> = [
     "pageReport", "registerKeepAliveRuntime", "importWorkspace", "setWindowLayout", "setSidebarPosition",
     "setWindowSidebar", "newTab", "settleNewTab", "closeTab", "closeTabs", "activate", "activateNumberedTab",
-    "handOffPin", "activateIndex", "cycle", "navigate", "updateTab", "navigated", "faviconChanged",
+    "switchPageEngine", "handOffPin", "activateIndex", "cycle", "navigate", "updateTab", "navigated", "faviconChanged",
     "closeCommandTabs", "reopenCommandClosed", "restoreCommandWindow", "duplicateTab", "togglePin", "moveTab",
     "moveTabBy", "createWindow", "closeWindow", "restoreClosingWindow", "forgetClosedWindow", "setWindowKeptOnClose",
     "setWindowFrame", "setWindowFullScreen", "toggleSidebar",
@@ -187,6 +187,7 @@ extension Session {
     case "activate": activate(try a.requireString(0))
     case "activateNumberedTab":
       if let tabId = SidebarQuery(state).numberedTab(windowId: try a.requireString(0), number: a.int(1)) { activate(tabId) }
+    case "switchPageEngine": switchPageEngine(try a.requireString(0), engine: try a.requireString(1), url: a.string(2))
     case "handOffPin": handOffPin(try a.requireString(0))
     case "activateIndex": activateIndex(try a.requireString(0), a.int(1))
     case "cycle": cycle(try a.requireString(0), a.int(1))

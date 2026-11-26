@@ -24,7 +24,7 @@ public class SettingsModule: Module {
       }
     }.runOnQueue(.main)
 
-    Events("onPanePopoversChanged", "onBookmarkProjectionChanged", "onAppIntegrationPresentation", "onSettingsCall", "onLiveReplica", "onLiveAuthRequest", "onLiveCloseGroup", "onBookmarkWriterState")
+    Events("onEngineBackChanged", "onPanePopoversChanged", "onBookmarkProjectionChanged", "onAppIntegrationPresentation", "onSettingsCall", "onLiveReplica", "onLiveAuthRequest", "onLiveCloseGroup", "onBookmarkWriterState")
 
     OnCreate {
       NativeBookmarkLaunch.select()
@@ -42,6 +42,10 @@ public class SettingsModule: Module {
         NativeSelectionTools.popoversChanged = { values in
           projectionSink.module?.sendEvent("onPanePopoversChanged", ["values": values])
         }
+        NativeEngineCommands.backChanged = {
+          DispatchQueue.main.async { projectionSink.module?.sendEvent("onEngineBackChanged", [:]) }
+        }
+        NativeEngineCommands.start()
         NativeSelectionTools.start()
         NativeSettingsWindow.install()
         NativeConfigNotifier.install()
@@ -56,6 +60,19 @@ public class SettingsModule: Module {
 
     Function("available") { () -> Bool in
       NativeSettingsWindow.enabled
+    }
+
+    AsyncFunction("engineCommand") { (tabId: String, action: String, options: String, promise: Promise) in
+      nonisolated(unsafe) let reply = promise
+      MainActor.assumeIsolated {
+        let value = (try? JSONValue.parse(options))?.object ?? [:]
+        NativeEngineCommands.request(tabId: tabId, action: action, options: value) { reply.resolve($0) }
+      }
+    }.runOnQueue(.main)
+
+    Function("engineBackAvailable") { (tabId: String) -> Bool in
+      if Thread.isMainThread { return MainActor.assumeIsolated { NativeEngineCommands.hasBack(tabId) } }
+      return DispatchQueue.main.sync { MainActor.assumeIsolated { NativeEngineCommands.hasBack(tabId) } }
     }
 
     Function("workspaceCommand") { (command: String, arg: String?, windowId: String?) -> Bool in
@@ -240,6 +257,13 @@ public class SettingsModule: Module {
     #endif
 
     #if DEBUG
+    AsyncFunction("devEngineCommands") { (choice: String) -> Int in
+      MainActor.assumeIsolated {
+        NativeEngineCommands.consent = choice == "cancel" ? false : choice == "confirm" ? true : nil
+        return NativeEngineCommands.confirmations
+      }
+    }.runOnQueue(.main)
+
     AsyncFunction("devBrowserServiceCommands") { (action: String, urls: [String]) -> [String] in
       MainActor.assumeIsolated { NativeBrowserServiceCommands.probe(action, urls: urls) }
     }.runOnQueue(.main)

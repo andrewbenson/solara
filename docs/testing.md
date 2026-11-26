@@ -701,5 +701,5 @@ engine (the focused window's profile), and `viaJS: true`, which now returns a re
 
 Verified: `SettingsWritesTests` (including shared-engine profile order and current native window
 state), `SettingsNavigationTests`, `SettingsSearchTests`; manage-extensions and settings-reopen in
-layouts 0 and 1. settings-shift's six search legs fail identically on main ff5f7f2b and with this
-slice ("⌘F didn't focus the search field"); its pane legs pass.
+layouts 0 and 1, and settings-shift's pane legs. Its six search legs pass again from 73521082 (⌘F in
+Settings).

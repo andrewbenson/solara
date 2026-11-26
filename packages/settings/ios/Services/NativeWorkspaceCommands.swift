@@ -265,6 +265,7 @@ enum NativeWorkspaceCommands {
     let timing = NewTabMainThreadTiming.begin("command.\(command)", windowId: windowId)
     defer { NewTabMainThreadTiming.end(timing) }
     #endif
+    if NativeExtensionCommands.perform(command, arg: arg, windowId: windowId) { return true }
     if PinnedPageCommand.commands.contains(command) { return NativePinnedPageCommands.perform(command, arg: arg, windowId: windowId) }
     if TabFocusCommand.commands.contains(command) { return NativeTabFocusCommands.perform(command, arg: arg, windowId: windowId) }
     if BrowserServiceCommand.commands.contains(command) { return NativeBrowserServiceCommands.perform(command, arg: arg, windowId: windowId) }

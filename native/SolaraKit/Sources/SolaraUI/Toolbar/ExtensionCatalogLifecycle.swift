@@ -64,3 +64,34 @@ public struct ExtensionCatalogLifecycle {
 
   public mutating func invalidate() { self = Self() }
 }
+
+public struct ExtensionActionCache {
+  public private(set) var states: [Int: JSONValue] = [:]
+  private var browsers: [PageRegistration: Int] = [:]
+  private var owners: [Int: PageRegistration] = [:]
+
+  public init() {}
+
+  public func state(browserId: Int, registration: PageRegistration) -> JSONObject? {
+    guard owners[browserId] == registration else { return nil }
+    return states[browserId]?.object
+  }
+
+  public mutating func refresh(ids: [String], target: () -> (PageRegistration, Int)?, read: (Int, [String]) -> JSONValue?) {
+    guard !ids.isEmpty, let (registration, browserId) = target(), browserId != 0 else { return }
+    if let previous = browsers[registration], previous != browserId { retire(registration) }
+    if let owner = owners[browserId], owner != registration { retire(owner) }
+    guard let value = read(browserId, ids) else { return }
+    browsers[registration] = browserId
+    owners[browserId] = registration
+    states[browserId] = value
+  }
+
+  @discardableResult
+  public mutating func retire(_ registration: PageRegistration) -> Bool {
+    guard let browserId = browsers.removeValue(forKey: registration) else { return false }
+    states[browserId] = nil
+    owners[browserId] = nil
+    return true
+  }
+}

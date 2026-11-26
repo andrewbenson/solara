@@ -7,7 +7,7 @@ import { engineProfile } from "../../store/model";
 import { extensionsProfileId } from "../extensions/store";
 import { openInternalPage } from "../pages/urls";
 import { autofillHandlers } from "./native/autofill";
-import { extensionsHandlers, publishExtensions } from "./native/extensions";
+import { extensionsHandlers } from "./native/extensions";
 import { replicaHandlers } from "./native/replica";
 import { bookmarkRestorationHandlers } from "./native/bookmarks";
 import { liveHandlers } from "./native/live";
@@ -99,20 +99,9 @@ export function startNativeSettings(): boolean {
   if (started) return true;
   if (!nativeSettingsAvailable()) return false;
   started = true;
-  let focusProfile: string | null | undefined;
-  const publishFocus = () => {
-    const profile = extensionsProfileId(null);
-    if (profile === focusProfile) return;
-    focusProfile = profile;
-    publishSettingsTopic("extensions.defaultProfile", profile);
-  };
-  publishFocus();
   publishSettingsTopic("advanced.cli", cliTopic());
   publishSettingsTopic("about.updateChecksNote", updateChecksNote());
-  useBrowser.subscribe((s, prev) => {
-    if (s.ui.focusedWindowId !== prev.ui.focusedWindowId || s.windows !== prev.windows) publishFocus();
-  });
   useCli.subscribe(() => publishSettingsTopic("advanced.cli", cliTopic()));
-  for (const publish of [publishPrivacy, publishPasswords, publishExtensions, publishProfiles, publishSync, publishOnboarding, ...publishers]) publish();
+  for (const publish of [publishPrivacy, publishPasswords, publishProfiles, publishSync, publishOnboarding, ...publishers]) publish();
   return true;
 }

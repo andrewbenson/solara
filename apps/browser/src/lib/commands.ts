@@ -39,9 +39,7 @@ import { openSplitPane } from "../components/layout/splitActions";
 import { commandRoute } from "./commandRoute";
 import { runSidebarCommand } from "../components/sidebar/commands";
 import { numberedTabs } from "../components/sidebar/entries";
-import { openExtensionFromMenu } from "../components/extensions/bridge";
 import { toggleCastPicker } from "../components/media/cast";
-import { openManageExtensions, openPinDialog, openWebStore } from "../components/extensions/state";
 import { openProfileMenu } from "../components/ProfileIndicator";
 import { groupOf, multiSelection } from "../store/organize";
 import { reopenClosedTogether } from "../store/closedTogether";
@@ -69,7 +67,7 @@ export const commandHandlers = {
 };
 
 export function runCommand({ command, arg, windowId: requested }: CommandEvent) {
-  if (command === "openBookmark" || command === "jumpToSelection" || ["copyUrl", "copyUrlAsMarkdown", "copyQuoteLink", "share", "openFile", "autofill", "searchTabs", "tabSwitcher", "focusCommandBar", "reload", "forceReload", "returnToPinnedUrl"].includes(command)) return void nativeWorkspaceCommand(command, arg, requested);
+  if (command === "openBookmark" || command === "jumpToSelection" || ["copyUrl", "copyUrlAsMarkdown", "copyQuoteLink", "share", "openFile", "autofill", "searchTabs", "tabSwitcher", "focusCommandBar", "reload", "forceReload", "returnToPinnedUrl", "openExtension", "addExtension", "pinExtensions", "manageExtensions"].includes(command)) return void nativeWorkspaceCommand(command, arg, requested);
   if (nativeOwnsWorkspace() && nativeWorkspaceCommand(command, arg, requested)) return;
   if (__DEV__ && !commandHandlersEnabled) { commandHandlerBlocked++; return; }
   if (__DEV__) commandHandlerCalls++;
@@ -265,12 +263,6 @@ export function runCommand({ command, arg, windowId: requested }: CommandEvent) 
       return cycleProfile(windowId, 1);
     case "previousProfile":
       return cycleProfile(windowId, -1);
-    case "openExtension":
-      return arg ? openExtensionFromMenu(windowId, arg, tabId) : undefined;
-    case "addExtension":
-      return void openWebStore(windowId);
-    case "pinExtensions":
-      return openPinDialog(windowId);
     case "newProfile":
       return void createProfile(windowId).then((id) => id && switchProfile(windowId, id));
   }
@@ -315,8 +307,6 @@ function runWindowCommand(command: string, arg: string | null | undefined, reque
       return openSettings("shortcuts");
     case "importBrowserData":
       return openImport();
-    case "manageExtensions":
-      return openManageExtensions(requested);
     case "setBookmarksBar":
       if (arg === "always" || arg === "newTab" || arg === "never") s.updateSettings({ bookmarksBar: arg });
       return;

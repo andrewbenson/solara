@@ -35,6 +35,9 @@ export type ExtensionPopupOpenWindow = {
 
 type NativeToolbarModule = {
   available(): boolean;
+  extensionToolbar(json: string): Promise<string>;
+  extensionCommand(json: string): Promise<void>;
+  addListener(event: "onExtensionToolbarChanged", listener: () => void): EventSubscription;
   refreshExtensionCatalog(profile: string, afterChange: boolean): Promise<string>;
   extensionContext(popup: string | null, panels: Record<string, string>): Promise<void>;
   showExtensionPopup(requestJSON: string): Promise<boolean>;
@@ -111,3 +114,8 @@ export function NativeSidebarAddressBarView(props: ViewProps & { windowId: strin
 export const refreshNativeExtensionCatalog = (profile: string, afterChange = false) => native?.refreshExtensionCatalog(profile, afterChange) ?? Promise.resolve("[]");
 
 export const nativeExtensionContext = (popup: string | null, panels: Record<string, string>) => native?.extensionContext(popup, panels);
+
+export const nativeExtensionToolbar = async (input: unknown): Promise<{ width: number; buttons: Record<string, unknown>[] }> =>
+  JSON.parse(await native?.extensionToolbar(JSON.stringify(input)) ?? '{"width":0,"buttons":[]}');
+export const nativeExtensionCommand = (input: unknown) => native?.extensionCommand(JSON.stringify(input)) ?? Promise.resolve();
+export const onNativeExtensionToolbarChanged = (listener: () => void) => native?.addListener("onExtensionToolbarChanged", listener);

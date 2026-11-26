@@ -20,7 +20,7 @@ const X = globalThis.expo.modules.SolaraExtensions;
 const T = globalThis.expo.modules.SolaraToolbar;
 const C = globalThis.expo.modules.SolaraCEF;
 const D = globalThis.expo.modules.SolaraShell;
-const ext = (id) => E.useExtensions.getState().lists[""]?.find((item) => item.id === id);
+const ext = (id) => T.devExtensionCatalog().then((catalog) => catalog.lists[""]?.find((item) => item.id === id));
 `;
 let app;
 const installed = [];
@@ -60,6 +60,7 @@ const context = async (id, choice = null) => {
 };
 try {
   app = await launch(resolve(appArg), { data: join(scratch, "data"), fresh: true, session: fixture, onboarded: true, probe: true,
+    env: process.env.SOLARA_EXTENSION_ACTION_POLL ? { SOLARA_EXTENSION_ACTION_POLL: process.env.SOLARA_EXTENSION_ACTION_POLL } : {},
     ready: 'return !!ac.store.getState().windows.w1 && !!ac.extensions;' });
   assert.equal(await run('return typeof D.devContextMenu;'), "function", "Debug native menu seam exists");
   windowNumber = await until("browser window", 'return C.chromeWindows().then((windows) => windows.find((window) => window.hasRoot && window.visible)?.window ?? null);');
@@ -74,7 +75,18 @@ try {
     installed.push(result.id);
   }
   await run('return E.refreshExtensions("").then(() => true);');
-  for (const id of installed) await run(`return E.setPinned("", ${JSON.stringify(id)}, true).then(() => true);`);
+  for (const id of installed) await run(`return T.extensionCommand(JSON.stringify({ command: "setPinned", profile: "", id: ${JSON.stringify(id)}, pinned: true })).then(() => true);`);
+  assert.equal(await run('return T.devExtensionCatalog().then((catalog) => catalog.native);'), true, "native catalog owns the workspace");
+  if (process.env.SOLARA_EXTENSION_ACTION_POLL === "on") assert.equal(await run('return T.devExtensionCatalog().then((catalog) => catalog.polling);'), true, "polling override is native");
+  await run(`
+    const store = E.useExtensions;
+    const write = store.setState;
+    store.setState = (update) => {
+      const { lists, actions, ...retained } = typeof update === "function" ? update(store.getState()) : update;
+      write(retained);
+    };
+    return true;
+  `);
   const id = installed[0];
   await rep.check("native-context-model", async () => {
     const model = await context(id);
@@ -95,11 +107,11 @@ try {
   });
   await rep.check("context-unpin-and-repin", async () => {
     await context(id, "pin");
-    await until("unpinned", `return ext(${JSON.stringify(id)})?.pinned === false;`);
+    await until("unpinned", `return ext(${JSON.stringify(id)}).then((item) => item?.pinned === false);`);
     await menuArm("pin");
-    await run(`E.showExtensionMenu("w1", ext(${JSON.stringify(id)})); return true;`);
+    await run(`T.extensionCommand(JSON.stringify({ command: "menu", windowId: "w1", id: ${JSON.stringify(id)} })); return true;`);
     assert.equal((await menuWait()).accepted, true);
-    await until("repinned", `return ext(${JSON.stringify(id)})?.pinned === true;`);
+    await until("repinned", `return ext(${JSON.stringify(id)}).then((item) => item?.pinned === true);`);
     return { pinned: true };
   });
   await rep.check("context-side-panel-toggle", async () => {
@@ -118,21 +130,33 @@ try {
   });
   await rep.check("context-enable-toggle", async () => {
     await context(id, "enable");
-    await until("disabled extension", `return ext(${JSON.stringify(id)})?.enabled === false;`);
+    await until("disabled extension", `return ext(${JSON.stringify(id)}).then((item) => item?.enabled === false);`);
     await menuArm("enable");
-    await run(`E.showExtensionMenu("w1", ext(${JSON.stringify(id)})); return true;`);
+    await run(`T.extensionCommand(JSON.stringify({ command: "menu", windowId: "w1", id: ${JSON.stringify(id)} })); return true;`);
     const model = await menuWait();
     assert.equal(model.items.find((item) => item.id === "enable").title, "Turn On");
-    await until("enabled extension", `return ext(${JSON.stringify(id)})?.enabled === true;`);
+    await until("enabled extension", `return ext(${JSON.stringify(id)}).then((item) => item?.enabled === true);`);
     return { enabled: true };
   });
   await rep.check("native-overflow-menu-and-pin-sheet", async () => {
     await run('S().updateSettings({ addressBar: "sidebar", tabLayout: "sidebar" }); return true;');
-    const sidebar = await until("sidebar overflow", 'return globalThis.expo.modules.SolaraSidebarAddressBar.sample("w1").then((json) => json ? JSON.parse(json) : null);', (value) => value?.["field.sample"]?.buttons?.some((item) => item.id === "ext-overflow"));
-    const overflow = sidebar["field.sample"].buttons.find((item) => item.id === "ext-overflow");
-    const [fx, fy] = sidebar.field;
-    const [bx, by, bw, bh] = overflow.frame;
-    const button = { frame: [sidebar.frame[0] + fx + bx, sidebar.frame[1] + fy + by, bw, bh] };
+    const overflowButton = async () => {
+      const sidebar = await run('return globalThis.expo.modules.SolaraSidebarAddressBar.sample("w1").then((json) => json ? JSON.parse(json) : null);');
+      const overflow = sidebar?.["field.sample"]?.buttons?.find((item) => item.id === "ext-overflow");
+      if (!overflow) return null;
+      const [fx, fy] = sidebar.field;
+      const [bx, by, bw, bh] = overflow.frame;
+      const frame = [sidebar.frame[0] + fx + bx, sidebar.frame[1] + fy + by, bw, bh];
+      const hit = String(await act(`hit:${Math.round(frame[0] + bw / 2)},${Math.round(frame[1] + bh / 2)}`));
+      return /ToolbarButtonView/.test(hit) ? { frame } : null;
+    };
+    const settleDeadline = Date.now() + 8000;
+    let button = await overflowButton();
+    while (!button && Date.now() < settleDeadline) {
+      await new Promise((done) => setTimeout(done, 100));
+      button = await overflowButton();
+    }
+    assert.ok(button, "sidebar overflow button settles under its sampled frame");
     await menuArm();
     await click(button);
     const model = await menuWait();

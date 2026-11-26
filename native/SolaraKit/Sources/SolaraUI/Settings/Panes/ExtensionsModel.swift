@@ -168,7 +168,7 @@ struct ExtensionInstallRequest: Identifiable, Equatable {
   var busy: Bool { status == .installing }
 }
 
-enum ExtensionWebStore {
+public enum ExtensionWebStore {
   static let categoryURL = "https://chromewebstore.google.com/category/extensions"
   static let invalidLinkMessage = "That isn't a link to an extension in the Chrome Web Store."
 
@@ -176,7 +176,7 @@ enum ExtensionWebStore {
     text.count == 32 && text.unicodeScalars.allSatisfy { ("a"..."p").contains($0) }
   }
 
-  static func extensionId(_ urlOrId: String) -> String? {
+  public static func extensionId(_ urlOrId: String) -> String? {
     let text = urlOrId.trimmingCharacters(in: .whitespacesAndNewlines)
     if isExtensionId(text) { return text }
     guard let url = URLComponents(string: text), let scheme = url.scheme, !scheme.isEmpty, let host = url.host?.lowercased() else { return nil }
@@ -185,7 +185,7 @@ enum ExtensionWebStore {
     return url.path.split(separator: "/", omittingEmptySubsequences: false).first(where: { isExtensionId($0) }).map(String.init)
   }
 
-  static func detailURL(_ id: String) -> String { "https://chromewebstore.google.com/detail/\(id)" }
+  public static func detailURL(_ id: String) -> String { "https://chromewebstore.google.com/detail/\(id)" }
 }
 
 enum ExtensionPermissions {

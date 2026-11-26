@@ -19,10 +19,8 @@ import { StyleSheet } from "react-native";
 import { useTheme } from "../../lib/theme";
 import { useBrowser, type BrowserState } from "../../store/browser";
 import { engineProfile, isIncognitoProfile, tabLabel } from "../../store/model";
-import { activateExtension, openWebStore, showExtensionMenu, useWindowExtensions } from "../extensions/state";
 import { useThemeTokens } from "../omnibox/nativeBar";
 import { siteControlsMounted } from "../overlayGates";
-import { addExtensionMenu } from "./SiteExtensions";
 import { chooseLanguage } from "./TranslateControls";
 import { defaultTarget, isNeverTranslated, languageName, setNeverTranslate, toggleTranslation, useTranslateState } from "./translate";
 
@@ -65,7 +63,6 @@ export function NativeSiteControls({ tabId, open, right, left, top, onClosed }: 
   const theme = useTheme();
   const tokens = useThemeTokens(theme);
   const windowId = useBrowser((s) => s.tabs[tabId]?.windowId ?? "");
-  const extensions = useWindowExtensions(windowId);
   const translate = useTranslateState(tabId);
   const tab = useBrowser((s) => s.tabs[tabId]);
   useBrowser((s) => s.settings.neverTranslateSites);
@@ -83,34 +80,7 @@ export function NativeSiteControls({ tabId, open, right, left, top, onClosed }: 
   for (const item of items) {
     if (item.kind !== "slot") continue;
     const expanded = contributed[item.id];
-    if (item.id === "extensions") {
-      expanded.push({ kind: "section", title: "Extensions" });
-      expanded.push({
-        kind: "extensions",
-        columns: item.columns ?? 4,
-        extensions: [
-          ...extensions.map((ext) => ({ id: `ext:${ext.id}`, name: ext.pinned ? `${ext.actionTitle || ext.name} (pinned)` : ext.actionTitle || ext.name, icon: ext.actionIcon || ext.icon || null })),
-          { id: "ext:add", name: "Add Extension", icon: null, symbol: "plus" },
-        ],
-      });
-      for (const ext of extensions) {
-        all[`ext:${ext.id}`] = {
-          press: (rect) => {
-            onClose();
-            void activateExtension(windowId, ext, anchorOf(rect), undefined, tabId);
-          },
-          menu: () => void showExtensionMenu(windowId, ext),
-        };
-      }
-      all["ext:add"] = {
-        press: () => {
-          onClose();
-          openWebStore(windowId);
-        },
-        menu: () => void addExtensionMenu(windowId, onClose),
-      };
-      continue;
-    }
+    if (item.id === "extensions") continue;
     const never = tab ? isNeverTranslated(tab.profileId, tab.url) : false;
     if (!translation || !tab || (!translate.source && translate.status === "idle" && !never)) continue;
     const translated = translate.status !== "idle";

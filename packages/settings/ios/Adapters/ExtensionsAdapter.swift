@@ -2,23 +2,60 @@ import AppKit
 import SolaraCore
 import Foundation
 import Observation
+import os
 import SolaraUI
+import SolaraStore
 
 @MainActor
 @Observable
 final class ExtensionsAdapter: ExtensionsServices {
   private(set) var focusedWindowProfileId: String?
-  @ObservationIgnored private var observer: UUID?
+  @ObservationIgnored private var observer: Int?
+  @ObservationIgnored private var observed: Store?
+  @ObservationIgnored private var subscription: Int?
 
   init() {
-    focusedWindowProfileId = SettingsJS.shared.latestValue("extensions.defaultProfile") as? String
-    observer = SettingsJS.shared.observe("extensions.defaultProfile") { [weak self] value in
-      self?.focusedWindowProfileId = value as? String
+    observer = NativeStoreHandle.subscribeLifecycle { [weak self] in self?.attach() }
+  }
+
+  private func attach() {
+    let next = NativeStoreHandle.ownsWorkspace ? NativeStoreHandle.store : nil
+    if observed !== next {
+      if let subscription { observed?.unsubscribe(subscription) }
+      observed = next
+      if let next {
+        subscription = next.sequence {
+          let revision = next.rev
+          let profile = OSAllocatedUnfairLock(initialState: Optional(ExtensionPresentation.focusedProfile(in: next.state)))
+          return next.subscribe { [weak self, weak next] commit in
+            guard commit.rev > revision else { return }
+            let changed = profile.withLock { previous in
+              guard let current = ExtensionPresentation.focusedProfileChange(commit, from: previous) else { return false }
+              previous = current
+              return true
+            }
+            guard changed else { return }
+            Task { @MainActor in
+              guard let self, let next, self.observed === next, NativeStoreHandle.ownsWorkspace, NativeStoreHandle.store === next else { return }
+              self.updateFocusedProfile()
+            }
+          }
+        }
+      } else {
+        subscription = nil
+      }
     }
+    updateFocusedProfile()
+  }
+
+  private func updateFocusedProfile() {
+    let profile = NativeExtensionCommands.focusedProfile
+    if focusedWindowProfileId != profile { focusedWindowProfileId = profile }
   }
 
   isolated deinit {
-    if let observer { SettingsJS.shared.stopObserving("extensions.defaultProfile", observer) }
+    if let observer { NativeStoreHandle.unsubscribeLifecycle(observer) }
+    if let subscription { observed?.unsubscribe(subscription) }
   }
 
   func listExtensions(profile: String) async throws -> [InstalledExtension] {
@@ -79,16 +116,20 @@ final class ExtensionsAdapter: ExtensionsServices {
   }
 
   func extensionChanges() -> AsyncStream<ExtensionsChange> {
-    SettingsJS.shared.stream("extensions.changed") { value -> ExtensionsChange? in
-      guard let dict = value as? [String: Any], let profile = dict.string("profile"), let id = dict.string("id"),
-            let event = dict.string("event").flatMap(ExtensionsChange.Event.init(rawValue:)) else { return nil }
-      return ExtensionsChange(profile: profile, id: id, event: event)
+    AsyncStream { continuation in
+      let token = NotificationCenter.default.addObserver(forName: Notification.Name("SolaraExtensionsChanged"), object: nil, queue: .main) { note in
+        guard let profile = note.userInfo?["profile"] as? String, let id = note.userInfo?["id"] as? String,
+          let raw = note.userInfo?["event"] as? String, let event = ExtensionsChange.Event(rawValue: raw) else { return }
+        continuation.yield(ExtensionsChange(profile: profile, id: id, event: event))
+      }
+      let receipt = ExtensionChangeObserver(token)
+      continuation.onTermination = { _ in receipt.cancel() }
     }
   }
 
   func closeExtensionSurfaces(_ id: String) { SettingsJS.shared.fire("extensions.closeSurfaces", id) }
 
-  func openWebStoreDetail(_ url: String, profile: String) { SettingsJS.shared.fire("extensions.openWebStoreDetail", url, profile) }
+  func openWebStoreDetail(_ url: String, profile: String) { NativeExtensionCommands.run(["command": "webStoreDetail", "url": .string(url), "profile": .string(profile), "windowId": "settings"]) }
 
   func openInNewTab(_ url: String) {
     guard let opening = SettingsDirectWrites.opening else {
@@ -100,7 +141,7 @@ final class ExtensionsAdapter: ExtensionsServices {
 
   private func changing(_ profile: String, _ start: (@escaping @Sendable ([String: Any]) -> Void) -> Void) async throws {
     let error = await EngineCalls.result(start) { Self.engineError($0) }
-    SettingsJS.shared.fire("extensions.refresh", profile)
+    NativeExtensionCatalog.refresh(profile)
     if let error { throw ExtensionServiceError(error) }
   }
 
@@ -135,4 +176,10 @@ final class ExtensionsAdapter: ExtensionsServices {
       webStoreUrl: dict.string("webStoreUrl")
     )
   }
+}
+
+private final class ExtensionChangeObserver: @unchecked Sendable {
+  let token: NSObjectProtocol
+  init(_ token: NSObjectProtocol) { self.token = token }
+  func cancel() { NotificationCenter.default.removeObserver(token) }
 }

@@ -4,6 +4,23 @@ import SolaraModel
 
 @MainActor
 struct ExtensionCatalogLifecycleTests {
+  @Test func emptyActionsSkipPageLookupAndReplacementRetiresOldBrowserState() {
+    var cache = ExtensionActionCache()
+    let page = PageRegistration(tabID: "tab", registrationGeneration: 1)
+    let replacement = PageRegistration(tabID: "tab", registrationGeneration: 2)
+    var lookups = 0
+    cache.refresh(ids: [], target: { lookups += 1; return (page, 4) }, read: { _, _ in [:] })
+    #expect(lookups == 0)
+    #expect(cache.states.isEmpty)
+    cache.refresh(ids: ["ext"], target: { (page, 4) }, read: { _, _ in ["ext": ["badgeText": "4"]] })
+    cache.refresh(ids: ["ext"], target: { (page, 5) }, read: { _, _ in ["ext": ["badgeText": "5"]] })
+    #expect(cache.states[4] == nil)
+    cache.refresh(ids: ["ext"], target: { (replacement, 5) }, read: { _, _ in ["ext": ["badgeText": "new"]] })
+    let retired = cache.retire(page)
+    #expect(!retired)
+    #expect(cache.states[5]?["ext"]?["badgeText"] == "new")
+  }
+
   func row(_ id: String, enabled: Bool = true, incognito: Bool = false, split: Bool = false) -> JSONObject {
     ["id": .string(id), "name": .string(id), "enabled": .bool(enabled), "incognito": .bool(incognito), "incognitoSplit": .bool(split)]
   }

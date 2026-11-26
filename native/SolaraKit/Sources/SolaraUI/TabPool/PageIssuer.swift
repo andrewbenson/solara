@@ -133,6 +133,7 @@ public final class PageIssuer {
     return id
   }
 
+  public var onBrowserReady: ((PageHostBinding, Int) -> Void)?
   public let store: Store
   public let registry: PageRegistry
   public private(set) var deliveryConfigured: Bool
@@ -388,6 +389,16 @@ public final class PageIssuer {
       store.sequence {}
       guard currentInScope(binding, requirePage: true) else { return false }
       if payload["type"]?.string == "navigation" { binding.navigation = .object(payload) }
+      if payload["type"]?.string == "ready", binding.engine == .chromium,
+        let browserId = payload["browserId"]?.int, browserId != 0, let onBrowserReady {
+        afterSequence { [weak self, weak binding] in
+          guard let self, let binding, self.store.sequence({
+            self.currentInScope(binding, requirePage: true)
+              && (try? self.store.pageHostSnapshotInScope(binding.tabId, generation: binding.sessionGeneration))?.facts?.ready?.browserId == browserId
+          }) else { return }
+          onBrowserReady(binding, browserId)
+        }
+      }
       return true
     }
   }

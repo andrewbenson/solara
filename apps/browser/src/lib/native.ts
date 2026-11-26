@@ -54,7 +54,6 @@ import { cancelAbandonedFocusMoves, settlingCommandFocus } from "./focusHandoff"
 import { flushPersistence, resumePersistence } from "./persist";
 import { startWindowCloseGuard } from "./windowClose";
 import { startExtensionsBridge } from "../components/extensions/bridge";
-import { extensionMenu, useExtensions } from "../components/extensions/state";
 import { PRODUCT } from "./productName";
 import { canToggleDeveloperModeFor, tabInDeveloperMode } from "../components/site/developerMode";
 
@@ -171,9 +170,6 @@ export function startNativeSync() {
   store.subscribe((s, prev) => {
     if (s.settings.appearance !== prev.settings.appearance) void setAppearance(s.settings.appearance);
     if (s.settings.pageScrollBars !== prev.settings.pageScrollBars) void setThinScrollBars(s.settings.pageScrollBars === "thin");
-  });
-  useExtensions.subscribe((e, prev) => {
-    if (e.lists !== prev.lists) menuTimer ??= setTimeout(syncMenu, 120);
   });
   void windows.sweep();
 }
@@ -312,7 +308,6 @@ export function menuState(s: BrowserState): MenuState {
     downloadsInProgress: s.downloads.filter((d) => d.state === "downloading").length,
     shortcuts: s.settings.shortcuts,
     shortcutPrecedence: s.settings.shortcutPrecedence,
-    extensions: extensionMenu(s, windowId),
   };
 }
 

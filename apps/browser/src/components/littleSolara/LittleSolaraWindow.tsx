@@ -11,7 +11,7 @@ import { CommandPanel } from "../CommandPanel";
 import { ContentCard } from "../ContentCard";
 import { DownloadsPopover } from "../Downloads";
 import { ExtensionOverlays } from "../extensions/ExtensionOverlays";
-import { ToolbarPopupAnchor } from "../extensions/ToolbarExtensions";
+import { ToolbarPopupAnchor } from "../extensions/ToolbarPopupAnchor";
 import { dropToolbarAnchor, setToolbarAnchor } from "../extensions/bridge";
 import { setUrlAnchor } from "../layout/windowLayout";
 import { showUrlBarMenu } from "../omnibox/paste";

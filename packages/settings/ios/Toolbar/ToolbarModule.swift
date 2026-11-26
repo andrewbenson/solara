@@ -13,11 +13,19 @@ public class ToolbarModule: Module {
   public func definition() -> ModuleDefinition {
     Name("SolaraToolbar")
 
-    Events("onExtensionPopupChanged", "onExtensionPopupOpenWindow")
+    Events("onExtensionPopupChanged", "onExtensionPopupOpenWindow", "onExtensionToolbarChanged")
 
     OnCreate {
       let sink = ToolbarPopupEventSink(module: self)
       DispatchQueue.main.async { MainActor.assumeIsolated {
+        NativeExtensionCommands.install()
+        NativeExtensionCatalog.emit = { toolbar, menus in
+          if toolbar { sink.module?.sendEvent("onExtensionToolbarChanged", [:]) }
+          if menus {
+            NativeSiteControls.shared.refresh()
+            ShellMenus.refreshExtensions()
+          }
+        }
         NativeExtensionActionPopup.install()
         NativeExtensionActionPopup.emit = { name, body in sink.module?.sendEvent(name, body) }
       } }
@@ -27,6 +35,7 @@ public class ToolbarModule: Module {
       DispatchQueue.main.async { MainActor.assumeIsolated {
         NativeExtensionActionPopup.close()
         NativeExtensionActionPopup.emit = nil
+        NativeExtensionCatalog.emit = nil
       } }
     }
 
@@ -42,6 +51,23 @@ public class ToolbarModule: Module {
       }
     }.runOnQueue(.main)
 
+    AsyncFunction("extensionToolbar") { (json: String) -> String in
+      MainActor.assumeIsolated {
+        let value = NativeExtensionCommands.toolbar((try? JSONValue.parse(Data(json.utf8))) ?? .null)
+        return String(decoding: (try? JSONSerialization.data(withJSONObject: value.foundation)) ?? Data("{}".utf8), as: UTF8.self)
+      }
+    }.runOnQueue(.main)
+
+    AsyncFunction("extensionCommand") { (json: String, promise: Promise) in
+      nonisolated(unsafe) let reply = promise
+      MainActor.assumeIsolated {
+        NativeExtensionCommands.run((try? JSONValue.parse(Data(json.utf8))) ?? .null) { error in
+          if let error { reply.reject("ERR_EXTENSION_COMMAND", error) }
+          else { reply.resolve(nil) }
+        }
+      }
+    }.runOnQueue(.main)
+
     Function("available") { () -> Bool in ToolbarModule.available }
 
     AsyncFunction("showExtensionPopup") { (json: String) -> Bool in
@@ -53,6 +79,15 @@ public class ToolbarModule: Module {
     }.runOnQueue(.main)
 
     #if DEBUG
+    AsyncFunction("devExtensionCatalog") { () -> [String: Any] in
+      let snapshot: JSONValue = MainActor.assumeIsolated {
+        guard SolaraCoreTestHooksAllowed() else { return [:] }
+        return ["native": .bool(NativeExtensionCatalog.current), "polling": .bool(NativeExtensionCatalog.polling),
+          "lists": .object(JSONObject(NativeExtensionCatalog.catalog.lists.map { ($0.key, .array($0.value.map(JSONValue.object))) }))]
+      }
+      return snapshot.foundation as? [String: Any] ?? [:]
+    }.runOnQueue(.main)
+
     AsyncFunction("devExtensionPopup") { (windowId: String) -> String in
       MainActor.assumeIsolated {
         guard SolaraCoreTestHooksAllowed(), let snapshot = ExtensionActionPopupRead.snapshot(windowId: windowId) else { return "null" }

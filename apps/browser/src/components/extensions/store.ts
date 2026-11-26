@@ -1,4 +1,4 @@
-import type { ActionState, ExtensionInstallPrompt, ExtensionPackage, InstalledExtension } from "@solara/solaracore";
+import type { ExtensionInstallPrompt, ExtensionPackage, InstalledExtension } from "@solara/solaracore";
 import { useMemo } from "react";
 import { create } from "zustand";
 import { useBrowser, type BrowserState } from "../../store/browser";
@@ -20,7 +20,6 @@ export type InstallRequest = {
 
 type ExtensionsStore = {
   lists: Record<string, InstalledExtension[]>;
-  actions: Record<number, Record<string, ActionState>>;
   popup: { windowId: string; extensionId: string; tabId: string | undefined } | null;
   install: InstallRequest | null;
   pinDialog: { windowId: string } | null;
@@ -35,7 +34,7 @@ export type SidePanel = {
   opened: number;
 };
 
-export const useExtensions = create<ExtensionsStore>()(() => ({ lists: {}, actions: {}, popup: null, install: null, pinDialog: null, sidePanels: {} }));
+export const useExtensions = create<ExtensionsStore>()(() => ({ lists: {}, popup: null, install: null, pinDialog: null, sidePanels: {} }));
 
 const EMPTY: InstalledExtension[] = [];
 

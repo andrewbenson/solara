@@ -351,7 +351,8 @@ public final class NewTabSources {
   }
 
   public func setExtensions(_ list: [ExtensionCandidate], windowId: String) {
-    extensions[windowId] = list
+    guard (extensions[windowId] ?? []) != list else { return }
+    extensions[windowId] = list.isEmpty ? nil : list
     revision += 1
   }
 

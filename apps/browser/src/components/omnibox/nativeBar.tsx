@@ -14,7 +14,6 @@ import { currentBarActions } from "./actions";
 import { profileBookmarks } from "./profileBookmarks";
 import { useOmniboxDriver } from "./devDriver";
 import { runOmniboxFallback, type NativeActionOwnership } from "./nativeActions";
-import { useBarExtensions } from "./extensions";
 import { openFromBar, switchFromBar, type Disposition } from "./open";
 import { clipboardPasteAction, pasteMenuItem, pasteTarget } from "./paste";
 import { runBarAction, runBarExtension } from "./runBar";
@@ -44,11 +43,6 @@ function debounced(run: () => void) {
 }
 
 export function usePublishSources(windowId: string, profileId: string) {
-  const extensions = useBarExtensions(windowId);
-  useEffect(() => {
-    void newTabSources.setExtensions(windowId, extensions);
-  }, [windowId, extensions]);
-
   useEffect(() => {
     let bookmarks: unknown = null;
     let bookmarkProfile = "";

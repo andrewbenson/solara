@@ -16,10 +16,9 @@ import { toggleBookmarkFromUI } from "../lib/bookmarkWriter";
 import { usePageProgress } from "../store/pageProgress";
 import { openModeFor, openUrl } from "./bookmarks/actions";
 import { showNativePanelNow } from "./CommandPanel";
-import { useNativeToolbarExtensions, useToolbarExtensionsWidth } from "./extensions/ToolbarExtensions";
-import { pageExtensionButtons, pageExtensionsWidth, WEBKIT_PILL_ACTION } from "./extensions/webkitPill";
+import { useNativeToolbarExtensions } from "./extensions/ToolbarExtensionHost";
+const WEBKIT_PILL_ACTION = "webkit:openInChromium";
 import { openPageIn } from "../lib/engines";
-import { tabEngine } from "../store/engines";
 import { type ToolbarGeometry } from "./layout/geometry";
 import { closeHistoryMenu, goBack, goForward, historyItems, openHistoryMenu, useHistoryAvailability, useHistoryMenu } from "./layout/history";
 import { setPopover, useFullscreenTab, usePage, usePages } from "./layout/pageState";
@@ -114,10 +113,9 @@ export function useNativeToolbarModel({ tabId, geometry, windowId, inSplit, focu
   const palette = toolbarPalette(theme, sidebar ? null : siteColor, onFrame);
   const history = useHistoryAvailability(tabId);
   const extensionLimit = sidebar?.extensionLimit ?? Infinity;
-  const engine = useBrowser((s) => tabEngine(s, tabId));
-  const extensionsWidth = pageExtensionsWidth(engine, useToolbarExtensionsWidth(windowId, extensionLimit));
   const extensions = useNativeToolbarExtensions(windowId, tabId, extensionLimit);
-  const extensionsJson = JSON.stringify(pageExtensionButtons(engine, extensions.buttons));
+  const extensionsWidth = extensions.width;
+  const extensionsJson = JSON.stringify(extensions.buttons);
   useEffect(() => {
     if (!sidebar) setToolbarExtensionsWidth(windowId, extensionsWidth);
   }, [windowId, extensionsWidth, !sidebar]);

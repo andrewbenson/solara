@@ -5,7 +5,7 @@ import { useShortcutHint, withShortcut } from "../../lib/commandShortcuts";
 import { layout, useTheme } from "../../lib/theme";
 import { useBrowser } from "../../store/browser";
 import { useActiveTabId, useWindowId } from "../../store/hooks";
-import { extensionsFitting } from "../extensions/ToolbarExtensions";
+import { extensionsFitting } from "../extensions/ToolbarExtensionHost";
 import { toolbarPalette } from "../layout/toolbarColors";
 import { addressBarInSidebar, setUrlAnchor } from "../layout/windowLayout";
 import { GLYPH } from "../Toolbar";

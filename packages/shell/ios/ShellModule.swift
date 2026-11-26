@@ -924,6 +924,9 @@ private enum ShellContextMenuTest {
 
 @MainActor
 public enum ShellMenus {
+  public static var extensionCatalog: (() -> [[String: Any]])?
+  public static func refreshExtensions() { MainMenu.refresh() }
+
   static var emit: ((String, [String: Any]) -> Void)?
 
   public static func choose(_ items: [[String: Any]], then chosen: @escaping @MainActor (String?) -> Void) {

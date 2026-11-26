@@ -46,7 +46,7 @@ function fixture() {
     "../../lib/commandShortcuts": { useShortcutHint: () => "", withShortcut: (value) => value },
     "../../store/browser": { useBrowser },
     "../../store/hooks": { useWindowId: () => "w", useActiveTabId: () => null },
-    "../extensions/ToolbarExtensions": { extensionsFitting: () => 4 },
+    "../extensions/ToolbarExtensionHost": { extensionsFitting: () => 4 },
     "../layout/toolbarColors": { toolbarPalette: () => ({}) },
     "../layout/windowLayout": { addressBarInSidebar: () => true, setUrlAnchor: (...args) => effects.push(["anchor", ...args]) },
     "../Toolbar": { GLYPH: 13 },

@@ -28,12 +28,12 @@ private struct IssuerFixture {
   let binding: PageHostBinding
   var id: String { binding.tabId }
 
-  init(engine: PageEngine = .chromium, host: PageHost = .pooled, shown: String? = nil) throws {
+  init(engine: PageEngine = .chromium, host: PageHost = .pooled, shown: String? = nil, deliver: PageRegistry.Deliver? = nil) throws {
     store = Store(state: BrowserState(settings: Settings.hydrated(from: nil)), checksInvariants: false)
     let window = try #require(try store.dispatch(Command("createWindow", [["url": "https://page.example/"]])).result?.string)
     let id = try #require(store.state.windows[window]?.tabIds.first)
     if engine == .webKit { try store.dispatch(Command("updateTab", [.string(id), ["engine": "webkit"]])) }
-    issuer = PageIssuer(store: store, registry: PageRegistry())
+    issuer = PageIssuer(store: store, registry: PageRegistry(), deliver: deliver)
     producer = IssuerProducer()
     let producer = producer
     let attached = issuer.attach(tabId: id, engine: engine, host: host, owner: producer,
@@ -114,6 +114,62 @@ private func heldPageAnswer(_ command: PageCommand = .livePage, incognito: Bool,
 
 @MainActor
 @Suite struct PageIssuerTests {
+  @MainActor
+  @Test func lateReadyRefreshesWithoutACommitAndRetirementEvictsOnlyItsBinding() throws {
+    let held = HeldDeliveries()
+    let fixture = try IssuerFixture(deliver: { held.work.append($0) })
+    held.runAll()
+    let store = fixture.store
+    let issuer = fixture.issuer
+    let binding = fixture.binding
+    let registration = try #require(binding.registration)
+    let other = PageRegistration(tabID: "other", registrationGeneration: registration.registrationGeneration + 1)
+    let row: JSONValue = ["ext": ["badgeText": "2"]]
+    var cache = ExtensionActionCache()
+    var queried: [Int] = []
+    cache.refresh(ids: ["ext"], target: { (other, 40) }, read: { _, _ in row })
+    issuer.onBrowserReady = { binding, browserId in
+      guard let registration = binding.registration else { return }
+      cache.refresh(ids: ["ext"], target: { (registration, browserId) }) { id, _ in
+        queried.append(id)
+        return row
+      }
+    }
+    issuer.registry.observe { event in
+      if case .retired(let registration) = event { cache.retire(registration) }
+    }
+    let beforeReady = store.rev
+    #expect(issuer.reserveEvent(binding, name: "onReady", payload: ["browserId": 41]) != nil)
+    #expect(store.rev == beforeReady)
+    #expect(queried.isEmpty)
+    held.runAll()
+    #expect(queried == [41])
+    #expect(cache.state(browserId: 41, registration: registration) == row.object)
+    #expect(cache.state(browserId: 41, registration: other) == nil)
+    #expect(issuer.reserveEvent(binding, name: "onReady", payload: ["browserId": 42]) != nil)
+    issuer.retire(binding)
+    held.runAll()
+    #expect(queried == [41])
+    #expect(cache.states == [40: row])
+  }
+
+  @MainActor
+  @Test func mediaOnlyLiveCommitDoesNotRefreshActionsOrSettingsProfile() throws {
+    let fixture = try IssuerFixture()
+    let store = fixture.store
+    let commits = Mutex<[Commit]>([])
+    let token = store.subscribe { commit in commits.withLock { $0.append(commit) } }
+    defer { store.unsubscribe(token) }
+    #expect(fixture.issuer.reserveEvent(fixture.binding, name: "onMedia", payload: ["playing": true]) != nil)
+    let media = try #require(commits.withLock { $0.last })
+    #expect(media.changes.live.upserted == [fixture.id])
+    #expect(media.changes.tabs.isEmpty)
+    #expect(!ExtensionPresentation.affectsActions(media))
+    #expect(ExtensionPresentation.focusedProfileChange(media, from: ExtensionPresentation.focusedProfile(in: store.state)) == nil)
+    let tab = try store.dispatch(Command("updateTab", [.string(fixture.id), ["engine": "webkit"]]), origin: .native)
+    #expect(ExtensionPresentation.affectsActions(tab))
+  }
+
   @Test func runtimeIdentityIsSharedOnlyByTheSameContext() {
     let first = NSObject()
     let second = NSObject()

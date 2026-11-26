@@ -46,69 +46,6 @@ function fixture() {
 
 const settle = async () => { for (let n = 0; n < 6; n++) await Promise.resolve(); };
 
-test("extension context menu preserves labels, option availability, side panel state and managed removal", async () => {
-  const f = fixture();
-  await f.api.showExtensionMenu("w", f.ext);
-  assert.deepEqual(f.menus[0], [
-    { id: "name", title: "Fixture", enabled: false }, { separator: true },
-    { id: "options", title: "Options", enabled: true }, { id: "sidePanel", title: "Open Side Panel" },
-    { id: "pin", title: "Unpin from Toolbar", symbol: "pin.slash" }, { id: "enable", title: "Turn Off" },
-    { separator: true }, { id: "remove", title: "Remove Extension…", enabled: false }, { id: "manage", title: "Manage Extensions…" },
-  ]);
-  f.extensions.sidePanels.w = { extensionId: "fixture" };
-  await f.api.showExtensionMenu("w", f.ext);
-  assert.equal(f.menus[1].find((item) => item.id === "sidePanel").title, "Close Side Panel");
-  await f.api.showExtensionMenu("w", { ...f.ext, enabled: false, pinned: false });
-  const disabled = f.menus[2];
-  assert.equal(disabled.find((item) => item.id === "options").enabled, false);
-  assert.equal(disabled.find((item) => item.id === "sidePanel"), undefined);
-  assert.equal(disabled.find((item) => item.id === "pin").title, "Pin to Toolbar");
-  assert.equal(disabled.find((item) => item.id === "enable").title, "Turn On");
-});
-
-test("extension context menu dispatches options, pin, panel and cancellation to their adapters", async () => {
-  const f = fixture();
-  for (const choice of ["options", "pin", "sidePanel", "manage", null]) {
-    f.choose(choice);
-    await f.api.showExtensionMenu("w", f.ext);
-    await settle();
-  }
-  assert.deepEqual(f.calls, [["tab", "w", { url: f.ext.optionsUrl }], ["configure", "fixture", "work", { pinned: false }], ["sidePanel", "w", "fixture"], ["settings", "extensions", "work"]]);
-});
-
-test("native toolbar overflow keeps extension order and routes selection with its tab anchor", async () => {
-  const f = fixture();
-  const anchor = { x: 90, y: 5, width: 28, height: 28 };
-  const { useNativeToolbarExtensions } = compile("./ToolbarExtensions.tsx", {
-    "@solara/shell": f.modules["@solara/shell"],
-    react: { useMemo: (fn) => fn(), useRef: (current) => ({ current }), useEffect: () => {} },
-    "../../lib/theme": { useTheme: () => ({}) },
-    "../../store/browser": { useBrowser: f.useBrowser },
-    "../media/cast": { useCastRoutes: () => [] },
-    "../layout/pageState": { usePages: (select) => select({ browsers: { 1: "a" } }) },
-    "./bridge": { setToolbarAnchor: () => {}, dropToolbarAnchor: () => {} },
-    "./state": {
-      useExtensions: f.useExtensions, useWindowExtensions: () => [f.ext], windowExtensions: () => [f.ext],
-      activateExtension: (...args) => f.calls.push(["activate", ...args]), openPinDialog: (...args) => f.calls.push(["pins", ...args]),
-      openManageExtensions: (...args) => f.calls.push(["manage", ...args]), openWebStore: (...args) => f.calls.push(["store", ...args]),
-    },
-  });
-  const toolbar = useNativeToolbarExtensions("w", "a", 0);
-  toolbar.onAnchors({ "*": [90, 5, 28, 28] });
-  for (const choice of ["open:fixture", "pin", "manage", "add", null]) {
-    f.choose(choice);
-    toolbar.onClick("ext-overflow", "press");
-    await settle();
-  }
-  assert.deepEqual(f.menus[0], [
-    { id: "open:fixture", title: "Fixture", symbol: "pin.fill" }, { separator: true },
-    { id: "pin", title: "Pin Extensions…", symbol: "pin" }, { id: "manage", title: "Manage Extensions…", symbol: "puzzlepiece.extension" },
-    { id: "add", title: "Add Extension…", symbol: "plus" },
-  ]);
-  assert.deepEqual(f.calls, [["activate", "w", f.ext, anchor, undefined, "a"], ["pins", "w"], ["manage", "w"], ["store", "w"]]);
-});
-
-
 test("Little Solara toolbar and action.openPopup use the existing native popup intent", async () => {
   const f = fixture();
   f.state.windows.w.kind = "small";
@@ -120,4 +57,30 @@ test("Little Solara toolbar and action.openPopup use the existing native popup i
     ["popup", { extensionId: "fixture", popupUrl: popup, profile: "work", tabId: "a", windowId: "w", anchor, requiresActive: false }],
     ["popup", { extensionId: "fixture", popupUrl: popup, profile: "work", tabId: "a", windowId: "w", anchor, requiresActive: true }],
   ]);
+});
+
+test("a dispatched extension menu action keeps its logical and engine profile across the JS bridge", () => {
+  const f = fixture();
+  let engine = "shared";
+  const handlers = compile("../settings/native/extensions.ts", {
+    "../../../store/browser": { useBrowser: f.useBrowser },
+    "../../extensions/state": {
+      extensionProfile: () => engine,
+      toggleSidePanel: (...args) => f.calls.push(["panel", ...args]),
+    },
+    "../../extensions/bridge": { openExtensionFromMenu: (...args) => f.calls.push(["open", ...args]) },
+  }).extensionsHandlers;
+  const select = () => {
+    handlers["extensions.activate"]("w", "fixture", "a", null, "work", "shared");
+    handlers["extensions.togglePanel"]("w", "fixture", "work", "shared");
+  };
+  f.state.windows.w.profileId = "personal";
+  select();
+  f.state.windows.w.profileId = "work";
+  engine = "different";
+  select();
+  assert.deepEqual(f.calls, []);
+  engine = "shared";
+  select();
+  assert.deepEqual(f.calls, [["open", "w", "fixture", "a"], ["panel", "w", "fixture"]]);
 });

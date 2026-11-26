@@ -104,6 +104,7 @@ enum NativeExtensionActionPopup {
     let host = ExtensionActionPopupHost(intent: intent, window: window, root: root)
     current = host
     emit?("onExtensionPopupChanged", ["windowId": intent.windowId, "extensionId": intent.extensionId, "tabId": intent.tabId as Any? ?? NSNull()])
+    NativeExtensionCatalog.publish()
     host.open()
     return current === host
   }
@@ -115,6 +116,7 @@ enum NativeExtensionActionPopup {
     host.end(restoreFocus: restoreFocus, focusPage: focusPage)
     settleHeldFieldBlurs(window: host.window)
     emit?("onExtensionPopupChanged", ["windowId": host.intent.windowId, "extensionId": NSNull(), "tabId": NSNull(), "reason": reason.rawValue])
+    NativeExtensionCatalog.publish()
   }
 
   static func anchorsChanged(window: NSWindow?, tabId: String?, anchors: [String: CGRect]) {

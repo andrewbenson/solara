@@ -9,8 +9,9 @@ import SolaraUI
 @MainActor
 enum NativeExtensionCatalog {
   static var catalog = ExtensionCatalogLifecycle()
-  static var actions: [Int: JSONValue] = [:]
-  static var emit: (() -> Void)?
+  private static var actionCache = ExtensionActionCache()
+  static var emit: ((_ toolbar: Bool, _ menus: Bool) -> Void)?
+  static let presentation = ExtensionPresentation()
   private static var lifecycle: Int?
   private static var observed: Store?
   private static var subscription: Int?
@@ -26,11 +27,10 @@ enum NativeExtensionCatalog {
   private static var nextWaiters: [String: [() -> Void]] = [:]
   static var legacyPanels: [String: String] = [:]
   static var legacyPopup: String?
-  private static var actionTabs: [Int: String] = [:]
-  private static var published: (lists: JSONValue, states: JSONValue)?
-
+  private static weak var pageIssuer: PageIssuer?
 
   static var current: Bool { NativeStoreHandle.ownsWorkspace && NativeStoreHandle.store === observed && observed != nil }
+  static var polling: Bool { timer != nil }
   static var active: Bool { NSApp.isActive }
 
   static func start() {
@@ -56,6 +56,10 @@ enum NativeExtensionCatalog {
       let profile = note.userInfo?["profile"] as? String ?? ""
       MainActor.assumeIsolated { if current { refresh(profile) } }
     })
+    PageRegistry.shared.observe { event in
+      guard current, case .retired(let registration) = event, actionCache.retire(registration) else { return }
+      publish()
+    }
     SettingsJS.shared.onConnect { publish(force: true) }
     lifecycle = NativeStoreHandle.subscribeLifecycle { reconcile() }
   }
@@ -72,8 +76,11 @@ enum NativeExtensionCatalog {
       waiters.removeAll()
       nextWaiters.removeAll()
       for completion in cancelled { completion() }
-      actions.removeAll()
-      actionTabs.removeAll()
+      actionCache = ExtensionActionCache()
+      pageIssuer?.onBrowserReady = nil
+      pageIssuer = nil
+      pendingAll = false
+      pendingProfiles.removeAll()
       timer?.invalidate()
       timer = nil
       flush?.cancel()
@@ -87,7 +94,7 @@ enum NativeExtensionCatalog {
             defer { last = focused }
             return last != focused
           }
-          guard focusMoved || affectsActions(commit) else { return }
+          guard focusMoved || ExtensionPresentation.affectsActions(commit) || ExtensionPresentation.affectsContext(commit) else { return }
           let first = queued.withLock { pending in
             defer { pending = true }
             return !pending
@@ -101,30 +108,38 @@ enum NativeExtensionCatalog {
       }
     }
     guard let store else { publish(); return }
+    if let issuer = PageIssuer.shared, issuer.store === store, pageIssuer !== issuer {
+      pageIssuer?.onBrowserReady = nil
+      pageIssuer = issuer
+      let generation = epoch
+      issuer.onBrowserReady = { [weak issuer] binding, browserId in
+        guard current, generation == epoch, let issuer, PageIssuer.shared === issuer,
+          let registration = binding.registration else { return }
+        let state = issuer.store.state
+        guard let window = state.tabs[binding.tabId]?.windowId, state.activeTabId(window) == binding.tabId else { return }
+        refreshAction(window) { (registration, browserId) }
+        publish()
+      }
+    }
     for profile in catalog.loadProfiles(store.state.windowOrder.map { profile($0) }) {
       refresh(profile)
       watch(profile)
     }
     refreshActions()
-    publish()
   }
 
-  private nonisolated static func affectsActions(_ commit: Commit) -> Bool {
-    let changes = commit.changes
-    if !changes.windows.isEmpty || !changes.tabs.removed.isEmpty || changes.tabs.reordered || !changes.lists.isEmpty
-      || !changes.live.removed.isEmpty { return true }
-    let state = commit.state
-    guard !changes.tabs.upserted.isEmpty || !changes.live.upserted.isEmpty else { return false }
-    let upserted = Set(changes.tabs.upserted).union(changes.live.upserted)
-    return state.windowOrder.contains { window in state.activeTabId(window).map(upserted.contains) == true }
-  }
-
-  static func page(_ tab: String) -> SolaraCoreWebView? {
-    guard current, let issuer = PageIssuer.shared, let binding = issuer.binding(tabId: tab),
-      issuer.ensurePageEstablished(binding), issuer.isCurrent(binding) else { return nil }
+  private static func actionTarget(_ tab: String) -> (PageRegistration, Int)? {
+    guard current, let issuer = PageIssuer.shared, issuer.store === observed,
+      let binding = issuer.binding(tabId: tab), let registration = binding.registration,
+      binding.engine == .chromium, issuer.ensurePageEstablished(binding), issuer.isCurrent(binding) else { return nil }
     let view = binding.host == .pooled ? TabPoolHost.shared.pageView(tab) : binding.owner as? NSView
     guard let page = NativeOmniboxExtensionActions.page(in: view), page.transferKey == tab else { return nil }
-    return page
+    return (registration, Int(page.browserId))
+  }
+
+  static func actionState(tab: String) -> JSONObject? {
+    guard !actionCache.states.isEmpty, let (registration, browserId) = actionTarget(tab) else { return nil }
+    return actionCache.state(browserId: browserId, registration: registration)
   }
 
   static func popupId(_ window: String) -> String? {
@@ -169,8 +184,7 @@ enum NativeExtensionCatalog {
       }
       guard current, generation == epoch else { return }
       let again = catalog.finish(profile, request: request, rows: rows)
-      publish()
-      refreshActions()
+      refreshActions([profile])
       let completed = waiters.removeValue(forKey: profile) ?? []
       waiters[profile] = nextWaiters.removeValue(forKey: profile)
       if again { refresh(profile) }
@@ -225,9 +239,9 @@ enum NativeExtensionCatalog {
   }
 
   static func refreshActions(_ profiles: Set<String>? = nil) {
+    guard current, let store = observed else { return }
     if let profiles { pendingProfiles.formUnion(profiles) } else { pendingAll = true }
     if actionRunning { actionAgain = true; return }
-    guard current, let store = observed else { return }
     actionRunning = true
     repeat {
       actionAgain = false
@@ -235,31 +249,34 @@ enum NativeExtensionCatalog {
       pendingAll = false
       pendingProfiles.removeAll()
       for window in store.state.windowOrder where only == nil || only!.contains(profile(window)) {
-        let popup = popupId(window)
-        let ids = visible(window).filter { $0["hasAction"] != .bool(false) && ($0["pinned"]?.truthy == true || $0["id"]?.string == popup || $0["id"]?.string == legacyPopup) }.compactMap { $0["id"]?.string }
-        guard let tab = store.state.activeTabId(window), let web = page(tab), web.browserId != 0, !ids.isEmpty else { continue }
-        let raw = SolaraCoreHost.actionStates(browserId: web.browserId, extensions: ids)
-        if raw["error"] == nil, let data = try? JSONSerialization.data(withJSONObject: raw), let value = try? JSONValue.parse(data) {
-          actions[Int(web.browserId)] = value
-          actionTabs[Int(web.browserId)] = tab
+        refreshAction(window) {
+          store.state.activeTabId(window).flatMap(actionTarget)
         }
       }
     } while actionAgain
     actionRunning = false
-    for (browserId, tab) in actionTabs where store.state.tabs[tab] == nil || page(tab).map({ Int($0.browserId) }) != browserId {
-      actions[browserId] = nil
-      actionTabs[browserId] = nil
-    }
     publish()
   }
 
+  private static func refreshAction(_ window: String, target: () -> (PageRegistration, Int)?) {
+    let popup = popupId(window)
+    let ids = visible(window).filter {
+      $0["hasAction"] != .bool(false) && ($0["pinned"]?.truthy == true || $0["id"]?.string == popup || $0["id"]?.string == legacyPopup)
+    }.compactMap { $0["id"]?.string }
+    actionCache.refresh(ids: ids, target: target) { browserId, ids in
+      guard let browserId = Int32(exactly: browserId) else { return nil }
+      let raw = SolaraCoreHost.actionStates(browserId: browserId, extensions: ids)
+      guard raw["error"] == nil, let data = try? JSONSerialization.data(withJSONObject: raw) else { return nil }
+      return try? JSONValue.parse(data)
+    }
+  }
+
   static func publish(force: Bool = false) {
+    let changes = presentation.publish(store: current ? observed : nil, lists: catalog.lists, states: actionCache.states,
+      popup: popupId, sources: NewTabSources.shared, force: force)
+    if changes.toolbar || changes.windows { emit?(changes.toolbar, changes.catalog || changes.windows) }
+    guard changes.catalog, SettingsJS.shared.connected else { return }
     let lists = JSONValue.object(JSONObject(catalog.lists.map { ($0.key, .array($0.value.map(JSONValue.object))) }))
-    let states = JSONValue.object(JSONObject(actions.map { (String($0.key), $0.value) }))
-    if !force, let published, published.lists == lists, published.states == states { return }
-    published = (lists, states)
-    emit?()
-    guard SettingsJS.shared.connected else { return }
-    SettingsJS.shared.fire("extensions.catalog", lists.foundation, states.foundation)
+    SettingsJS.shared.fire("extensions.catalog", lists.foundation)
   }
 }

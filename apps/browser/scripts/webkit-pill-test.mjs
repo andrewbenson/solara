@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdtempSync, rmSync, mkdirSync, writeFileSync } from "node:fs";
 import { createServer } from "node:http";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
@@ -43,14 +43,10 @@ const click = (x, y) => act("mouse:down:" + x + "," + y + ",1").then(() => settl
 const bar = () => T.devToolbar("w1", "t0").then((j) => JSON.parse(j));
 const engine = () => st().tabs.t0.engine ?? "chromium";
 const browserId = () => Number(Object.entries(ac.pageState.getState().browsers).find(([, tab]) => tab === "t0")?.[0] ?? 0);
-const pin = () => {
-  const E = ac.extensions.useExtensions;
-  const fake = { id: "fixtureext", name: "Fixture Extension", enabled: true, state: "ENABLED", hasAction: true, pinned: true, icon: "", actionIcon: "", optionsUrl: "", incognito: false, incognitoSplit: false };
-  const keys = new Set([...Object.keys(E.getState().lists), "default", ...Object.keys(st().profiles)]);
-  E.setState({ lists: Object.fromEntries([...keys].map((k) => [k, [fake]])) });
-};
+
 `;
 let inst = null;
+let extensionId = null;
 const run = (body, timeout = 30000) => inst.eval(`${HELPERS}\n${body}`, { timeout });
 const until = async (what, body, accept, ms = 8000) => {
   const end = Date.now() + ms;
@@ -62,7 +58,7 @@ const until = async (what, body, accept, ms = 8000) => {
   }
   throw new Error(`${what}: ${JSON.stringify(last)}`);
 };
-const env = { SOLARA_NATIVE_SHELL: "1", SOLARA_NATIVE_TOP_STRIP: "1" };
+const env = { ...(process.env.SOLARA_EXTENSION_ACTION_POLL ? { SOLARA_EXTENSION_ACTION_POLL: process.env.SOLARA_EXTENSION_ACTION_POLL } : {}), SOLARA_NATIVE_SHELL: "1", SOLARA_NATIVE_TOP_STRIP: "1" };
 const ids = (b) => (b?.extensions ?? []).map((e) => e.id);
 
 try {
@@ -70,8 +66,15 @@ try {
   await sleep(2500);
 
   await rep.check("(a) a Chromium page shows its pinned extension in the toolbar", async () => {
-    await run(`pin(); return settle(500);`);
-    const b = await until("the extension button", `return bar();`, (b) => ids(b).includes("ext:fixtureext"));
+    const directory = join(scratch, "extension");
+    mkdirSync(directory, { recursive: true });
+    writeFileSync(join(directory, "manifest.json"), JSON.stringify({ manifest_version: 3, name: "WebKit Pill Fixture", version: "1.0", action: {} }));
+    const installed = await run(`return globalThis.expo.modules.SolaraExtensions.install(${JSON.stringify(directory)}, "");`);
+    if (!/^[a-p]{32}$/.test(installed?.id) || installed.error) throw new Error(JSON.stringify(installed));
+    extensionId = installed.id;
+    await run(`return T.extensionCommand(JSON.stringify({ command: "setPinned", profile: "", id: ${JSON.stringify(extensionId)}, pinned: true }));`);
+    if (!await run(`return T.devExtensionCatalog().then((catalog) => catalog.native);`)) throw new Error("native catalog unavailable");
+    const b = await until("the extension button", `return bar();`, (b) => ids(b).includes(`ext:${extensionId}`));
     if (ids(b).includes("webkit")) throw new Error(JSON.stringify(b));
     return { extensions: ids(b) };
   });
@@ -79,7 +82,7 @@ try {
   await rep.check("(b) in WebKit the extensions give way to the WebKit pill", async () => {
     await run(`ac.runCommand({ command: "togglePageEngine", arg: null, windowId: "w1" }); return true;`);
     await until("the WebKit engine", `return engine();`, (e) => e === "webkit", 15000);
-    const b = await until("the pill", `pin(); return bar();`, (b) => ids(b).length === 1 && ids(b)[0] === "webkit" && b.extensions[0].frame[2] > 0, 10000);
+    const b = await until("the pill", `return bar();`, (b) => ids(b).length === 1 && ids(b)[0] === "webkit" && b.extensions[0].frame[2] > 0, 10000);
     const pill = b.extensions[0];
     if (pill.label !== "WebKit" || pill.frame[2] < 60) throw new Error(JSON.stringify(b));
     return { pill: pill.frame };
@@ -106,7 +109,7 @@ try {
   await rep.check("(e) Open Page in Chromium moves the page back and the extension returns", async () => {
     await run(`return T.devInfoPopover("press");`);
     await until("the Chromium engine", `return engine();`, (e) => e === "chromium", 15000);
-    const b = await until("the extension back", `pin(); return bar();`, (b) => ids(b).includes("ext:fixtureext") && !ids(b).includes("webkit"), 10000);
+    const b = await until("the extension back", `return bar();`, (b) => ids(b).includes(`ext:${extensionId}`) && !ids(b).includes("webkit"), 10000);
     if (b.infoPopover !== null) throw new Error(JSON.stringify(b));
     const id = await until("a Chromium browser", `return browserId();`, (id) => id > 0, 10000);
     return { extensions: ids(b), browserId: id };
@@ -116,7 +119,7 @@ try {
     await run(`st().updateSettings({ tabLayout: "sidebar", addressBar: "sidebar" }); return settle(1500);`);
     await run(`ac.runCommand({ command: "togglePageEngine", arg: null, windowId: "w1" }); return true;`);
     await until("the WebKit engine", `return engine();`, (e) => e === "webkit", 15000);
-    const s = await until("the sidebar pill", `pin(); return B.sample("w1").then((j) => JSON.parse(j));`,
+    const s = await until("the sidebar pill", `return B.sample("w1").then((j) => JSON.parse(j));`,
       (s) => (s?.["field.sample"]?.buttons ?? []).some((b) => b.id === "webkit"), 10000);
     const buttons = s["field.sample"].buttons;
     const pill = buttons.find((b) => b.id === "webkit");
@@ -126,6 +129,7 @@ try {
 } catch (e) {
   rep.record("run", { error: e });
 } finally {
+  if (inst && extensionId) await run(`return globalThis.expo.modules.SolaraExtensions.uninstall(${JSON.stringify(extensionId)}, "");`).catch(() => null);
   await inst?.quit();
   server.close();
 }

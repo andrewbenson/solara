@@ -189,7 +189,7 @@ test("tab changes schedule no independent compaction", () => {
   assert.equal(timers.size, 0);
   assert.equal(f.gc, 0);
   assert.equal(f.engine, 0);
-  assert.equal(f.listeners.length, 1, "only native Settings subscribes to browser state");
+  assert.equal(f.listeners.length, 0, "native Settings no longer mirrors the focused extension profile");
 });
 
 test("tab changes leave an in-flight compaction timer alone", async () => {

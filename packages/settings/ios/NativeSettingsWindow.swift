@@ -163,7 +163,7 @@ enum NativeSettingsWindow {
     made.profileForPane = { pane, current in
       guard pane == .extensions else { return nil }
       if current.pane == .extensions, let profile = current.profileId { return profile }
-      return SettingsJS.shared.latestValue("extensions.defaultProfile") as? String
+      return NativeExtensionCommands.focusedProfile
     }
     made.onPaneAppear = { place in
       guard !SettingsPrewarm.warming else { return }

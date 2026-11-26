@@ -844,7 +844,13 @@ enum MainMenu {
                              extensions: [String], history: [[MenuState.Entry]])?
 
   static func refresh() {
-    let state = MenuState.current
+    var state = MenuState.current
+    let catalogRows: [(id: String, title: String, icon: String?)]? = MainActor.assumeIsolated {
+      (ShellMenus.extensionCatalog?()).map { rows in
+        rows.map { (id: $0["id"] as? String ?? "", title: $0["title"] as? String ?? "", icon: $0["icon"] as? String) }
+      }
+    }
+    if let catalogRows { state.extensions = catalogRows }
     let last = built
     let extensionKeys = state.extensions.map { "\($0.id)|\($0.title)|\($0.icon ?? "")" }
     let history = [state.recentlyClosed, state.recentlyClosedGroups]

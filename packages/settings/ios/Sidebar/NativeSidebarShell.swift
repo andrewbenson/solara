@@ -754,9 +754,9 @@ final class NativeLayoutChrome {
     sidebar.incognito = window.incognito
     sidebar.tidy = CommandContext(state: state, windowId: shell.windowId).canTidyPins
     sidebar.cleaned = state.cleanedTabs.filter { $0.windowId == shell.windowId }.count
+    sidebar.pip = window.tabIds.filter { NowPlayingStore.shared.pictureInPicture[$0] != nil }
+    sidebar.capture = NowPlayingStore.shared.capture
     if let feed = sidebarFeed {
-      sidebar.pip = feed.pip
-      sidebar.capture = feed.capture
       sidebar.badge = feed.badge
       sidebar.upsell = feed.profileId == window.profileId ? feed.upsell : nil
       sidebar.product = feed.product

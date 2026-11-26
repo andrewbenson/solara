@@ -522,7 +522,6 @@ final class TabPoolHost {
       guard issuer.ensurePageEstablished(binding), issuer.isCurrent(binding) else { return false }
       if name == "onPagePhysical" {
         guard let page = payload["page"] as? NSView else { return false }
-        issuer.transferExecution(from: page, to: binding)
         issuer.associateNativePage(binding, page: page)
         return true
       }

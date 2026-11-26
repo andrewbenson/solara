@@ -327,8 +327,9 @@ public final class TabSleepRunner {
       feed.handled >= max(facts.latchedThrough, facts.newestEventSeq) else { return "awaiting page facts" }
     if feed.keep.capturing { return "capturing" }
     if feed.keep.newTabShown { return "kept for Forward" }
-    if feed.keep.pip { return "picture in picture" }
+    if NowPlayingStore.shared.pictureInPicture[id] != nil || feed.keep.pip { return "picture in picture" }
     if feed.keep.displayRequest { return "choosing a screen to share" }
+    if let reason = NowPlayingStore.shared.protectionReason(tabId: id, pinned: tab.pinned) { return reason }
     if feed.keep.media == .playing || (tab.pinned && feed.keep.media == .present) { return "media" }
     return nil
   }

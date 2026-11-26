@@ -977,6 +977,7 @@ const backToA = async () => {
 };
 const lastEvent = async (tabId, name, test = () => true) => (await eventsOf(tabId)).findLast((x) => x.name === name && test(x.payload ?? {})) ?? null;
 const live = (tabId) => evalApp(`return ac.store.getState().live["${tabId}"] ?? null`);
+const nativeMedia = (kind) => evalApp(`return expo.modules.SolaraMedia.probe(${JSON.stringify(kind)}, "").then(JSON.parse)`);
 const pipWindows = () => cef(`devPictureInPicture()`).catch(() => null);
 const startVideo = async (tabId, audio) => {
   const t = await pageFor(tabId, "/video");
@@ -5992,6 +5993,8 @@ try {
     try {
     const playing = await until("onNowPlaying playing", async () =>
       (await eventsOf(first.id)).findLast((x) => x.name === "nowPlaying" && x.payload?.state?.title === "NN Tone" && x.payload?.state?.playbackState === "playing"), 10000);
+    await until("Swift owns the playing session", async () =>
+      (await nativeMedia("media.nowPlaying")).find((row) => row.tabId === first.id && row.title === "NN Tone" && row.playbackState === "playing"), 5000);
     await evalApp(`return ac.webviews.get("${first.id}").mediaCommand("pause")`);
     await until("paused by the app", async () => {
       const r = await cdp(t, "Runtime.evaluate", { expression: "document.getElementById('tone').paused", returnByValue: true });
@@ -6050,6 +6053,7 @@ try {
       const t = await startVideo(tab.id, false);
       const click = await pipByHand(tab.id);
       const on = await until("onPictureInPicture video", async () => lastEvent(tab.id, "pictureInPicture", (p) => p.kind === "video" && p.active), 5000);
+      await until("Swift owns the video PiP", async () => (await nativeMedia("media.pictureInPicture"))[tab.id] === "video", 5000);
       const element = (await cdp(t, "Runtime.evaluate", { expression: "document.pictureInPictureElement?.id ?? null", returnByValue: true })).result.value;
       const video = await until("Chrome's PiP window, styled", async () => (await pipWindows())?.find((w) => w.video && w.styled) ?? null, 5000)
         .catch(async (e) => { throw new Error(`${e.message}: ${JSON.stringify(await pipWindows())}`); });
@@ -6080,6 +6084,7 @@ try {
         const e = await lastEvent(tab.id, "pictureInPicture");
         return e && e.payload.kind === "document" && !e.payload.active ? e : null;
       }, 5000);
+      await until("Swift cleared the PiP", async () => !(await nativeMedia("media.pictureInPicture"))[tab.id], 5000);
       return { clickAt: click.at, on: on.payload, element, window: { frame: video.frame, level: video.level, alpha: video.alpha }, menu, off: off.payload,
         docOn: docOn.payload, docWindow: { title: docWindow.title, alpha: docWindow.alpha }, docOff: docOff.payload };
     } finally {

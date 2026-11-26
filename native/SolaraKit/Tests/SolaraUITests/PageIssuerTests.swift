@@ -6,7 +6,7 @@ import Testing
 @testable import SolaraUI
 
 @MainActor
-private final class IssuerProducer {
+final class IssuerProducer {
   var commands: [PageCommand] = []
   var created: [Bool] = []
   var clears = 0
@@ -21,7 +21,7 @@ private final class IssuerProducer {
 }
 
 @MainActor
-private struct IssuerFixture {
+struct IssuerFixture {
   let store: Store
   let issuer: PageIssuer
   let producer: IssuerProducer
@@ -557,7 +557,7 @@ private func heldPageAnswer(_ command: PageCommand = .livePage, incognito: Bool,
     let fixture = try IssuerFixture()
     let revision = fixture.store.rev
     let first = try #require(fixture.issuer.reserveEvent(fixture.binding, name: "onMediaAccess", payload: ["camera": true]))
-    let second = try #require(fixture.issuer.reserveEvent(fixture.binding, name: "onNowPlaying", payload: [:]))
+    let second = try #require(fixture.issuer.reserveEvent(fixture.binding, name: "onFullscreen", payload: [:]))
     #expect(first == 1)
     #expect(second == 2)
     #expect(fixture.store.pageFacts(fixture.id)?.latchedThrough == second)
@@ -581,9 +581,9 @@ private func heldPageAnswer(_ command: PageCommand = .livePage, incognito: Bool,
     let fixture = try IssuerFixture()
     let first = try #require(fixture.issuer.reserveEvent(fixture.binding, name: "onMediaAccess", payload: ["camera": true]))
     try fixture.store.dispatch(Command("updateTab", [.string(fixture.id), ["unloaded": true]]))
-    #expect(fixture.issuer.reserveEvent(fixture.binding, name: "onNowPlaying", payload: [:]) == nil)
+    #expect(fixture.issuer.reserveEvent(fixture.binding, name: "onFullscreen", payload: [:]) == nil)
     try fixture.store.dispatch(Command("updateTab", [.string(fixture.id), ["unloaded": false]]))
-    let next = try #require(fixture.issuer.reserveEvent(fixture.binding, name: "onNowPlaying", payload: [:]))
+    let next = try #require(fixture.issuer.reserveEvent(fixture.binding, name: "onFullscreen", payload: [:]))
     #expect(next == first + 1)
     #expect(fixture.store.pageFacts(fixture.id)?.latchedThrough == next)
   }
@@ -678,7 +678,7 @@ private func heldPageAnswer(_ command: PageCommand = .livePage, incognito: Bool,
       owner: fixture.producer, context: fixture.binding.context, perform: fixture.producer.perform))
     #expect(next.sessionGeneration != fixture.binding.sessionGeneration)
     #expect(next.registrationGeneration > fixture.binding.registrationGeneration)
-    fixture.issuer.transferExecution(from: physicalPage, to: next)
+    fixture.issuer.associateNativePage(next, page: physicalPage)
     #expect(next.executedNavigationSeq == nil)
     #expect(fixture.issuer.isCurrent(next))
   }
@@ -735,7 +735,6 @@ private func heldPageAnswer(_ command: PageCommand = .livePage, incognito: Bool,
         let next = try #require(fixture.issuer.attach(tabId: fixture.id, engine: engine,
           host: sourceHost == .pooled ? .reactNative : .pooled, owner: nextProducer,
           context: fixture.binding.context, perform: nextProducer.perform))
-        fixture.issuer.transferExecution(from: physicalPage, to: next)
         fixture.issuer.associateNativePage(next, page: physicalPage)
         #expect(next.sessionGeneration != fixture.binding.sessionGeneration)
         #expect(next.registrationGeneration > fixture.binding.registrationGeneration)
@@ -762,7 +761,7 @@ private func heldPageAnswer(_ command: PageCommand = .livePage, incognito: Bool,
       let nextProducer = IssuerProducer()
       let next = try #require(fixture.issuer.attach(tabId: fixture.id, engine: engine, host: .pooled, owner: nextProducer,
         context: context, perform: nextProducer.perform))
-      fixture.issuer.transferExecution(from: physicalPage, to: next)
+      fixture.issuer.associateNativePage(next, page: physicalPage)
       #expect(next.executedNavigationSeq == executedA)
       #expect(next.executedNavigationSeq != context.navigationSeq)
       #expect(fixture.issuer.follow(next))

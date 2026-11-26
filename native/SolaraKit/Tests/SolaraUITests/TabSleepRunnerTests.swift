@@ -122,7 +122,7 @@ import Testing
     issuer.beginRuntime(firstRuntime)
     issuer.noteDelivery(binding)
     #expect(issuer.report(binding, report: ["type": "ready", "browserId": 100]))
-    let mediaEvent = try #require(issuer.reserveEvent(binding, name: "onNowPlaying", payload: ["playbackState": "paused"]))
+    let mediaEvent = try #require(issuer.reserveEvent(binding, name: "onMediaAccess", payload: [:]))
     issuer.noteDelivery(binding)
     fixture.epoch = fixture.store.registerKeepAliveRuntime()
     try fixture.feed("target0", handled: mediaEvent, keep: ["capturing": false, "newTabShown": false,

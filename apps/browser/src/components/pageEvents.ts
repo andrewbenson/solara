@@ -24,7 +24,6 @@ import { openFromPage } from "./layout/openFromPage";
 import { closeFolderPanelIn } from "./sidebar/tileFolderUi";
 import { answerExternalApp, shouldPromptForPopups, showAutofillPrompt, showPasswordPrompt } from "./site/Prompts";
 import { requestDisplayMedia } from "./media/SharePicker";
-import { setNowPlaying, setPictureInPictureState } from "./media/state";
 import { noteScroll, revealToolbar } from "./layout/toolbarAutoHide";
 import { closeLittleSolaraOnEscape } from "./littleSolara/actions";
 import { closePeekOnEscape } from "./peek/actions";
@@ -60,8 +59,6 @@ export type PageEventName =
   | "onFindResult"
   | "onFavicon"
   | "onMedia"
-  | "onNowPlaying"
-  | "onPictureInPicture"
   | "onDisplayMediaRequest"
   | "onOpenWindow"
   | "onStatus"
@@ -342,8 +339,6 @@ export function pageEventHandlers(session: PageSession): PageEventHandlers {
       if (session.factsOwner === "js") store().updateLive(tabId, { playingAudio: playing });
       if (tab()?.muted && !muted) void webviews.get(tabId)?.setMuted(true);
     },
-    onNowPlaying: (state) => setNowPlaying(tabId, state),
-    onPictureInPicture: (state) => setPictureInPictureState(tabId, state),
     onDisplayMediaRequest: (request) => requestDisplayMedia(tabId, request),
     onOpenWindow: (request: OpenWindowRequest) => {
       const t = tab();

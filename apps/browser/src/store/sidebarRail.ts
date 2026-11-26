@@ -72,7 +72,7 @@ export function commitSidebarWidth(windowId: string, width: number, nativeShell 
 
 export function sidebarPositionSupported(windowId?: string): boolean {
   const app = requireOptionalNativeModule<{ apiVersion?: number; sidebarPosition?: boolean }>("SolaraApp");
-  return app?.apiVersion === 84 && app.sidebarPosition === true && nativeOwnsWorkspace() && (windowId === undefined || windowNativeLayout(windowId));
+  return app?.apiVersion === 85 && app.sidebarPosition === true && nativeOwnsWorkspace() && (windowId === undefined || windowNativeLayout(windowId));
 }
 
 export function sidebarPositionOf(window: Pick<BrowserWindow, "sidebarPosition"> | undefined, settings: Pick<Settings, "sidebarPosition" | "fileOwn">): "left" | "right" {

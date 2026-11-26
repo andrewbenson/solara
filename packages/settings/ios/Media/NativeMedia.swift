@@ -25,16 +25,6 @@ enum NativeMedia {
     MediaImages.favicons.loader = { request in
       return await NativeHistoryCatalog.favicon(page: request.url, source: request.favicon, profileId: request.profileId, dark: request.dark)
     }
-    HostedViews.register(sidebarPlayer) { windowId in
-      let view = SidebarPlayerView()
-      var tabId = ""
-      view.onAction = { player("sidebarPlayer", windowId, tabId, $0) }
-      return content(sidebarPlayer, windowId, view) { json in
-        guard let state = MediaPlayerState.decode(json) else { return }
-        tabId = state.tabId
-        view.update(state)
-      }
-    }
     HostedViews.register(shareBar) { windowId in
       let view = ShareBarView()
       var target: (capturer: String, tabId: String) = ("", "")
@@ -55,14 +45,16 @@ enum NativeMedia {
         view.update(state)
       }
     }
-    HostedViews.register(hoverPlayer) { windowId in
-      let view = MiniPlayerView()
+    HostedViews.register("media.tabBadge") { _ in
+      let view = TabBadgesView()
       var tabId = ""
-      view.onAction = { player("hoverPlayer", windowId, tabId, $0) }
-      return content(hoverPlayer, windowId, view) { json in
-        guard let state = MediaPlayerState.decode(json) else { return }
-        tabId = state.tabId
-        view.update(state)
+      let update: @MainActor () -> Void = {
+        view.set(pip: false, capture: NowPlayingStore.shared.capture[tabId], iconSize: 16, badge: .clear, badgeGlyph: .clear)
+      }
+      let listener = NativeMediaStack.listen(update)
+      return HostedContent(view: view, onUnmount: { NativeMediaStack.stopListening(listener) }, takesFocus: false) { json in
+        tabId = (try? JSONDecoder().decode(String.self, from: Data(json.utf8))) ?? ""
+        update()
       }
     }
     HostedViews.register(castPicker) { windowId in
@@ -160,12 +152,6 @@ enum NativeMedia {
     }
   }
 
-  static func player(_ source: String, _ windowId: String, _ tabId: String, _ action: MediaAction) {
-    var extra: [String: Any] = ["action": action.name]
-    if let seconds = action.seconds { extra["seconds"] = seconds }
-    NativeMedia.action(windowId, source, tabId, extra)
-  }
-
   static func action(_ windowId: String, _ name: String, _ tabId: String = "", _ extra: [String: Any] = [:]) {
     let payload = MediaPayload(extra)
     Task { @MainActor in
@@ -174,6 +160,10 @@ enum NativeMedia {
   }
 
   static func probe(kind: String, windowId: String) -> String {
+    if kind == "media.pictureInPicture" {
+      let data = try? JSONSerialization.data(withJSONObject: NowPlayingStore.shared.pictureInPicture)
+      return data.flatMap { String(data: $0, encoding: .utf8) } ?? "{}"
+    }
     if kind == "media.nowPlaying" {
       let rows: [[String: Any]] = NowPlayingStore.shared.entries.map { id, entry in
         ["tabId": id, "playbackState": entry.report.playbackState, "controllable": entry.report.controllable,

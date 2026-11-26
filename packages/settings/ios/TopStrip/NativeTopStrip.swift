@@ -241,6 +241,7 @@ final class TopStripHost {
   private var hostState: StripHostState?
   private var state: BrowserState?
   private var listener: Int?
+  private var mediaListener: UUID?
   var storeSubscriptions: Int { listener == nil ? 0 : 1 }
   private let commits = TopStripCommits()
   private var markUri: String?
@@ -264,6 +265,7 @@ final class TopStripHost {
     view.onAction = { [weak self] action in self?.handle(action) }
     view.dragBridge = TopStripDrag.shared
     commits.host = self
+    mediaListener = NativeMediaStack.listen { [weak self] in self?.setNeedsRender() }
     #if SOLARA_PROBES
     NativeWorkCounters.host(self, windowId: windowId, kind: takesDrops ? "topStrip" : "topStripPeek") { host in
       (!host.probeStopped, (host.listener == nil ? 0 : 1) + (host.pagerObserver == nil ? 0 : 1))
@@ -285,6 +287,8 @@ final class TopStripHost {
     guard !stopped else { return }
     stopped = true
     commits.host = nil
+    NativeMediaStack.stopListening(mediaListener)
+    mediaListener = nil
     view.onAction = { _ in }
     view.stop()
     #if SOLARA_PROBES
@@ -326,6 +330,7 @@ final class TopStripHost {
     guard !stopped, renderingEnabled, var hostState, let state = state ?? NativeStoreHandle.store?.state else { return }
     self.state = state
     if let pageWidth { hostState.pageWidth = pageWidth }
+    hostState.capture = NowPlayingStore.shared.capture
     view.update(state: state, host: hostState)
   }
 

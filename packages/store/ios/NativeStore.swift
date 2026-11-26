@@ -185,6 +185,16 @@ public final class NativeStore: Sendable {
         let issuer = PageIssuer(store: store, deliver: { work in host.deliverPageCallback(work) })
         PageIssuer.shared = issuer
         RNPageReports.install(issuer: issuer)
+        _ = NativeStoreHandle.subscribeLifecycle { [weak issuer] in
+          if NativeStoreHandle.frozen || !NativeStore.ownsWorkspace { issuer?.endMedia() }
+        }
+        _ = store.subscribe { [weak issuer] commit in
+          guard !commit.changes.tabs.isEmpty || !commit.changes.windows.isEmpty else { return }
+          Task { @MainActor in
+            guard let issuer, NativeStore.ownsWorkspace, PageIssuer.shared === issuer else { return }
+            issuer.pruneMedia()
+          }
+        }
       }
       shared = NativeStore(host: host, launch: launch, folder: folder)
       NativeSettingsHandle.active = true

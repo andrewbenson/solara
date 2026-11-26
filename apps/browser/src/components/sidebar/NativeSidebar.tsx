@@ -28,9 +28,6 @@ import { closeAllTabs, openOverflowMenu, openSidebarMenu, openTabMenu, runGroupM
 import { applyNativeRenameState, resetNativeRenames } from "./renameMirror";
 import { setSidebarUi, sidebarUi, useSidebarUi } from "./state";
 import { useSidebarTokens } from "./tokens";
-import "../media/SidebarPlayer";
-import { useMedia } from "../media/state";
-import { usePages } from "../layout/pageState";
 import { publishNativeLive, runNativeLive } from "./nativeLive";
 import { tidyPins } from "./tidyPinsUi";
 import { downloadsIn } from "../../store/ui";
@@ -318,18 +315,6 @@ export const NativeSidebar = memo(function NativeSidebar({ windowId, profileId, 
 
   const pages = usePageLooks(windowId);
   const tokens = useSidebarTokens();
-  const pip = useMedia((m) => Object.keys(m.pipOpen).filter((id) => m.pipOpen[id]).sort().join(","));
-  const capture = usePages(
-    useShallow((p) => {
-      const out: Record<string, "screen" | "camera"> = {};
-      for (const id of Object.keys(p.pages)) {
-        const access = p.pages[id]?.mediaAccess;
-        if (access) out[id] = access.screen ? "screen" : "camera";
-      }
-      return out;
-    }),
-  );
-
   const state = useMemo(() => {
     return JSON.stringify(sidebarHostProps({
       profileId,
@@ -356,11 +341,9 @@ export const NativeSidebar = memo(function NativeSidebar({ windowId, profileId, 
       developer: split(developer),
       newTabMark: Image.resolveAssetSource(NEW_TAB_MARK)?.uri ?? null,
       pages,
-      pip: split(pip),
-      capture,
       badge: [tokens.badge, tokens.badgeGlyph],
     }));
-  }, [pip, capture, tokens.badge, tokens.badgeGlyph, pages, theme, glow.shadowColor, glow.shadowOpacity, glow.shadowRadius, profileId, selection, loading, playing, sleeping, closeHint, renaming, addressBar, tidy, clear, iconRing, newTabAtTop, cleaned, upsell, engines, developer, adjustInk]);
+  }, [tokens.badge, tokens.badgeGlyph, pages, theme, glow.shadowColor, glow.shadowOpacity, glow.shadowRadius, profileId, selection, loading, playing, sleeping, closeHint, renaming, addressBar, tidy, clear, iconRing, newTabAtTop, cleaned, upsell, engines, developer, adjustInk]);
 
   const chrome = useShellChrome(windowId, addressBar, theme);
   if (headless) return <NativeSidebarFeed windowId={windowId} state={state} chrome={chrome} addressBar={addressBar} />;

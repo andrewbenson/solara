@@ -58,6 +58,7 @@ const deadline = async (name, operation, timeout = 10000) => {
   throw new Error(`${name} timed out after ${timeout} ms; last=${JSON.stringify(last)}`);
 };
 const snapshots = () => app.eval("return globalThis.expo.modules.SolaraCEF.devPictureInPicture()", { timeout: 5000 });
+const nativePiP = () => app.eval('return expo.modules.SolaraMedia.probe("media.pictureInPicture", "w-pip").then(JSON.parse).then((rows) => rows["t-pip"] ?? null)', { timeout: 5000 });
 const action = (value) => app.eval(`return globalThis.expo.modules.SolaraCEF.devPictureInPictureAction(${JSON.stringify(value)})`, { timeout: 5000 });
 async function current(kind) {
   return deadline(`${kind} PiP window`, async () => (await snapshots()).find((window) => window.visible && window[kind]));
@@ -188,6 +189,7 @@ try {
     assert.equal(await page.eval("openVideo()", { userGesture: true }), "video opened");
     await current("video");
     const window = await current("video");
+    if (!before) await deadline("Swift owns the video PiP", () => nativePiP().then((kind) => kind === "video"));
     checkHidden("video-on", window);
     checkSettings(window);
     return window;
@@ -200,6 +202,7 @@ try {
   await rep.check("document PiP window settings and hidden focus guard", async () => {
     assert.equal(await page.eval("openDocument()", { userGesture: true }), "document opened");
     const window = await current("document");
+    if (!before) await deadline("Swift owns the document PiP", () => nativePiP().then((kind) => kind === "document"));
     checkHidden("document", window);
     checkSettings(window);
     return window;
@@ -209,6 +212,7 @@ try {
   else await rep.check("document PiP keeps its chosen display through simulated lifecycle notifications", () => placement("document"));
   await page.eval("window.pipDocument?.close(); true");
   await deadline("document PiP closed", async () => !(await snapshots()).some((window) => window.visible && window.document));
+  if (!before) await deadline("Swift cleared the PiP", () => nativePiP().then((kind) => kind === null));
   await rep.check("hidden instance never becomes the frontmost application", async () => {
     evidence.frontAfter = frontApp();
     assert.notEqual(evidence.frontAfter?.pid, app.pid);

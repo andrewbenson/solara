@@ -13,7 +13,7 @@ function clearTransientFacts(id: string) {
   patchPage(id, { mediaAccess: null, permission: null, crashed: null, unresponsive: false, fullscreen: false, newTabShown: null });
   revealToolbar(id);
   useMedia.setState((media) => {
-    const keys = ["sessions", "dismissed", "pip", "pipOpen", "displayRequests", "tabShares"] as const;
+    const keys = ["displayRequests", "tabShares"] as const;
     return Object.fromEntries(keys.map((key) => [key, Object.fromEntries(Object.entries(media[key]).filter(([tabId, value]) => tabId !== id && (key !== "tabShares" || (value as { capturedTabId?: string }).capturedTabId !== id)))]));
   });
 }
@@ -47,15 +47,14 @@ export function startNativeKeepAlive() {
     if (!tab || !hasPage(tab) || s.live[tab.id]?.discarded) return null;
     const page = pageOf(tab.id);
     const media = useMedia.getState();
-    const session = media.sessions[tab.id];
     return {
       route: JSON.stringify([tab.profileId, tab.windowId]),
       keep: {
         capturing: !!(page.mediaAccess || page.permission),
         newTabShown: !!page.newTabShown,
-        pip: !!media.pipOpen[tab.id],
+        pip: false,
         displayRequest: !!media.displayRequests[tab.id],
-        media: session?.playbackState === "playing" ? "playing" as const : session ? "present" as const : "none" as const,
+        media: "none" as const,
       },
       reveal: {
         fullscreen: page.fullscreen,
@@ -101,7 +100,7 @@ export function startNativeKeepAlive() {
   };
   const mediaChanged = (s: ReturnType<typeof useMedia.getState>, prev: ReturnType<typeof useMedia.getState>) => {
     for (const id of identities.keys()) {
-      if (s.sessions[id] !== prev.sessions[id] || s.pipOpen[id] !== prev.pipOpen[id] || s.displayRequests[id] !== prev.displayRequests[id]) return feed.changed();
+      if (s.displayRequests[id] !== prev.displayRequests[id]) return feed.changed();
     }
     if (s.tabShares === prev.tabShares) return;
     const shares = (all: typeof s.tabShares) => Object.entries(all).flatMap(([id, share]) => [id, (share as { capturedTabId?: string }).capturedTabId ?? ""]);

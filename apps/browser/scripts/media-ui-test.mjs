@@ -90,7 +90,7 @@ const hover = ([x, y]) => ac.shell.devSetPointer("w1", { x, y }).then(() => act(
 const click = (p) => hover(p).then(() => settle(60)).then(() => act("mouse:down:" + p[0] + "," + p[1])).then(() => settle(60)).then(() => act("mouse:up:" + p[0] + "," + p[1]));
 const playerShown = () => probe("media.sidebarPlayer").then((rows) => rows.length);
 const first = (kind) => probe(kind).then((rows) => rows[0] || null);
-const session = () => acMedia.useMedia.getState().sessions.p;
+const playerSession = () => probe("media.nowPlaying").then((rows) => rows.find((row) => row.tabId === "p"));
 const hostOf = (fiber) => { let f = fiber; while (f && !(f.stateNode && f.stateNode.measureInWindow)) f = f.child; return f && f.stateNode; };
 const measure = (fiber) => new Promise((r) => { const n = hostOf(fiber); return n ? n.measureInWindow((x, y, w, h) => r([x, y, w, h])) : r(null); });
 const pane = (kind) => M.describePaneOverlays("w1").then(JSON.parse).then((d) => ({ top: d.top, inCard: d.inCard, entry: Object.values(d.tabs).map((t) => t[kind]).find(Boolean) ?? null }));
@@ -255,7 +255,8 @@ try {
 
   await rep.check("native-kinds", async () => {
     const kinds = await run(`return globalThis.expo.modules.SolaraHosted.kinds();`);
-    const want = ["media.cliPill", "media.hoverPlayer", "media.sidebarPlayer"];
+    const want = ["media.cliPill", "media.tabBadge", "sidebar.mediaHover"];
+    for (const kind of ["media.hoverPlayer", "media.sidebarPlayer"]) assert.ok(!kinds.includes(kind), `stale hosted player kind ${kind}`);
     const have = want.filter((k) => kinds.includes(k));
     if (have.length !== want.length) throw new Error(`native kinds missing: ${JSON.stringify(kinds)}`);
     await untilSnapshot("registered native media kinds", async (window) => {
@@ -293,7 +294,7 @@ try {
   await rep.check("sidebar-player-shows", async () => {
     await until("player page loaded", `return st().tabs.p?.title === "Player" && !st().live.p?.isLoading;`, 15000);
     await inPage("document.getElementById('tone').play().then(() => true)");
-    await until("session playing", `return session()?.playbackState === "playing" && session()?.controllable;`, 10000);
+    await until("session playing", `return playerSession().then((row) => row?.playbackState === "playing" && row.controllable);`, 10000);
     await run(`ac.actions.switchToTab("b"); return true;`);
     const count = await until("sidebar player", `return playerShown().then((n) => n || null);`, 6000);
     const rows = await run(`return probe("media.sidebarPlayer");`);
@@ -313,13 +314,13 @@ try {
 
   await rep.check("play-pause", async () => {
     await pressPlayer("play");
-    await until("paused", `return session()?.playbackState === "paused";`, 6000);
+    await until("paused", `return playerSession().then((row) => row?.playbackState === "paused");`, 6000);
     if (!(await paused())) throw new Error("the page kept playing");
     const pausedRows = await run(`return probe("media.sidebarPlayer");`);
     await crossCheckMedia("paused player labels", "media.sidebarPlayer", pausedRows);
     assert.equal(pausedRows[0].labels.play, "Play");
     await pressPlayer("play");
-    await until("playing", `return session()?.playbackState === "playing";`, 6000);
+    await until("playing", `return playerSession().then((row) => row?.playbackState === "playing");`, 6000);
     const playingRows = await run(`return probe("media.sidebarPlayer");`);
     await crossCheckMedia("playing player labels", "media.sidebarPlayer", playingRows);
     assert.equal(playingRows[0].labels.play, "Pause");
@@ -346,7 +347,7 @@ try {
 
   await rep.check("new-play-brings-it-back", async () => {
     await inPage("document.getElementById('tone').pause(), true");
-    await until("paused", `return session()?.playbackState === "paused";`, 6000);
+    await until("paused", `return playerSession().then((row) => row?.playbackState === "paused");`, 6000);
     await inPage("document.getElementById('tone').play().then(() => true)");
     const count = await until("player again", `return playerShown().then((n) => n || null);`, 6000);
     await untilSnapshot("player returns", async (window) => window?.media?.["media.sidebarPlayer"]?.length === await run(`return playerShown().then((n) => n || null);`) && window?.media?.["media.sidebarPlayer"]?.length === count);

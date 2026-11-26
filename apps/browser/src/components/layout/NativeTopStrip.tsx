@@ -17,7 +17,6 @@ import { openTabMenu, runGroupMenuChoice, runTabMenuChoice, runTabMenuSelectionC
 import { toggleNewTabBar } from "../omnibox/newTabBar";
 import { developerModeFor } from "../site/developerMode";
 import { isDeveloperMode } from "../../lib/developerMode";
-import { usePages } from "./pageState";
 import { usePagerPages } from "./profilePager";
 import { openNewTabInSplit } from "./splitActions";
 import { EXTERNAL_DRAG, setInsert, setInsertResolver, useTabDrag } from "./tabDrag";
@@ -189,16 +188,6 @@ function useTopStripState(windowId: string, profileId: string, floating: boolean
   );
   const pages = usePageLooks(windowId);
   const selection = useBrowser(useShallow((s) => s.selection[windowId] ?? NONE));
-  const capture = usePages(
-    useShallow((p) => {
-      const out: Record<string, "screen" | "camera"> = {};
-      for (const id of Object.keys(p.pages)) {
-        const access = p.pages[id]?.mediaAccess;
-        if (access) out[id] = access.screen ? "screen" : "camera";
-      }
-      return out;
-    }),
-  );
   useIncomingFile(windowId);
   const iconRing = useBrowser((s) => !s.settings.classicPinnedTabs);
   const adjustInk = useAdjustedInk();
@@ -216,7 +205,7 @@ function useTopStripState(windowId: string, profileId: string, floating: boolean
         ownsLive: nativeOwnsWorkspace(),
         live: { playing: split(playing), sleeping },
         engines,
-        capture,
+        capture: {},
         bands,
         closeHint,
         newTabMark: Image.resolveAssetSource(NEW_TAB_MARK)?.uri ?? null,
@@ -224,7 +213,7 @@ function useTopStripState(windowId: string, profileId: string, floating: boolean
         selection,
         iconRing,
       })),
-    [iconRing, pages, selection, theme, glow.shadowColor, glow.shadowOpacity, glow.shadowRadius, profileId, floating, pageWidth, playing, sleeping, engines, capture, bands, closeHint, adjustInk],
+    [iconRing, pages, selection, theme, glow.shadowColor, glow.shadowOpacity, glow.shadowRadius, profileId, floating, pageWidth, playing, sleeping, engines, bands, closeHint, adjustInk],
   );
 
   return state;

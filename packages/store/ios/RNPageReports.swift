@@ -173,7 +173,6 @@ enum RNPageReports {
       } else if name == "onPageRequestAccepted", let url = payload["url"] as? String {
         attachment.execution.accepted(url: toAppUrl(url))
       } else if name == "onPagePhysical", let physicalPage = payload["page"] as? NSView {
-        issuer.transferExecution(from: physicalPage, to: binding)
         issuer.associateNativePage(binding, page: physicalPage)
       } else if name == "onPageExecution", let url = payload["url"] as? String {
         let sequence = attachment.execution.executed(url: toAppUrl(url), constructor: payload["constructor"] as? Bool ?? false)

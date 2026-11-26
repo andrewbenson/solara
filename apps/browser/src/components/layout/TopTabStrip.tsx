@@ -17,7 +17,7 @@ import { openGroupMenu, openTabMenu } from "../sidebar/menus";
 import { groupLabel } from "../../store/organize";
 import { firstStaying, movingTabIds, resolveDrop, slotDrop, type DropSpot } from "../../store/drops";
 import { hasOwnGroupIcon, SYMBOL_PREFIX, TabIcon } from "../sidebar/TabIcon";
-import { TabBadges } from "../media/TabBadges";
+import { NativeMediaView } from "../media/nativeMedia";
 import { groupTint, NEUTRAL_GROUP_SWATCH, useSidebarTokens, withAlpha } from "../sidebar/tokens";
 import { modifiersOf } from "./controls";
 import { usePageStyle, usePagerPages } from "./profilePager";
@@ -910,7 +910,7 @@ function TabChip({ tabId, width, tuck, dragged }: { tabId: string; width: number
             <ItemRow hovered={(hovered || dragged) && !active && !onto} pressed={pressed && !active}>
               <View pointerEvents="none">
                 <TabIcon tabId={tab.id} url={tab.url} favicon={tab.favicon} icon={tab.customIcon} />
-                <TabBadges tabId={tab.id} pip={false} />
+                <NativeMediaView kind="media.tabBadge" windowId={windowId} state={tab.id} />
               </View>
               {(playing || tab.muted) && (
                 <Pressable onPress={() => toggleMute(tab.id)} style={{ marginLeft: 5 }} tooltip={tab.muted ? "Unmute" : "Mute"}>
@@ -1113,6 +1113,7 @@ const PINNED_FACE_RADIUS = 8;
 const PINNED_RING_STROKE = 2;
 
 function PinnedFace({ tabId, active, hovered, pressed }: { tabId: string; active: boolean; hovered: boolean; pressed: boolean }) {
+  const windowId = useWindowId();
   const theme = useTheme();
   const tab = useTab(tabId);
   const tileTheme = useTileTheme(tab?.url ?? "", tab?.favicon, tab?.customIcon, tab?.profileId ?? "");
@@ -1146,7 +1147,7 @@ function PinnedFace({ tabId, active, hovered, pressed }: { tabId: string; active
       )}
       <View pointerEvents="none">
         {template ? <View style={{ width: 16, height: 16 }} /> : <TabIcon tabId={tab.id} url={tab.url} favicon={tab.favicon} icon={tab.customIcon} />}
-        <TabBadges tabId={tab.id} pip={false} />
+        <NativeMediaView kind="media.tabBadge" windowId={windowId} state={tab.id} />
       </View>
     </View>
   );

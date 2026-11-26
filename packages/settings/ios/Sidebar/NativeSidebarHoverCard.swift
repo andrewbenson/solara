@@ -2,6 +2,7 @@ import AppKit
 import Foundation
 import SolaraLive
 import SolaraModel
+import SolaraStore
 import SolaraUI
 
 @MainActor
@@ -11,7 +12,23 @@ enum NativeSidebarHoverCard {
   private static var hosts: [String: SidebarHoverCardHost] = [:]
 
   static func start() {
-    guard NativeWindowShell.enabled, observer == nil else { return }
+    guard observer == nil else { return }
+    HostedViews.register("sidebar.mediaHover") { windowId in
+      let root = FlippedContainerView()
+      let host = SidebarHoverCardHost(windowId: windowId, overlay: root)
+      hosts[windowId] = host
+      DispatchQueue.main.async {
+        guard hosts[windowId] === host else { return }
+        let latest = SettingsJS.shared.latestValue(topic) as? [String: Any]
+        let windows = latest?["windows"] as? [String: Any]
+        host.show(windows?[windowId] as? [String: Any])
+      }
+      return HostedContent(view: root, onUnmount: {
+        if hosts[windowId] === host { windowEnded(windowId) }
+        else { host.end() }
+      }, takesFocus: false)
+    }
+
     NativeTabMemory.installEngineQuery()
     NativeHeavyTabs.start()
     observer = SettingsJS.shared.observe(topic) { value in receive(value) }
@@ -22,7 +39,7 @@ enum NativeSidebarHoverCard {
   private static func receive(_ value: Any?) {
     let windows = ((value as? [String: Any])?["windows"] as? [String: Any]) ?? [:]
     for (windowId, host) in hosts where windows[windowId] == nil { host.show(nil) }
-    for (windowId, card) in windows where NativeWindowShell.host(windowId) != nil {
+    for (windowId, card) in windows where NativeWindowShell.host(windowId) != nil || hosts[windowId] != nil {
       let host = hosts[windowId] ?? SidebarHoverCardHost(windowId: windowId)
       hosts[windowId] = host
       host.show(card as? [String: Any])
@@ -97,11 +114,7 @@ enum NativeSidebarHoverCard {
 
   #endif
   static func send(_ windowId: String, _ id: String, _ event: String, _ extra: [String: Any] = [:]) {
-    var payload = extra
-    if payload["clickAt"] == nil {
-      payload["clickAt"] = NSApp.currentEvent.map { $0.type == .leftMouseUp ? $0.timestamp * 1000 : 0 } ?? 0
-    }
-    let sendable = MediaPayload(payload)
+    let sendable = MediaPayload(extra)
     Task { @MainActor in
       _ = await SettingsAdapters.js(topic, windowId, id, event, sendable.value)
     }
@@ -112,16 +125,27 @@ enum NativeSidebarHoverCard {
 final class SidebarHoverCardHost {
   let windowId: String
   private let motion = HoverCardView()
+  private weak var inlineOverlay: NSView?
+  private var mediaListener: UUID?
+  private var input: [String: Any]?
   private var attachment: (anchor: CGRect, y: CGFloat, gap: CGFloat)?
   private lazy var tabCard: SidebarTabCardView = {
     let card = SidebarTabCardView()
+    card.prefersGlass = inlineOverlay == nil
     card.onAction = { [weak self, weak card] action in
       guard let self, let id = card?.state?.tabId else { return }
+      if action == "pip" {
+        return NativeMediaStack.togglePictureInPicture(tabId: id, windowId: self.windowId, window: card?.window)
+      }
       if action == SidebarTabCardState.Button.sleepHeavy.action {
         Task { @MainActor in _ = await HeavyTabs.sleep?(id) }
         return
       }
       NativeSidebarHoverCard.send(self.windowId, id, action)
+    }
+    card.onPictureInPictureAccessibilityPress = { [weak self, weak card] in
+      guard let self, let card, let id = card.state?.tabId else { return }
+      NativeMediaStack.togglePictureInPicture(tabId: id, windowId: self.windowId, window: card.window, keyboardOrAccessibility: true)
     }
     card.onPointer = { [weak self] inside in self?.pointer(inside) }
     return card
@@ -163,7 +187,11 @@ final class SidebarHoverCardHost {
     let card = HoverPlayerCardView()
     card.player.onAction = { [weak self, weak card] action in
       guard let self, let id = card?.state?.tabId else { return }
-      NativeMedia.player("hoverPlayer", self.windowId, id, action)
+      if case .backToTab = action {
+        self.show(nil)
+        NativeSidebarHoverCard.send(self.windowId, id, "close")
+      }
+      NativeMediaStack.perform(windowId: self.windowId, tabId: id, action: action, fromHover: true)
     }
     card.onPointer = { [weak self] inside in self?.pointer(inside) }
     return card
@@ -202,8 +230,13 @@ final class SidebarHoverCardHost {
   private var liveCardInput: [String: Any]?
   private var liveObserver: NSObjectProtocol?
 
-  init(windowId: String) {
+  init(windowId: String, overlay: NSView? = nil) {
     self.windowId = windowId
+    inlineOverlay = overlay
+    mediaListener = NativeMediaStack.listen { [weak self] in
+      guard let self, let input = self.input, input["kind"] as? String == "tab" else { return }
+      self.show(input)
+    }
     motion.autoresizingMask = [.width, .height]
     motion.onHidden = { [weak self] in self?.coverChanged() }
     liveObserver = NotificationCenter.default.addObserver(forName: SidebarLiveFeed.changed, object: nil, queue: .main) { [weak self] _ in
@@ -244,6 +277,9 @@ final class SidebarHoverCardHost {
   }
 
   func end() {
+    input = nil
+    NativeMediaStack.stopListening(mediaListener)
+    mediaListener = nil
     motion.removeFromSuperview()
     if let liveObserver { NotificationCenter.default.removeObserver(liveObserver) }
     liveObserver = nil
@@ -251,19 +287,31 @@ final class SidebarHoverCardHost {
 
   func show(_ card: [String: Any]?) {
     attachment = nil
-    guard let card, let kind = card["kind"] as? String else {
+    input = card
+    guard let card, var kind = card["kind"] as? String else {
       guard motion.content != nil else { tabCardInput = nil; return }
       if kind == "group" { groupCard.live = false }
       tabCardInput = nil
       motion.hide()
       return coverChanged()
     }
-    guard let overlay = NativeWindowShell.overlay(windowId) else { return }
+    guard let overlay = inlineOverlay ?? NativeWindowShell.overlay(windowId) else { return }
     if motion.superview !== overlay {
       motion.frame = overlay.bounds
       overlay.addSubview(motion)
     }
-    guard let placed = place(kind, card) else {
+    let placed: (view: NSView, origin: CGPoint)?
+    if kind == "tab", let decoded = SidebarTabCardState.decode(card),
+      let state = WorkspaceWrites.store?.state,
+      let player = NativeMediaStack.hoverPlayer(tabId: decoded.tabId, state: state, windowId: windowId) {
+      kind = "player"
+      playerCard.set(player)
+      let edge = max(decoded.anchorRect.maxX, decoded.sidebarWidth - (card["sidebarInset"] as? Double ?? 0))
+      placed = (playerCard, HoverCardMotion.origin(anchor: decoded.anchorRect, edge: edge))
+    } else {
+      placed = place(kind, card)
+    }
+    guard let placed else {
       motion.hide()
       return coverChanged()
     }
@@ -292,8 +340,15 @@ final class SidebarHoverCardHost {
     switch kind {
     case "tab":
       guard let decoded = SidebarTabCardState.decode(card) else { return nil }
-      let state = decoded.offeringSleep(heavy: HeavyTabs.current[decoded.tabId], canSleep: HeavyTabs.sleep != nil)
-      let memoryEnabled = NativeTabMemory.enabled
+      let inline = inlineOverlay != nil
+      var state = inline ? decoded : decoded.offeringSleep(heavy: HeavyTabs.current[decoded.tabId], canSleep: HeavyTabs.sleep != nil)
+      let pip = NowPlayingStore.shared.pictureInPicture[state.tabId] != nil
+      if pip || NowPlayingStore.shared.entries[state.tabId]?.report.hasVideo == true {
+        let index = state.buttons.firstIndex { $0.action == "back" || $0.action == "sleepHeavy" } ?? state.buttons.endIndex
+        state.buttons.insert(.init(action: "pip", icon: pip ? "pip.exit" : "pip.enter",
+          label: pip ? "Exit Picture in Picture" : "Picture in Picture"), at: index)
+      }
+      let memoryEnabled = !inline && NativeTabMemory.enabled
       let memoryKey = TabMemoryKey.key(tabId: state.tabId, document: NativeTabMemory.document(state.tabId) ?? "")
       let fresh = motion.phase == .hidden || motion.phase == .leaving || self.kind != "tab" || tabCardId != memoryKey
       tabCardId = memoryKey
@@ -316,11 +371,6 @@ final class SidebarHoverCardHost {
       groupCard.live = true
       groupCard.set(state)
       return (groupCard, SidebarGroupCardMetrics.origin(anchor: state.anchorRect, height: groupCard.frame.height, windowHeight: state.windowHeight))
-    case "player":
-      guard let json = card["state"] as? String, let state = MediaPlayerState.decode(json), let anchor = card["anchor"] as? [Double], anchor.count == 4 else { return nil }
-      playerCard.set(state)
-      let edge = card["edge"] as? Double ?? anchor[0] + anchor[2]
-      return (playerCard, HoverCardMotion.origin(anchor: CGRect(x: anchor[0], y: anchor[1], width: anchor[2], height: anchor[3]), edge: edge))
     case "calendar":
       guard let tabId = card["tabId"] as? String, let json = card["state"] as? String, let data = json.data(using: .utf8),
         let state = try? JSONDecoder().decode(LiveCardModel.State.self, from: data),

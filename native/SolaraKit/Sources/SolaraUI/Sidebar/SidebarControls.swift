@@ -15,6 +15,25 @@ final class SidebarIconButton: NSView {
   var pressedFill: NSColor = .clear { didSet { paint() } }
   var radius: CGFloat = 6 { didSet { plate.cornerRadius = radius } }
   var onPress: (() -> Void)?
+  var onKeyboardOrAccessibilityPress: (() -> Void)?
+
+  override var acceptsFirstResponder: Bool { onKeyboardOrAccessibilityPress != nil }
+
+  override func keyDown(with event: NSEvent) {
+    let forbidden: NSEvent.ModifierFlags = [.command, .control, .option]
+    if !event.isARepeat, event.modifierFlags.intersection(forbidden).isEmpty,
+      [36, 49, 76].contains(event.keyCode), let press = onKeyboardOrAccessibilityPress {
+      press()
+    } else {
+      super.keyDown(with: event)
+    }
+  }
+
+  override func accessibilityPerformPress() -> Bool {
+    guard window != nil, !isHiddenOrHasHiddenAncestor, let press = onKeyboardOrAccessibilityPress else { return false }
+    press()
+    return true
+  }
 
   override var isFlipped: Bool { true }
 

@@ -166,7 +166,7 @@ const NativePageContent = memo(function NativePageContent({ windowId, tabId, ful
   }, [own.url, tabId]);
   return (
     <>
-      {tabPool && <PooledPageProps pool={tabPool} tabId={tabId} visible />}
+      {tabPool && <PooledPageProps pool={tabPool} tabId={tabId} />}
       {!fullscreen && <ShareBar tabId={tabId} />}
       {!own.url && !inSplit && (emptyCard ? <EmptyCard windowId={windowId} tabId={tabId} /> : <NewTabPage key={tabId} tabId={tabId} toolbar={toolbar} />)}
       <InternalPage tabId={tabId} />

@@ -87,12 +87,14 @@ public enum SidebarTabCardMetrics {
 
 public final class SidebarTabCardView: NSView, HoverCardRetainedContent {
   public var onAction: ((String) -> Void)?
+  public var onPictureInPictureAccessibilityPress: (() -> Void)?
   public var onPointer: ((Bool) -> Void)?
   public private(set) var state: SidebarTabCardState?
   private let surface = SurfaceLayer()
   private var glass: NewTabGlassSurface?
   private var glassApplied: (size: CGSize, dark: Bool)?
   private var glassDark = false
+  public var prefersGlass = true
   public private(set) var usesGlass = false
   #if DEBUG
   var forcedReduceTransparency: Bool?
@@ -175,7 +177,7 @@ public final class SidebarTabCardView: NSView, HoverCardRetainedContent {
     let look = next.look
     func color(_ text: String) -> NSColor { CSSColor(text)?.ns ?? .clear }
     let dark = Self.darkLook(look)
-    usesGlass = !reduceTransparency
+    usesGlass = prefersGlass && !reduceTransparency
     if usesGlass, glass == nil { makeGlass(dark: dark) }
     glassDark = dark
     glass?.isHidden = !usesGlass
@@ -209,6 +211,7 @@ public final class SidebarTabCardView: NSView, HoverCardRetainedContent {
       button.pressedFill = usesGlass ? ink.withAlphaComponent(dark ? 0.22 : 0.14) : color(look.pressed)
       let action = spec.action
       button.onPress = { [weak self] in self?.onAction?(action) }
+      button.onKeyboardOrAccessibilityPress = action == "pip" ? { [weak self] in self?.onPictureInPictureAccessibilityPress?() } : nil
     }
     titleLines = title.lineCount(width: SidebarTabCardMetrics.titleWidth)
     setFrameSize(NSSize(width: SidebarTabCardMetrics.width, height: height))

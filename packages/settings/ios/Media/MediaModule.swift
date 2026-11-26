@@ -31,6 +31,10 @@ public class MediaModule: Module {
 
     Function("cliIndicatorShown") { () -> Bool? in NativeMedia.cliShown }
 
+    Function("protectionReason") { (tabId: String, pinned: Bool) in
+      NowPlayingStore.shared.protectionReason(tabId: tabId, pinned: pinned)
+    }
+
     #if DEBUG
       AsyncFunction("devSetCliIndicator") { (shown: Bool) in
         MainActor.assumeIsolated {

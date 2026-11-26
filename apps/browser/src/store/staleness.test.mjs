@@ -28,7 +28,6 @@ const { useTabValue, useStoreWhile, shallowEqual } = await import("./tabWatch.ts
 const { usePageProgress, setPageProgress } = await import("./pageProgress.ts");
 const { useSidebarUi, setSidebarUi } = await import("../components/sidebar/state.ts");
 const { useIsSleeping, noteDiscarded, noteReady } = await import("../lib/tabLifecycle.ts");
-const { useMedia, setPictureInPictureState } = await import("../components/media/state.ts");
 const { usePage, usePages, patchPage } = await import("../components/layout/pageState.ts");
 const { useFavicons, useFavicon, useFaviconTheme, useAppearanceDark, pageKey } = await import("../lib/favicons.ts");
 const { engineProfile } = await import("./model.ts");
@@ -57,7 +56,6 @@ const sidebarFeed = (tabId, windowId) =>
         loading: useTabLive(tabId, (live) => !!live.isLoading),
         renaming: useSidebarUi((u) => u.renaming?.kind === "tab" && u.renaming.id === tabId),
         sleeping: useIsSleeping(tabId),
-        pip: useMedia((m) => !!m.pipOpen[tabId]),
         capture: usePage(tabId, (p) => !!p.mediaAccess),
         profile: useTabValue(tabId, (t) => t?.profileId),
       };
@@ -101,10 +99,6 @@ test("the native sidebar feed: created, renamed, re-iconed, pinned, flagged, bad
   S().updateLive(a, { isLoading: false, playingAudio: false });
   assert.deepEqual([ra.value.loading, ra.value.playing], [false, false], "done");
 
-  setPictureInPictureState(a, { kind: "video", active: true });
-  assert.equal(ra.value.pip, true, "PiP badge on");
-  setPictureInPictureState(a, { kind: "video", active: false });
-  assert.equal(ra.value.pip, false, "PiP badge off");
   patchPage(a, { mediaAccess: { camera: true, microphone: false, screen: false } });
   assert.equal(ra.value.capture, true, "capture badge on");
   patchPage(a, { mediaAccess: null });

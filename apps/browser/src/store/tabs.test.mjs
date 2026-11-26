@@ -4,7 +4,6 @@ const { useBrowser } = await import("./browser.ts");
 const model = await import("./model.ts");
 const organize = await import("./organize.ts");
 const { controllingSearchExtension, defaultSearchEngine, searchUrlPrefix } = await import("./settings.ts");
-const media = await import("../components/media/state.ts");
 const { hiddenEmptyCard, windowClosingWithTab } = await import("./newTabBar.ts");
 
 const S = () => useBrowser.getState();
@@ -563,39 +562,6 @@ test("an extension that took the default search engine controls it until it goes
   assert.equal(defaultSearchEngine(S().settings).name, "Wikipedia Fixture");
   S().updateSettings({ extensionSearchEngines: [] });
   assert.equal(defaultSearchEngine(S().settings).id, "google", "a removed engine falls back to Google");
-});
-
-test("closing the mini player lasts until its tab plays again", async () => {
-  const M = () => media.useMedia.getState();
-  const report = (overrides = {}) => ({
-    title: "Song", artist: "Band", album: "", artwork: null, playbackState: "playing", position: 10, duration: 200,
-    playbackRate: 1, timestamp: Date.now(), hasVideo: false, actions: ["play", "pause"], controllable: true, ...overrides,
-  });
-  reset();
-  const w = S().createWindow({ url: "a.com" });
-  const [a] = model.viewTabIds(S(), w);
-  const b = S().newTab(w, { url: "b.com", background: true });
-  const c = S().newTab(w, { url: "c.com", background: true });
-
-  media.setNowPlaying(b, report());
-  media.setNowPlaying(c, report({ playbackState: "paused" }));
-  assert.equal(media.playerTabFor(M(), [a, b, c]), b, "the tab that played");
-  media.setNowPlaying(b, report({ playbackState: "paused" }));
-  await new Promise((resolve) => setTimeout(resolve, 3));
-  media.setNowPlaying(c, report());
-  assert.equal(media.playerTabFor(M(), [a, b, c]), c, "the tab that played last");
-
-  media.useMedia.setState({ dismissed: { [c]: true } });
-  assert.equal(media.playerTabFor(M(), [a, b, c]), b);
-  media.setNowPlaying(c, report({ position: 30 }));
-  assert.equal(M().dismissed[c], true, "still playing: stays dismissed");
-  media.setNowPlaying(c, report({ playbackState: "paused" }));
-  media.setNowPlaying(c, report());
-  assert.equal(M().dismissed[c], undefined, "played again");
-  assert.equal(media.playerTabFor(M(), [a, b, c]), c);
-
-  S().closeTab(b);
-  assert.equal(M().sessions[b], undefined);
 });
 
 test("Clear closes the unselected unpinned tabs into Recently Closed, keeps pinned tabs and pinned groups, and undoes", () => {

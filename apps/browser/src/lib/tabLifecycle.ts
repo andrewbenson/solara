@@ -1,3 +1,4 @@
+import { mediaProtectionReason } from "@solara/settings";
 import { listTasks, onSystemState, releaseProfile, setBatterySaver, systemState, type SystemState, type WebViewHandle } from "@solara/solaracore";
 import { onAppEvent, onWindowEvent } from "@solara/shell";
 import { create } from "zustand";
@@ -108,10 +109,10 @@ function keepAliveReason(s: BrowserState, id: string): string | null {
   if (page.permission) return "asking for permission";
   if (page.newTabShown) return "kept for Forward";
   const media = useMedia.getState();
-  if (media.pipOpen[id]) return "picture in picture";
+  const nativeMedia = mediaProtectionReason(id, tab.pinned);
+  if (nativeMedia === "picture in picture") return nativeMedia;
   if (media.displayRequests[id]) return "choosing a screen to share";
-  const session = media.sessions[id];
-  if (session?.playbackState === "playing" || (tab.pinned && session)) return "media";
+  if (nativeMedia) return nativeMedia;
   if (splitOf(s, id)) return "in a split";
   return null;
 }

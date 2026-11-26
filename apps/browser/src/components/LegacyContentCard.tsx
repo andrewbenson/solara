@@ -47,7 +47,6 @@ import { NewTabPage } from "./NewTabPage";
 import { EmptyCard } from "./EmptyCard";
 import { SmallWindowCard } from "./SmallWindowCard";
 import { InternalPage } from "./pages";
-import { useAutoPictureInPicture } from "./media/pip";
 import { ShareBar } from "./media/ShareBar";
 import { Toolbar, ToolbarBackdrop, urlFieldRight } from "./Toolbar";
 import { AutoHideBackdrop, AutoHideToolbar, useToolbarMode, useToolbarMotion } from "./AutoHideToolbar";
@@ -481,7 +480,7 @@ const TabPane = memo(function TabPane({
         <View pointerEvents={pooled ? "box-none" : "auto"} style={autoLayout ? { height: motion.pageHeight } : { flex: 1 }}>
           {visible && !fullscreen && <ShareBar tabId={tabId} />}
           <View pointerEvents={pooled ? "box-none" : "auto"} style={{ flex: 1 }}>
-            {pooled && tabPool && <PooledPageProps pool={tabPool} tabId={tabId} visible={visible} />}
+            {pooled && tabPool && <PooledPageProps pool={tabPool} tabId={tabId} />}
             {!pooled && (mounted || prewarmed) && <TabWebView tabId={tabId} visible={visible && !newTabShown && !isNewTab} warm={!!warm && !newTabShown && !isNewTab} />}
             {visible && isNewTab && !small && !nativePane && (inSplit ? <SplitEmptyState tabId={tabId} focused={focused} /> : emptyCard ? <EmptyCard windowId={windowId} tabId={tabId} /> : <NewTabPage key={tabId} tabId={tabId} toolbar={toolbar} />)}
             {visible && <InternalPage tabId={tabId} />}
@@ -539,7 +538,6 @@ function EngineWebView({ tabId, visible, warm, peekOf, engine }: TabWebViewProps
   const tab = () => useBrowser.getState().tabs[tabId];
   const store = () => useBrowser.getState();
   const ref = useMemo(() => webviewRef(tabId), [tabId]);
-  const autoPictureInPicture = useAutoPictureInPicture(tabId, visible);
   const pageColor = useProfilesValue(profileId, (profiles) => (isIncognitoProfile(profileId) ? "incognito" : (profiles[profileId]?.color ?? "plum")));
   const theme = useTheme();
   const backdrop = useMemo(() => opaqueCard(theme), [theme.card, theme.windowTint[0], theme.windowTint[1]]);
@@ -592,7 +590,6 @@ function EngineWebView({ tabId, visible, warm, peekOf, engine }: TabWebViewProps
       visible={visible}
       warm={warm}
       neighbour={neighbour}
-      autoPictureInPicture={autoPictureInPicture}
       pageColor={pageColor}
       contentsBackgroundColor={backdrop}
       shownUrl={shownUrl}

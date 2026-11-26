@@ -2,19 +2,16 @@ import { displayUrl } from "@solara/core";
 import { publishSettingsTopic, windowShellActive } from "@solara/settings";
 import { useLayoutEffect, useState } from "react";
 import type { LayoutChangeEvent } from "react-native";
-import { hex, useTheme } from "../../lib/theme";
+import { useIsBookmarked } from "../../store/hooks";
+import { hex, layout, useTheme } from "../../lib/theme";
 import { useIsSleeping } from "../../lib/tabLifecycle";
 import { useBrowser } from "../../store/browser";
-import { useIsBookmarked, useTab } from "../../store/hooks";
 import { activeTabId, bookmarkProfileId, plural } from "../../store/model";
 import { toggleBookmarkFromUI } from "../../lib/bookmarkWriter";
 import { folderIn, folderLabel, folderMembers } from "../../store/tileFolders";
 import { useShallow } from "zustand/react/shallow";
 import { awayFromPin } from "../../store/organize";
 import { openInSplit } from "../layout/splitActions";
-import { useArtwork } from "../media/artwork";
-import { mediaTheme, playerState } from "../media/nativeMedia";
-import { togglePictureInPicture, useMedia, useSession } from "../media/state";
 import { addNativeSettingsHandlers } from "../settings/nativeSettings";
 import { openLiveItem } from "../../live/engine";
 import { useLive } from "../../live/store";
@@ -31,7 +28,7 @@ const TOPIC = "sidebar.hoverCard";
 const cards: Record<string, object> = {};
 let queued = false;
 
-export type NativeCardKind = "tab" | "group" | "live" | "player" | "calendar" | "folder";
+export type NativeCardKind = "tab" | "group" | "live" | "calendar" | "folder";
 
 export const FOLDER_PEEK_ROWS = 8;
 
@@ -64,11 +61,10 @@ export function useNativeHoverCardActive(windowId: string): boolean {
   return active;
 }
 
-export function nativeCardKind(active: boolean, hover: Hover | null, dia: boolean, player: boolean, calendar: boolean): NativeCardKind | null {
-  if (!active || !hover) return null;
-  if (dia) return "tab";
-  if (hover.kind === "tab" && player) return "player";
-  if (hover.kind === "tab" && !player && calendar) return "calendar";
+export function nativeCardKind(active: boolean, hover: Hover | null, calendar: boolean): NativeCardKind | null {
+  if (!hover) return null;
+  if (hover.kind === "tab") return calendar ? (active ? "calendar" : null) : "tab";
+  if (!active) return null;
   if (hover.kind === "group") return "group";
   if (hover.kind === "live") return "live";
   if (hover.kind === "folder") return "folder";
@@ -84,14 +80,11 @@ function useTabCard(windowId: string, id: string | null, anchor: Anchor | null, 
   const tab = useBrowser((s) => (id ? s.tabs[id] : undefined));
   const isActive = useBrowser((s) => !!id && activeTabId(s, windowId) === id);
   const bookmarked = useIsBookmarked(tab?.url ?? "");
-  const video = useMedia((m) => !!id && (!!m.sessions[id]?.hasVideo || !!m.pipOpen[id]));
-  const pip = useMedia((m) => !!id && !!m.pipOpen[id]);
   const sleeping = useIsSleeping(id ?? "");
   if (!id || !tab || !anchor) return null;
   const buttons: Button[] = [{ action: "pin", icon: tab.pinned ? "pin.slash" : "pin", label: tab.pinned ? "Unpin" : "Pin" }];
   if (tab.url) buttons.push({ action: "bookmark", icon: bookmarked ? "bookmark.fill" : "bookmark", label: bookmarked ? "Remove Bookmark" : "Bookmark" });
   if (!isActive && !tab.pinned) buttons.push({ action: "split", icon: "rectangle.split.2x1", label: "Open in Split View" });
-  if (video) buttons.push({ action: "pip", icon: pip ? "pip.exit" : "pip.enter", label: pip ? "Exit Picture in Picture" : "Picture in Picture" });
   if (awayFromPin(tab)) buttons.push({ action: "back", icon: "arrow.uturn.backward", label: "Back to Pinned URL" });
   return {
     kind: "tab",
@@ -102,6 +95,7 @@ function useTabCard(windowId: string, id: string | null, anchor: Anchor | null, 
     buttons,
     anchor: frame(anchor),
     sidebarWidth,
+    sidebarInset: layout.sidebarInset,
     windowHeight,
     look: {
       fill: theme.dark ? "#262626" : hex(theme.panel),
@@ -153,15 +147,6 @@ function useFolderCard(windowId: string, id: string | null, anchor: Anchor | nul
     shadowOpacity: theme.panelShadowOpacity,
     theme: { panel: hex(theme.panel), panelBorder: hex(theme.panelBorder), textSecondary: theme.textSecondary, textTertiary: theme.textTertiary, textTab: theme.textTab, rowHover: theme.rowHover },
   };
-}
-
-function usePlayerCard(id: string | null, anchor: Anchor | null, edge: number) {
-  const theme = useTheme();
-  const session = useSession(id ?? undefined);
-  const tab = useTab(id ?? "");
-  const artwork = useArtwork(id ?? "", session?.artwork);
-  if (!id || !anchor || !session || !tab) return null;
-  return { kind: "player", state: JSON.stringify(playerState(session, tab, artwork, mediaTheme(theme))), anchor: frame(anchor), edge };
 }
 
 function liveItem(id: string): [string, string] {
@@ -227,15 +212,14 @@ export function NativeCalendarCard({ windowId, tabId, anchor }: { windowId: stri
   return null;
 }
 
-export function useNativeHoverCard(windowId: string, kind: NativeCardKind | null, target: Hover | null, sidebarWidth: number, windowHeight: number, edge: number) {
+export function useNativeHoverCard(windowId: string, kind: NativeCardKind | null, target: Hover | null, sidebarWidth: number, windowHeight: number) {
   const live = target && kind ? target : null;
   const anchor = live?.anchor ?? null;
   const tab = useTabCard(windowId, kind === "tab" ? (live?.id ?? null) : null, anchor, sidebarWidth, windowHeight);
   const group = useGroupCard(windowId, kind === "group" ? (live?.id ?? null) : null, anchor, windowHeight);
   const liveCard = useLiveCard(kind === "live" ? (live?.id ?? null) : null, anchor);
-  const player = usePlayerCard(kind === "player" ? (live?.id ?? null) : null, anchor, edge);
   const folder = useFolderCard(windowId, kind === "folder" ? (live?.id ?? null) : null, anchor);
-  const card = tab ?? group ?? liveCard ?? player ?? folder;
+  const card = tab ?? group ?? liveCard ?? folder;
   const key = kind === "calendar" && live ? "calendar" : card && JSON.stringify(card);
   useLayoutEffect(() => {
     if (key !== "calendar") setCard(windowId, key ? JSON.parse(key) : null);
@@ -244,7 +228,7 @@ export function useNativeHoverCard(windowId: string, kind: NativeCardKind | null
 }
 
 addNativeSettingsHandlers({
-  [TOPIC]: (windowId: string, id: string, event: string, extra?: { clickAt?: number; frame?: number[]; tabId?: string; url?: string; action?: string; eventId?: string }) => {
+  [TOPIC]: (windowId: string, id: string, event: string, extra?: { frame?: number[]; tabId?: string; url?: string; action?: string; eventId?: string }) => {
     if (event === "enter") return cardHoverProps.onMouseEnter();
     if (event === "leave") return cardHoverProps.onMouseLeave();
     if (event === "hold") return holdHover(true);
@@ -287,8 +271,6 @@ addNativeSettingsHandlers({
       case "split":
         dismissHover();
         return openInSplit(id);
-      case "pip":
-        return void togglePictureInPicture(id, { clickAt: extra?.clickAt ?? 0, control: 0 });
       case "back":
         dismissHover();
         return s.returnToPinnedUrl(id);

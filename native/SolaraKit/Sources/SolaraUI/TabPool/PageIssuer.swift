@@ -3,7 +3,7 @@ import SolaraModel
 import SolaraStore
 import Synchronization
 
-public struct PageIdentity: Sendable, Equatable {
+public struct PageIdentity: Sendable, Hashable {
   public let tabId: String
   public let registrationGeneration: PageRegistrationGeneration
   public let sessionGeneration: String
@@ -76,6 +76,8 @@ public final class PageHostBinding {
   fileprivate var windowId: String?
   fileprivate var movedNavigationSeq: Int?
   fileprivate var sameProfileMove = false
+  fileprivate var associatedNativePage = false
+  fileprivate var reportedMedia: Set<NowPlayingStore.Field> = []
   fileprivate let perform: PageRegistry.Perform
   fileprivate let onCreated: @MainActor (PageHostBinding, Bool) -> Void
   fileprivate let onClearNewTabShown: @MainActor (PageHostBinding, PageIssueGuard) -> Void
@@ -141,6 +143,7 @@ public final class PageIssuer {
   private struct NativeExecution {
     weak var page: AnyObject?
     let binding: PageHostBinding
+    var media: NowPlayingStore.Snapshot? = nil
   }
 
   private var nativeExecutions: [ObjectIdentifier: NativeExecution] = [:]
@@ -149,6 +152,7 @@ public final class PageIssuer {
   private var bindings: [String: PageHostBinding] = [:]
   private var protectionRuntimeID: UUID?
   private var hasBegunRuntime = false
+  private var mediaEnded = false
   private nonisolated let cleanProtection = Mutex<[String: String]>([:])
   private var registrations: [PageRegistration: PageHostBinding] = [:]
 
@@ -321,7 +325,13 @@ public final class PageIssuer {
   private func retireInScope(_ binding: PageHostBinding) {
     guard !binding.retired else { return }
     binding.retired = true
-    if bindings[binding.tabId] === binding { bindings[binding.tabId] = nil }
+    if bindings[binding.tabId] === binding {
+      bindings[binding.tabId] = nil
+      if !mediaEnded {
+        rememberMediaInScope(binding)
+        NowPlayingStore.shared.end(tabId: binding.tabId)
+      }
+    }
     publishProtectionInScope(binding)
     if let registration = binding.registration {
       registrations[registration] = nil
@@ -405,8 +415,26 @@ public final class PageIssuer {
   }
 
   public func reserveEvent(_ binding: PageHostBinding, name: String, payload: JSONValue) -> Int? {
+    if name == "onNowPlaying" || name == "onPictureInPicture" {
+      store.sequence {
+        guard !mediaEnded, ensurePageEstablished(binding), currentInScope(binding, requirePage: true) else { return }
+        if name == "onNowPlaying" {
+          binding.reportedMedia.insert(.session)
+          NowPlayingStore.shared.report(tabId: binding.tabId, NowPlayingReport(json: payload))
+        } else if let kind = payload["kind"]?.string, let active = payload["active"]?.bool {
+          if kind == "video" || kind == "document" { binding.reportedMedia.insert(.pictureInPicture(kind)) }
+          NowPlayingStore.shared.setPictureInPicture(tabId: binding.tabId, kind: kind, active: active)
+        }
+      }
+      return nil
+    }
     let sequence = reserveEventInScope(binding, name: name, payload: payload)
-    if sequence != nil, name == "onNowPlaying" { NowPlayingStore.shared.report(tabId: binding.tabId, NowPlayingReport(json: payload)) }
+    if !mediaEnded, sequence != nil, name == "onMediaAccess" {
+      binding.reportedMedia.insert(.capture)
+      let kind: TabCapture? = payload["screen"]?.bool == true ? .screen
+        : payload["camera"]?.bool == true || payload["microphone"]?.bool == true ? .camera : nil
+      NowPlayingStore.shared.setCapture(tabId: binding.tabId, kind)
+    }
     if sequence != nil, Self.consumeLifecycleEvent?(self, binding, name, payload) == true { return nil }
     if sequence != nil {
       Self.lifecycleEvent?(self, binding, name, payload)
@@ -453,21 +481,33 @@ public final class PageIssuer {
   public func associateNativePage(_ binding: PageHostBinding, page: AnyObject) {
     store.sequence {
       guard currentInScope(binding, requirePage: true) else { return }
+      let key = ObjectIdentifier(page)
+      let previous = nativeExecutions[key]
+      if binding.associatedNativePage && (previous?.binding !== binding || previous?.page !== page) {
+        nativeExecutions = nativeExecutions.filter { $0.value.binding !== binding }
+        binding.reportedMedia.removeAll()
+        if !mediaEnded { NowPlayingStore.shared.end(tabId: binding.tabId) }
+      }
       nativeExecutions = nativeExecutions.filter { $0.value.page != nil }
-      nativeExecutions[ObjectIdentifier(page)] = NativeExecution(page: page, binding: binding)
+      if let source = nativeExecutions[key], source.page === page,
+        source.binding !== binding, source.binding.engine == binding.engine, source.binding.profile == binding.profile {
+        transferExecutionInScope(from: source, to: binding)
+      }
+      binding.associatedNativePage = true
+      nativeExecutions[key] = NativeExecution(page: page, binding: binding)
     }
   }
 
-  public func transferExecution(from sourcePage: AnyObject, to binding: PageHostBinding) {
-    store.sequence {
-      guard currentInScope(binding, requirePage: true),
-        let source = nativeExecutions[ObjectIdentifier(sourcePage)], source.page === sourcePage,
-        source.binding !== binding, source.binding.engine == binding.engine, source.binding.profile == binding.profile else { return }
-      binding.executedNavigationSeq = source.binding.executedNavigationSeq
-      binding.sameProfileMove = true
-      try? store.rebasePageExecutionInScope(binding.tabId, generation: binding.sessionGeneration,
-        executedNavigationSeq: binding.executedNavigationSeq)
+  private func transferExecutionInScope(from source: NativeExecution, to binding: PageHostBinding) {
+    if !mediaEnded, source.binding.tabId == binding.tabId, let media = source.media,
+      source.binding.context.navigationSeq == binding.context.navigationSeq ||
+      movedMediaWindowInScope(source.binding, windowId: binding.windowId) {
+      NowPlayingStore.shared.restore(media, tabId: binding.tabId, excluding: binding.reportedMedia)
     }
+    binding.executedNavigationSeq = source.binding.executedNavigationSeq
+    binding.sameProfileMove = true
+    try? store.rebasePageExecutionInScope(binding.tabId, generation: binding.sessionGeneration,
+      executedNavigationSeq: binding.executedNavigationSeq)
   }
 
   public func noteExecuted(_ binding: PageHostBinding, navigationSeq: Int?) {
@@ -501,6 +541,66 @@ public final class PageIssuer {
     store.sequence {
       guard ensurePageEstablished(binding), let prepared = prepareInScope(binding) else { return false }
       return finishInScope(binding, guardValue: prepared.guardValue)
+    }
+  }
+
+  public func dismissMedia(tabId: String, identity: PageIdentity) {
+    guard !mediaEnded, let binding = self.binding(identity: identity), tabId == identity.tabId, isCurrent(binding),
+      let entry = NowPlayingStore.shared.entries[tabId], !entry.removed else { return }
+    NowPlayingStore.shared.remove(tabId)
+    if entry.report.playing {
+      issue(tabId: tabId, identity: identity, command: .mediaCommand("pause", 0)) { _ in }
+    }
+  }
+
+  public func toggleMediaPictureInPicture(tabId: String, identity: PageIdentity, clickAt: Double, control: Int = 0) {
+    guard !mediaEnded, clickAt.isFinite, clickAt >= 0, clickAt > 0 || control > 0, let binding = self.binding(identity: identity),
+      tabId == identity.tabId, isCurrent(binding) else { return }
+    guard let kind = NowPlayingStore.shared.pictureInPicture[tabId], let press = NowPlayingStore.shared.pipReceipt(tabId: tabId) else {
+      issue(tabId: tabId, identity: identity, command: .requestPictureInPicture(clickAt, control)) { _ in }
+      return
+    }
+    issue(tabId: tabId, identity: identity, command: .takeControlPress(clickAt, control)) { [weak self] result in
+      guard let self, case .success(.bool(true)) = result,
+        !self.mediaEnded, NowPlayingStore.shared.pipReceipt(tabId: tabId) == press else { return }
+      let command: PageCommand = kind == "document" ? .executeJavaScript("window.documentPictureInPicture?.window?.close()") : .exitPictureInPicture
+      self.issue(tabId: tabId, identity: identity, command: command) { _ in }
+    }
+  }
+
+  public func pruneMedia() {
+    store.sequence {
+      guard !mediaEnded else { return }
+      let media = NowPlayingStore.shared
+      for id in Set(media.entries.keys).union(media.pictureInPicture.keys).union(media.capture.keys) {
+        guard let binding = bindings[id], !currentInScope(binding, requirePage: true) else { continue }
+        if movedMediaWindowInScope(binding, windowId: store.state.tabs[id]?.windowId) {
+          rememberMediaInScope(binding)
+        }
+        media.end(tabId: id)
+      }
+    }
+  }
+
+  private func movedMediaWindowInScope(_ source: PageHostBinding, windowId: String?) -> Bool {
+    guard let windowId, source.windowId != windowId, let tab = store.state.tabs[source.tabId],
+      store.state.engineProfile(tab.profileId) == source.profile, let navigation = tab.navigation else { return false }
+    return navigation.url == tab.url && navigation.userInitiated != true
+  }
+
+  private func rememberMediaInScope(_ binding: PageHostBinding) {
+    guard let media = NowPlayingStore.shared.snapshot(tabId: binding.tabId) else { return }
+    for key in Array(nativeExecutions.keys) where nativeExecutions[key]?.binding === binding {
+      nativeExecutions[key]?.media = media
+    }
+  }
+
+  public func endMedia() {
+    store.sequence {
+      guard !mediaEnded else { return }
+      mediaEnded = true
+      for id in Array(nativeExecutions.keys) { nativeExecutions[id]?.media = nil }
+      for id in bindings.keys { NowPlayingStore.shared.end(tabId: id) }
     }
   }
 

@@ -1,3 +1,4 @@
+import { SolaraHostedView } from "@solara/settings";
 import { FadeLabel, Surface, Symbol } from "@solara/shell";
 import { useLayoutEffect, useState } from "react";
 import { Animated, Pressable, StyleSheet, Text, View, type AccessibilityActionEvent, type GestureResponderEvent } from "react-native";
@@ -21,10 +22,8 @@ import { clickTab, tabTitle } from "./actions";
 import { GroupPanel } from "./GroupPanel";
 import { cardHoverProps, dismissHover, setHoverSpace } from "./hover";
 import { hoverCardOrigin, useHoverCardMotion, useHoverCardPlacement } from "./hoverMotion";
-import { useSidebarUi, type Anchor, type Hover } from "./state";
+import { measureRow, setSidebarUi, useSidebarUi, type Anchor, type Hover } from "./state";
 import { TabIcon } from "./TabIcon";
-import { HoverPlayer, usePlayerEdge, useShowsMiniPlayer } from "../media/HoverPlayer";
-import { useMedia, usePictureInPicture } from "../media/state";
 import { useSidebarWidth } from "./tokens";
 import { bareHost, FOLDER_PEEK_ROWS, NativeCalendarCard, nativeCardKind, useNativeHoverCard, useNativeHoverCardActive } from "./nativeHoverCard";
 
@@ -56,33 +55,32 @@ export function HoverCard({ windowId, width, height }: { windowId: string; width
   const target = orphaned ? null : hover;
   const { drawn, leaving, entering, motion } = useHoverCardMotion(windowId, target);
   const shown = drawn ?? target;
-  const player = useShowsMiniPlayer(shown?.kind === "tab" ? shown.id : undefined);
   const calendar = useIsCalendarTab(shown?.kind === "tab" ? shown.id : null);
-  const edge = usePlayerEdge(windowId, shown?.anchor);
   const sidebarWidth = useSidebarWidth(windowId);
   const [diaHeight, setDiaHeight] = useState(DIA_HEIGHT);
-  const dia = shown?.kind === "tab" && !player && !calendar;
-  const origin = !shown ? null : dia ? diaCardOrigin(shown.anchor, sidebarWidth, diaHeight, height) : hoverCardOrigin(shown.anchor, player ? edge : undefined);
+  const dia = shown?.kind === "tab" && !calendar;
+  const origin = !shown ? null : dia ? diaCardOrigin(shown.anchor, sidebarWidth, diaHeight, height) : hoverCardOrigin(shown.anchor);
   useHoverCardPlacement(motion, origin, { width, height });
-  const nativeKind = nativeCardKind(useNativeHoverCardActive(windowId), shown, dia, player, calendar);
-  useNativeHoverCard(windowId, nativeKind, target, sidebarWidth, height, edge);
+  const nativeHost = useNativeHoverCardActive(windowId);
+  const nativeKind = nativeCardKind(nativeHost, shown, calendar);
+  useNativeHoverCard(windowId, nativeKind, target, sidebarWidth, height);
   if (!shown) return null;
   if (nativeKind === "calendar") return target ? <NativeCalendarCard windowId={windowId} tabId={shown.id} anchor={shown.anchor} /> : null;
+  if (nativeKind === "tab" && !nativeHost) return <SolaraHostedView kind="sidebar.mediaHover" windowId={windowId} state="" pointerEvents="box-none" style={StyleSheet.absoluteFill} />;
   if (nativeKind) return null;
   return (
     <Animated.View pointerEvents={leaving || entering ? "none" : "box-none"} style={[StyleSheet.absoluteFill, motion.style]}>
       {dia && origin ? (
         <DiaTabCard tabId={shown.id} windowId={windowId} origin={origin} onHeight={setDiaHeight} />
       ) : (
-        <HoverContent hover={shown} windowId={windowId} player={player} calendar={calendar} windowHeight={height} />
+        <HoverContent hover={shown} windowId={windowId} calendar={calendar} windowHeight={height} />
       )}
     </Animated.View>
   );
 }
 
-function HoverContent({ hover, windowId, player, calendar, windowHeight }: { hover: Hover; windowId: string; player: boolean; calendar: boolean; windowHeight: number }) {
+function HoverContent({ hover, windowId, calendar, windowHeight }: { hover: Hover; windowId: string; calendar: boolean; windowHeight: number }) {
   if (hover.kind === "live") return <LiveItemCard id={hover.id} windowId={windowId} anchor={hover.anchor} />;
-  if (hover.kind === "tab" && player) return <HoverPlayer tabId={hover.id} windowId={windowId} anchor={hover.anchor} />;
   if (hover.kind === "tab" && calendar) return <CalendarPreview tabId={hover.id} windowId={windowId} anchor={hover.anchor} />;
   if (hover.kind === "folder") return <FolderPeek folderId={hover.id} windowId={windowId} anchor={hover.anchor} />;
   return hover.kind === "tab" ? <TabCard tabId={hover.id} windowId={windowId} anchor={hover.anchor} /> : <GroupPanel key={`${windowId}:${hover.id}`} groupId={hover.id} windowId={windowId} anchor={hover.anchor} windowHeight={windowHeight} />;
@@ -93,8 +91,6 @@ function DiaTabCard({ tabId, windowId, origin, onHeight }: { tabId: string; wind
   const tab = useBrowser((s) => s.tabs[tabId]);
   const isActive = useBrowser((s) => activeTabId(s, windowId) === tabId);
   const bookmarked = useIsBookmarked(tab?.url ?? "");
-  const video = useMedia((m) => !!m.sessions[tabId]?.hasVideo || !!m.pipOpen[tabId]);
-  const [pip, togglePip] = usePictureInPicture(tabId);
   const sleeping = useIsSleeping(tabId);
   if (!tab) return null;
   const s = () => useBrowser.getState();
@@ -119,7 +115,6 @@ function DiaTabCard({ tabId, windowId, origin, onHeight }: { tabId: string; wind
         openInSplit(tabId);
       },
     });
-  if (video) actions.push({ icon: pip ? "pip.exit" : "pip.enter", label: pip ? "Exit Picture in Picture" : "Picture in Picture", onPress: togglePip });
   if (away)
     actions.push({
       icon: "arrow.uturn.backward",
@@ -225,8 +220,6 @@ function TabCard({ tabId, windowId, anchor }: { tabId: string; windowId: string;
   const tab = useBrowser((s) => s.tabs[tabId]);
   const isActive = useBrowser((s) => activeTabId(s, windowId) === tabId);
   const bookmarked = useIsBookmarked(tab?.url ?? "");
-  const video = useMedia((m) => !!m.sessions[tabId]?.hasVideo || !!m.pipOpen[tabId]);
-  const [pip, togglePip] = usePictureInPicture(tabId);
   const sleeping = useIsSleeping(tabId);
   if (!tab) return null;
   const s = () => useBrowser.getState();
@@ -272,7 +265,6 @@ function TabCard({ tabId, windowId, anchor }: { tabId: string; windowId: string;
             }}
           />
         ) : null}
-        {video ? <Action icon={pip ? "pip.exit" : "pip.enter"} label={pip ? "Exit PiP" : "PiP"} onPress={togglePip} /> : null}
         {away ? (
           <Action
             icon="arrow.uturn.backward"
@@ -364,4 +356,14 @@ function PeekRow({ tabId, windowId }: { tabId: string; windowId: string }) {
       </View>
     </Pressable>
   );
+}
+
+if (__DEV__) {
+  (globalThis as { acMediaHover?: unknown }).acMediaHover = (windowId: string, tabId: string | null) => {
+    if (!tabId) return dismissHover();
+    return measureRow(windowId, tabId).then((anchor) => {
+      if (anchor) setSidebarUi({ hover: { windowId, kind: "tab", id: tabId, anchor } });
+      return anchor;
+    });
+  };
 }

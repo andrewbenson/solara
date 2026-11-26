@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
+import { randomUUID } from "node:crypto";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { createServer } from "node:http";
 import { tmpdir } from "node:os";
@@ -11,8 +12,9 @@ const args = process.argv.slice(2);
 const appArg = args.find((a) => !a.startsWith("--"));
 const keep = args.includes("--keep-data");
 const pooled = args.includes("--pool");
-if (!appArg || args.some((arg) => arg.startsWith("--") && !["--keep-data", "--pool"].includes(arg))) {
-  console.error(`usage: node media-stack-test.mjs <Debug Solara.app> [--pool] [--keep-data]
+const safe = args.includes("--safe");
+if (!appArg || args.some((arg) => arg.startsWith("--") && !["--keep-data", "--pool", "--safe"].includes(arg))) {
+  console.error(`usage: node media-stack-test.mjs <Debug Solara.app> [--pool] [--safe] [--keep-data]
 
 The sidebar mini player stack across windows: two normal windows in different profiles and a private window. Both
 normal windows show the same cross-profile stack, newest first, and each hides only the card for the tab it shows; a
@@ -106,6 +108,7 @@ const settle = (ms) => new Promise((r) => setTimeout(r, ms));
 const win = (id) => C.chromeWindows().then((ws) => { const f = st().windows[id].frame; const w = ws.filter((w) => w.hasRoot).find((w) => { const r = w.frame.match(/[-\\d.]+/g).map(Number); return Math.abs(r[0] - f[0]) < 2 && Math.abs(r[2] - f[2]) < 2; }); return w && w.window; });
 const act = (id, a) => win(id).then((n) => C.devWindow(n, a));
 const rows = (id) => M.probe("media.sidebarPlayer", id).then(JSON.parse).then((r) => r.filter((row) => !row.leaving));
+const heldPiP = (id) => M.probe("media.pictureInPicture", id).then(JSON.parse);
 const allRows = (id) => M.probe("media.sidebarPlayer", id).then(JSON.parse);
 const ids = (id) => rows(id).then((r) => r.filter((row) => !row.leaving).map((row) => row.tabId));
 const centre = (f) => [Math.round(f[0] + f[2] / 2), Math.round(f[1] + f[3] / 2)];
@@ -179,14 +182,7 @@ const settledAt = (series, to) => {
   return at;
 };
 
-try {
-  app = await launch(resolve(appArg), {
-    data, fresh: true, session: fixture, onboarded: true, probe: true,
-    env: { SOLARA_ALLOW_AUDIO: "1", ...(pooled ? { SOLARA_NATIVE_PAGES_POOL: "1" } : { SOLARA_NATIVE_PAGES_POOL: "0" }) },
-    switches: "--disable-audio-output --autoplay-policy=no-user-gesture-required",
-    ready: "return !!ac.store.getState().windows.w1 && !!ac.store.getState().windows.w2",
-  });
-
+async function checkStack() {
   await rep.check("pages-load", async () => {
     for (const [tab, name] of [["a", "player-a"], ["c", "player-c"], ["d", "player-d"]]) {
       await run(`ac.actions.switchToTab(${JSON.stringify(tab)}); return true;`);
@@ -472,6 +468,7 @@ try {
     await run(`return rows("w1").then((r) => click("w1", centre(r[0].frames.pip))).then(() => true);`);
     out.holder = await until("v holds the PiP", `return C.devPictureInPictureHolder().then((h) => h === "v" ? h : null);`, 6000);
     out.playingInPiP = (await state())?.playbackState;
+    await until("v owns native PiP", `return heldPiP("w1").then((rows) => rows.v === "video");`, 4000);
     const held = await until("both windows' cards offer Minimize", `return Promise.all([rows("w1"), rows("w2")]).then(([a, b]) => { const x = a.find((r) => r.tabId === "v"), y = b.find((r) => r.tabId === "v"); const minimize = "Minimize Picture in Picture"; return x?.labels?.pip === minimize && y?.labels?.pip === minimize ? [x.labels.pip, y.labels.pip, x.subtitle, y.subtitle] : null; });`, 4000);
     out.heldLabels = held.slice(0, 2);
     out.heldSubtitles = held.slice(2);
@@ -584,6 +581,65 @@ try {
     assert.deepEqual([...new Set([...out.frontsToWork, ...out.frontsToPersonal])], ["c"], `the front card never changes during either swipe: ${JSON.stringify(out)}`);
     return out;
   });
+  await rep.check("peek and Little Solara media teardown", async () => {
+    const source = "a2";
+    await run(`ac.actions.switchToTab(${JSON.stringify(source)}); return true;`);
+    const peek = await run(`return st().openPeek(${JSON.stringify(source)}, ${JSON.stringify(url("player-peek"))});`);
+    const report = (tab, playing) => `return M.probe("media.nowPlaying", "w1").then(JSON.parse).then((rows) => ${playing ? "" : "!"}rows.some((row) => row.tabId === ${JSON.stringify(tab)} ${playing ? '&& row.playbackState === "playing"' : ""}));`;
+    try {
+      await until("Peek fixture ready", `return st().tabs[${JSON.stringify(peek)}]?.title === "player-peek";`, 12000);
+      await play("player-peek");
+      await until("Peek is playing in Swift", report(peek, true));
+    } finally {
+      await run(`ac.peek.dismissPeek("w1"); return true;`);
+    }
+    await until("Peek media removed", report(peek, false));
+    assert.equal(await run(`return st().windows.w1.activeTabIds.default;`), source);
+
+    await run(`ac.runCommand({ command: "newLittleSolara" }); return true;`);
+    const small = await until("Little Solara tab", `return Object.values(st().windows).find((w) => w.kind === "small")?.tabIds[0] ?? null;`);
+    try {
+      await run(`st().navigate(${JSON.stringify(small)}, ${JSON.stringify(url("player-little"))}, { userInitiated: true }); return true;`);
+      await until("Little Solara fixture ready", `return st().tabs[${JSON.stringify(small)}]?.title === "player-little";`, 12000);
+      await play("player-little");
+      await until("Little Solara is playing in Swift", report(small, true));
+      await run(`st().navigate(${JSON.stringify(small)}, ${JSON.stringify(url("replacement"))}, { userInitiated: true }); return true;`);
+      await until("replacement committed", `return st().tabs[${JSON.stringify(small)}]?.title === "REPLACEMENT";`, 12000);
+      await until("replacement cleared the old media", report(small, false));
+    } finally {
+      await run(`st().closeTab(${JSON.stringify(small)}); return true;`);
+    }
+    return { peek, small };
+  });
+}
+
+try {
+  app = await launch(resolve(appArg), {
+    data, fresh: true, session: fixture, onboarded: true, probe: true,
+    env: {
+      SOLARA_ALLOW_AUDIO: "1", SOLARA_NATIVE_PAGES_POOL: pooled ? "1" : "0",
+      ...(safe ? { SOLARA_LAUNCH_SWITCHES_DEFAULTS: `solara-media-stack-${randomUUID()}`, SOLARA_LAUNCH_SWITCHES_OPTION: "1" } : {}),
+    },
+    switches: "--disable-audio-output --autoplay-policy=no-user-gesture-required",
+    ready: safe ? "return Object.keys(ac.store.getState().windows).length > 0"
+      : "return !!ac.store.getState().windows.w1 && !!ac.store.getState().windows.w2",
+  });
+
+  if (safe) await rep.check("safe mode owns media on a page opened after launch", async () => {
+    const status = await run(`return expo.modules.SolaraStoreAdapter.status();`);
+    assert.equal(status.safeMode, "option");
+    assert.equal(status.active, true);
+    const window = await run(`return Object.keys(st().windows)[0];`);
+    const tab = await run(`return st().newTab(${JSON.stringify(window)}, { url: ${JSON.stringify(url("player-safe"))} });`);
+    const session = `M.probe("media.nowPlaying", ${JSON.stringify(window)}).then(JSON.parse).then((rows) => rows.find((row) => row.tabId === ${JSON.stringify(tab)}))`;
+    await until("safe mode fixture ready", `return st().tabs[${JSON.stringify(tab)}]?.title === "player-safe";`, 12000);
+    await play("player-safe");
+    await until("safe mode is playing in Swift", `return ${session}.then((row) => row?.playbackState === "playing");`);
+    await run(`st().closeTab(${JSON.stringify(tab)}); return true;`);
+    await until("safe mode cleared media", `return ${session}.then((row) => !row);`);
+    return { window, tab };
+  });
+  else await checkStack();
 } catch (e) {
   rep.record("run", { error: e });
 } finally {

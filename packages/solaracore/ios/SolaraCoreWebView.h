@@ -109,6 +109,7 @@ extern NSNotificationName const SolaraCorePictureInPictureDidChangeNotification;
     NS_SWIFT_NAME(downloadImage(_:maxPixels:completion:));
 
 - (void)mediaCommand:(NSString *)action seconds:(double)seconds NS_SWIFT_NAME(mediaCommand(_:seconds:));
++ (NSInteger)recordNativePictureInPicturePressInWindow:(NSWindow *)window NS_SWIFT_NAME(recordNativePictureInPicturePress(in:));
 - (BOOL)takeControlPressAt:(double)clickMs control:(NSInteger)target NS_SWIFT_NAME(takeControlPress(clickAt:control:));
 - (void)requestPictureInPictureForClickAt:(double)clickMs
                                   control:(NSInteger)target

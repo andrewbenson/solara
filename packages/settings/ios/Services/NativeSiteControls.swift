@@ -20,6 +20,7 @@ final class NativeSiteControls {
   private var menus: [WeakSiteMenu] = []
   private var started = false
   private var blockerObserver: NSObjectProtocol?
+  private var mediaListener: UUID?
 
   private init() {}
 
@@ -31,6 +32,7 @@ final class NativeSiteControls {
       return
     }
     started = true
+    mediaListener = NativeMediaStack.listen { [weak self] in self?.refresh() }
     blockerObserver = NotificationCenter.default.addObserver(forName: Notification.Name("SolaraWebKitContentBlockerApplied"), object: nil, queue: .main) { [weak self] _ in
       Task { @MainActor in self?.refreshBlockerStatus() }
     }
@@ -118,6 +120,8 @@ final class NativeSiteMenu {
     guard !closed, let tabId = input["tabId"]?.string,
       var c = SiteControlsLogic.context(state: store?.state, tabId: tabId, pageEngine: store.map { $0.pageEngine(tabId, in: $0.state) } ?? "", input: input)?.object
     else { return }
+    c["video"] = .bool(NowPlayingStore.shared.entries[tabId]?.report.hasVideo == true)
+    c["pip"] = .bool(NowPlayingStore.shared.pictureInPicture[tabId] != nil)
     let windowId = c["windowId"]?.string ?? ""
     if store != nil, let provider = NativeSiteControls.shared.extensions { c["extensions"] = provider.rows(tabId: tabId, windowId: windowId) }
     if store != nil, let provider = NativeSiteControls.shared.translate { c["translate"] = provider.rows(tabId: tabId, windowId: windowId) }
@@ -242,6 +246,11 @@ final class NativeSiteMenu {
     case .permission(let type): pickPermission(type)
     case .shared(let action):
       guard case .press(_, let rect) = event else { return }
+      if action == "pip" {
+        NativeMediaStack.togglePictureInPicture(tabId: tabId, windowId: windowId, window: body.window)
+        dismiss()
+        return
+      }
       if action == "copy" || action == "share" {
         let options: [String: Any] = ["tabId": tabId, "anchor": [rect.minX, rect.minY, rect.width, rect.height]]
         let arg = (try? JSONSerialization.data(withJSONObject: options)).flatMap { String(data: $0, encoding: .utf8) }

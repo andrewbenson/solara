@@ -3352,6 +3352,13 @@ static NSString *LinkKeyAction(NSString *key) {
   [self callFrame:_nowPlayingFrame ?: @"" kind:@"media" json:JSONString(@{@"action" : action ?: @"", @"seconds" : @(seconds)})];
 }
 
++ (NSInteger)recordNativePictureInPicturePressInWindow:(NSWindow *)window {
+  static NSInteger nextControl = 1LL << 40;
+  const NSInteger control = ++nextControl;
+  RecordControlPress(NSProcessInfo.processInfo.systemUptime, window.windowNumber, @(control));
+  return control;
+}
+
 - (BOOL)takeControlPressAt:(double)clickMs control:(NSInteger)target {
   const BOOL taken = TakeControlPress(clickMs, target, self.window) > 0;
   [self traceManualPictureInPicture:[NSString stringWithFormat:@"exit press %@ (control %ld)", taken ? @"verified" : @"not verified", (long)target]];

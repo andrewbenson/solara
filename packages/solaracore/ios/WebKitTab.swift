@@ -671,6 +671,7 @@ final class WebKitTab: NSView, WKNavigationDelegate, WKUIDelegate {
     if !showingError { errorURL = nil }
     playingFrames.removeAll()
     mediaFrames.removeAll()
+    if nowPlayingFrame != nil { emit("nowPlaying", ["state": NSNull()]) }
     nowPlayingFrame = nil
     self.webView?.captureOrigins.removeAll()
     if !host.isEmpty {

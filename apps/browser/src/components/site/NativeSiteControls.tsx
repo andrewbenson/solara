@@ -6,7 +6,6 @@ import { openPageIn, togglePageEngine } from "../../lib/engines";
 import { patchPage, setPopover, usePage } from "../layout/pageState";
 import { showToast } from "../layout/splitActions";
 import { toggleCastPicker } from "../media/cast";
-import { togglePictureInPicture, useMedia } from "../media/state";
 import type { PageEngine, SecurityInfo } from "@solara/solaracore";
 import type { Tab } from "../../store/types";
 import type { Settings } from "../../store/settings";
@@ -69,8 +68,6 @@ export function NativeSiteControls({ tabId, open, right, left, top, onClosed }: 
   const onClose = () => setPopover(tabId, null);
   const all: Record<string, SitePanelHandler> = {};
   const items: SitePanelItem[] = [{ kind: "slot", id: "extensions" }, { kind: "slot", id: "translate" }];
-  const video = useMedia((m) => !!m.sessions[tabId]?.hasVideo);
-  const pip = useMedia((m) => !!m.pipOpen[tabId]);
   const security = usePage(tabId, (p) => p.security);
   const blocked = usePage(tabId, (p) => p.blocked);
   const access = usePage(tabId, (p) => p.mediaAccess);
@@ -115,7 +112,7 @@ export function NativeSiteControls({ tabId, open, right, left, top, onClosed }: 
   const fallbackContext = useBrowser(useShallow((s) => siteControlsFallbackContext(s, tabId)));
   const request = JSON.stringify({
     tabId, fallbackContext, open, top, right, left, dark: !!theme.dark, theme: tokens,
-    video, pip, security, blocked, camera: !!access?.camera, microphone: !!access?.microphone, playingAudio,
+    security, blocked, camera: !!access?.camera, microphone: !!access?.microphone, playingAudio,
     extensions: contributed.extensions, translate: contributed.translate,
   });
   const onEvent = (e: NativeSitePanelEvent) => {
@@ -167,7 +164,6 @@ addNativeSettingsHandlers({
     if (action === "copy") return nativeWorkspaceCommand("copyUrl", JSON.stringify({ tabId: tabId }), snapshot.windowId);
     if (action === "find") return useBrowser.getState().setFind(tabId, { open: true, replace: false, focusRequest: Date.now() });
     if (action === "cast") return toggleCastPicker(snapshot.windowId);
-    if (action === "pip") { void togglePictureInPicture(tabId, { clickAt: args.clickAt, control: 0 }); return; }
     if (action === "engine") return openPageIn(tabId, args.engine, { rule: args.rule });
     if (action === "other-engine") return togglePageEngine(tabId);
     if (action === "privacy") return openSettings("privacy");

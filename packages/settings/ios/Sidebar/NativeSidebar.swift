@@ -216,6 +216,8 @@ final class SidebarHost {
       host.player = stacked.first
       host.stack = stacked
     }
+    host.pip = state.windows[windowId]?.tabIds.filter { NowPlayingStore.shared.pictureInPicture[$0] != nil }
+    host.capture = NowPlayingStore.shared.capture
     view.update(state: state, host: host)
     NativeTileFolders.render(windowId: windowId)
   }

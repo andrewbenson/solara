@@ -52,7 +52,7 @@ const closed = (id) => until("popup fully released", async () => {
   return !info.frame && info.liveViews === 0 && !(await app.targets()).some((target) => target.url.includes(`${extensionId}/popup.html`));
 });
 const open = async (windowId, tabId) => {
-  await run(`globalThis.acExtensionsApp.bridge.openExtensionFromMenu(${JSON.stringify(windowId)}, ${JSON.stringify(extensionId)}, ${JSON.stringify(tabId)}); return true`);
+  await run(`return globalThis.expo.modules.SolaraToolbar.extensionCommand(JSON.stringify({ command: "openExtension", windowId: ${JSON.stringify(windowId)}, id: ${JSON.stringify(extensionId)}, tabId: ${JSON.stringify(tabId)} })).then(() => true)`);
   const info = await until("native popup appeared", async () => {
     const value = await popup(windowId);
     return value.frame?.[2] > 100 && value.appeared ? value : null;
@@ -170,7 +170,7 @@ try {
   });
   await rep.check("toggle-and-navigation", async () => {
     await open(little.id, little.tabId);
-    await run(`globalThis.acExtensionsApp.bridge.openExtensionFromMenu(${JSON.stringify(little.id)}, ${JSON.stringify(extensionId)}, ${JSON.stringify(little.tabId)}); return true`);
+    await run(`return globalThis.expo.modules.SolaraToolbar.extensionCommand(JSON.stringify({ command: "openExtension", windowId: ${JSON.stringify(little.id)}, id: ${JSON.stringify(extensionId)}, tabId: ${JSON.stringify(little.tabId)} })).then(() => true)`);
     await closed(little.id);
     await open(little.id, little.tabId);
     await run(`ac.store.getState().navigate(${JSON.stringify(little.tabId)}, ${JSON.stringify(`${url}/navigated`)}); return true`);
@@ -191,8 +191,8 @@ try {
   await rep.check("inactive-api-refused", async () => {
     await act(little.number, "fakeAppActive:0");
     try {
-      const accepted = await run(`return globalThis.expo.modules.SolaraToolbar.showExtensionPopup(JSON.stringify({windowId:${JSON.stringify(little.id)},tabId:${JSON.stringify(little.tabId)},extensionId:${JSON.stringify(extensionId)},profile:'',popupUrl:${JSON.stringify(`chrome-extension://${extensionId}/popup.html`)},anchor:{x:100,y:5,width:28,height:28},requiresActive:true}))`);
-      assert.equal(accepted, false);
+      await run(`return globalThis.expo.modules.SolaraToolbar.extensionCommand(JSON.stringify({ command: "openExtension", windowId: ${JSON.stringify(little.id)}, id: ${JSON.stringify(extensionId)}, tabId: ${JSON.stringify(little.tabId)}, requiresActive: true })).then(() => true)`);
+      assert.equal((await popup(little.id)).extensionId, null);
       await closed(little.id);
       await open(little.id, little.tabId);
       await run("ac.extensions.closeExtensionPopup(); return true");

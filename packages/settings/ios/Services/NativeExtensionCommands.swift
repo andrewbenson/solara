@@ -118,7 +118,15 @@ enum NativeExtensionCommands {
       if target != window { ShellScripting.showWindow(target) }
       SettingsJS.shared.fire("extensions.pin", target)
     case "options": if let url = ext?["optionsUrl"]?.string { open(url, window: window, store: store) }
-    case "openExtension": activate(input, id: id, window: window, menu: menu)
+    case "openExtension":
+      let rect = input["anchor"].flatMap { value -> CGRect? in
+        guard let x = value["x"]?.number, let y = value["y"]?.number,
+          let width = value["width"]?.number, let height = value["height"]?.number,
+          [x, y, width, height].allSatisfy(\.isFinite), width >= 0, height >= 0 else { return nil }
+        return CGRect(x: x, y: y, width: width, height: height)
+      }
+      NativeExtensionActionPopup.activate(windowId: window, extensionId: id, tabId: input["tabId"]?.string,
+        anchor: rect, requiresActive: input["requiresActive"]?.truthy == true)
     case "menu":
       guard let ext else { return }
       let panel = NativeExtensionCatalog.legacyPanels[window] == id || NativeExtensionSidePanel.extensionId(windowId: window) == id
@@ -167,6 +175,7 @@ enum NativeExtensionCommands {
         guard response == .alertFirstButtonReturn, NativeExtensionCatalog.current, NativeStoreHandle.store === store,
           NativeStoreHandle.ownershipGeneration == generation, menu?.matches(state: state) != false,
           ExtensionPresentation.WindowContext.profileExists(state: state, engineProfile: profile) else { completion?(nil); return }
+        NativeExtensionActionPopup.extensionRemoved(id, profile: profile)
         SettingsJS.shared.fire("extensions.closeSurfaces", id)
         SolaraCoreServices.uninstallExtension(id, profile: profile) { result in
           let error = ExtensionsAdapter.engineError(result)
@@ -194,12 +203,6 @@ enum NativeExtensionCommands {
       close()
       run(["command": .string(choice), "windowId": .string(window)], menu: context)
     }
-  }
-
-  private static func activate(_ input: JSONValue, id: String, window: String, menu: ExtensionPresentation.WindowContext?) {
-    guard NativeExtensionCatalog.visible(window).contains(where: { $0["id"]?.string == id }) else { return }
-    SettingsJS.shared.fire("extensions.activate", window, id, input["tabId"]?.foundation ?? NSNull(), input["anchor"]?.foundation ?? NSNull(),
-      menu.map { $0.profileId as Any } ?? NSNull(), menu.map { $0.engineProfile as Any } ?? NSNull())
   }
 
   private static func choose(_ rows: [JSONObject], window: String, selected: @escaping (String, ExtensionPresentation.WindowContext) -> Void) {

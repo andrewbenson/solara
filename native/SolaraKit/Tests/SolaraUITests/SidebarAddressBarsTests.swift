@@ -55,6 +55,28 @@ import Testing
     #expect(published.last?["field"] == field)
   }
 
+  @Test func resizedExtensionAnchorIsPublishedBeforeNotifying() throws {
+    let bars = SidebarAddressBars()
+    let bar = bars.view("w1")
+    let window = Self.hosted(bar, width: 240)
+    defer { bar.removeFromSuperview(); _ = window }
+    let json = Self.json.replacingOccurrences(of: #""extensions":[]"#, with:
+      #""extensions":[{"id":"ext:a","icon":"puzzlepiece","anchor":"a"}]"#)
+    bars.set("w1", json: json)
+    let previous = try #require(bars.anchors["w1"]?["a"])
+    var reported: CGRect?
+    var cachedDuringNotification: CGRect?
+    bars.onAnchors = { windowId, anchors in
+      reported = anchors["a"]
+      cachedDuringNotification = bars.anchors[windowId]?["a"]
+    }
+    bar.frame.size.width += 50
+    bar.layoutSubtreeIfNeeded()
+    let moved = try #require(reported)
+    #expect(moved != previous)
+    #expect(cachedDuringNotification == moved)
+  }
+
   @Test func afterAReconnectTheNextStateReportsAgainOnce() throws {
     let bars = SidebarAddressBars()
     let bar = bars.view("w1")

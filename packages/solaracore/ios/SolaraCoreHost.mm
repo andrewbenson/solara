@@ -745,13 +745,13 @@ static void StartEarlyWindow() {
 }
 
 - (BOOL)engine:(SolaraCoreEngine *)engine extensionActionPopup:(NSDictionary *)popup tab:(SolaraCoreTab *)tab {
-  if (!gChromeUIHandler || !tab) {
-    NSLog(@"[solaracore] action.openPopup for %@: %@", popup[@"extensionId"], tab ? @"the app isn't listening yet" : @"no tab");
+  if (!tab) {
+    NSLog(@"[solaracore] action.openPopup for %@: no tab", popup[@"extensionId"]);
     return NO;
   }
   NSMutableDictionary *payload = [popup mutableCopy];
   payload[@"browserId"] = @(solaracore_host::BrowserId(tab));
-  gChromeUIHandler(@"actionPopup", payload);
+  [NSNotificationCenter.defaultCenter postNotificationName:@"SolaraExtensionActionPopup" object:nil userInfo:payload];
   return YES;
 }
 
@@ -764,10 +764,10 @@ static void StartEarlyWindow() {
 }
 
 - (BOOL)engine:(SolaraCoreEngine *)engine extensionActionShortcut:(NSDictionary *)shortcut tab:(SolaraCoreTab *)tab {
-  if (!gChromeUIHandler || !tab) return NO;
+  if (!tab) return NO;
   NSMutableDictionary *payload = [shortcut mutableCopy];
   payload[@"browserId"] = @(solaracore_host::BrowserId(tab));
-  gChromeUIHandler(@"actionShortcut", payload);
+  [NSNotificationCenter.defaultCenter postNotificationName:@"SolaraExtensionActionShortcut" object:nil userInfo:payload];
   return YES;
 }
 

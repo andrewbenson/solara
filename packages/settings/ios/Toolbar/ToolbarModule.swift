@@ -13,7 +13,7 @@ public class ToolbarModule: Module {
   public func definition() -> ModuleDefinition {
     Name("SolaraToolbar")
 
-    Events("onExtensionPopupChanged", "onExtensionPopupOpenWindow", "onExtensionToolbarChanged")
+    Events("onExtensionPopupChanged", "onExtensionToolbarChanged")
 
     OnCreate {
       let sink = ToolbarPopupEventSink(module: self)
@@ -43,9 +43,8 @@ public class ToolbarModule: Module {
       await NativeExtensionCatalog.refreshAndWait(profile, afterChange: afterChange)
     }
 
-    AsyncFunction("extensionContext") { (popup: String?, panels: [String: String]) in
+    AsyncFunction("extensionContext") { (panels: [String: String]) in
       MainActor.assumeIsolated {
-        NativeExtensionCatalog.legacyPopup = popup
         NativeExtensionCatalog.legacyPanels = panels
         NativeExtensionCatalog.refreshActions()
       }
@@ -68,11 +67,11 @@ public class ToolbarModule: Module {
       }
     }.runOnQueue(.main)
 
-    Function("available") { () -> Bool in ToolbarModule.available }
+    Function("extensionPopupWindow") { () -> String? in
+      NativeExtensionActionPopup.visibleWindowId
+    }
 
-    AsyncFunction("showExtensionPopup") { (json: String) -> Bool in
-      MainActor.assumeIsolated { NativeExtensionActionPopup.show(json) }
-    }.runOnQueue(.main)
+    Function("available") { () -> Bool in ToolbarModule.available }
 
     AsyncFunction("closeExtensionPopup") { (windowId: String?) in
       MainActor.assumeIsolated { NativeExtensionActionPopup.close(windowId: windowId) }
@@ -162,12 +161,10 @@ final class NativeToolbarHostView: ExpoView {
     return nil
   }
 
-  static func extensionAnchor(window: NSWindow, tabId: String?, extensionId: String) -> CGRect? {
+  static func extensionAnchor(window: NSWindow, tabId: String?, extensionId: String, fallback: Bool = false) -> CGRect? {
     guard let root = window.contentView else { return nil }
     for toolbar in toolbars(in: root) where toolbar.state?.tabId == tabId {
-      guard let item = toolbar.describeExtensions().first(where: { $0["id"] as? String == "ext:\(extensionId)" }),
-        let frame = item["frame"] as? [CGFloat], frame.count == 4 else { continue }
-      return CGRect(x: frame[0], y: frame[1], width: frame[2], height: frame[3])
+      if let anchor = toolbar.extensionAnchor(extensionId, fallback: fallback) { return anchor }
     }
     return nil
   }
@@ -323,7 +320,6 @@ public class SidebarAddressBarModule: Module {
 @MainActor
 enum SidebarAddressBridge {
   private static var installed = false
-  private static var latestAnchors: [String: [String: [CGFloat]]] = [:]
 
   static func install() {
     guard !installed else { return }
@@ -348,20 +344,24 @@ enum SidebarAddressBridge {
       let state = NativeStoreHandle.store?.state
       let tabId = state?.peeks[windowId]?.tabId ?? state?.activeTabId(windowId)
       NativeExtensionActionPopup.anchorsChanged(window: ShellDrag.window(windowId), tabId: tabId, anchors: anchors)
-      let payload = anchors.mapValues { [$0.minX, $0.minY, $0.width, $0.height] }
-      latestAnchors[windowId] = payload
-      sendAnchors(windowId, payload)
+      sendAnchors(windowId, anchors)
     }
     SettingsJS.shared.onConnect {
-      latestAnchors = latestAnchors.filter { SidebarAddressBars.shared.existing($0.key) != nil }
-      for (windowId, payload) in latestAnchors { sendAnchors(windowId, payload) }
+      for (windowId, anchors) in SidebarAddressBars.shared.anchors { sendAnchors(windowId, anchors) }
       SidebarAddressBars.shared.reannounceOnNextSet()
     }
   }
 
-  private static func sendAnchors(_ windowId: String, _ payload: [String: [CGFloat]]) {
+  private static func sendAnchors(_ windowId: String, _ anchors: [String: CGRect]) {
     guard SettingsJS.shared.connected else { return }
+    let payload = anchors.mapValues { [$0.minX, $0.minY, $0.width, $0.height] }
     Task { @MainActor in _ = await SettingsAdapters.js("sidebar.addressAnchors", windowId, payload) }
+  }
+
+  static func extensionAnchor(windowId: String, extensionId: String) -> CGRect? {
+    let bars = SidebarAddressBars.shared
+    guard let bar = bars.existing(windowId), !bar.isHiddenOrHasHiddenAncestor, let anchors = bars.anchors[windowId] else { return nil }
+    return anchors[extensionId] ?? anchors["*"]
   }
 
   static func extensionButton(windowId: String, event: NSEvent) -> ExtensionPopupButton? {
@@ -370,9 +370,8 @@ enum SidebarAddressBridge {
       let hit = root.superview?.hitTest(event.locationInWindow), hit.isDescendant(of: bar) else { return nil }
     let native = root.convert(event.locationInWindow, from: nil)
     let point = root.isFlipped ? native : CGPoint(x: native.x, y: root.bounds.height - native.y)
-    guard let id = (latestAnchors[windowId] ?? [:]).first(where: { key, frame in
-      key != "*" && key != "field" && frame.count == 4 && CGRect(x: frame[0], y: frame[1], width: frame[2], height: frame[3]).contains(point)
-    })?.key else { return nil }
+    guard let anchors = SidebarAddressBars.shared.anchors[windowId],
+      let id = anchors.first(where: { key, rect in key != "*" && key != "field" && rect.contains(point) })?.key else { return nil }
     return ExtensionPopupButton(owner: ObjectIdentifier(hit), id: "ext:\(id)", tabId: nil)
   }
 }

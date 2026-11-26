@@ -4,7 +4,6 @@ import { showMenu } from "@solara/shell";
 import { useEffect, useState } from "react";
 import { useTheme } from "../../lib/theme";
 import { toggleCastPicker, useCastRoutes } from "../media/cast";
-import { dropToolbarAnchor, setToolbarAnchor } from "./bridge";
 import type { Anchor } from "./store";
 
 let nextHost = 0;
@@ -30,17 +29,9 @@ export function useNativeToolbarExtensions(windowId: string, tabId: string, limi
     return () => { live = false; subscription?.remove(); };
   }, [input]);
   const [anchors] = useState(() => new Map<string, Anchor>());
-  useEffect(() => () => {
-    for (const [slot, anchor] of anchors) dropToolbarAnchor(windowId, tabId, slot, anchor);
-    anchors.clear();
-  }, [windowId, tabId]);
   const onAnchors = (next: Record<string, [number, number, number, number]>) => {
-    for (const [slot, anchor] of anchors) if (!next[slot]) { dropToolbarAnchor(windowId, tabId, slot, anchor); anchors.delete(slot); }
-    for (const [slot, [x, y, width, height]] of Object.entries(next)) {
-      const anchor = { x, y, width, height };
-      anchors.set(slot, anchor);
-      setToolbarAnchor(windowId, tabId, slot, anchor);
-    }
+    anchors.clear();
+    for (const [slot, [x, y, width, height]] of Object.entries(next)) anchors.set(slot, { x, y, width, height });
   };
   const onClick = (id: string, kind: "press" | "menu") => {
     if (id === "ext-cast") {

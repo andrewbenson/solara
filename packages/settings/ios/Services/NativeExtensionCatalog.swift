@@ -26,7 +26,6 @@ enum NativeExtensionCatalog {
   private static var waiters: [String: [() -> Void]] = [:]
   private static var nextWaiters: [String: [() -> Void]] = [:]
   static var legacyPanels: [String: String] = [:]
-  static var legacyPopup: String?
   private static weak var pageIssuer: PageIssuer?
 
   static var current: Bool { NativeStoreHandle.ownsWorkspace && NativeStoreHandle.store === observed && observed != nil }
@@ -132,9 +131,21 @@ enum NativeExtensionCatalog {
     guard current, let issuer = PageIssuer.shared, issuer.store === observed,
       let binding = issuer.binding(tabId: tab), let registration = binding.registration,
       binding.engine == .chromium, issuer.ensurePageEstablished(binding), issuer.isCurrent(binding) else { return nil }
-    let view = binding.host == .pooled ? TabPoolHost.shared.pageView(tab) : binding.owner as? NSView
-    guard let page = NativeOmniboxExtensionActions.page(in: view), page.transferKey == tab else { return nil }
+    guard let page = page(binding) else { return nil }
     return (registration, Int(page.browserId))
+  }
+
+  static func page(_ tab: String) -> SolaraCoreWebView? {
+    guard current, let issuer = PageIssuer.shared, issuer.store === observed,
+      let binding = issuer.binding(tabId: tab), binding.engine == .chromium,
+      issuer.ensurePageEstablished(binding), issuer.isCurrent(binding) else { return nil }
+    return page(binding)
+  }
+
+  private static func page(_ binding: PageHostBinding) -> SolaraCoreWebView? {
+    let view = binding.host == .pooled ? TabPoolHost.shared.pageView(binding.tabId) : binding.owner as? NSView
+    guard let page = NativeOmniboxExtensionActions.page(in: view), page.transferKey == binding.tabId else { return nil }
+    return page
   }
 
   static func actionState(tab: String) -> JSONObject? {
@@ -217,7 +228,7 @@ enum NativeExtensionCatalog {
     guard let state = observed?.state else { return false }
     return state.windowOrder.contains { window in
       guard self.profile(window) == profile else { return false }
-      return visible(window).contains { $0["id"]?.string == id && ($0["pinned"]?.truthy == true || legacyPopup == id) }
+      return visible(window).contains { $0["id"]?.string == id && ($0["pinned"]?.truthy == true) }
         || popupId(window) == id
         || NativeExtensionSidePanel.extensionId(windowId: window) == id || legacyPanels[window] == id
     }
@@ -261,7 +272,7 @@ enum NativeExtensionCatalog {
   private static func refreshAction(_ window: String, target: () -> (PageRegistration, Int)?) {
     let popup = popupId(window)
     let ids = visible(window).filter {
-      $0["hasAction"] != .bool(false) && ($0["pinned"]?.truthy == true || $0["id"]?.string == popup || $0["id"]?.string == legacyPopup)
+      $0["hasAction"] != .bool(false) && ($0["pinned"]?.truthy == true || $0["id"]?.string == popup)
     }.compactMap { $0["id"]?.string }
     actionCache.refresh(ids: ids, target: target) { browserId, ids in
       guard let browserId = Int32(exactly: browserId) else { return nil }
@@ -272,6 +283,7 @@ enum NativeExtensionCatalog {
   }
 
   static func publish(force: Bool = false) {
+    NativeExtensionActionPopup.validateLifecycle()
     let changes = presentation.publish(store: current ? observed : nil, lists: catalog.lists, states: actionCache.states,
       popup: popupId, sources: NewTabSources.shared, force: force)
     if changes.toolbar || changes.windows { emit?(changes.toolbar, changes.catalog || changes.windows) }

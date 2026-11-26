@@ -4,7 +4,7 @@ import { useBrowser } from "../../store/browser";
 import { shownBrowserId, extensionProfile, isPrivate, pageProfile, shownIn, useExtensions } from "./store";
 
 const wanted = new Map<string, string>();
-const publishWanted = () => void nativeExtensionContext(useExtensions.getState().popup?.extensionId ?? null, Object.fromEntries(wanted));
+const publishWanted = () => void nativeExtensionContext(Object.fromEntries(wanted));
 const fetches = new Map<string, number>();
 let opens = 0;
 

@@ -1,5 +1,5 @@
 import { breadcrumb } from "@solara/core";
-import { nativeToolbarAvailable, windowShellActive } from "@solara/settings";
+import { nativeToolbarAvailable, windowShellActive, useNativeExtensionPopupShown } from "@solara/settings";
 import { Hairline } from "@solara/shell";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { AccessibilityInfo, Animated, Easing, Pressable, StyleSheet, Text, View, type ViewStyle } from "react-native";
@@ -12,7 +12,6 @@ import type { ToolbarGeometry } from "./layout/geometry";
 import { TOOLBAR_DIVIDER_THICKNESS, railToolbarOnFrame, toolbarPalette, useEasedColor } from "./layout/toolbarColors";
 import { useHistoryMenu } from "./layout/history";
 import { useFullscreenTab, usePages } from "./layout/pageState";
-import { useExtensions } from "./extensions/store";
 import { needsBar, revealToolbar, setToolbarPeek, STRIP_HEIGHT, toolbarMode, useToolbarAutoHide, type ToolbarMode } from "./layout/toolbarAutoHide";
 import { Toolbar } from "./Toolbar";
 import { DeveloperStripes } from "./site/DeveloperStripes";
@@ -42,7 +41,7 @@ export function useToolbarMode(tabId: string, windowId: string, enabled: boolean
   const appNeedsBar = useStoreWhile(useBrowser, down, (s) => down && needsBar(s, tabId, windowId));
   const popover = useStoreWhile(usePages, down, (s) => down && !!s.popover[tabId]);
   const historyMenu = useStoreWhile(useHistoryMenu, down, (m) => down && m.menu?.tabId === tabId);
-  const extensionPopup = useStoreWhile(useExtensions, down, (e) => down && e.popup?.windowId === windowId);
+  const extensionPopup = useNativeExtensionPopupShown(windowId);
   return toolbarMode({ enabled, hasPage, scrolledDown, peek, needsBar: appNeedsBar || popover || historyMenu || extensionPopup });
 }
 

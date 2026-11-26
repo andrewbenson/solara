@@ -20,7 +20,6 @@ export type InstallRequest = {
 
 type ExtensionsStore = {
   lists: Record<string, InstalledExtension[]>;
-  popup: { windowId: string; extensionId: string; tabId: string | undefined } | null;
   install: InstallRequest | null;
   pinDialog: { windowId: string } | null;
   sidePanels: Record<string, SidePanel>;
@@ -34,7 +33,7 @@ export type SidePanel = {
   opened: number;
 };
 
-export const useExtensions = create<ExtensionsStore>()(() => ({ lists: {}, popup: null, install: null, pinDialog: null, sidePanels: {} }));
+export const useExtensions = create<ExtensionsStore>()(() => ({ lists: {}, install: null, pinDialog: null, sidePanels: {} }));
 
 const EMPTY: InstalledExtension[] = [];
 

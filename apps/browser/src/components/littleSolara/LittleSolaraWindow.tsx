@@ -11,8 +11,6 @@ import { CommandPanel } from "../CommandPanel";
 import { ContentCard } from "../ContentCard";
 import { DownloadsPopover } from "../Downloads";
 import { ExtensionOverlays } from "../extensions/ExtensionOverlays";
-import { ToolbarPopupAnchor } from "../extensions/ToolbarPopupAnchor";
-import { dropToolbarAnchor, setToolbarAnchor } from "../extensions/bridge";
 import { setUrlAnchor } from "../layout/windowLayout";
 import { showUrlBarMenu } from "../omnibox/paste";
 import { profileSymbol } from "../profiles/icons";
@@ -157,10 +155,9 @@ const barRight = (count: number) => SMALL_INSET + count * SMALL_BAR_BUTTON + Mat
 
 function ShellLittleSolaraBar({ width }: { width: number }) {
   const theme = useTheme();
-  const { windowId, tab, state, count } = useSmallBarState();
+  const { windowId, state, count } = useSmallBarState();
   const json = JSON.stringify(state);
   const backdrop = JSON.stringify({ vibrancy: true, colors: theme.windowTint, angle: 180, grainScale: 1, ...theme.backdrop, grainOpacity: theme.grain });
-  const tabId = tab?.id;
   useEffect(() => void setLittleSolaraBar(windowId, json), [windowId, json]);
   useEffect(() => void setLittleSolaraBackdrop(windowId, backdrop), [windowId, backdrop]);
   useEffect(() => void setTrafficLightsCenter(windowId, SMALL_LIGHTS_CENTER), [windowId]);
@@ -168,23 +165,16 @@ function ShellLittleSolaraBar({ width }: { width: number }) {
     const fieldWidth = width - FIELD_LEFT - barRight(count);
     if (width > 0 && fieldWidth > 0) setUrlAnchor(windowId, { left: FIELD_LEFT, top: (SMALL_BAR_HEIGHT - 28) / 2, width: fieldWidth, sidebar: { height: 28 } });
   }, [windowId, width, count]);
-  useEffect(() => {
-    if (!tabId || width <= 0) return;
-    const anchor = { x: width - SMALL_INSET - SMALL_BAR_BUTTON, y: (SMALL_BAR_HEIGHT - SMALL_BAR_BUTTON) / 2, width: SMALL_BAR_BUTTON, height: SMALL_BAR_BUTTON };
-    setToolbarAnchor(windowId, tabId, "*", anchor);
-    return () => dropToolbarAnchor(windowId, tabId, "*", anchor);
-  }, [windowId, tabId, width]);
   return null;
 }
 
 function LittleSolaraBar() {
-  const { windowId, tab, state, count } = useSmallBarState();
+  const { windowId, state, count } = useSmallBarState();
   const { holder, anchor } = useBarAnchor(windowId, count);
   return (
     <View ref={holder} onLayout={anchor} style={{ height: SMALL_BAR_HEIGHT }}>
       <WindowDragRegion style={StyleSheet.absoluteFill} />
       <NativeMediaView kind="littleSolara.bar" windowId={windowId} state={state} />
-      {tab ? <ToolbarPopupAnchor windowId={windowId} tabId={tab.id} top={(SMALL_BAR_HEIGHT - SMALL_BAR_BUTTON) / 2} right={SMALL_INSET} /> : null}
     </View>
   );
 }

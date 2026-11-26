@@ -16,7 +16,7 @@ function setup() {
   const a = S().windows[w].tabIds[0];
   const b = S().newTab(w, { url: "b.com", background: true });
   usePages.setState({ browsers: { 1: a, 2: b } });
-  useExtensions.setState({ lists: { "": [EXT] }, popup: null, sidePanels: {} });
+  useExtensions.setState({ lists: { "": [EXT] }, sidePanels: {} });
   const asked = [];
   const ask = (what) => (browserId) => new Promise((resolve) => asked.push({ what, browserId, resolve }));
   native.extensionAnswers.actionStates = ask("states");

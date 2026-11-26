@@ -3608,8 +3608,7 @@ try {
     try {
       await evalApp(`return ac.extensions.refreshExtensions("").then(() => true)`);
       await evalApp(`ac.actions.switchToTab("${first.id}"); return true`);
-      await evalApp(`const lists = ac.extensions.useExtensions.getState().lists; const ext = Object.values(lists).flat().find((x) => x.id === "${installed.id}");
-        return ac.extensions.activateExtension(${JSON.stringify(mainWindow)}, ext, { x: 100, y: 40, width: 20, height: 20 }).then(() => true)`);
+      await evalApp(`return globalThis.expo.modules.SolaraToolbar.extensionCommand(JSON.stringify({ command: "openExtension", windowId: ${JSON.stringify(mainWindow)}, id: "${installed.id}", anchor: { x: 100, y: 40, width: 20, height: 20 } })).then(() => true)`);
       await until("the native popup frame", async () => (await nativeExtensionPopup())?.frame ?? null, 8000);
       const popupTarget = await until("the popup page", async () => (await targets()).find((t) => t.type === "page" && t.url.includes(`${installed.id}/popup.html`)), 10000);
       const strips = await cef(`tabStrips()`);
@@ -3667,8 +3666,7 @@ try {
     try {
       await evalApp(`return ac.extensions.refreshExtensions("").then(() => true)`);
       await evalApp(`ac.actions.switchToTab("${first.id}"); return true`);
-      const activate = () => evalApp(`const lists = ac.extensions.useExtensions.getState().lists; const ext = Object.values(lists).flat().find((x) => x.id === "${installed.id}");
-        return ac.extensions.activateExtension(${JSON.stringify(mainWindow)}, ext, { x: 100, y: 40, width: 20, height: 20 }).then(() => true)`);
+      const activate = () => evalApp(`return globalThis.expo.modules.SolaraToolbar.extensionCommand(JSON.stringify({ command: "openExtension", windowId: ${JSON.stringify(mainWindow)}, id: "${installed.id}", anchor: { x: 100, y: 40, width: 20, height: 20 } })).then(() => true)`);
       await activate();
       const popup = await until("the popup page", async () => (await targets()).find((t) => t.type === "page" && t.url.includes(`${installed.id}/popup.html`)), 10000);
       await cdp(popup, "Runtime.evaluate", { expression: "chrome.permissions.remove({ permissions: ['bookmarks'] }).then(() => true)", awaitPromise: true });
@@ -3700,8 +3698,7 @@ try {
     if (installed?.error) throw new Error(installed.error);
     const click = () => evalApp(`return ac.shell.devClick(${JSON.stringify(mainWindow)}, { in: "page", x: 200, y: 200, asKey: false })`);
     const ask = async () => {
-      await evalApp(`const lists = ac.extensions.useExtensions.getState().lists; const ext = Object.values(lists).flat().find((x) => x.id === "${installed.id}");
-        return ac.extensions.activateExtension(${JSON.stringify(mainWindow)}, ext, { x: 100, y: 40, width: 20, height: 20 }).then(() => true)`);
+      await evalApp(`return globalThis.expo.modules.SolaraToolbar.extensionCommand(JSON.stringify({ command: "openExtension", windowId: ${JSON.stringify(mainWindow)}, id: "${installed.id}", anchor: { x: 100, y: 40, width: 20, height: 20 } })).then(() => true)`);
       const popup = await until("the popup page", async () => (await targets()).find((t) => t.type === "page" && t.url.includes(`${installed.id}/popup.html`)), 10000);
       await cdp(popup, "Runtime.evaluate", { expression: "chrome.permissions.remove({ permissions: ['bookmarks'] }).then(() => true)", awaitPromise: true });
       await cdp(popup, "Runtime.evaluate", { expression: "chrome.permissions.request({ permissions: ['bookmarks'] }); true", userGesture: true });
@@ -4623,8 +4620,7 @@ try {
         const windowsBefore = (await cef(`chromeWindows()`)).length;
         const stripTabs = async () => (await cef(`tabStrips()`)).strips.flatMap((st) => st.tabs.map((x) => ({ strip: st.strip, profile: st.profile, ...x })));
         const browsersBefore = new Set((await stripTabs()).map((x) => x.browser));
-        await evalApp(`const ext = Object.values(ac.extensions.useExtensions.getState().lists).flat().find((x) => x.id === "${id}");
-          return ac.extensions.activateExtension(${JSON.stringify(mainWindow)}, ext, { x: 100, y: 40, width: 20, height: 20 }).then(() => true)`);
+        await evalApp(`return globalThis.expo.modules.SolaraToolbar.extensionCommand(JSON.stringify({ command: "openExtension", windowId: ${JSON.stringify(mainWindow)}, id: "${id}", anchor: { x: 100, y: 40, width: 20, height: 20 } })).then(() => true)`);
         await until("the native popup frame", async () => (await nativeExtensionPopup())?.frame ?? null, 8000);
         const popup = await until("the popup page", async () => (await targets()).find((t) => t.type === "page" && t.url.includes(`${id}/popup.html`)), 10000);
         const seen = JSON.parse((await cdp(popup, "Runtime.evaluate", {
@@ -4877,8 +4873,7 @@ try {
         }, 8000);
         await evalApp(`ac.runCommand({ command: "focusCommandBar", arg: null, windowId: ${JSON.stringify(mainWindow)} }); return true`);
         await until("the toolbar URL field editing", async () => (await snapshot())?.omniboxFocused && (await toolbar()).urlEditor, 5000);
-        await evalApp(`const ext = Object.values(ac.extensions.useExtensions.getState().lists).flat().find((x) => x.id === "${id}");
-          return ac.extensions.activateExtension(${JSON.stringify(mainWindow)}, ext, { x: ${placed.button.frame[0]}, y: ${placed.button.frame[1]}, width: ${placed.button.frame[2]}, height: ${placed.button.frame[3]} }).then(() => true)`);
+        await evalApp(`return globalThis.expo.modules.SolaraToolbar.extensionCommand(JSON.stringify({ command: "openExtension", windowId: ${JSON.stringify(mainWindow)}, id: "${id}", anchor: { x: ${placed.button.frame[0]}, y: ${placed.button.frame[1]}, width: ${placed.button.frame[2]}, height: ${placed.button.frame[3]} } })).then(() => true)`);
         popup = await until("the popup renderer", async () => (await targets()).find((t) => t.type === "page" && t.url.includes(`${id}/popup.html`)) ?? null, 8000);
         await until("the field's blur held while the popup is up", async () => (await snapshot())?.heldFieldBlurs === 1, 3000);
         if (!(await toolbar()).urlEditor) throw new Error("the URL edit ended while the popup had focus in the rail");

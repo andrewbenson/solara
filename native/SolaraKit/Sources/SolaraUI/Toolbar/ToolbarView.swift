@@ -460,6 +460,11 @@ public final class ToolbarView: NSView {
     }
   }
 
+  public func extensionAnchor(_ extensionId: String, fallback: Bool) -> CGRect? {
+    let rect = extensionAnchorRects[extensionId] ?? (fallback ? extensionAnchorRects["*"] : nil)
+    return rect.map(windowRect)
+  }
+
   public func describeExtensions() -> [[String: Any]] {
     extensions.map { b in
       let r = windowRect(b.frame)

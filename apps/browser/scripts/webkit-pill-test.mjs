@@ -120,7 +120,7 @@ try {
     await run(`ac.runCommand({ command: "togglePageEngine", arg: null, windowId: "w1" }); return true;`);
     await until("the WebKit engine", `return engine();`, (e) => e === "webkit", 15000);
     const s = await until("the sidebar pill", `return B.sample("w1").then((j) => JSON.parse(j));`,
-      (s) => (s?.["field.sample"]?.buttons ?? []).some((b) => b.id === "webkit"), 10000);
+      (s) => (s?.["field.sample"]?.buttons ?? []).some((b) => b.id === "webkit" && b.frame[2] > 0), 10000);
     const buttons = s["field.sample"].buttons;
     const pill = buttons.find((b) => b.id === "webkit");
     if (buttons.some((b) => b.id.startsWith("ext")) || pill.frame[2] < 60) throw new Error(JSON.stringify(buttons));

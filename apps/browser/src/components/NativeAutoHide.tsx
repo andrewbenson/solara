@@ -1,5 +1,5 @@
 import { breadcrumb } from "@solara/core";
-import { windowNativeLayoutGeneration, windowShellActive } from "@solara/settings";
+import { windowNativeLayoutGeneration, windowShellActive, useNativeExtensionPopupShown } from "@solara/settings";
 import { requireOptionalNativeModule, type EventSubscription } from "expo-modules-core";
 import { useEffect } from "react";
 import { layout, useTheme } from "../lib/theme";
@@ -12,7 +12,6 @@ import { useFullscreenTab, usePages } from "./layout/pageState";
 import { stripesUri } from "./NativeToolbar";
 import { useTabDeveloperMode, useToolbarSiteColor, useUrlEdit } from "./site/developerMode";
 import { useHistoryMenu } from "./layout/history";
-import { useExtensions } from "./extensions/store";
 
 type AutoHideNative = {
   set(windowId: string, tabId: string, json: string): Promise<void>;
@@ -30,7 +29,7 @@ export function NativeAutoHideStyleFeed({ windowId, tabId }: { windowId: string;
   const developer = useTabDeveloperMode(tabId);
   const popover = usePages((s) => !!s.popover[tabId]);
   const history = useHistoryMenu((s) => s.menu?.tabId === tabId);
-  const extension = useExtensions((s) => s.popup?.windowId === windowId);
+  const extension = useNativeExtensionPopupShown(windowId);
   const editing = useUrlEdit((s) => s.tabId === tabId);
   const json = JSON.stringify({
     held: popover || history || extension || editing,

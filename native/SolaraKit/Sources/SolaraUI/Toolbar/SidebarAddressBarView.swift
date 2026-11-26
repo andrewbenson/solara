@@ -196,6 +196,7 @@ public final class SidebarAddressBars {
   public var onClick: (String, ToolbarClick) -> Void = { _, _ in }
   public var onAnchors: (String, [String: CGRect]) -> Void = { _, _ in }
 
+  public private(set) var anchors: [String: [String: CGRect]] = [:]
   private var views: [String: SidebarAddressBarView] = [:]
   private var states: [String: SidebarAddressBarState] = [:]
   private var navigationViews: [String: SidebarAddressBarView] = [:]
@@ -208,7 +209,11 @@ public final class SidebarAddressBars {
     if let view = views[windowId] { return view }
     let view = SidebarAddressBarView(frame: CGRect(x: 0, y: 0, width: 0, height: SidebarHeaderMetrics.height))
     view.onClick = { [weak self] click in self?.onClick(windowId, click) }
-    view.onAnchors = { [weak self] anchors in self?.onAnchors(windowId, anchors) }
+    view.onAnchors = { [weak self] anchors in
+      guard let self else { return }
+      self.anchors[windowId] = anchors
+      self.onAnchors(windowId, anchors)
+    }
     if let state = states[windowId] { view.update(state) }
     views[windowId] = view
     return view
@@ -242,6 +247,7 @@ public final class SidebarAddressBars {
       if claims.contains(windowId) { return }
       views[windowId]?.removeFromSuperview()
       views[windowId] = nil
+      anchors[windowId] = nil
       return
     }
     let remounted = remounts.remove(windowId) != nil
@@ -262,6 +268,7 @@ public final class SidebarAddressBars {
     if states[windowId] == nil {
       views[windowId]?.removeFromSuperview()
       views[windowId] = nil
+      anchors[windowId] = nil
     }
     NotificationCenter.default.post(name: SidebarAddressBars.claimsChanged, object: self, userInfo: ["windowId": windowId])
   }

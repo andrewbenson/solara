@@ -1,5 +1,5 @@
 import { requireNativeViewManager, requireOptionalNativeModule, type EventSubscription } from "expo-modules-core";
-import type { ComponentType } from "react";
+import { useEffect, useState, type ComponentType } from "react";
 import type { NativeSyntheticEvent, ViewProps } from "react-native";
 
 export type ToolbarClick = { id: string; kind: "press" | "menu" | "middle" | "submit" | "cancel" | "blur" | "focus"; meta: boolean; alt: boolean; shift: boolean; text: string | null; nativeActions?: boolean };
@@ -10,52 +10,23 @@ export type NativeToolbarProps = ViewProps & {
   onToolbarAnchors?(e: NativeSyntheticEvent<{ anchors: Record<string, [number, number, number, number]> }>): void;
 };
 
-export type ExtensionPopupIntent = {
-  extensionId: string;
-  popupUrl: string;
-  profile: string;
-  tabId: string;
-  windowId: string;
-  anchor: { x: number; y: number; width: number; height: number };
-  requiresActive: boolean;
-};
-
 export type ExtensionPopupChange = { windowId: string; extensionId: string | null; tabId?: string; reason?: "replacement" | "dismissal" };
-export type ExtensionPopupOpenWindow = {
-  windowId: string;
-  profile: string;
-  request: {
-    url: string;
-    disposition: "foreground" | "background" | "window" | "popup" | "incognito" | "current" | "split" | "peek";
-    adoptId?: string;
-    profile?: string;
-    point?: { x: number; y: number };
-  };
-};
-
 type NativeToolbarModule = {
   available(): boolean;
+  extensionPopupWindow(): string | null;
   extensionToolbar(json: string): Promise<string>;
   extensionCommand(json: string): Promise<void>;
   addListener(event: "onExtensionToolbarChanged", listener: () => void): EventSubscription;
   refreshExtensionCatalog(profile: string, afterChange: boolean): Promise<string>;
-  extensionContext(popup: string | null, panels: Record<string, string>): Promise<void>;
-  showExtensionPopup(requestJSON: string): Promise<boolean>;
+  extensionContext(panels: Record<string, string>): Promise<void>;
   closeExtensionPopup(windowId: string | null): Promise<void>;
   addListener(event: "onExtensionPopupChanged", listener: (event: ExtensionPopupChange) => void): EventSubscription;
-  addListener(event: "onExtensionPopupOpenWindow", listener: (event: ExtensionPopupOpenWindow) => void): EventSubscription;
 };
 
 const native = requireOptionalNativeModule<NativeToolbarModule>("SolaraToolbar");
 
-export const showNativeExtensionPopup = (intent: ExtensionPopupIntent): Promise<boolean> =>
-  native?.showExtensionPopup?.(JSON.stringify(intent)) ?? Promise.resolve(false);
-
 export const closeNativeExtensionPopup = (windowId: string | null = null): Promise<void> =>
   native?.closeExtensionPopup?.(windowId) ?? Promise.resolve();
-
-export const onNativeExtensionPopupOpenWindow = (listener: (event: ExtensionPopupOpenWindow) => void): EventSubscription | null =>
-  native?.addListener?.("onExtensionPopupOpenWindow", listener) ?? null;
 
 export const onNativeExtensionPopupChanged = (listener: (event: ExtensionPopupChange) => void): EventSubscription | null =>
   native?.addListener?.("onExtensionPopupChanged", listener) ?? null;
@@ -113,9 +84,21 @@ export function NativeSidebarAddressBarView(props: ViewProps & { windowId: strin
 
 export const refreshNativeExtensionCatalog = (profile: string, afterChange = false) => native?.refreshExtensionCatalog(profile, afterChange) ?? Promise.resolve("[]");
 
-export const nativeExtensionContext = (popup: string | null, panels: Record<string, string>) => native?.extensionContext(popup, panels);
+export const nativeExtensionContext = (panels: Record<string, string>) => native?.extensionContext(panels);
 
 export const nativeExtensionToolbar = async (input: unknown): Promise<{ width: number; buttons: Record<string, unknown>[] }> =>
   JSON.parse(await native?.extensionToolbar(JSON.stringify(input)) ?? '{"width":0,"buttons":[]}');
 export const nativeExtensionCommand = (input: unknown) => native?.extensionCommand(JSON.stringify(input)) ?? Promise.resolve();
 export const onNativeExtensionToolbarChanged = (listener: () => void) => native?.addListener("onExtensionToolbarChanged", listener);
+
+
+export function useNativeExtensionPopupShown(windowId: string): boolean {
+  const read = () => native?.extensionPopupWindow?.() === windowId;
+  const [shown, setShown] = useState(read);
+  useEffect(() => {
+    const subscription = onNativeExtensionPopupChanged(() => setShown(read()));
+    setShown(read());
+    return () => subscription?.remove();
+  }, [windowId]);
+  return shown;
+}

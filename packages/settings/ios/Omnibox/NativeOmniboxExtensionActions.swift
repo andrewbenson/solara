@@ -13,18 +13,20 @@ enum NativeOmniboxExtensionActions {
     let enabled: Bool
     let incognito: Bool
     let incognitoSplit: Bool
-    let popup: String?
   }
 
   static func open(_ suggestion: SolaraOmnibox.Suggestion, model: HeroBarModel, view: NSView?) {
     guard case .extension(let id, _, _, let mode) = suggestion,
       NativeStoreHandle.ownsWorkspace, let store = NativeStoreHandle.store,
       let window = store.state.windows[model.windowId], current(model, store: store) else { return }
+    if mode != .options {
+      NativeExtensionActionPopup.activate(windowId: model.windowId, extensionId: id, tabId: model.tabId, anchor: anchor(view, windowId: model.windowId), nativeSidePanel: true)
+      return
+    }
     let generation = NativeStoreHandle.ownershipGeneration
     let profile = OmniboxCommandSources.extensionProfile(state: store.state, windowId: model.windowId)
     let sequence = store.state.tabs[model.tabId]?.navigation?.seq
     let sourceURL = store.state.tabs[model.tabId]?.url
-    let anchor = anchor(view, windowId: model.windowId)
     let request = UUID()
     requests[model.windowId] = request
     Task { @MainActor in
@@ -41,29 +43,6 @@ enum NativeOmniboxExtensionActions {
           _ = try store.dispatch(Command("newTab", [.string(model.windowId), ["url": .string(url), "profileId": .string(model.profileId)]]), origin: .native)
           return
         }
-        let web = page(in: TabPoolHost.shared.pageView(model.tabId))
-        let result = web?.executeExtensionAction(id)
-        guard valid(model, store: store, generation: generation, sequence: sequence, url: sourceURL, request: request) else { return }
-        if result == "sidePanel" {
-          guard let web, web.browserId != 0,
-            let url = SolaraCoreHost.sidePanelURL(browserId: web.browserId, extension: id), extensionURL(url, id: id) else { return }
-          NativeExtensionSidePanel.open(windowId: model.windowId, profileId: model.profileId, extensionId: id,
-            url: url, title: ext.name, icon: ext.icon, optionsUrl: ext.optionsUrl, store: store)
-          return
-        }
-        guard result != "none" else { return }
-        let states = web.map { SolaraCoreHost.actionStates(browserId: $0.browserId, extensions: [id]) }
-        let state = states?[id] as? [String: Any]
-        let popup = state?["popup"] as? String ?? details.popup.map { "chrome-extension://\(id)/\($0.hasPrefix("/") ? String($0.dropFirst()) : $0)" }
-        guard let popup, extensionURL(popup, id: id) else { return }
-        let pageProfile = store.state.engineProfile(model.profileId)
-        let payload: [String: Any] = [
-          "extensionId": id, "popupUrl": popup, "profile": pageProfile, "tabId": model.tabId,
-          "windowId": model.windowId, "requiresActive": false,
-          "anchor": ["x": anchor.minX, "y": anchor.minY, "width": anchor.width, "height": anchor.height],
-        ]
-        guard let data = try? JSONSerialization.data(withJSONObject: payload) else { return }
-        _ = NativeExtensionActionPopup.show(String(decoding: data, as: UTF8.self))
       } catch {
         NSLog("[omnibox] opening extension failed: %@", String(describing: error))
       }
@@ -74,7 +53,7 @@ enum NativeOmniboxExtensionActions {
     await EngineCalls.result({ done in SolaraCoreServices.listExtensions(profile: profile) { done($0) } }) { result in
       let row = (result["extensions"] as? [[String: Any]])?.first { $0["id"] as? String == id }
       return Details(enabled: row?["enabled"] as? Bool == true, incognito: row?["incognito"] as? Bool == true,
-        incognitoSplit: row?["incognitoSplit"] as? Bool == true, popup: row?["popup"] as? String)
+        incognitoSplit: row?["incognitoSplit"] as? Bool == true)
     }
   }
 

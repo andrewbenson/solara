@@ -1,8 +1,6 @@
 import {
   onExtensionInstallPrompt,
   onExtensionInstallPromptClosed,
-  onExtensionActionPopup,
-  onExtensionActionShortcut,
   onExtensionSidePanel,
   onExtensionTabsRequest,
   resolveExtensionInstallPrompt,
@@ -10,8 +8,7 @@ import {
   type TabsRequest,
   type CloseCancelledTab,
 } from "@solara/solaracore";
-import { nativeExtensionContext, onNativeExtensionPopupChanged, onNativeExtensionPopupOpenWindow } from "@solara/settings";
-import { AppState } from "react-native";
+import { nativeExtensionCommand, onNativeExtensionPopupChanged, type ExtensionPopupChange } from "@solara/settings";
 import { openWindow } from "../../lib/actions";
 import { webviews } from "../../lib/webviews";
 import { keepAlivePagesChanged } from "../../lib/nativeKeepAlive";
@@ -19,17 +16,13 @@ import { storeTransaction, useBrowser, type BrowserState } from "../../store/bro
 import { snapshotTabId, takeCloseSnapshot } from "../../lib/windowClose";
 import type { Tab, TabSnapshot } from "../../store/types";
 import { changedIds } from "../../store/changes";
-import { activeTabId, engineProfile, incognitoOriginal } from "../../store/model";
+import { engineProfile, incognitoOriginal } from "../../store/model";
 import { shownPageId } from "../../store/peek";
-import { openFromPage, pageProfileId } from "../layout/openFromPage";
 import { tabForBrowser, usePages } from "../layout/pageState";
 import * as state from "./state";
 import {
-  activateExtension,
   cancelInstall,
-  closeExtensionPopup,
   closeInstallPrompt,
-  extensionPopupChanged,
   closeSidePanel,
   extensionProfile,
   findExtension,
@@ -46,15 +39,8 @@ import { PRODUCT } from "../../lib/productName";
 
 export function startExtensionsBridge() {
   onExtensionTabsRequest(openRequestedTab);
-  useBrowser.subscribe((s, prev) => {
-    if (toolbarAnchors.size && (s.windows !== prev.windows || s.tabs !== prev.tabs)) pruneToolbarAnchors(s);
-  });
   usePages.subscribe(keepAlivePagesChanged);
-  useExtensions.subscribe((e, prev) => {
-    if (e.popup !== prev.popup || e.sidePanels !== prev.sidePanels) void nativeExtensionContext(e.popup?.extensionId ?? null, Object.fromEntries(wantedSidePanels()));
-  });
   startSidePanels();
-  startActionPopups();
   startWebStoreIntegration();
   if (__DEV__) Object.assign(globalThis, { acExtensionsApp: { ...state, bridge: { openExtensionFromMenu } } });
 }
@@ -204,56 +190,8 @@ function moveIntoChromeMadeWindow(request: TabsRequest, chromeWindow: string, ta
   s.createWindow({ profileId: tab.profileId, tabIds: [tabId], chromeWindow, background: request.focused === false });
 }
 
-export function openExtensionFromMenu(windowId: string, extensionId: string, tabId?: string, requiresActive = false) {
-  const ext = findExtension(extensionProfile(useBrowser.getState(), windowId), extensionId);
-  if (ext) void activateExtension(windowId, ext, toolbarAnchor(windowId, ext.id, tabId), undefined, tabId, { requiresActive });
-}
-
-type Anchor = import("./state").Anchor;
-type AnchorEntry = { windowId: string; tabId: string; anchor: Anchor };
-const toolbarAnchors = new Map<string, AnchorEntry>();
-const anchorKey = (windowId: string, tabId: string, slot: string) => `${windowId}|${tabId}|${slot}`;
-
-export const setToolbarAnchor = (windowId: string, tabId: string, slot: string, anchor: Anchor) =>
-  void toolbarAnchors.set(anchorKey(windowId, tabId, slot), { windowId, tabId, anchor });
-
-export function dropToolbarAnchor(windowId: string, tabId: string, slot: string, anchor: Anchor) {
-  const key = anchorKey(windowId, tabId, slot);
-  if (toolbarAnchors.get(key)?.anchor === anchor) toolbarAnchors.delete(key);
-}
-
-function pruneToolbarAnchors(s: BrowserState) {
-  for (const [key, entry] of toolbarAnchors) if (!s.windows[entry.windowId] || s.tabs[entry.tabId]?.windowId !== entry.windowId) toolbarAnchors.delete(key);
-}
-
-function toolbarAnchor(windowId: string, extensionId: string, tabId?: string): Anchor {
-  const s = useBrowser.getState();
-  for (const pane of new Set([tabId ?? shownPageId(s, windowId), activeTabId(s, windowId)])) {
-    if (!pane) continue;
-    const entry = toolbarAnchors.get(anchorKey(windowId, pane, extensionId)) ?? toolbarAnchors.get(anchorKey(windowId, pane, "*"));
-    if (entry) return entry.anchor;
-  }
-  return { x: 100_000, y: 13, width: 28, height: 28 };
-}
-
-function startActionPopups() {
-  AppState.addEventListener("change", (state) => { if (state !== "active") closeExtensionPopup(); });
-  onNativeExtensionPopupChanged(extensionPopupChanged);
-  onNativeExtensionPopupOpenWindow(({ windowId, profile, request }) => {
-    openFromPage(request, { windowId, profileId: pageProfileId(windowId, profile) });
-  });
-  onExtensionActionPopup(({ browserId, extensionId }) => {
-    const tabId = tabForBrowser(browserId);
-    const windowId = tabId ? useBrowser.getState().tabs[tabId]?.windowId : undefined;
-    if (!windowId) return console.warn(`action.openPopup for ${extensionId}: ${tabId ? "its tab has no window" : `no tab for browser ${browserId}`}`);
-    void state.openActionPopup(windowId, extensionId, toolbarAnchor(windowId, extensionId, tabId), browserId);
-  });
-  onExtensionActionShortcut(({ browserId, extensionId }) => {
-    const tabId = tabForBrowser(browserId);
-    const windowId = tabId ? useBrowser.getState().tabs[tabId]?.windowId : undefined;
-    if (windowId) openExtensionFromMenu(windowId, extensionId, tabId, true);
-  });
-}
+export const openExtensionFromMenu = (windowId: string, extensionId: string, tabId?: string, requiresActive = false) =>
+  nativeExtensionCommand({ command: "openExtension", windowId, id: extensionId, tabId, requiresActive });
 
 function startSidePanels() {
   onExtensionSidePanel(({ browserId, extensionId, open }) => {
@@ -278,7 +216,6 @@ function startSidePanels() {
     for (const [windowId, extensionId] of wantedSidePanels()) {
       if (!windowExtensions(s, windowId).some((x) => x.id === extensionId)) closeSidePanel(windowId);
     }
-    if (e.popup && !windowExtensions(s, e.popup.windowId).some((x) => x.id === e.popup!.extensionId)) closeExtensionPopup();
   });
 }
 
@@ -320,6 +257,12 @@ const isStorePage = (url: string | undefined) => !!url && /^https:\/\/chromewebs
 
 function startWebStoreIntegration() {
   let watchRequester: (() => void) | null = null;
+  let popup: ExtensionPopupChange | null = null;
+  let checkRequester: (() => void) | null = null;
+  onNativeExtensionPopupChanged((change) => {
+    popup = change.extensionId ? change : null;
+    checkRequester?.();
+  });
   onExtensionInstallPromptClosed((closed) => closeInstallPrompt(closed.requestId));
   onExtensionInstallPrompt((prompt) => {
     const s = useBrowser.getState();
@@ -328,20 +271,20 @@ function startWebStoreIntegration() {
     if (!windowId) return void resolveExtensionInstallPrompt(prompt.requestId, false);
     showInstallPrompt(windowId, prompt);
     watchRequester?.();
-    const popup = useExtensions.getState().popup;
-    const requester: InstallRequester = tabId ? { tabId } : popup && popup.extensionId === prompt.id ? { popupOf: popup.extensionId } : null;
+    const requester: InstallRequester = tabId ? { tabId } : popup?.extensionId === prompt.id ? { popupOf: prompt.id } : null;
     if (!requester) return void (watchRequester = null);
     const check = () => {
       if (useExtensions.getState().install?.prompt?.requestId !== prompt.requestId) return stop();
-      if (installRequesterGone(requester, useBrowser.getState(), useExtensions.getState().popup)) {
+      if (installRequesterGone(requester, useBrowser.getState(), popup?.extensionId ? { extensionId: popup.extensionId } : null)) {
         stop();
         cancelInstall();
       }
     };
+    checkRequester = check;
     const unsubscribers = [useBrowser.subscribe(check), useExtensions.subscribe(check)];
     const stop = () => {
       unsubscribers.splice(0).forEach((off) => off());
-      if (watchRequester === stop) watchRequester = null;
+      if (watchRequester === stop) { watchRequester = null; checkRequester = null; }
     };
     watchRequester = stop;
   });

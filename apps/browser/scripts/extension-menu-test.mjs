@@ -82,12 +82,19 @@ try {
     const store = E.useExtensions;
     const write = store.setState;
     store.setState = (update) => {
-      const { lists, actions, ...retained } = typeof update === "function" ? update(store.getState()) : update;
+      const { lists, actions, popup, ...retained } = typeof update === "function" ? update(store.getState()) : update;
       write(retained);
     };
     return true;
   `);
   const id = installed[0];
+  await rep.check("popup-without-js-lifetime", async () => {
+    await run(`return T.extensionCommand(JSON.stringify({ command: "openExtension", windowId: "w1", tabId: "a", id: ${JSON.stringify(id)} })).then(() => true);`);
+    const opened = await until("native popup", 'return T.devExtensionPopup("w1").then(JSON.parse);', (value) => value?.extensionId === id && value?.frame?.[2] > 100);
+    await run('S().navigate("a", "data:text/html,<title>Popup dismissed</title>"); return true;');
+    await until("native navigation dismissal", 'return T.devExtensionPopup("w1").then(JSON.parse);', (value) => !value?.frame && value?.liveViews === 0);
+    return { tabId: opened.tabId, extensionId: opened.extensionId };
+  });
   await rep.check("native-context-model", async () => {
     const model = await context(id);
     assert.deepEqual(model.items.map((item) => item.separator ? "separator" : item.id), ["name", "separator", "options", "sidePanel", "pin", "enable", "separator", "remove", "manage"]);

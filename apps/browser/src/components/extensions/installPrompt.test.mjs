@@ -11,7 +11,7 @@ const prompt = (requestId, id = "ext") => ({ requestId, profile: "", id, name: "
 function setup() {
   useBrowser.getState().hydrate({});
   const w = useBrowser.getState().createWindow({ url: "a.com" });
-  useExtensions.setState({ install: null, popup: null });
+  useExtensions.setState({ install: null });
   return w;
 }
 

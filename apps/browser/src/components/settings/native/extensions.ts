@@ -1,12 +1,10 @@
 import type { InstalledExtension, ExtensionPackage } from "@solara/solaracore";
 import { type SettingsHandler } from "@solara/settings";
 import { useBrowser } from "../../../store/browser";
-import { activateExtension, findExtension, openPinDialog, toggleSidePanel, addFromWebStore, closeExtensionPopup, closeSidePanelsOf, refreshExtensionsAfterChange, useExtensions, wantedSidePanels, syncSidePanel, extensionProfile } from "../../extensions/state";
-import { openExtensionFromMenu } from "../../extensions/bridge";
+import { openPinDialog, toggleSidePanel, addFromWebStore, closeSidePanelsOf, refreshExtensionsAfterChange, useExtensions, wantedSidePanels, syncSidePanel, extensionProfile } from "../../extensions/state";
 import { SETTINGS_WINDOW_ID } from "../windows";
 
 function closeSurfaces(id: string) {
-  if (useExtensions.getState().popup?.extensionId === id) closeExtensionPopup();
   closeSidePanelsOf(id);
 }
 
@@ -22,13 +20,6 @@ export const extensionsHandlers: Record<string, SettingsHandler> = {
   "extensions.pin": (windowId: string) => openPinDialog(windowId),
   "extensions.togglePanel": (windowId: string, id: string, profileId?: string | null, engineProfile?: string | null) => {
     if (matchesMenuProfile(windowId, profileId, engineProfile)) return toggleSidePanel(windowId, id);
-  },
-  "extensions.activate": (windowId: string, id: string, tabId: string | null, anchor: import("../../extensions/store").Anchor | null,
-    profileId?: string | null, engineProfile?: string | null) => {
-    if (!matchesMenuProfile(windowId, profileId, engineProfile)) return;
-    if (!anchor) return openExtensionFromMenu(windowId, id, tabId ?? undefined);
-    const ext = findExtension(extensionProfile(useBrowser.getState(), windowId), id);
-    if (ext) return activateExtension(windowId, ext, anchor, undefined, tabId ?? undefined);
   },
   "extensions.catalog": (lists: Record<string, InstalledExtension[]>) => useExtensions.setState({ lists }),
   "extensions.syncPanels": (profiles: string[] | null) => {

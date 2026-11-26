@@ -277,10 +277,10 @@ test("a theme file given up as damaged after a day doesn't end adoption", async 
 
 test("picking a preset while adopting keeps the preset when the late theme arrives", async () => {
   const { a, c, engineA, engineC } = await joinWhileThemeDownloads("5");
-  const { choosePresetColor } = await import("../lib/profileThemeActions.ts");
   await c.with(async () => {
     S().updateProfile("default", { theme: undefined });
-    choosePresetColor("default", "blue", engineC.adoptProfileTheme);
+    engineC.adoptProfileTheme("default");
+    S().updateProfile("default", { color: "blue", theme: null });
     await engineC.syncNow();
   });
   downloading.clear();

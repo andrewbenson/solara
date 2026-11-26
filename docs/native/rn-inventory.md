@@ -297,13 +297,12 @@ Historical perf census/ratchet names are measurements, not executable consumers.
 | `components/site/DeveloperUrlInput.tsx` | 50 | Its React toolbar consumer was removed by the layout-controls cutover; the native toolbar owns the developer URL field. |
 
 The fifth source deletion brings the total to **5 files / 223 lines**, plus **1 test / 16 lines** excluded from source
-budgets. The later layout-controls deletion adds **1 file / 50 lines**. The other **3 app-dead files / 118 lines** remain because deleting their consumers would remove active coverage:
+budgets. The later layout-controls deletion adds **1 file / 50 lines**. The New Tab theme-edit slice deletes the 13-line `lib/profileThemeActions.ts` helper while retaining the late-download and cross-device propagation regression in `sync/themePairing.test.mjs`. The other **2 app-dead files / 105 lines** retain active coverage:
 
 | Retained path under `apps/browser/src/` | Lines | Reason |
 | --- | ---: | --- |
 | `sync/commandJournal.ts` | 58 | Five step5 test files use this oracle alongside live native-store/sync-origin behavior. `step5-fallback` checks the fallback protocol; `step5-followups` checks sync tokens, transaction busy/retry, switch ordering and deferred effects. Preserve these tests until the oracle is migrated. |
 | `components/omnibox/dropdownStart.ts` | 47 | Its unit test reads/transpiles the source. `native/SolaraKit/Scripts/omnibox-idle-fixtures.mts:55` also hashes it for the native `idle-tabs.json` fixture; deleting it breaks fixture verification. |
-| `lib/profileThemeActions.ts` | 13 | The preset case in `sync/themePairing.test.mjs` tests late theme download/adoption and propagation to another Mac. The suite also covers live sync pairing, persistence and refused admission; it is not an obsolete helper-only test. |
 
 The unconsumed `NetworkBadge` export in `components/site/Autofill.tsx` is removable, but the file's `requestAutofill`
 function is live; do not delete the whole file.
@@ -311,7 +310,7 @@ function is live; do not delete the whole file.
 Do not infer deadness from an app-only import graph: `components/omnibox/knownHosts.ts` (30) is used by
 `scripts/perf/{micro-bench,suggest-hermes}.mjs` and tests; both pinned sync fixtures (691 lines) are test inputs and
 pinned by native `sources.json`; `react-native-macos.d.ts` (10) is an ambient declaration included by tsconfig.
-Together with the three retained files above, these account for seven app-graph orphans (849 lines total), not additional safe deletions.
+Together with the two retained files above, these account for six app-graph orphans (836 lines total).
 The scan followed literal imports/reexports/require/dynamic import repository-wide, checked filename-based source
 loaders and exported-symbol references, and retained `index.js` / AppRegistry/native main/pane bootstrap entries.
 
@@ -665,7 +664,6 @@ Notes name secondary work and immediate deletion candidates. Whole-file lines re
 | `apps/browser/src/lib/profileData.ts` | 44 | c | 0.4.5 | Deleted-profile data cleanup |
 | `apps/browser/src/lib/profileLoading.ts` | 52 | b | 0.4.2 | Profile launch/page target selection |
 | `apps/browser/src/lib/profileTheme.ts` | 359 | b | 0.4.2 | Profile appearance selection/math; also c schema |
-| `apps/browser/src/lib/profileThemeActions.ts` | 13 | b | 0.4.2 | App-dead; retained for live theme-pairing regression coverage; theme choice helper |
 | `apps/browser/src/lib/scriptUrls.ts` | 10 | b | 0.4.2 | JavaScript URL admission |
 | `apps/browser/src/lib/shortcuts.ts` | 115 | b | 0.4.2 | Shortcut parsing/conflict resolution |
 | `apps/browser/src/lib/signInCookies.ts` | 24 | c | 0.4.5 | Cookie transfer filtering |

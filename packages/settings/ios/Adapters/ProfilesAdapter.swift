@@ -72,7 +72,8 @@ final class ProfilesAdapter: ProfilesServices {
       SettingsJS.shared.fire("profiles.update", id, arg)
       return
     }
-    SettingsDirectWrites.write(store, SettingsWrites.updateProfile(id, fields))
+    guard let command = ProfileThemeEdit.command(profileId: id, fields: fields, state: store.state) else { return }
+    SettingsDirectWrites.write(store, command)
   }
 
   func deleteProfile(_ id: String, completion: @escaping @MainActor (Bool) -> Void) {

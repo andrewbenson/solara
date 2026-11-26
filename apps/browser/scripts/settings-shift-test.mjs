@@ -1,6 +1,9 @@
-import { mkdtempSync, rmSync } from "node:fs";
+import assert from "node:assert/strict";
+import { execFileSync } from "node:child_process";
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 import { parseArgs } from "node:util";
 import { attach, launch, reporter, sleep } from "../../../scripts/lib/instance.mjs";
 
@@ -32,6 +35,7 @@ const near = (a, b) => a && b && a.length === b.length && a.every((v, i) => Math
 
 const scratch = flags.attach ? null : mkdtempSync(join(tmpdir(), "ac-settings-shift-"));
 const data = flags.attach ? resolve(flags.attach) : join(scratch, "data");
+const importSources = scratch && join(scratch, "import-sources");
 const rep = reporter(join(flags.attach ?? scratch, "settings-shift-test.log"), { name: "settings-shift-test" });
 
 function compare({ first, settled }) {
@@ -83,6 +87,58 @@ return wait(400)
     return { results, nav: s.pane, frame: s.anchor, viewport: s.viewport };
   });`;
 
+async function checkArcThemePicker(ac) {
+  const probe = (choose) => ac(`
+    return globalThis.expo.modules.SolaraSettings.devSettingsWrites("arcThemeChoices", ${JSON.stringify(JSON.stringify({ id: "default", choose }))}).then(JSON.parse);
+  `);
+  const waitForChoices = async (test) => {
+    const deadline = Date.now() + 8000;
+    let last;
+    do {
+      last = await probe();
+      if (Array.isArray(last.choices) && test(last.choices)) return last.choices;
+      await sleep(100);
+    } while (Date.now() < deadline);
+    throw new Error(`Profile theme picker did not load the expected Arc choices: ${JSON.stringify(last)}`);
+  };
+
+  await ac('ac.openSettings("profiles", "default"); return true;');
+  assert.deepEqual(await waitForChoices(() => true), [], "unavailable Arc discovery");
+  await ac('ac.openSettings("general"); return true;');
+  await untilSnapshot("settings general before reopening the profile", (state) =>
+    state.windows.some((w) => w.kind === "settings" && w.settings?.search?.pane === "general"));
+
+  const theme = (name) => JSON.parse(readFileSync(new URL(`../../../packages/import/fixtures/arc-themes/${name}.json`, import.meta.url), "utf8"));
+  const spec = join(scratch, "arc-theme-fixture.json");
+  writeFileSync(spec, JSON.stringify({
+    browser: "arc",
+    spaces: [
+      { id: "z", name: "Research", profile: "Profile 2", emoji: "🔬", theme: theme("basic-appearance") },
+      { id: "b", name: "Studio", theme: theme("single-orange") },
+      { id: "a", name: "Review", profile: "Profile 2", theme: theme("single-orange") },
+      { id: "invalid", name: "Invalid", theme: {} },
+      { id: "missing", name: "No Theme" },
+    ],
+  }));
+  const fixture = fileURLToPath(new URL("../../../packages/settings/scripts/sidebar-fixture.py", import.meta.url));
+  execFileSync("python3", [fixture, spec, importSources], { timeout: 10000 });
+  const sidebar = join(importSources, "Arc", "StorableSidebar.json");
+  const original = readFileSync(sidebar);
+
+  await ac('ac.openSettings("profiles", "default"); return true;');
+  assert.deepEqual(await waitForChoices((choices) => choices.length > 0), [
+    { id: "z", name: "Research", emoji: "🔬" },
+    { id: "a", name: "Review", emoji: null },
+    { id: "b", name: "Studio", emoji: null },
+  ]);
+  const { theme: applied } = await probe("z");
+  assert.equal(applied.mode, "auto");
+  assert.equal(applied.translucency, 0);
+  assert.deepEqual(applied.stops[0].color, { r: 0.86, g: 0.9, b: 0.97, a: 1 });
+  assert.deepEqual(applied.dark.stops[0].color, { r: 0.08, g: 0.1, b: 0.16, a: 1 });
+  assert.deepEqual(readFileSync(sidebar), original, "Arc sidebar file is unchanged");
+}
+
 let app;
 const untilSnapshot = async (what, accept, ms = 5000) => {
   const deadline = Date.now() + ms;
@@ -97,7 +153,10 @@ const untilSnapshot = async (what, accept, ms = 5000) => {
 try {
   app = flags.attach
     ? attach(data)
-    : await launch(resolve(positionals[0]), { data, port: flags.port, onboarded: true, ready: "return !!ac.openSettings", env: {} });
+    : await launch(resolve(positionals[0]), {
+        data, port: flags.port, onboarded: true, ready: "return !!ac.openSettings",
+        env: { SOLARA_IMPORT_SOURCE_DIR: importSources },
+      });
   const ac = (body) => app.eval(body, { timeout: 60000 });
   await new Promise((r) => setTimeout(r, 6000));
 
@@ -146,6 +205,9 @@ try {
       await untilSnapshot("native settings search cleared", (state) => state.windows.some((w) => w.kind === "settings" && w.settings?.search?.query === ""));
       return `${out.results.length} results, row at y ${y}`;
     });
+  }
+  if (importSources && PANES.includes("profiles")) {
+    await rep.check("Profiles theme picker loads and applies Arc choices", () => checkArcThemePicker(ac));
   }
 } catch (error) {
   rep.record("setup", { error });

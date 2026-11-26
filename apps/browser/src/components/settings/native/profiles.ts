@@ -1,13 +1,9 @@
 import { clearBrowsingData, listExtensions, type BrowsingDataType } from "@solara/solaracore";
 import { publishSettingsTopic, type SettingsHandler } from "@solara/settings";
 import { pruneProfileFavicons } from "../../../lib/favicons";
-import { sanitizeTheme } from "../../../lib/profileTheme";
 import { useBrowser, type BrowserState } from "../../../store/browser";
 import { refuseSafeHistoryDeletion } from "../../../store/safeLibraryEdits";
-import type { ProfileTheme } from "../../../store/types";
 import { adoptProfileTheme } from "../../../sync/engine";
-import { parseArcTheme } from "../../../lib/arcTheme";
-import { importModule } from "../../import/module";
 
 export const profilesHandlers: Record<string, SettingsHandler> = {
   "profiles.delete": (id: string) => useBrowser.getState().deleteProfile(id),
@@ -23,15 +19,6 @@ export const profilesHandlers: Record<string, SettingsHandler> = {
       () => null,
     ),
   "profiles.adoptTheme": (id: string) => adoptProfileTheme(id),
-  "profiles.arcThemeChoices": () =>
-    arcThemeChoices().then(
-      (choices) =>
-        choices.flatMap((c) => {
-          const theme = sanitizeTheme(c.theme);
-          return theme ? [{ id: c.id, name: c.name, emoji: c.emoji ?? null, theme }] : [];
-        }),
-      () => [],
-    ),
 };
 
 const bookmarkCounts = new WeakMap<BrowserState["bookmarks"], Map<string, number>>();
@@ -75,17 +62,4 @@ export function publishProfiles(): void {
     if (s.ui.appDark !== prev.ui.appDark) publishSettingsTopic("profiles.appDark", s.ui.appDark);
     if (s.history !== prev.history || s.bookmarks !== prev.bookmarks || s.profileOrder !== prev.profileOrder) publishStats(s);
   });
-}
-
-export async function arcThemeChoices(): Promise<{ id: string; name: string; emoji?: string; color?: string; theme: ProfileTheme }[]> {
-  const api = importModule();
-  if (!api) return [];
-  const browsers = await api.listBrowsers().catch(() => []);
-  const arc = browsers.find((b) => b.id === "arc");
-  return (arc?.profiles ?? []).flatMap((p) =>
-    (p.spaces ?? []).flatMap((s) => {
-      const theme = s.theme ? parseArcTheme(s.theme) : null;
-      return theme ? [{ id: s.id, name: s.name, emoji: s.emoji, color: s.color, theme }] : [];
-    }),
-  );
 }

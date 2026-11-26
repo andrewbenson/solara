@@ -1,5 +1,6 @@
 import AppKit
 import SolaraCore
+import SolaraImportAdapter
 import SolaraShaders
 import SolaraShell
 import Foundation
@@ -148,11 +149,8 @@ final class ProfilesAdapter: ProfilesServices {
   func holdThemedWindowsKeyLook(_ on: Bool) { ThemedWindows.holdKeyLook(on) }
 
   func arcThemeChoices() async -> [ArcThemeChoice] {
-    let list = await SettingsAdapters.js("profiles.arcThemeChoices") as? [[String: Any]] ?? []
-    return list.compactMap { choice in
-      guard let id = choice.string("id"), let theme = Self.theme(choice["theme"]) else { return nil }
-      return ArcThemeChoice(id: id, name: choice.string("name") ?? "", emoji: choice.string("emoji"), theme: theme)
-    }
+    let spaces = await ImportService.shared.arcSpaces()
+    return ArcThemeChoice.imported(from: spaces?.map { ($0.id, $0.name, $0.emoji, $0.theme) })
   }
 
   func themeSwatch(_ spec: ThemeSwatchSpec) -> AnyView? { nil }
@@ -202,11 +200,6 @@ final class ProfilesAdapter: ProfilesServices {
     return result
   }
 
-  static func theme(_ value: Any?) -> ProfileThemeValue? {
-    guard let value, !(value is NSNull), JSONSerialization.isValidJSONObject(value),
-          let data = try? JSONSerialization.data(withJSONObject: value) else { return nil }
-    return try? JSONDecoder().decode(ProfileThemeValue.self, from: data)
-  }
 }
 
 @MainActor
@@ -270,6 +263,16 @@ enum SettingsWritesDev {
     case "reorder":
       guard !viaJS else { return #"{"error":"Reorder Profiles is native only"}"# }
       adapter.reorderProfiles(args.strings("ids"))
+    case "arcThemeChoices":
+      guard let context = NativeSettingsWindow.existingContext, context.navigation.pane == .profiles,
+            context.navigation.profileId == id, let profiles = context.panes[.profiles] as? ProfilesPaneModel else {
+        return #"{"error":"Open a profile in Settings first"}"#
+      }
+      let choices = profiles.devArcThemeChoices(profile: id, choose: args.string("choose"))
+      out["choices"] = choices.map { $0.map { ["id": $0.id, "name": $0.name, "emoji": $0.emoji ?? NSNull()] as [String: Any] } } as Any? ?? NSNull()
+      if let theme = NativeStoreHandle.store?.state.profiles[id]?.theme {
+        out["theme"] = try? JSONSerialization.jsonObject(with: Data(theme.text().utf8))
+      }
     case "layout":
       guard !viaJS else { return #"{"error":"Tab layout is native only"}"# }
       out["direct"] = !NativeStoreHandle.frozen && NativeStoreHandle.ownsWorkspace && NativeStoreHandle.store != nil

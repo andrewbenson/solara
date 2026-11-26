@@ -48,6 +48,12 @@ public final class ImportService: @unchecked Sendable {
     try? await onWork { [importer] in try ImportModule.json(importer.discovery.list()) }
   }
 
+  public func arcSpaces() async -> [SpaceSummary]? {
+    try? await onWork { [importer] in
+      importer.discovery.arcProfiles().flatMap { $0.spaces ?? [] }
+    }
+  }
+
   public func isUnlocked(_ browserId: String) -> Bool { importer.isUnlocked(browserId) }
 
   public func unlock(_ browserId: String) async -> Bool {

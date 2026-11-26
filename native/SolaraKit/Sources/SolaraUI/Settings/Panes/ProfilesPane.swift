@@ -75,6 +75,14 @@ public struct ArcThemeChoice: Hashable, Sendable, Identifiable {
   }
 
   var title: String { emoji.map { "\($0)  \(name)" } ?? name }
+
+  public static func imported(from spaces: [(id: String, name: String, emoji: String?, theme: String?)]?) -> [Self] {
+    (spaces ?? []).compactMap { space in
+      guard let raw = space.theme, let parsed = ImportArcTheme.parse(raw),
+            let theme = try? JSONDecoder().decode(ProfileThemeValue.self, from: Data(parsed.text().utf8)) else { return nil }
+      return Self(id: space.id, name: space.name, emoji: space.emoji, theme: theme)
+    }
+  }
 }
 
 public enum BrowsingDataKind: String, Hashable, Sendable {
@@ -306,6 +314,15 @@ public final class ProfilesPaneModel: SettingsPaneProvider {
   func loadArcChoices() async {
     arcChoices = await services.arcThemeChoices()
   }
+
+  #if DEBUG
+  public func devArcThemeChoices(profile: String, choose id: String?) -> [ArcThemeChoice]? {
+    if let id, let choice = arcChoices?.first(where: { $0.id == id }) {
+      importArcTheme(profile, choice)
+    }
+    return arcChoices
+  }
+  #endif
 }
 
 struct ProfilesPane: View {

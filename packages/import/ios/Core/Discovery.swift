@@ -160,9 +160,10 @@ public struct BrowserDiscovery {
       guard app != nil else { return nil }
     case .firefox:
       profiles = firefoxProfiles(def)
-    case .chromium, .arc:
+    case .chromium:
       profiles = chromiumProfiles(def)
-      if def.family == .arc { attachArcSpaces(&profiles) }
+    case .arc:
+      profiles = arcProfiles(def)
     case .automation:
       return nil
     }
@@ -297,6 +298,12 @@ public struct BrowserDiscovery {
 
   public func arcSidebarURL() -> URL {
     applicationSupport.appendingPathComponent("Arc/StorableSidebar.json")
+  }
+
+  func arcProfiles(_ def: BrowserDefinition = .arc) -> [BrowserProfile] {
+    var profiles = chromiumProfiles(def)
+    attachArcSpaces(&profiles)
+    return profiles
   }
 
   func attachArcSpaces(_ profiles: inout [BrowserProfile]) {

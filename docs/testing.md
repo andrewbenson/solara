@@ -587,8 +587,7 @@ The native-actions driver requests all windows from `state.snapshot`: a `windowI
 frozen outcomes, state, repeat and relaunch oracle. It no longer sets a defaults route or requests script work.
 Run `ImportRunTests`, `ImportSidebarRunTests`, `ImportDiaRunTests` and `ImportArcThemeTests`, then the full
 SolaraKit suite. Run the existing browser sync theme pairing suite; import theme acknowledgement still uses
-E6d's `import.adoptProfileTheme` / `adoptProfileThemeForImport` path. The profile theme picker still uses
-`src/lib/arcTheme.ts` and its tests.
+E6d's `import.adoptProfileTheme` / `adoptProfileThemeForImport` path.
 The import transport and environment hosts remain relevant; the removed script-routing/browser-adoption hosts do not.
 The bookmarks scale benchmark invokes the native `benchmarkImportBookmarks` hook, which denies distribution builds
 and requires a background isolated instance with `AC_BENCH_BOOKMARKS=1` for local Debug or Release builds.
@@ -780,3 +779,11 @@ unchanged window selections, and the three `viaJS` retirement replies. In Safe M
 submit Create Profile through the pane and verify that the sheet dismisses and the
 native Safe Mode alert appears. Check the Profiles pane in settings-shift and run
 pages-test's Create a Profile legs, profile-dots-launch, config-files and lazy-profiles.
+
+## E8 Settings Arc profile-theme choices
+
+Run `ImportArcThemeTests` and `ProfilesPaneTests` with `-Xswiftc -DSOLARA_PROBES`. In layouts 0 and 1,
+run settings-shift with its own hidden instance and sidebar-parity. Settings-shift opens the default
+profile's Theme section with Arc discovery unavailable, then supplies an Arc fixture with two profiles,
+optional emoji and invalid or missing themes. It checks choice order, applies a two-look theme and checks
+the stored light and dark colors and the unchanged fixture.

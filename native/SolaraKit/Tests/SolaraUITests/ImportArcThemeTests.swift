@@ -80,6 +80,31 @@ import Testing
     #expect(ImportArcTheme.parse(Self.red.replacingOccurrences(of: "\"red\":1", with: "\"red\":3.9")) != nil)
   }
 
+  @Test func settingsChoicesPreserveSpaceOrderAndSanitizedLooks() throws {
+    let basic = try fixture("basic-appearance")
+    let extended = try fixture("single-orange")
+    let choices = ArcThemeChoice.imported(from: [
+      (id: "missing", name: "Missing", emoji: nil, theme: nil),
+      (id: "z", name: "Research", emoji: "🔬", theme: basic),
+      (id: "malformed", name: "Malformed", emoji: "❌", theme: "{"),
+      (id: "out-of-range", name: "Out of range", emoji: nil, theme: Self.red.replacingOccurrences(of: "\"red\":1", with: "\"red\":4")),
+      (id: "a", name: "Studio", emoji: nil, theme: extended)
+    ])
+    #expect(choices.map(\.id) == ["z", "a"])
+    #expect(choices.map(\.name) == ["Research", "Studio"])
+    #expect(choices.map(\.emoji) == ["🔬", nil])
+    #expect(choices.map(\.title) == ["🔬  Research", "Studio"])
+    for (choice, raw) in zip(choices, [basic, extended]) {
+      let encoded = try JSONValue.parse(JSONEncoder().encode(choice.theme))
+      compare(encoded, try #require(ImportArcTheme.parse(raw)))
+    }
+  }
+
+  @Test func settingsChoicesAreEmptyWhenDiscoveryIsUnavailable() {
+    #expect(ArcThemeChoice.imported(from: nil).isEmpty)
+    #expect(ArcThemeChoice.imported(from: []).isEmpty)
+  }
+
   @Test func forcedDarkAndSingleAppearanceTakePrecedence() throws {
     var raw = try JSONSerialization.jsonObject(with: Data(try fixture("basic-appearance").utf8)) as! [String: Any]
     raw["windowAppearance"] = ["single": ["_0": "dark"]]

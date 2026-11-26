@@ -25,7 +25,7 @@ public struct Command: Sendable, Equatable {
   public var json: JSONValue { ["name": .string(name), "args": .array(args)] }
 
   public static let durable: Set<String> = [
-    "updateSettings", "setSidebarPosition", "setWindowSidebar", "setWindowKeptOnClose", "closeWindow", "restoreClosingWindow", "restoreCommandWindow", "deleteProfile", "createProfile", "updateProfile", "reorderProfiles", "setDefaultProfile",
+    "updateSettings", "setSidebarPosition", "setWindowSidebar", "setWindowKeptOnClose", "closeWindow", "commitChromeWindowClose", "restoreClosingWindow", "restoreCommandWindow", "deleteProfile", "createProfile", "updateProfile", "reorderProfiles", "setDefaultProfile",
   ]
 
   public var isDurable: Bool { Command.durable.contains(name) }
@@ -35,7 +35,7 @@ public struct Command: Sendable, Equatable {
     "setWindowSidebar", "newTab", "settleNewTab", "closeTab", "closeTabs", "activate", "activateNumberedTab",
     "switchPageEngine", "handOffPin", "activateIndex", "cycle", "navigate", "updateTab", "navigated", "faviconChanged",
     "closeCommandTabs", "reopenCommandClosed", "restoreCommandWindow", "duplicateTab", "togglePin", "moveTab",
-    "moveTabBy", "createWindow", "closeWindow", "restoreClosingWindow", "forgetClosedWindow", "setWindowKeptOnClose",
+    "moveTabBy", "createWindow", "closeWindow", "setChromeWindowClosePending", "commitChromeWindowClose", "restoreClosingWindow", "forgetClosedWindow", "setWindowKeptOnClose",
     "setWindowFrame", "setWindowFullScreen", "toggleSidebar",
     "switchProfile", "tabMenuSelection", "tabMenuMoveToWindow", "moveTabsToWindow", "moveTabToProfile", "mergeAllWindows", "reopenClosed", "reopenClosedTab", "reopenClosedWindow",
     "restoreClosed", "createProfile", "updateProfile", "deleteProfile", "reorderProfiles", "setDefaultProfile", "profileDataDeleted",
@@ -214,6 +214,12 @@ extension Session {
       options.chromeWindow = optionalString(o, "chromeWindow")
       options.newTabCommand = o["newTabCommand"]?.truthy
       result = .string(createWindow(options))
+    case "setChromeWindowClosePending":
+      memory.closingWindowUndos[try a.requireString(0)]?.chromeClosePending = a.bool(1)
+    case "commitChromeWindowClose":
+      let id = try a.requireString(0)
+      closeWindow(id)
+      memory.closingWindowUndos.removeValue(forKey: id)
     case "closeWindow": closeWindow(try a.requireString(0))
     case "restoreClosingWindow":
       let snapshot = a.object(0)

@@ -59,7 +59,6 @@ enum NativeExtensionCatalog {
       guard current, case .retired(let registration) = event, actionCache.retire(registration) else { return }
       publish()
     }
-    SettingsJS.shared.onConnect { publish(force: true) }
     lifecycle = NativeStoreHandle.subscribeLifecycle { reconcile() }
   }
 
@@ -290,8 +289,6 @@ enum NativeExtensionCatalog {
     let changes = presentation.publish(store: current ? observed : nil, lists: catalog.lists, states: actionCache.states,
       popup: popupId, sources: NewTabSources.shared, force: force)
     if changes.toolbar || changes.windows { emit?(changes.toolbar, changes.catalog || changes.windows) }
-    guard changes.catalog, SettingsJS.shared.connected else { return }
-    let lists = JSONValue.object(JSONObject(catalog.lists.map { ($0.key, .array($0.value.map(JSONValue.object))) }))
-    SettingsJS.shared.fire("extensions.catalog", lists.foundation)
+    NativeExtensionSheets.reconcile()
   }
 }

@@ -270,7 +270,7 @@ test("the feed adds no browser-store listener and follows the store through tab 
   assert.equal(f.sent.at(-1).generation, "G");
 });
 
-test("the feed adds no pages-store listener and follows the store through the extension bridge's", () => {
+test("the feed adds no pages-store listener and follows the store through native sync's", () => {
   for (const running of [true, false]) {
     const f = fixture(running);
     assert.equal(f.pagesListeners(), 0);

@@ -354,7 +354,6 @@ const cef: Modules["SolaraCEF"] = {
 const extensionEvents = nativeEvents();
 const extensions: Modules["SolaraExtensions"] = {
   addListener: extensionEvents.addListener,
-  resolveInstallPrompt: () => Promise.resolve(),
   list: async () => ({ extensions: [] }),
   inspectUnpacked: () => unfaked("SolaraExtensions", "inspectUnpacked"),
   install: () => Promise.resolve({ error: "no extension engine in this test" }),

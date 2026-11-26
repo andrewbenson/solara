@@ -4,6 +4,7 @@ import os
 public enum WindowHost {
   public static var makeWindow: (() -> NSWindow)?
   @MainActor public static var closeRequest: ((String) -> Bool)?
+  @MainActor public static var publishesWindowTeardown: Bool { WindowManager.shared.publishesWindowTeardown }
   @MainActor public static func beginCommandFocus(_ command: String, windowId: String) -> Int? {
     guard let window = WindowManager.shared.windows[windowId] else { return nil }
     defer {
@@ -89,6 +90,7 @@ final class WindowManager: NSObject, NSWindowDelegate {
   private var retention = LastWindowRetention()
   private var closingIntents = Set<String>()
   private var termination = WindowTerminationLifecycle()
+  var publishesWindowTeardown: Bool { termination.publishesWindowTeardown }
   private var retainedPresentation: LastWindowPresentation?
   var retainedWindowId: String? { retention.id }
 

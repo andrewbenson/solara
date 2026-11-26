@@ -12,6 +12,21 @@ public struct ExtensionInstallState: Decodable, Equatable, Sendable {
   public var theme: [String: String]
   public var goButton: String
   public var goButtonText: String
+
+  public init(status: String, title: String, error: String? = nil, icon: String? = nil, warnings: [String], loadedFrom: String? = nil,
+    action: String, dark: Bool, theme: [String: String], goButton: String, goButtonText: String) {
+    self.status = status
+    self.title = title
+    self.error = error
+    self.icon = icon
+    self.warnings = warnings
+    self.loadedFrom = loadedFrom
+    self.action = action
+    self.dark = dark
+    self.theme = theme
+    self.goButton = goButton
+    self.goButtonText = goButtonText
+  }
 }
 
 public struct ExtensionPin: Decodable, Equatable, Sendable {
@@ -19,6 +34,13 @@ public struct ExtensionPin: Decodable, Equatable, Sendable {
   public var name: String
   public var icon: String?
   public var pinned: Bool
+
+  public init(id: String, name: String, icon: String? = nil, pinned: Bool) {
+    self.id = id
+    self.name = name
+    self.icon = icon
+    self.pinned = pinned
+  }
 }
 
 public struct ExtensionPinsState: Decodable, Equatable, Sendable {
@@ -29,6 +51,17 @@ public struct ExtensionPinsState: Decodable, Equatable, Sendable {
   public var controlBorder: String
   public var goButton: String
   public var goButtonText: String
+
+  public init(extensions: [ExtensionPin], dark: Bool, theme: [String: String],
+    control: String, controlBorder: String, goButton: String, goButtonText: String) {
+    self.extensions = extensions
+    self.dark = dark
+    self.theme = theme
+    self.control = control
+    self.controlBorder = controlBorder
+    self.goButton = goButton
+    self.goButtonText = goButtonText
+  }
 }
 
 public enum ExtensionDialogEvent: Equatable, Sendable {

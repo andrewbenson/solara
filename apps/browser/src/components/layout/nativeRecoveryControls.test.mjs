@@ -90,7 +90,6 @@ async function siteFixture() {
     "zustand/react/shallow": { useShallow: (fn) => fn },
     "../../store/model": model,
     "../../store/engines": engines,
-    "../extensions/state": { useWindowExtensions: () => [] },
     "../omnibox/nativeBar": { useThemeTokens: () => ({}) },
     "../layout/pageState": { usePage: (id, select) => select({ security: null, blocked: 0, mediaAccess: null }) },
     "../media/state": { useMedia: (select) => select({ sessions: {}, pipOpen: {} }) },

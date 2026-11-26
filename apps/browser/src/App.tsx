@@ -6,7 +6,6 @@ import { CommandPanel } from "./components/CommandPanel";
 import { ContentCard } from "./components/ContentCard";
 import { BookmarkDialog } from "./components/bookmarks/BookmarkDialog";
 import { EditBookmarkDialog } from "./components/bookmarks/EditBookmarkDialog";
-import { ExtensionOverlays } from "./components/extensions/ExtensionOverlays";
 import { DownloadMagnet, DownloadsPopover } from "./components/Downloads";
 import { isUtilityWindowId } from "./components/settings/windows";
 import { OnboardingOverlay } from "./components/onboarding";
@@ -63,7 +62,6 @@ function NativeBrowserWindow() {
       <NativeLayoutGuests topTabs={topTabs} />
       <CommandPanel windowWidth={width} />
       <DownloadsPopover />
-      <ExtensionOverlays />
       <DownloadMagnet />
       <BookmarkDialog />
       <EditBookmarkDialog />

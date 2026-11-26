@@ -1855,9 +1855,10 @@ void AnnounceStrayTab(SolaraCoreTab *tab, int tries) {
     dispatch_after(dispatch_time(DISPATCH_TIME_NOW, 25 * NSEC_PER_MSEC), dispatch_get_main_queue(), ^{ AnnounceStrayTab(tab, tries + 1); });
     return;
   }
-  if (!SolaraCoreServices.extensionsHandler) return;
-  SolaraCoreServices.extensionsHandler(@"tabs", @{
-    @"action" : @"open", @"url" : url ?: @"", @"profile" : solaracore_host::ProfileName(tab.profile), @"active" : @YES,
+  if (!SolaraCoreServices.extensionTabsHandler) return;
+  SolaraCoreServices.extensionTabsHandler(@{
+    @"action" : @"open", @"url" : url ?: @"", @"profile" : solaracore_host::ProfileName(tab.profile),
+    @"incognito" : @(tab.profile.offTheRecord), @"active" : @YES,
     @"window" : NSNull.null, @"extensionId" : @"", @"adoptId" : [SolaraCoreTabs offerTab:tab prefix:@"tab"]
   });
 }
@@ -1886,7 +1887,9 @@ void HandOffTab(SolaraCoreTab *tab) {
   BOOL _awaitingApp;
   BOOL _showInactive;
   BOOL _announced;
+  BOOL _appCloseInFlight;
   __weak SolaraCoreTab *_chromeActive;
+  void (^_revealCancelledClose)(void);
   NSString *_deferredFocusShortcut;
   NSEvent *_deferredFocusEvent;
   BOOL _deferredFocusWasKey;
@@ -1949,7 +1952,52 @@ NSMutableDictionary<NSString *, SolaraCoreWindowController *> *ChromeMadeWindows
   [ChromeMadeWindows() removeObjectForKey:token];
   if (!controller->_awaitingApp || !controller.coreWindow.window) return nil;
   controller->_awaitingApp = NO;
+  controller->_revealCancelledClose = nil;
   return controller;
+}
+
++ (void)rejectCancelledChromeWindow:(NSString *)token {
+  SolaraCoreWindowController *controller = ChromeMadeWindows()[token];
+  if (!controller) return;
+  void (^reveal)(void) = controller->_revealCancelledClose;
+  if (reveal) reveal();
+}
+
+- (void)showAfterCancelledClose {
+  SolaraCoreWindow *coreWindow = self.coreWindow;
+  NSWindow *window = coreWindow.window;
+  if (!window || coreWindow.closing) return;
+  if (!self.root) {
+    NSMutableArray *profiles = [solaracore_host::LoadedProfiles() mutableCopy];
+    if (coreWindow.activeProfile) [profiles insertObject:coreWindow.activeProfile atIndex:0];
+    SolaraCoreTab *tab = nil;
+    for (SolaraCoreProfile *profile in profiles) {
+      for (SolaraCoreTab *candidate in [coreWindow tabsForProfile:profile]) {
+        if (!candidate.closed && !candidate.closingWithWindow) {
+          tab = candidate;
+          break;
+        }
+      }
+      if (tab) break;
+    }
+    if (tab) {
+      NSView *page = tab.view;
+      NSView *host = coreWindow.hostView;
+      if (page.superview != host) {
+        [page removeFromSuperview];
+        page.frame = host.bounds;
+        page.autoresizingMask = NSViewWidthSizable | NSViewHeightSizable;
+        [host addSubview:page];
+      }
+      [coreWindow activateTab:tab];
+    }
+  }
+  if (solaracore_host::Background()) {
+    [coreWindow showInactive];
+    if (!window.isVisible) [window orderFront:nil];
+  } else {
+    [window makeKeyAndOrderFront:nil];
+  }
 }
 
 - (void)stopAwaitingApp {
@@ -1970,16 +2018,17 @@ NSMutableDictionary<NSString *, SolaraCoreWindowController *> *ChromeMadeWindows
   NSString *moving = [SolaraCoreTabs viewForTab:tab].transferKey;
   NSString *url = tab.url;
   const BOOL blank = !moving.length && (!url.length || [url isEqualToString:@"about:blank"]);
-  if ((blank && tries < 20) || (!SolaraCoreServices.extensionsHandler && tries < 400)) {
+  if ((blank && tries < 20) || (!SolaraCoreServices.extensionTabsHandler && tries < 400)) {
     __weak SolaraCoreWindowController *weakSelf = self;
     dispatch_after(dispatch_time(DISPATCH_TIME_NOW, 25 * NSEC_PER_MSEC), dispatch_get_main_queue(), ^{
       [weakSelf announceChromeMadeTab:tab tries:tries + 1];
     });
     return;
   }
-  if (!SolaraCoreServices.extensionsHandler) return;
+  if (!SolaraCoreServices.extensionTabsHandler) return;
   NSMutableDictionary *request = [@{
     @"action" : @"open", @"url" : url ?: @"", @"profile" : solaracore_host::ProfileName(tab.profile),
+    @"incognito" : @(tab.profile.offTheRecord),
     @"active" : @(!_chromeActive || _chromeActive == tab), @"window" : NSNull.null, @"extensionId" : @"",
     @"chromeWindow" : _chromeToken, @"focused" : @(!_showInactive)
   } mutableCopy];
@@ -1987,7 +2036,7 @@ NSMutableDictionary<NSString *, SolaraCoreWindowController *> *ChromeMadeWindows
   else if ([SolaraCoreTabs viewForTab:tab]) return;
   else request[@"adoptId"] = [SolaraCoreTabs offerTab:tab prefix:@"tab"];
   _announced = YES;
-  SolaraCoreServices.extensionsHandler(@"tabs", request);
+  SolaraCoreServices.extensionTabsHandler(request);
 }
 
 - (void)window:(SolaraCoreWindow *)window showRequestedActive:(BOOL)active {
@@ -2069,6 +2118,11 @@ NSMapTable<SolaraCoreProfile *, SolaraCoreWindowController *> *StandaloneWindows
                                                     objc_setAssociatedObject(c, kProfileSelectionClosedKey, @YES, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
                                                     objc_setAssociatedObject(c, kProfileSelectionKey, nil, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
                                                     [SolaraCoreTabStrip windowClosed:c];
+                                                    if (c.appWindowId.length && SolaraCoreServices.extensionTabsHandler)
+                                                      SolaraCoreServices.extensionTabsHandler(@{
+                                                        @"action" : @"windowCloseCommitted", @"appWindow" : c.appWindowId,
+                                                        @"chromeWindow" : c->_chromeToken ?: @""
+                                                      });
                                                   }
                                                 }];
   }
@@ -2121,7 +2175,8 @@ NSMapTable<SolaraCoreProfile *, SolaraCoreWindowController *> *StandaloneWindows
   [SolaraCoreTabStrip removed:tab fromWindow:self];
   if (SolaraCoreProfile *profile = tab.profile) [SolaraCoreTabStrip changedInWindow:self profile:profile];
   [[self viewFor:tab] tabRemovedFromWindow:window];
-  if (_stray || _standalone || _awaitingApp) {
+  const BOOL claimedChromeClose = _chromeToken.length && self.appWindowId.length && tab.closingWithWindow;
+  if (_stray || _standalone || _awaitingApp || claimedChromeClose) {
     __weak SolaraCoreWindowController *weakSelf = self;
     SolaraCoreProfile *removedProfile = tab.profile;
     dispatch_async(dispatch_get_main_queue(), ^{
@@ -2134,9 +2189,9 @@ NSMapTable<SolaraCoreProfile *, SolaraCoreWindowController *> *StandaloneWindows
       if (c->_awaitingApp) {
         c->_awaitingApp = NO;
         [ChromeMadeWindows() removeObjectForKey:c->_chromeToken];
-        if (c->_announced && SolaraCoreServices.extensionsHandler)
-          SolaraCoreServices.extensionsHandler(@"tabs", @{@"action" : @"closeWindow", @"chromeWindow" : c->_chromeToken});
-      } else if (!c.stray && !c.standalone) {
+        if (c->_announced && SolaraCoreServices.extensionTabsHandler)
+          SolaraCoreServices.extensionTabsHandler(@{@"action" : @"closeWindow", @"chromeWindow" : c->_chromeToken});
+      } else if (!c.stray && !c.standalone && !claimedChromeClose) {
         return;
       }
       for (SolaraCoreProfile *p in KeeperWindows().keyEnumerator.allObjects)
@@ -2197,6 +2252,12 @@ NSMapTable<SolaraCoreProfile *, SolaraCoreWindowController *> *StandaloneWindows
   [SolaraCoreWebView moveKeptTabs:tabs closingWindow:window.window];
 }
 
+- (void)beginAppClose {
+  _appCloseInFlight = YES;
+  if (self.appWindowId.length && SolaraCoreServices.extensionTabsHandler)
+    SolaraCoreServices.extensionTabsHandler(@{@"action" : @"windowCloseStarted", @"appWindow" : self.appWindowId});
+}
+
 - (void)windowDidCancelClose:(SolaraCoreWindow *)window {
   NSLog(@"[solaracore] window close cancelled");
   __weak SolaraCoreWindowController *weakSelf = self;
@@ -2205,13 +2266,19 @@ NSMapTable<SolaraCoreProfile *, SolaraCoreWindowController *> *StandaloneWindows
     SolaraCoreWindow *coreWindow = controller.coreWindow;
     NSWindow *nsWindow = coreWindow.window;
     if (!controller || !coreWindow || !nsWindow) return;
-    if (!solaracore_windows::ShouldRecoverCancelledClose(nsWindow.isVisible, coreWindow.closing, controller->_awaitingApp, controller.root != nil)) return;
+    const BOOL appClose = controller->_appCloseInFlight;
+    controller->_appCloseInFlight = NO;
+    if (!solaracore_windows::ShouldRecoverCancelledClose(nsWindow.isVisible && !appClose, coreWindow.closing,
+                                                         controller->_awaitingApp, controller.root != nil && !appClose)) return;
+    if (!SolaraCoreServices.extensionTabsHandler) return [controller showAfterCancelledClose];
+    NSString *token = NSUUID.UUID.UUIDString;
+    NSString *offerPrefix = [@"tab:" stringByAppendingString:token];
     NSMutableArray<NSDictionary<NSString *, id> *> *tabs = [NSMutableArray array];
     for (SolaraCoreProfile *profile in solaracore_host::LoadedProfiles()) {
       for (SolaraCoreTab *tab in [coreWindow tabsForProfile:profile]) {
         if (tab.closed || tab.closingWithWindow) continue;
         [tabs addObject:@{
-          @"adoptId" : [SolaraCoreTabs offerTab:tab prefix:@"tab"],
+          @"adoptId" : [SolaraCoreTabs offerTab:tab prefix:offerPrefix],
           @"url" : tab.url ?: @"",
           @"title" : tab.title ?: @"",
           @"profile" : solaracore_host::ProfileName(tab.profile),
@@ -2221,34 +2288,36 @@ NSMapTable<SolaraCoreProfile *, SolaraCoreWindowController *> *StandaloneWindows
         }];
       }
     }
-    if (!tabs.count || (!SolaraCoreServices.closeCancelledHandler && !SolaraCoreServices.extensionsHandler)) return;
     NSString *previousToken = controller->_chromeToken;
     const BOOL previousAnnounced = controller->_announced;
     const BOOL previousShowInactive = controller->_showInactive;
-    NSString *token = NSUUID.UUID.UUIDString;
     controller->_chromeToken = token;
     controller->_awaitingApp = YES;
     controller->_announced = YES;
     controller->_showInactive = NO;
     ChromeMadeWindows()[token] = controller;
     NSArray<NSString *> *offers = [tabs valueForKey:@"adoptId"];
-    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, 20 * NSEC_PER_SEC), dispatch_get_main_queue(), ^{
-      for (NSString *offer in offers) [SolaraCoreTabs takeOffered:offer];
+    controller->_revealCancelledClose = ^{
       SolaraCoreWindowController *waiting = weakSelf;
       if (!waiting || !waiting->_awaitingApp || ![waiting->_chromeToken isEqualToString:token]) return;
-      NSLog(@"[solaracore] close cancel went unanswered; window stays hidden");
       [ChromeMadeWindows() removeObjectForKey:token];
       waiting->_awaitingApp = NO;
+      waiting->_revealCancelledClose = nil;
       waiting->_chromeToken = previousToken;
       waiting->_announced = previousAnnounced;
       waiting->_showInactive = previousShowInactive;
+      for (NSString *offer in offers) [SolaraCoreTabs takeOffered:offer];
+      [waiting showAfterCancelledClose];
+    };
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, 20 * NSEC_PER_SEC), dispatch_get_main_queue(), ^{
+      [SolaraCoreWindowController rejectCancelledChromeWindow:token];
+      for (NSString *offer in offers) [SolaraCoreTabs takeOffered:offer];
     });
     NSDictionary *request = @{
       @"action" : @"closeCancelled", @"chromeWindow" : token, @"appWindow" : controller.appWindowId ?: @"",
       @"focused" : @YES, @"tabs" : tabs,
     };
-    if (SolaraCoreServices.closeCancelledHandler && SolaraCoreServices.closeCancelledHandler(request)) return;
-    if (SolaraCoreServices.extensionsHandler) SolaraCoreServices.extensionsHandler(@"tabs", request);
+    if (SolaraCoreServices.extensionTabsHandler) SolaraCoreServices.extensionTabsHandler(request);
   });
 }
 
@@ -3122,8 +3191,13 @@ NSView *ACWindowRootView(NSWindow *window) {
   return gSwapped;
 }
 
++ (void)rejectCancelledChromeWindow:(NSString *)token {
+  [SolaraCoreWindowController rejectCancelledChromeWindow:token];
+}
+
 + (void)closeWindow:(NSWindow *)window {
   SolaraCoreWindowController *controller = [SolaraCoreWindowController forNSWindow:window];
+  [controller beginAppClose];
   [SolaraCoreWebView keepTransfersOfWindow:window];
   if (controller) [controller.coreWindow close];
   else [window close];

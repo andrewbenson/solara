@@ -1,11 +1,10 @@
+import { nativeExtensionCommand } from "@solara/settings";
 import type { Suggestion } from "@solara/core";
 import { prompt, showMenu, type BrowserCommand, type MenuItem } from "@solara/shell";
 import { moveTabToProfile } from "../../lib/actions";
 import { runCommand } from "../../lib/commands";
 import { useBrowser } from "../../store/browser";
 import { splitOf, type SplitSide } from "../../store/splits";
-import { openExtensionFromMenu } from "../extensions/bridge";
-import { openOptions, shownIn } from "../extensions/state";
 import { openSplitPane } from "../layout/splitActions";
 import { openSettings } from "../settings/windows";
 import { tabTitle } from "../sidebar/actions";
@@ -73,7 +72,6 @@ export function runBarAction(id: string, windowId: string) {
 }
 
 export function runBarExtension(s: Extract<Suggestion, { kind: "extension" }>, windowId: string) {
-  if (s.open === "action") return openExtensionFromMenu(windowId, s.id);
-  const ext = shownIn(windowId, s.id);
-  if (ext) openOptions(windowId, ext);
+  const command = s.open === "action" ? "openExtension" : "options";
+  return nativeExtensionCommand({ command, windowId, id: s.id, requiresVisible: true });
 }

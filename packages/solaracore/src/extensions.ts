@@ -70,53 +70,10 @@ export type ExtensionsChange = {
   event: "installed" | "uninstalled" | "enabled" | "disabled" | "configured" | "reloaded";
 };
 
-export type CloseCancelledTab = {
-  adoptId: string;
-  url: string;
-  title: string;
-  profile: string;
-  incognito: boolean;
-  storeTabId: string;
-  browserId: number;
-};
-
-export type TabsRequest = {
-  action: "open" | "closeWindow" | "closeCancelled";
-  profile: string;
-  extensionId: string;
-  window: string | null;
-  url: string;
-  active?: boolean;
-  adoptId?: string;
-  chromeWindow?: string;
-  focused?: boolean;
-  tabKey?: string;
-  tabs?: CloseCancelledTab[];
-  appWindow?: string;
-};
-
-export type ExtensionInstallPrompt = {
-  requestId: string;
-  profile: string;
-  id: string;
-  name: string;
-  version: string;
-  type: "install" | "re-enable" | "permissions" | "external" | "remote" | "repair" | "other";
-  icon: string;
-  permissions: string[];
-  browserId: number;
-};
-
-export type ExtensionInstallPromptClosed = { requestId: string; reason: "accepted" | "cancelled" | "requesterGone" | "navigated" };
-
 type Result<T> = T | { error: string };
 
 export type NativeExtensions = {
   addListener(name: "onChanged", listener: (e: ExtensionsChange) => void): EventSubscription;
-  addListener(name: "onTabs", listener: (e: TabsRequest) => void): EventSubscription;
-  addListener(name: "onInstallPrompt", listener: (e: ExtensionInstallPrompt) => void): EventSubscription;
-  addListener(name: "onInstallPromptClosed", listener: (e: ExtensionInstallPromptClosed) => void): EventSubscription;
-  resolveInstallPrompt(requestId: string, accepted: boolean): Promise<void>;
   list(profile: string): Promise<Result<{ extensions: InstalledExtension[] }>>;
   inspectUnpacked(path: string): Promise<Result<ExtensionPackage>>;
   install(path: string, profile: string): Promise<Result<{ id: string }>>;
@@ -219,66 +176,5 @@ export const onExtensionActionChanged = (listener: (e: ExtensionActionChange) =>
   onEngineEvent("extensions.action", (p) => {
     if (typeof p.id === "string") listener(extensionActionChange(p));
   });
-export const onExtensionInstallPrompt = (listener: (e: ExtensionInstallPrompt) => void) => Native.addListener("onInstallPrompt", listener);
-export const resolveExtensionInstallPrompt = (requestId: string, accepted: boolean) => Native.resolveInstallPrompt(requestId, accepted);
-export const onExtensionInstallPromptClosed = (listener: (e: ExtensionInstallPromptClosed) => void) => Native.addListener("onInstallPromptClosed", listener);
-export const onExtensionTabsRequest = (listener: (e: TabsRequest) => void) => Native.addListener("onTabs", listener);
 
 export const chooseExtensionFolder = () => Native.chooseFolder();
-
-export function permissionWarnings(pkg: Pick<ExtensionPackage, "permissions" | "hostPermissions">): string[] {
-  const warnings: string[] = [];
-  const perms = new Set(pkg.permissions);
-  const hosts = pkg.hostPermissions.filter((h) => !/^(chrome|chrome-extension|about|data):/.test(h));
-  const allHosts = hosts.some((h) => h === "<all_urls>" || /^(\*|https?|wss?):\/\/\*\//.test(h)) || perms.has("debugger");
-  if (allHosts || perms.has("proxy") || perms.has("pageCapture") || perms.has("debugger")) {
-    warnings.push("Read and change all your data on all websites");
-  } else if (hosts.length) {
-    const names = [...new Set(hosts.map(hostLabel).filter(Boolean))] as string[];
-    if (names.length === 1) warnings.push(`Read and change your data on ${names[0]}`);
-    else if (names.length === 2) warnings.push(`Read and change your data on ${names[0]} and ${names[1]}`);
-    else if (names.length === 3) warnings.push(`Read and change your data on ${names[0]}, ${names[1]}, and ${names[2]}`);
-    else if (names.length > 3) warnings.push(`Read and change your data on a number of websites`);
-  }
-  const clipboard = perms.has("clipboardRead") && perms.has("clipboardWrite");
-  if (clipboard) warnings.push("Read and modify data you copy and paste");
-  for (const [permission, message] of PERMISSION_WARNINGS) {
-    if (clipboard && permission.startsWith("clipboard")) continue;
-    if (perms.has(permission)) warnings.push(message);
-  }
-  if (perms.has("declarativeNetRequest") && !allHosts && !perms.has("declarativeNetRequestWithHostAccess"))
-    warnings.push("Block content on any page");
-  const browsing = perms.has("history") ? "Read and change your browsing history on all your signed-in devices" : null;
-  if (!browsing && (perms.has("tabs") || perms.has("webNavigation")) && !allHosts) warnings.push("Read your browsing history");
-  if (browsing) warnings.push(browsing);
-  return [...new Set(warnings)];
-}
-
-function hostLabel(pattern: string): string | null {
-  const m = /^[^:]+:\/\/(\*\.)?([^/]+)/.exec(pattern);
-  if (!m) return null;
-  return m[1] ? `all ${m[2]} sites` : m[2]!;
-}
-
-const PERMISSION_WARNINGS: [string, string][] = [
-  ["bookmarks", "Read and change your bookmarks"],
-  ["clipboardRead", "Read data you copy and paste"],
-  ["clipboardWrite", "Modify data you copy and paste"],
-  ["contentSettings", "Change your settings that control websites' access to features such as cookies, JavaScript, plugins, geolocation, microphone, camera etc."],
-  ["desktopCapture", "Capture content of your screen"],
-  ["downloads", "Manage your downloads"],
-  ["downloads.open", "Open downloaded files"],
-  ["geolocation", "Detect your physical location"],
-  ["management", "Manage your apps, extensions, and themes"],
-  ["nativeMessaging", "Communicate with cooperating native applications"],
-  ["notifications", "Display notifications"],
-  ["privacy", "Change your privacy-related settings"],
-  ["readingList", "Read and change entries in the reading list"],
-  ["sessions", "Read your browsing history on all your signed-in devices"],
-  ["system.storage", "Identify and eject storage devices"],
-  ["tabCapture", "Capture content of your screen"],
-  ["tabGroups", "View and manage your tab groups"],
-  ["topSites", "Read a list of your most frequently visited websites"],
-  ["ttsEngine", "Read all text spoken using synthesized speech"],
-  ["webAuthenticationProxy", "Read and change all your data on all websites"],
-];

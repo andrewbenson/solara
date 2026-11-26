@@ -11,7 +11,7 @@ import { create } from "zustand";
 import { useBrowser, type BrowserState } from "../../store/browser";
 import { engineProfile } from "../../store/model";
 import { shownPageId } from "../../store/peek";
-import { browserIdOf } from "../extensions/state";
+import { browserIdOf } from "../layout/pageState";
 import { tabForBrowser } from "../layout/pageState";
 
 type CastStore = {

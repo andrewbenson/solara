@@ -58,7 +58,7 @@ for (const shared of [false, true]) test(`JS deletion prunes only the removed al
 test("native profileDeleted effect prunes only the alias, preserving the common state", () => {
   const workspace = load("./nativeWorkspace.ts", {
     "./bookmarkProjection": bookmarkProjection,
-    "@solara/solaracore": {}, "./bookmarks": bookmarks, "./model": model, "./closingWindowRestore": {}, "./tabs": {},
+    "@solara/solaracore": {}, "./bookmarks": bookmarks, "./model": model, "./tabs": {},
     "../lib/earlyNavigate": {}, "../lib/focusClaims": {}, "./nativeStore": { nativeOwnsWorkspace: () => true },
   });
   const f = fixture({ shared: true });
@@ -100,7 +100,7 @@ function nativeBridge({ present = true, active = true, dispatch = () => ({ rev: 
       nativeDispatch: dispatch,
       installPageReportWriter: () => {},
     },
-    "./closingWindowRestore": {}, "../sync/redesignSwitch": { syncRedesign: { on: false } },
+    "../sync/redesignSwitch": { syncRedesign: { on: false } },
     "./syncOrigin": { applyingFromSync: () => false }, "./nativeWorkspace": {},
   });
   native.startNativeStore();

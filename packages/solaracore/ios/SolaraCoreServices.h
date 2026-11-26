@@ -52,7 +52,7 @@ typedef void (^SolaraCoreResult)(NSDictionary<NSString *, id> *result);
     NS_SWIFT_NAME(zoomLevels(profile:completion:));
 + (void)setZoom:(double)zoom profile:(NSString *)profile host:(NSString *)host NS_SWIFT_NAME(setZoom(_:profile:host:));
 
-@property(class, nonatomic, copy, nullable) BOOL (^closeCancelledHandler)(NSDictionary<NSString *, id> *payload);
+@property(class, nonatomic, copy, nullable) void (^extensionTabsHandler)(NSDictionary<NSString *, id> *payload);
 @property(class, nonatomic, copy, nullable) void (^extensionsHandler)(NSString *name, NSDictionary<NSString *, id> *payload);
 + (void)listExtensions:(NSString *)profile completion:(SolaraCoreResult)completion NS_SWIFT_NAME(listExtensions(profile:completion:));
 + (NSDictionary<NSString *, id> *)inspectUnpacked:(NSString *)path;

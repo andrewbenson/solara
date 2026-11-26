@@ -28,6 +28,7 @@ public class ToolbarModule: Module {
         }
         NativeExtensionActionPopup.install()
         NativeExtensionActionPopup.emit = { name, body in sink.module?.sendEvent(name, body) }
+        NativeExtensionCatalog.publish(force: true)
       } }
     }
 
@@ -83,6 +84,15 @@ public class ToolbarModule: Module {
         }
         return NativeExtensionSidePanel.extensionId(windowId: windowId).map { ["extensionId": $0] }
       }
+    }.runOnQueue(.main)
+
+    AsyncFunction("devExtensionSheet") { (action: String, id: String?, windowId: String?) -> [String: Any]? in
+      let snapshot: JSONValue? = MainActor.assumeIsolated {
+        guard SolaraCoreTestHooksAllowed(), let value = NativeExtensionSheets.dev(action, id, windowId),
+          let data = try? JSONSerialization.data(withJSONObject: value) else { return nil }
+        return try? JSONValue.parse(data)
+      }
+      return snapshot?.foundation as? [String: Any]
     }.runOnQueue(.main)
 
     AsyncFunction("devExtensionCatalog") { () -> [String: Any] in

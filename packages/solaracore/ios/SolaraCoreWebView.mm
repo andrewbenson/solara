@@ -737,6 +737,7 @@ static BOOL HeldSelector(SEL selector) {
 }
 
 - (void)tabWillClose:(SolaraCoreTab *)tab {
+  [SolaraCoreHost extensionInstallRequesterInvalidated:solaracore_host::BrowserId(tab)];
   _closedByChrome = YES;
   _closedWithWindow = [tab respondsToSelector:@selector(closingWithWindow)] && tab.closingWithWindow;
   [SolaraCoreEarlyWindow dropPage:tab];
@@ -830,6 +831,8 @@ static void (^gPageLoadHook)(NSDictionary<NSString *, id> *);
   NSView *_devtoolsView;
   NSString *_devToolsPanel;
   NSString *_devToolsReopen;
+  NSUInteger _extensionStoreSequence;
+  NSString *_extensionStoreURL;
   BOOL _navigationQueued;
   NSString *_pageTheme;
   BOOL _pageScriptGreeted;
@@ -2569,6 +2572,43 @@ static BOOL PinnedLinkGestureBypassed() {
 #endif
 }
 
+- (void)listenForWebStoreRemoval:(SolaraCoreTab *)tab url:(NSString *)url {
+  if (SolaraCoreHost.safeMode || tab.loading || tab.closed || !_transferKey.length ||
+      ![url hasPrefix:@"https://chromewebstore.google.com/"] || [_extensionStoreURL isEqualToString:url]) return;
+  static NSString *script;
+  static dispatch_once_t once;
+  dispatch_once(&once, ^{
+    NSBundle *bundle = [NSBundle bundleForClass:SolaraCoreWebView.class];
+    NSString *path = [bundle pathForResource:@"extension_store" ofType:@"js"];
+    NSString *source = path ? [NSString stringWithContentsOfFile:path encoding:NSUTF8StringEncoding error:nil] : nil;
+    NSString *name = NSBundle.mainBundle.infoDictionary[@"CFBundleDisplayName"] ?: NSBundle.mainBundle.infoDictionary[@"CFBundleName"] ?: @"Solara";
+    NSData *encoded = [NSJSONSerialization dataWithJSONObject:name options:NSJSONWritingFragmentsAllowed error:nil];
+    NSString *literal = [[NSString alloc] initWithData:encoded encoding:NSUTF8StringEncoding];
+    script = [source stringByReplacingOccurrencesOfString:@"\"__SOLARA_PRODUCT__\"" withString:literal ?: @"\"Solara\""];
+  });
+  if (!script.length) return;
+  _extensionStoreURL = [url copy];
+  NSUInteger sequence = ++_extensionStoreSequence;
+  NSString *tabId = [_transferKey copy];
+  __weak SolaraCoreWebView *weakSelf = self;
+  __weak SolaraCoreTab *weakTab = tab;
+  [tab evaluate:script completion:^(NSString *json) {
+    SolaraCoreWebView *view = weakSelf;
+    SolaraCoreTab *source = weakTab;
+    if (!view || !source || view->_tab != source || view->_extensionStoreSequence != sequence || source.closed || source.loading ||
+        ![source.url isEqualToString:url] || ![view.transferKey isEqualToString:tabId]) return;
+    view->_extensionStoreURL = nil;
+    if (!json.length) return;
+    id idValue = [NSJSONSerialization JSONObjectWithData:[json dataUsingEncoding:NSUTF8StringEncoding] options:NSJSONReadingFragmentsAllowed error:nil];
+    if ([idValue isKindOfClass:NSString.class])
+      [NSNotificationCenter.defaultCenter postNotificationName:@"SolaraWebStoreRemoveExtension" object:nil userInfo:@{@"tabId" : tabId, @"id" : idValue}];
+    dispatch_async(dispatch_get_main_queue(), ^{
+      if (view->_tab == source && view->_extensionStoreSequence == sequence && [source.url isEqualToString:url])
+        [view listenForWebStoreRemoval:source url:url];
+    });
+  }];
+}
+
 - (void)emitNavigation {
   _navigationQueued = NO;
   if (!_tab) return;
@@ -2576,6 +2616,7 @@ static BOOL PinnedLinkGestureBypassed() {
   NSString *themeSource = _pageTheme ? _pageThemeSource : (theme ? @"meta" : nil);
   NSString *url = _tab.url ?: @"";
   if (IsRendererDebugURL(url)) url = _sentNavigation[@"url"] ?: @"";
+  [self listenForWebStoreRemoval:_tab url:url];
   [SolaraCoreEarlyWindow page:_tab emitted:url];
   NSDictionary *navigation = @{
         @"url" : url,
@@ -2619,6 +2660,9 @@ static BOOL PinnedLinkGestureBypassed() {
 }
 
 - (void)tabDidChangeURL:(SolaraCoreTab *)tab {
+  [SolaraCoreHost extensionInstallRequesterInvalidated:solaracore_host::BrowserId(tab)];
+  _extensionStoreURL = nil;
+  _extensionStoreSequence++;
   [self queueNavigation];
   [SolaraCoreEarlyWindow page:tab shownURL:_shownURL];
 }
@@ -2629,6 +2673,11 @@ static BOOL PinnedLinkGestureBypassed() {
 }
 
 - (void)tabDidChangeLoading:(SolaraCoreTab *)tab {
+  if (tab.loading) {
+    [SolaraCoreHost extensionInstallRequesterInvalidated:solaracore_host::BrowserId(tab)];
+    _extensionStoreURL = nil;
+    _extensionStoreSequence++;
+  }
   if (_temporary && !tab.loading && !_temporaryEmptyReported && !_temporaryStopped && tab.url.length && ![tab.url hasPrefix:@"about:"] && [tab respondsToSelector:@selector(committedInitial)] && tab.committedInitial) {
     _temporaryEmptyReported = YES;
     PeekTrace(@{@"event" : @"peekEmpty", @"url" : tab.url});
@@ -2664,6 +2713,7 @@ static BOOL PinnedLinkGestureBypassed() {
 }
 
 - (void)tabDidCommitDocument:(SolaraCoreTab *)tab {
+  [SolaraCoreHost extensionInstallRequesterInvalidated:solaracore_host::BrowserId(tab)];
   [self resetUnreadSignals];
   ACFieldMarkNow(_transferKey, @"commit");
   [SolaraCoreEarlyWindow pageCommitted:tab shownURL:_shownURL];
@@ -3028,6 +3078,7 @@ static NSString *LinkKeyAction(NSString *key) {
 }
 
 - (void)tabWillClose:(SolaraCoreTab *)tab {
+  [SolaraCoreHost extensionInstallRequesterInvalidated:solaracore_host::BrowserId(tab)];
   if (tab == _tab) [self postUnreadEvent:@"closed" payload:@{}];
   [SolaraCoreEarlyWindow dropPage:tab];
   if (_closing || tab != _tab) return;

@@ -250,6 +250,7 @@ enum NativeExtensionActionPopup {
   private static func closeHost(_ host: ExtensionActionPopupHost, restoreFocus: Bool = true, focusPage: Bool = false, reason: CloseReason = .dismissal) {
     current = nil
     publishedWindow.withLock { $0 = nil }
+    NativeExtensionSheets.reconcile()
     host.end(restoreFocus: restoreFocus, focusPage: focusPage)
     settleHeldFieldBlurs(window: host.window)
     emit?("onExtensionPopupChanged", ["windowId": host.intent.windowId, "extensionId": NSNull(), "tabId": NSNull(), "reason": reason.rawValue])
@@ -353,6 +354,8 @@ enum NativeExtensionActionPopup {
 @MainActor
 final class ExtensionActionPopupHost: NSObject, SolaraCoreWebViewDelegate {
   let intent: ExtensionActionPopupIntent
+  let installRequesterId = UUID().uuidString
+  var browserId: Int { Int(page?.browserId ?? 0) }
   weak var window: NSWindow?
   private weak var root: NSView?
   private weak var container: NSView?

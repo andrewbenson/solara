@@ -10,9 +10,9 @@ const fake = (source) => ({ url: `data:text/javascript,${encodeURIComponent(sour
 const store = `export const useBrowser = { getState: () => ({ tabs: {}, ui: { focusedWindowId: null }, windows: {}, profileOrder: [] }), subscribe: (listener) => { globalThis.memoryTrimTest.listeners.push(listener); return () => {}; } };`;
 const unrelated = {
   "../../lib/actions": ["openUrls"], "../../lib/cliControl": ["installCliInBackground", "useCli"],
-  "../../store/model": ["engineProfile"], "../extensions/store": ["extensionsProfileId"],
+  "../../store/model": ["engineProfile"],
   "../pages/urls": ["openInternalPage"], "./windows": ["openImport", "openSettings"],
-  "./native/autofill": ["autofillHandlers"], "./native/extensions": ["extensionsHandlers", "publishExtensions"],
+  "./native/autofill": ["autofillHandlers"],
   "./native/bookmarks": ["bookmarkRestorationHandlers"], "./native/replica": ["replicaHandlers"], "./native/live": ["liveHandlers"],
   "./native/onboarding": ["onboardingHandlers", "publishOnboarding"], "./native/passwords": ["passwordsHandlers", "publishPasswords"],
   "./native/privacy": ["privacyHandlers", "publishPrivacy"], "./native/profiles": ["profilesHandlers", "publishProfiles"],

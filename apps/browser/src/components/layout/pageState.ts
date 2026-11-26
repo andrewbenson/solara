@@ -127,3 +127,9 @@ useBrowser.subscribe((s, prev) => {
   for (const [id] of goneBrowsers) delete nextBrowsers[Number(id)];
   usePages.setState({ pages: nextPages, browsers: nextBrowsers, popover: nextPopover });
 });
+
+export function browserIdOf(tabId: string | undefined): number {
+  if (!tabId) return 0;
+  for (const [browserId, tab] of Object.entries(usePages.getState().browsers)) if (tab === tabId) return Number(browserId);
+  return 0;
+}

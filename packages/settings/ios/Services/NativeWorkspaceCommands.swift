@@ -52,9 +52,6 @@ enum NativeWorkspaceCommands {
       return WorkspaceMenuCommand.available(command, arg: arg, windowId: windowId, state: state)
     }
     WindowHost.closeRequest = { id in perform("closeWindow", windowId: id) }
-    SolaraCoreServices.closeCancelledHandler = { request in
-      MainActor.assumeIsolated { restoreCancelledClose(request) }
-    }
   }
 
   private static func performView(_ command: String, arg: String?, windowId: String?) -> Bool {
@@ -240,24 +237,6 @@ enum NativeWorkspaceCommands {
       return NSLog("%@: background instance, not opening %@", Bundle.main.productName, target.absoluteString)
     }
     _ = NSWorkspace.shared.open(target)
-  }
-
-  private static func restoreCancelledClose(_ request: [String: Any]) -> Bool {
-    guard NativeStoreHandle.ownsWorkspace, let store = NativeStoreHandle.store else { return false }
-    guard let windowId = request["appWindow"] as? String, let token = request["chromeWindow"] as? String,
-      let tabs = request["tabs"] as? [[String: Any]], let data = try? JSONSerialization.data(withJSONObject: tabs),
-      let text = String(data: data, encoding: .utf8), let live = try? JSONValue.parse(text) else { return true }
-    let before = store.state
-    do {
-      let commit = try store.dispatch(Command("restoreCommandWindow", [.string(windowId), .string(token), live]), origin: .native)
-      guard commit.result?.string != nil else {
-        NSLog("[commands] a cancelled close could not restore window %@", windowId)
-        return true
-      }
-      materializeChanges(before: before, after: store.state)
-      FrameUpdates.flush()
-    } catch { NSLog("[commands] restoring cancelled close failed: %@", String(describing: error)) }
-    return true
   }
 
   @discardableResult

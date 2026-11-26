@@ -3599,7 +3599,41 @@ try {
 
   // MARK: Chrome services and extensions
 
+  const extensionSheet = (action = "read", id = null, window = null) =>
+    evalApp(`return expo.modules.SolaraToolbar.devExtensionSheet(${JSON.stringify(action)}, ${JSON.stringify(id)}, ${JSON.stringify(window)})`);
+  const startCrxInstall = (path) => evalApp(`globalThis.__acSheetCrx = null;
+    expo.modules.SolaraExtensions.installCrx(${JSON.stringify(path)}, "").then((r) => (globalThis.__acSheetCrx = r)); return true`);
+  const crxInstallResult = () => evalApp("return globalThis.__acSheetCrx");
+  const crxInstallPrompt = () => until("the extension install request", async () => {
+    const value = await extensionSheet();
+    return value?.name === "SolaraCore crx fixture" ? value : null;
+  }, 15000);
+  const extensionSheetSnapshot = async () => {
+    const value = await instance.snapshot({ fields: ["windows.sheet"] });
+    assert.ok(value.capabilities?.available?.includes("windows.sheet"));
+    const window = value.windows.find((w) => w.id === mainWindow);
+    assert.ok(window, "the sheet's window is in the native snapshot");
+    return window.sheet;
+  };
   const nativeExtensionPopup = async (windowId = mainWindow) => JSON.parse(await evalApp(`return globalThis.expo.modules.SolaraToolbar.devExtensionPopup(${JSON.stringify(windowId)})`));
+  const activateExtension = (id) => evalApp(`return expo.modules.SolaraToolbar.extensionCommand(JSON.stringify({ command: "openExtension", windowId: ${JSON.stringify(mainWindow)}, id: ${JSON.stringify(id)}, anchor: { x: 100, y: 40, width: 20, height: 20 } })).then(() => true)`);
+  const popupTargetFor = (id) => until("the popup page", async () =>
+    (await targets()).find((target) => target.type === "page" && target.url === `chrome-extension://${id}/popup.html`), 10000);
+  const requestPopupPermissions = async (popup, id) => {
+    const result = await cdp(popup, "Runtime.evaluate", {
+      expression: "window.__perm = 'pending'; chrome.permissions.request({ permissions: ['bookmarks'] }).then((g) => (window.__perm = String(g)), (e) => (window.__perm = String(e))); true",
+      userGesture: true,
+    });
+    assert.equal(result.exceptionDetails, undefined);
+    const prompt = await until("the popup permission request", async () => {
+      const value = await extensionSheet();
+      return value?.id === id && value.type === "permissions" ? value : null;
+    }, 10000);
+    assert.equal(prompt.browserId, undefined);
+    await until("the permission sheet in the popup window", async () =>
+      (await extensionSheetSnapshot())?.key === prompt.requestId, 5000);
+    return prompt;
+  };
 
   await check("extension-popup-and-panel", async () => {
     const installed = await exts(`install(${JSON.stringify(extPath)}, "")`);
@@ -3666,80 +3700,35 @@ try {
     try {
       await evalApp(`return ac.extensions.refreshExtensions("").then(() => true)`);
       await evalApp(`ac.actions.switchToTab("${first.id}"); return true`);
-      const activate = () => evalApp(`return globalThis.expo.modules.SolaraToolbar.extensionCommand(JSON.stringify({ command: "openExtension", windowId: ${JSON.stringify(mainWindow)}, id: "${installed.id}", anchor: { x: 100, y: 40, width: 20, height: 20 } })).then(() => true)`);
-      await activate();
-      const popup = await until("the popup page", async () => (await targets()).find((t) => t.type === "page" && t.url.includes(`${installed.id}/popup.html`)), 10000);
-      await cdp(popup, "Runtime.evaluate", { expression: "chrome.permissions.remove({ permissions: ['bookmarks'] }).then(() => true)", awaitPromise: true });
-      await cdp(popup, "Runtime.evaluate", { expression: "window.__perm = 'pending'; chrome.permissions.request({ permissions: ['bookmarks'] }).then((g) => (window.__perm = String(g)), (e) => (window.__perm = String(e))); true", userGesture: true });
-      const request = await until("the app's install dialog", async () => evalApp(`return ac.extensions.useExtensions.getState().install ?? null`), 10000);
-      const requestId = request.requestId ?? request.prompt?.requestId ?? request.request?.requestId;
-      await exts(`resolveInstallPrompt(${JSON.stringify(requestId)}, true)`);
+      await activateExtension(installed.id);
+      const popup = await popupTargetFor(installed.id);
+      const prompt = await requestPopupPermissions(popup, installed.id);
+      assert.deepEqual(await extensionSheet("accept", prompt.requestId), { answered: true });
       const granted = await until("the page's answer", async () => {
         const v = (await cdp(popup, "Runtime.evaluate", { expression: "window.__perm", returnByValue: true })).result.value;
         return v !== "pending" ? v : null;
       }, 10000);
-      if (granted !== "true") throw new Error(`permissions.request answered ${granted}`);
+      assert.equal(granted, "true");
+      assert.equal(await extensionSheet(), null);
       await evalApp(`ac.extensions.closeExtensionPopup(); return true`);
       const worker = await extensionWorker(installed.id, "sidePanel.open");
       await cdp(worker, "Runtime.evaluate", { expression: "chrome.action.setPopup({ popup: '' }); chrome.action.onClicked.addListener((tab) => chrome.sidePanel.open({ tabId: tab.id })); true" });
       await sleep(300);
-      await activate();
+      await activateExtension(installed.id);
       const panel = await until("the side panel", async () => (await targets()).find((t) => t.type === "page" && t.url.includes(`${installed.id}/panel.html`)), 10000);
       const shown = await evalApp(`return expo.modules.SolaraToolbar.devSidePanel(${JSON.stringify(mainWindow)}, "read", null).then(Boolean)`);
-      return { prompt: request.type ?? request.prompt?.type ?? Object.keys(request), granted, panel: !!panel, shown };
+      return { granted, panel: !!panel, shown };
     } finally {
+      await extensionSheet("cancel").catch(() => null);
       await evalApp(`ac.extensions.closeExtensionPopup(); return expo.modules.SolaraToolbar.devSidePanel(${JSON.stringify(mainWindow)}, "close", null)`).catch(() => null);
       await exts(`uninstall("${installed.id}", "")`);
     }
   });
 
-  await check("extension-prompt-closed", async () => {
-    const installed = await exts(`install(${JSON.stringify(extPath)}, "")`);
-    if (installed?.error) throw new Error(installed.error);
-    const click = () => evalApp(`return ac.shell.devClick(${JSON.stringify(mainWindow)}, { in: "page", x: 200, y: 200, asKey: false })`);
-    const ask = async () => {
-      await evalApp(`return globalThis.expo.modules.SolaraToolbar.extensionCommand(JSON.stringify({ command: "openExtension", windowId: ${JSON.stringify(mainWindow)}, id: "${installed.id}", anchor: { x: 100, y: 40, width: 20, height: 20 } })).then(() => true)`);
-      const popup = await until("the popup page", async () => (await targets()).find((t) => t.type === "page" && t.url.includes(`${installed.id}/popup.html`)), 10000);
-      await cdp(popup, "Runtime.evaluate", { expression: "chrome.permissions.remove({ permissions: ['bookmarks'] }).then(() => true)", awaitPromise: true });
-      await cdp(popup, "Runtime.evaluate", { expression: "chrome.permissions.request({ permissions: ['bookmarks'] }); true", userGesture: true });
-      return until("the app's install dialog", async () => evalApp(`return ac.extensions.useExtensions.getState().install?.prompt ?? null`), 10000);
-    };
-    try {
-      await evalApp(`return ac.extensions.refreshExtensions("").then(() => true)`);
-      await evalApp(`ac.actions.switchToTab("${first.id}"); return true`);
-      const before = (await click()).hit;
-      const prompt = await ask();
-      const covered = (await click()).hit;
-      await exts(`resolveInstallPrompt(${JSON.stringify(prompt.requestId)}, true)`);
-      await sleep(1000);
-      const left = await evalApp(`return ac.extensions.useExtensions.getState().install?.status ?? null`);
-      await evalApp(`ac.extensions.closeExtensionPopup(); return true`);
-      await sleep(500);
-      const answered = (await click()).hit;
-      if (left !== null || answered !== before) throw new Error(`after the engine-side answer the dialog is ${left ?? "gone"} and a click lands on ${answered}, not ${before} (under the dialog: ${covered})`);
-      const second = await ask();
-      await evalApp(`ac.extensions.closeExtensionPopup(); return true`);
-      await until("the dialog to go when its popup closes", async () => ((await evalApp(`return ac.extensions.useExtensions.getState().install === null`)) === true ? true : null), 5000);
-      const closed = (await click()).hit;
-      if (closed !== before) throw new Error(`after the popup closed a click lands on ${closed}, not ${before}`);
-      return { before, covered, answered, closed, requests: [prompt.requestId, second.requestId] };
-    } finally {
-      await evalApp(`ac.extensions.cancelInstall(); ac.extensions.closeExtensionPopup(); return true`).catch(() => null);
-      await exts(`uninstall("${installed.id}", "")`);
-    }
-  });
-
   await check("extension-sheet-native", async () => {
-    const installed = await exts(`install(${JSON.stringify(extPath)}, "")`);
-    if (installed?.error) throw new Error(installed.error);
+    const crxPath = join(scratch, "extension-sheet-native.crx");
+    writeFileSync(crxPath, fixtureCrx());
     let tab = null;
-    const snapshot = async () => {
-      const value = await instance.snapshot({ fields: ["windows.sheet"] });
-      assert.ok(value.capabilities?.available?.includes("windows.sheet"));
-      const window = value.windows.find((w) => w.id === mainWindow);
-      assert.ok(window, "the sheet's window is in the native snapshot");
-      return window.sheet;
-    };
     const pageFocus = () => until("focus restored to the shown page", async () => {
       const value = await nativeExtensionPopup(mainWindow);
       return value?.focusedTabId === tab && !value.omniboxFocused ? true : null;
@@ -3753,24 +3742,18 @@ try {
       return result.hit;
     };
     const gone = async () => {
-      await until("the native sheet removed", async () => (await snapshot()) === null, 5000);
+      await until("the native sheet removed", async () => (await extensionSheetSnapshot()) === null, 5000);
       await pageFocus();
     };
     try {
-      await evalApp(`return ac.extensions.refreshExtensions("").then(() => true)`);
-      extensionPagesOpenedAsTabs.add(`chrome-extension://${installed.id}/popup.html`);
-      tab = await freshTab(`chrome-extension://${installed.id}/popup.html`);
-      const page = await until("the extension page", () => pageFor(tab, `${installed.id}/popup.html`), 10000);
-      await cdp(page, "Runtime.evaluate", { expression: "chrome.permissions.remove({ permissions: ['bookmarks'] }).then(() => true)", awaitPromise: true });
+      tab = await freshTab(`${base}/b?extension-sheet-native`);
+      await until("the source page", () => pageFor(tab, "/b?extension-sheet-native"), 10000);
       await evalApp(`return ac.webviews.get(${JSON.stringify(tab)}).focus()`);
       const ask = async () => {
-        await cdp(page, "Runtime.evaluate", {
-          expression: "window.__perm = 'pending'; chrome.permissions.request({ permissions: ['bookmarks'] }).then((granted) => (window.__perm = String(granted)), (error) => (window.__perm = String(error))); true",
-          userGesture: true,
-        });
-        const prompt = await until("the permission request", () => evalApp(`return ac.extensions.useExtensions.getState().install?.prompt ?? null`), 10000);
-        const sheet = await until("the native permission sheet", async () => {
-          const value = await snapshot();
+        await startCrxInstall(crxPath);
+        const prompt = await crxInstallPrompt();
+        const sheet = await until("the native install sheet", async () => {
+          const value = await extensionSheetSnapshot();
           return value?.kind === "install" ? value : null;
         }, 5000);
         assert.equal(sheet.key, prompt.requestId);
@@ -3779,43 +3762,107 @@ try {
         assert.ok(Math.abs(sheet.card[2] - 380) <= 0.5, `card width ${sheet.card[2]}`);
         const window = (await nativeExtensionPopup(mainWindow)).window;
         assert.ok(Math.abs(sheet.card[0] + sheet.card[2] / 2 - window[0] / 2) <= 0.5, "the card is horizontally centred in the window");
+        assert.equal(await crxInstallResult(), null);
         return { prompt, sheet };
       };
-      const cancelled = async () => {
-        await until("install state cleared", () => evalApp(`return ac.extensions.useExtensions.getState().install === null`), 5000);
-        const answer = await until("the page's permission answer", async () => {
-          const value = (await cdp(page, "Runtime.evaluate", { expression: "window.__perm", returnByValue: true })).result.value;
-          return value !== "pending" ? value : null;
-        }, 5000);
-        assert.equal(answer, "false");
+      const cancelled = async (prompt) => {
+        await until("install state cleared", async () => !(await extensionSheet()), 5000);
+        const answer = await until("the install result", crxInstallResult, 5000);
+        assert.deepEqual(answer, { error: "" });
+        const { extensions } = await exts('list("")');
+        assert.ok(!extensions.some((extension) => extension.id === prompt.id), "the cancelled CRX was never installed");
         await gone();
         return answer;
       };
       const firstPrompt = await ask();
       await sleep(650);
       const installHit = await clickScrim(firstPrompt.sheet);
-      const scrimAnswer = await cancelled();
+      assert.equal(installHit, "SheetView");
+      const scrimAnswer = await cancelled(firstPrompt.prompt);
       const second = await ask();
       assert.notEqual(second.prompt.requestId, firstPrompt.prompt.requestId);
       await sleep(650);
       const escape = await evalApp(`return ac.shell.devKeyEquivalent(${JSON.stringify(mainWindow)}, { key: "\\u001b", keyCode: 53, modifiers: [] })`);
       if (escape.error) throw new Error(escape.error);
-      const escapeAnswer = await cancelled();
-      await evalApp(`ac.extensions.useExtensions.setState({ pinDialog: { windowId: ${JSON.stringify(mainWindow)} } }); return true`);
+      const escapeAnswer = await cancelled(second.prompt);
+      await evalApp(`return expo.modules.SolaraToolbar.extensionCommand(JSON.stringify({ command: "pinExtensions", windowId: ${JSON.stringify(mainWindow)} }))`);
       const pins = await until("the native pin sheet", async () => {
-        const value = await snapshot();
+        const value = await extensionSheetSnapshot();
         return value?.kind === "pins" ? value : null;
       }, 5000);
       assert.equal(pins.key, "pins");
       const pinsHit = await clickScrim(pins);
-      await until("the pin dialog closed", () => evalApp(`return ac.extensions.useExtensions.getState().pinDialog === null`), 5000);
+      assert.equal(pinsHit, "SheetView");
       await gone();
-      return { card: firstPrompt.sheet.card, scrimAnswer, escapeAnswer, installHit, pinsHit, requests: [firstPrompt.prompt.requestId, second.prompt.requestId] };
+      assert.equal((await extensionSheet("accept", second.prompt.requestId)).answered, false);
+      return { card: firstPrompt.sheet.card, scrimAnswer, escapeAnswer, installHit, pinsHit,
+        requests: [firstPrompt.prompt.requestId, second.prompt.requestId] };
     } finally {
-      await evalApp(`ac.extensions.cancelInstall(); ac.extensions.useExtensions.setState({ pinDialog: null }); return true`).catch(() => null);
+      await extensionSheet("cancel").catch(() => null);
+      await extensionSheet("dismissPins", null, mainWindow).catch(() => null);
       if (tab) await closeTab(tab).catch(() => null);
       await evalApp(`ac.actions.switchToTab(${JSON.stringify(first.id)}); return true`).catch(() => null);
-      await exts(`uninstall("${installed.id}", "")`);
+    }
+  });
+
+  await check("extension-prompt-closed", async () => {
+    const crxPath = join(scratch, "extension-prompt-closed.crx");
+    writeFileSync(crxPath, fixtureCrx());
+    const popupPath = join(scratch, "extension-prompt-closed-popup");
+    cpSync(extPath, popupPath, { recursive: true });
+    const pagePoint = { in: "page", x: 200, y: 200 };
+    const hitAt = async (point) => {
+      const click = await evalApp(`return ac.shell.devClick(${JSON.stringify(mainWindow)}, ${JSON.stringify({ ...point, asKey: false })})`);
+      assert.equal(click.error, undefined);
+      return click.hit;
+    };
+    const installed = await exts(`install(${JSON.stringify(popupPath)}, "")`);
+    if (installed?.error) throw new Error(installed.error);
+    let installedId = null;
+    try {
+      await shownAndMounted(first.id);
+      const before = await hitAt(pagePoint);
+      assert.match(before, /RenderWidgetHostView/);
+      await evalApp(`return ac.extensions.refreshExtensions("").then(() => true)`);
+      await activateExtension(installed.id);
+      const popup = await popupTargetFor(installed.id);
+      const permission = await requestPopupPermissions(popup, installed.id);
+      assert.equal((await nativeExtensionPopup()).extensionId, installed.id);
+      await evalApp(`return ac.extensions.closeExtensionPopup(${JSON.stringify(mainWindow)}).then(() => true)`);
+      await until("the popup's permission sheet removed", async () => (await extensionSheetSnapshot()) === null, 5000);
+      assert.equal(await extensionSheet(), null);
+      assert.deepEqual(await extensionSheet("accept", permission.requestId), { answered: false });
+      const worker = await extensionWorker(installed.id, "permissions.contains");
+      const permissionState = await cdp(worker, "Runtime.evaluate", {
+        expression: "chrome.permissions.contains({ permissions: ['bookmarks'] })", awaitPromise: true, returnByValue: true,
+      });
+      assert.equal(permissionState.result.value, false);
+      assert.equal(await hitAt(pagePoint), before);
+      await startCrxInstall(crxPath);
+      const prompt = await crxInstallPrompt();
+      const sheet = await until("the native install sheet", async () => {
+        const value = await extensionSheetSnapshot();
+        return value?.key === prompt.requestId ? value : null;
+      }, 5000);
+      assert.equal(sheet.focusInSheet, true);
+      const covered = await hitAt({ x: sheet.card[0] + sheet.card[2] / 2, y: sheet.card[1] + 12 });
+      assert.notEqual(covered, "nil");
+      assert.notEqual(covered, before);
+      assert.deepEqual(await extensionSheet("accept", prompt.requestId), { answered: true });
+      const result = await until("the accepted install result", crxInstallResult, 15000);
+      installedId = result.id;
+      assert.equal(installedId, prompt.id);
+      assert.equal(await extensionSheet(), null);
+      await until("the answered sheet removed", async () => (await extensionSheetSnapshot()) === null, 5000);
+      assert.deepEqual(await extensionSheet("accept", prompt.requestId), { answered: false });
+      const answered = await hitAt(pagePoint);
+      assert.equal(answered, before);
+      return { before, covered, answered, permission: permission.requestId, request: prompt.requestId, installedId };
+    } finally {
+      await evalApp(`return ac.extensions.closeExtensionPopup(${JSON.stringify(mainWindow)}).then(() => true)`).catch(() => null);
+      await extensionSheet("cancel").catch(() => null);
+      await exts(`uninstall(${JSON.stringify(installed.id)}, "")`);
+      if (installedId) await exts(`uninstall(${JSON.stringify(installedId)}, "")`);
     }
   });
 
@@ -4996,14 +5043,15 @@ try {
       return { id, native };
     };
     const install = async (closeFirst) => {
-      await evalApp(`ac.extensions.cancelInstall(); globalThis.__acCrx = null;
+      await extensionSheet("cancel");
+      await evalApp(`globalThis.__acCrx = null;
         globalThis.expo.modules.SolaraExtensions.installCrx(${JSON.stringify(crxPath)}, ${JSON.stringify(profile)}).then((r) => (globalThis.__acCrx = r)); return true`);
       const prompt = await until("the install prompt", async () => {
-        const p = await evalApp(`return ac.extensions.useExtensions.getState().install?.prompt ?? null`);
+        const p = await extensionSheet();
         return p?.name === "SolaraCore crx fixture" ? p : null;
       }, 15000);
       if (closeFirst) await closeFirst();
-      await exts(`resolveInstallPrompt(${JSON.stringify(prompt.requestId)}, true)`);
+      assert.equal((await extensionSheet("accept", prompt.requestId)).answered, true);
       const result = await until("the install", () => evalApp(`return globalThis.__acCrx`), 15000);
       if (!result.id) throw new Error(`install: ${JSON.stringify(result)}`);
       return result.id;
@@ -5034,7 +5082,7 @@ try {
       if (later !== third.native) throw new Error(`the waiting bubble is in window ${later}, not the profile's ${third.native}`);
       return { immediate: shown, waited: later };
     } finally {
-      await evalApp(`ac.extensions.cancelInstall(); return true`).catch(() => null);
+      await extensionSheet("cancel").catch(() => null);
       for (const w of opened) await evalApp(`ac.store.getState().closeWindow(${JSON.stringify(w)}); return true`).catch(() => null);
       if (id) await exts(`uninstall("${id}", ${JSON.stringify(profile)})`).catch(() => null);
     }
@@ -8148,8 +8196,6 @@ try {
     const windowId = await until("a window", async () => (await state()).windowId, 30000);
     const installed = await exts(`install(${JSON.stringify(extPath)}, "")`);
     if (installed?.error) throw new Error(installed.error);
-    await evalApp(`globalThis.__acTabs = []; globalThis.__acTabsSub?.remove();
-      globalThis.__acTabsSub = globalThis.expo.modules.SolaraExtensions.addListener("onTabs", (e) => globalThis.__acTabs.push(e)); return true`);
     try {
       const worker = await extensionWorker(installed.id, "tabs.create");
       const create = async (url) => {
@@ -8209,17 +8255,19 @@ try {
         out.loads !== 1 && "the page loaded more than once",
       ].filter(Boolean);
       if (wrong.length) throw new Error(`${wrong.join("; ")}: ${JSON.stringify(out)}`);
-      const event = (await evalApp(`return globalThis.__acTabs`)).some((e) => e.url?.includes("e?empty-window"));
       await evalApp(`const s = ac.store.getState(); Object.keys(s.windows).forEach((id) => s.closeWindow(id)); return true`);
       await until("no app windows", async () => ((await evalApp(`return Object.keys(ac.store.getState().windows).length`)) === 0 ? true : null), 10000);
       await sleep(1000);
       const noWindow = await create(`${base}/e?no-window`);
       await sleep(1500);
-      const noWindowEvent = (await evalApp(`return globalThis.__acTabs`)).some((e) => e.url?.includes("e?no-window"));
-      return { placeholderTabs: empty.tabs.length, tabsCreate: created, appTab: opened.id, ...out, route: event ? "onTabs" : "openWindow",
-        noWindow: { tabsCreate: noWindow, onTabs: noWindowEvent } };
+      const stateWithoutWindow = await evalApp(`const s = ac.store.getState(); return Object.values(s.tabs).filter((tab) => tab.url?.includes("e?no-window")).map((tab) => [tab.id, tab.adoptId]);`);
+      if (String(noWindow).startsWith("{")) {
+        assert.equal(stateWithoutWindow.length, 1);
+        assert.match(stateWithoutWindow[0][1], /^tab:/);
+      }
+      return { placeholderTabs: empty.tabs.length, tabsCreate: created, appTab: opened.id, ...out,
+        noWindow: { tabsCreate: noWindow, adopted: stateWithoutWindow } };
     } finally {
-      await evalApp(`globalThis.__acTabsSub?.remove(); return true`).catch(() => null);
       await exts(`uninstall("${installed.id}", "")`).catch(() => null);
     }
   });
@@ -8320,7 +8368,7 @@ try {
       return (result?.extensions ?? []).filter((x) => names.includes(x.name));
     };
     const pinnedNames = (list) => list.filter((x) => x.pinned).map((x) => x.name).sort();
-    const shownPins = (p) => evalApp(`const list = ac.extensions.useExtensions.getState().lists[${JSON.stringify(p)}]; return list ? list.filter((e) => ${JSON.stringify(names)}.includes(e.name) && e.pinned).map((e) => e.name).sort() : null;`);
+    const shownPins = (p) => evalApp(`return expo.modules.SolaraToolbar.devExtensionCatalog().then(({ lists }) => lists[${JSON.stringify(p)}]?.filter((e) => ${JSON.stringify(names)}.includes(e.name) && e.pinned).map((e) => e.name).sort() ?? null);`);
     const want = { personal: names.slice(), work: [names[0], names[2]], play: [names[3]] };
     const ids = {};
     for (const [key, p] of Object.entries(profiles)) {
@@ -8402,7 +8450,7 @@ try {
         }
       }, 90000);
       mainWindow = await until("a window", async () => (await state()).windowId, 30000);
-      const shown = () => evalApp(`const lists = ac.extensions.useExtensions.getState().lists; for (const list of Object.values(lists)) { const x = list.find((e) => e.id === "${installed.id}"); if (x) return { pinned: !!x.pinned }; } return null;`);
+      const shown = () => evalApp(`return expo.modules.SolaraToolbar.devExtensionCatalog().then(({ lists }) => { const x = Object.values(lists).flat().find((e) => e.id === "${installed.id}"); return x ? { pinned: !!x.pinned } : null; });`);
       await until("the app's first extension list", shown, 20000);
       await sleep(3000);
       const afterRelaunch = await shown();

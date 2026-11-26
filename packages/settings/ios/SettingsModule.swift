@@ -39,6 +39,8 @@ public class SettingsModule: Module {
         NativeMediaPreferences.start()
         NativeExtensionSearchEngines.start()
         NativeExtensionCatalog.start()
+        NativeExtensionTabs.install()
+        NativeExtensionSheets.install()
         NativeSelectionTools.popoversChanged = { values in
           projectionSink.module?.sendEvent("onPanePopoversChanged", ["values": values])
         }

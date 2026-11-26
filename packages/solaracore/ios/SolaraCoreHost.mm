@@ -773,10 +773,18 @@ static void StartEarlyWindow() {
 
 - (void)engine:(SolaraCoreEngine *)engine extensionInstallPrompt:(NSDictionary *)prompt tab:(SolaraCoreTab *)tab {
   NSMutableDictionary *payload = [prompt mutableCopy];
-  payload[@"browserId"] = @(tab ? solaracore_host::BrowserId(tab) : 0);
+  if (tab) payload[@"browserId"] = @(solaracore_host::BrowserId(tab));
   if ([prompt[@"profile"] isKindOfClass:NSString.class]) payload[@"profile"] = solaracore_host::ProfileNameOfDirectory(prompt[@"profile"]);
+  SolaraCoreProfile *profile = tab.profile;
+  BOOL offTheRecord = profile.offTheRecord;
+  payload[@"offTheRecord"] = @(offTheRecord);
+  if (offTheRecord) {
+    NSString *name = solaracore_host::ProfileName(profile);
+    if (solaracore_host::IsIncognito(name)) payload[@"privateProfile"] = name;
+  }
   gInstallPrompts[payload[@"requestId"] ?: @""] = payload;
-  if (gExtensionsEventHandler) gExtensionsEventHandler(@"installPrompt", payload);
+  if (tab.closed) [SolaraCoreHost resolveExtensionInstallPrompt:payload[@"requestId"] accepted:NO];
+  else if (gExtensionsEventHandler) gExtensionsEventHandler(@"installPrompt", payload);
 }
 
 - (void)engine:(SolaraCoreEngine *)engine permissionRequestDismissed:(NSString *)requestId {
@@ -1058,16 +1066,38 @@ static void StartEarlyWindow() {
 + (void)setExtensionsEventHandler:(void (^)(NSString *, NSDictionary *))handler {
   gExtensionsEventHandler = [handler copy];
   if (handler)
-    for (NSDictionary *prompt in gInstallPrompts.allValues) handler(@"installPrompt", prompt);
+    for (NSDictionary *prompt in gInstallPrompts.allValues.copy) handler(@"installPrompt", prompt);
 }
 
 + (void)resolveExtensionInstallPrompt:(NSString *)requestId accepted:(BOOL)accepted {
-  BOOL pending = gInstallPrompts[requestId ?: @""] != nil;
+  if (!gInstallPrompts[requestId ?: @""]) return;
   [gInstallPrompts removeObjectForKey:requestId ?: @""];
   if ([SolaraCoreEngine respondsToSelector:@selector(resolveExtensionInstallPrompt:accepted:)])
     [SolaraCoreEngine resolveExtensionInstallPrompt:requestId accepted:accepted];
-  if (pending && gExtensionsEventHandler)
-    gExtensionsEventHandler(@"installPromptClosed", @{@"requestId" : requestId ?: @"", @"reason" : accepted ? @"accepted" : @"cancelled"});
+}
+
++ (BOOL)isExtensionInstallTabLive:(int)browserId {
+  SolaraCoreTab *tab = solaracore_host::TabWithBrowserId(browserId);
+  return tab && !tab.closed;
+}
+
++ (NSString *)extensionInstallTabId:(int)browserId {
+  SolaraCoreTab *tab = solaracore_host::TabWithBrowserId(browserId);
+  return !tab || tab.closed ? nil : [SolaraCoreTabs viewForTab:tab].transferKey;
+}
+
++ (void)invalidateExtensionInstallPrompt:(NSString *)requestId {
+  if (!gInstallPrompts[requestId]) return;
+  if (gExtensionsEventHandler) gExtensionsEventHandler(@"requesterInvalidated", @{@"requestId" : requestId});
+  [self resolveExtensionInstallPrompt:requestId accepted:NO];
+}
+
++ (void)extensionInstallRequesterInvalidated:(int)browserId {
+  if (!browserId) return;
+  for (NSDictionary *prompt in gInstallPrompts.allValues.copy) {
+    if ([prompt[@"browserId"] intValue] == browserId)
+      [self invalidateExtensionInstallPrompt:prompt[@"requestId"]];
+  }
 }
 
 + (void)beginTracing:(void (^)(BOOL))completion {

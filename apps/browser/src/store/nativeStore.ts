@@ -215,7 +215,7 @@ function wrapActions(store: Replica) {
       if (name === "updateSettings" && applyingFromSync()) args[1] = { ...(args[1] as object | undefined), fromSync: true };
       prelude?.(...args);
       const response = nativeWrite(encodeCommand(name, args));
-      return response?.result ?? (name === "restoreClosingWindow" ? null : undefined);
+      return response?.result;
     };
   }
   wrapped.hydrate = (data: HydrateData) => {

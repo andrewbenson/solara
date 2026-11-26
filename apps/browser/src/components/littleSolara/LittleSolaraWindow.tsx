@@ -10,7 +10,6 @@ import { useActiveTab, useTabLive, useWindowId, useWindowProfile, useWindowUi } 
 import { CommandPanel } from "../CommandPanel";
 import { ContentCard } from "../ContentCard";
 import { DownloadsPopover } from "../Downloads";
-import { ExtensionOverlays } from "../extensions/ExtensionOverlays";
 import { setUrlAnchor } from "../layout/windowLayout";
 import { showUrlBarMenu } from "../omnibox/paste";
 import { profileSymbol } from "../profiles/icons";
@@ -48,7 +47,6 @@ export function LittleSolaraWindow() {
       )}
       <CommandPanel windowWidth={width} />
       <DownloadsPopover />
-      <ExtensionOverlays />
     </View>
   );
 }

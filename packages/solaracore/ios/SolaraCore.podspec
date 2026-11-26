@@ -14,7 +14,7 @@ Pod::Spec.new do |s|
   s.frameworks     = 'WebKit'
   s.source_files   = '*.{h,mm,swift}'
   s.public_header_files = 'SolaraCoreHost.h', 'SolaraCoreWebView.h', 'SolaraCoreTabStrip.h', 'SolaraCoreEngineBridge.h', 'SolaraCoreServices.h', 'SolaraCoreNotifications.h', 'ACSwipe.h', 'ACChromeWindow.h'
-  s.resources      = 'page_script.js'
+  s.resources      = ['page_script.js', 'extension_store.js']
   s.pod_target_xcconfig = {
     'DEFINES_MODULE' => 'YES',
     'HEADER_SEARCH_PATHS' => "\"#{engine_public}\"",

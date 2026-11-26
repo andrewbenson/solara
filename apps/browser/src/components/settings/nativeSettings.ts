@@ -2,7 +2,6 @@ import { nativeSettingsAvailable, publishSettingsTopic, serveNativeSettings, typ
 import { useCli } from "../../lib/cliControl";
 import { compactMemory } from "../../lib/memoryTrim";
 import { autofillHandlers } from "./native/autofill";
-import { extensionsHandlers } from "./native/extensions";
 import { replicaHandlers } from "./native/replica";
 import { bookmarkRestorationHandlers } from "./native/bookmarks";
 import { liveHandlers } from "./native/live";
@@ -54,7 +53,6 @@ export function startNativeSettings(): boolean {
       privacyHandlers,
       passwordsHandlers,
       autofillHandlers,
-      extensionsHandlers,
       shortcutsHandlers,
       profilesHandlers,
       syncHandlers,

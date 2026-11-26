@@ -177,24 +177,49 @@ public enum WorkspaceClosePolicy {
 }
 
 extension Session {
-  public func restoreCommandWindow(_ windowId: String, chromeWindow: String, live: [JSONValue]) -> String? {
+  public func restoreCommandWindow(_ appWindow: String, chromeWindow: String, live: [JSONValue]) -> String? {
     pruneClosingWindows()
-    guard !chromeWindow.isEmpty, let undo = memory.closingWindowUndos[windowId], let window = undo.before.windows[windowId] else { return nil }
+    guard !chromeWindow.isEmpty else { return nil }
+    let windowId: String
+    if memory.closingWindowUndos[appWindow] != nil { windowId = appWindow }
+    else {
+      let tabIds = Set(live.compactMap { $0["storeTabId"]?.string })
+      let browserIds = Set(live.compactMap { $0["browserId"]?.number }.compactMap { Int(exactly: $0) }.filter { $0 > 0 })
+      let candidates = memory.closingWindowUndos.filter { id, undo in
+        undo.before.windows[id]?.tabIds.contains { tabId in
+          tabIds.contains(tabId) || undo.heldPages[tabId]?.page.ready.map { browserIds.contains($0.browserId) } == true
+        } == true
+      }
+      guard candidates.count == 1, let candidate = candidates.keys.first else { return nil }
+      windowId = candidate
+    }
+    guard let undo = memory.closingWindowUndos[windowId], let window = undo.before.windows[windowId] else { return nil }
     var matched: [(id: String, offer: String?)] = []
     for request in live {
+      guard request["incognito"]?.bool.map({ $0 == window.incognito }) != false else { continue }
       let named = request["storeTabId"]?.string.flatMap { window.tabIds.contains($0) ? $0 : nil }
       let browser = request["browserId"]?.number.flatMap { number -> String? in
-        guard let browserId = Int(exactly: number) else { return nil }
+        guard let browserId = Int(exactly: number), browserId > 0 else { return nil }
         return window.tabIds.first { undo.heldPages[$0]?.page.ready?.browserId == browserId }
       }
-      guard let id = named ?? browser, !matched.contains(where: { $0.id == id }) else { continue }
+      let previous = Set(matched.map(\.id))
+      let fallback: String? = request["url"]?.string.flatMap { url in
+        guard !url.isEmpty, request["adoptId"]?.truthy == true else { return nil }
+        let matches = window.tabIds.filter { id in
+          guard !previous.contains(id), undo.heldPages[id] == nil, let tab = undo.before.tabs[id], tab.url == url else { return false }
+          return request["profile"]?.string.map { undo.before.engineProfile(tab.profileId) == $0 } != false
+        }
+        return matches.count == 1 ? matches.first : nil
+      }
+      guard let id = browser ?? named ?? fallback, !previous.contains(id) else { continue }
       matched.append((id, request["adoptId"]?.string))
     }
     guard !matched.isEmpty else { return nil }
     let tabs = window.tabIds.compactMap { undo.before.tabs[$0] }
     let groups = undo.before.groups.values.filter { $0.windowId == windowId }
     let splits = undo.before.splits.values.filter { $0.windowId == windowId }
-    guard let restored = restoreClosingWindow(window, tabs, groups, splits, chromeWindow: chromeWindow, liveTabIds: matched.map(\.id)) else { return nil }
+    guard let restored = restoreClosingWindow(window, tabs, groups, splits, chromeWindow: chromeWindow,
+      liveTabIds: matched.map(\.id), recoveringChromeClose: true) else { return nil }
     for match in matched where undo.heldPages[match.id] == nil {
       guard let offer = match.offer, !offer.isEmpty, var tab = state.tabs[match.id] else { continue }
       tab.adoptId = offer

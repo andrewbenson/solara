@@ -4,6 +4,7 @@ struct ClosingWindowUndo: Sendable, Equatable {
   var before: BrowserState
   var after: BrowserState
   var closedAt: Double
+  var chromeClosePending = false
   var liveBefore: [String: PageLiveFacts]
   var liveAfter: [String: PageLiveFacts] = [:]
   var affectedLiveIds: Set<String> = []
@@ -89,17 +90,30 @@ private func undoClosingValue<T: Equatable>(_ current: T, _ before: T, _ after: 
   return current == after ? before : nil
 }
 
+private func restoreWindowOrder(_ current: [String], before: [String], id: String) -> [String] {
+  guard let oldIndex = before.firstIndex(of: id) else { return current + [id] }
+  var next = current
+  let following = before.suffix(from: oldIndex + 1).compactMap { current.firstIndex(of: $0) }.first
+  let preceding = before.prefix(oldIndex).reversed().compactMap { current.firstIndex(of: $0) }.first
+  next.insert(id, at: following ?? preceding.map { $0 + 1 } ?? min(oldIndex, current.count))
+  return next
+}
+
+private func restoreCloseArchive<T: Equatable>(_ current: [T], before: [T], after: [T], id: (T) -> String) -> [T] {
+  if current == after { return before }
+  let added = Set(after.map(id)).subtracting(before.map(id))
+  return current.filter { !added.contains(id($0)) }
+}
+
 private func renamedClosingKey<T>(_ current: JSMap<T>, _ old: String, _ new: String) -> JSMap<T> {
   JSMap(current.map { ($0.key == old ? new : $0.key, $0.value) })
 }
 
 extension Session {
   func pruneClosingWindows() {
-    memory.closingWindowUndos = memory.closingWindowUndos.filter { now - $0.value.closedAt <= 30_000 }
-    while memory.closingWindowUndos.count > 10 {
-      guard let oldest = memory.closingWindowUndos.min(by: { $0.value.closedAt < $1.value.closedAt })?.key else { break }
-      memory.closingWindowUndos.removeValue(forKey: oldest)
-    }
+    memory.closingWindowUndos = memory.closingWindowUndos.filter { $0.value.chromeClosePending || now - $0.value.closedAt <= 30_000 }
+    let expiring = memory.closingWindowUndos.filter { !$0.value.chromeClosePending }.sorted { $0.value.closedAt > $1.value.closedAt }
+    for (id, _) in expiring.dropFirst(10) { memory.closingWindowUndos.removeValue(forKey: id) }
   }
 
   func captureClosingWindows(before: BrowserState, after: BrowserState) {
@@ -210,10 +224,11 @@ extension Session {
     memory.closingWindowUndos[id] = undo
   }
 
-  public func restoreClosingWindow(_ window: BrowserWindow, _ tabs: [Tab], _ groups: [TabGroup], _ splits: [SplitView], chromeWindow: String, liveTabIds: [String]) -> String? {
+  public func restoreClosingWindow(_ window: BrowserWindow, _ tabs: [Tab], _ groups: [TabGroup], _ splits: [SplitView], chromeWindow: String,
+    liveTabIds: [String], recoveringChromeClose: Bool = false) -> String? {
     let s = state
     pruneClosingWindows()
-    guard let undo = memory.closingWindowUndos[window.id], now - undo.closedAt <= 30_000,
+    guard let undo = memory.closingWindowUndos[window.id],
           let original = undo.before.windows[window.id], original.profileId == window.profileId, original.kind == window.kind,
           original.incognito == window.incognito, original.tabIds == window.tabIds,
           Set(original.tabIds).count == original.tabIds.count,
@@ -257,13 +272,32 @@ extension Session {
           let find = undoClosingMap(s.find, before.find, after.find),
           let selection = undoClosingMap(s.selection, before.selection, after.selection),
           let selectionAnchors = undoClosingMap(s.selectionAnchors, before.selectionAnchors, after.selectionAnchors),
-          let windowUi = undoClosingMap(s.windowUi, before.windowUi, after.windowUi),
-          let closedTabs = undoClosingValue(s.closedTabs, before.closedTabs, after.closedTabs),
-          let closedWindows = undoClosingValue(s.closedWindows, before.closedWindows, after.closedWindows),
-          let windowOrder = undoClosingValue(s.windowOrder, before.windowOrder, after.windowOrder),
-          let focusedWindowId = undoClosingValue(s.ui.focusedWindowId, before.ui.focusedWindowId, after.ui.focusedWindowId),
-          let focusOrder = undoClosingValue(s.ui.focusOrder, before.ui.focusOrder, after.ui.focusOrder),
-          let lastProfileId = undoClosingValue(s.ui.lastProfileId, before.ui.lastProfileId, after.ui.lastProfileId) else { return nil }
+          let windowUi = undoClosingMap(s.windowUi, before.windowUi, after.windowUi) else { return nil }
+    let closedTabs: [ClosedTab]
+    let closedWindows: [ClosedWindow]
+    let windowOrder: [String]
+    var ui = s.ui
+    if recoveringChromeClose {
+      closedTabs = restoreCloseArchive(s.closedTabs, before: before.closedTabs, after: after.closedTabs, id: \.id)
+      closedWindows = restoreCloseArchive(s.closedWindows, before: before.closedWindows, after: after.closedWindows, id: \.id)
+      windowOrder = restoreWindowOrder(s.windowOrder, before: before.windowOrder, id: window.id)
+      ui.focusedWindowId = window.id
+      ui.focusOrder = [window.id] + s.ui.focusOrder.filter { $0 != window.id }
+      ui.lastProfileId = linkProfileOf(before, original) ?? s.ui.lastProfileId
+    } else {
+      guard let tabs = undoClosingValue(s.closedTabs, before.closedTabs, after.closedTabs),
+        let windows = undoClosingValue(s.closedWindows, before.closedWindows, after.closedWindows),
+        let order = undoClosingValue(s.windowOrder, before.windowOrder, after.windowOrder),
+        let focus = undoClosingValue(s.ui.focusedWindowId, before.ui.focusedWindowId, after.ui.focusedWindowId),
+        let focusOrder = undoClosingValue(s.ui.focusOrder, before.ui.focusOrder, after.ui.focusOrder),
+        let profile = undoClosingValue(s.ui.lastProfileId, before.ui.lastProfileId, after.ui.lastProfileId) else { return nil }
+      closedTabs = tabs
+      closedWindows = windows
+      windowOrder = order
+      ui.focusedWindowId = focus
+      ui.focusOrder = focusOrder
+      ui.lastProfileId = profile
+    }
     let pinTabs = Set(original.tabIds.compactMap { before.tabs[$0] }.filter { before.inPinnedContainer($0.id) }.map(\.pinKeyOrId))
     let pinGroups = Set(before.groups.values.filter { $0.windowId == window.id && $0.pinned }.map(\.pinKeyOrId))
     guard !parkedPins.values.contains(where: { park in
@@ -302,9 +336,9 @@ extension Session {
     next.closedTabs = closedTabs
     next.closedWindows = closedWindows
     next.windowOrder = windowOrder.map { $0 == window.id ? id : $0 }
-    next.ui.focusedWindowId = focusedWindowId == window.id ? id : focusedWindowId
-    next.ui.focusOrder = focusOrder.map { $0 == window.id ? id : $0 }
-    next.ui.lastProfileId = lastProfileId
+    if ui.focusedWindowId == window.id { ui.focusedWindowId = id }
+    ui.focusOrder = ui.focusOrder.map { $0 == window.id ? id : $0 }
+    next.ui = ui
     next.find = find
     var activeTabIds = JSMap<String>()
     for tabId in original.tabIds where live.contains(tabId) {

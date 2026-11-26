@@ -3,7 +3,6 @@ import type { BrowserState } from "../store/browser";
 import { nativeOwnsWorkspace } from "../store/nativeStore";
 import { engineProfile, windowTitle } from "../store/model";
 import { windowOpens } from "./windowOpenOrder";
-import { hasPendingCloseSnapshot } from "./closeSnapshots";
 
 export type LightsCenter = [number, number] | null;
 
@@ -32,11 +31,7 @@ export function createWindowSync({ port, getState, isQuitting, lightsCenter, isU
   const releaseIfIncognito = (w: BrowserState["windows"][string] | undefined) => {
     if (nativeOwnsWorkspace() || !w?.incognito) return;
     const profileId = w.profileId;
-    const release = () => {
-      if (!Object.values(getState().windows).some((window) => window.profileId === profileId)) port.releaseProfile(engineProfile(profileId));
-    };
-    if (hasPendingCloseSnapshot(w.id)) setTimeout(release, 30_000);
-    else release();
+    if (!Object.values(getState().windows).some((window) => window.profileId === profileId)) port.releaseProfile(engineProfile(profileId));
   };
 
   const listen = () =>
@@ -49,7 +44,7 @@ export function createWindowSync({ port, getState, isQuitting, lightsCenter, isU
       if (e.type === "close") {
         if (isQuitting()) return;
         open.delete(e.id);
-        s.closeWindow(e.id);
+        if (s.windows[e.id]) s.closeWindow(e.id);
         releaseIfIncognito(s.windows[e.id]);
       }
     });

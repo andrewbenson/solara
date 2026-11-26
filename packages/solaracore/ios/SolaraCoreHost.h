@@ -45,6 +45,9 @@ NS_ASSUME_NONNULL_BEGIN
 + (nullable NSString *)sidePanelURL:(int)browserId extension:(NSString *)extensionId NS_SWIFT_NAME(sidePanelURL(browserId:extension:));
 + (void)resolveExtensionInstallPrompt:(NSString *)requestId accepted:(BOOL)accepted
     NS_SWIFT_NAME(resolveExtensionInstallPrompt(_:accepted:));
++ (void)extensionInstallRequesterInvalidated:(int)browserId;
++ (BOOL)isExtensionInstallTabLive:(int)browserId NS_SWIFT_NAME(isExtensionInstallTabLive(_:));
++ (nullable NSString *)extensionInstallTabId:(int)browserId NS_SWIFT_NAME(extensionInstallTabId(_:));
 @property(class, nonatomic, copy, nullable) void (^extensionsEventHandler)(NSString *name, NSDictionary<NSString *, id> *payload);
 + (void)beginTracing:(void (^)(BOOL started))completion;
 + (void)endTracing:(BOOL)keep completion:(void (^)(NSString *_Nullable path))completion NS_SWIFT_NAME(endTracing(keep:completion:));

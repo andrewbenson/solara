@@ -1101,9 +1101,6 @@ public class WindowShellModule: Module {
       FrameUpdates.readOnMain { NativeWindowShell.setBackdrop(windowId, json) }
     }.runOnQueue(.main)
 
-    AsyncFunction("setSheet") { (windowId: String, json: String?) in
-      FrameUpdates.readOnMain { NativeSheets.set(windowId, json) }
-    }.runOnQueue(.main)
 
     AsyncFunction("setLayout") { (windowId: String, layout: [String: Any]) in
       nonisolated(unsafe) let given = layout

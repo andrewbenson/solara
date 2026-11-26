@@ -141,7 +141,7 @@ final class SearchEngineAdapter: SearchEngineServices {
     _ = await EngineCalls.result({ done in SolaraCoreServices.setExtension(extensionId, enabled: false, profile: profile) { done($0) } }) {
       EngineCalls.failed($0, "search.disableExtension")
     }
-    SettingsJS.shared.fire("extensions.refresh", profile)
+    NativeExtensionCatalog.refresh(profile, afterChange: true)
   }
 
   static func engineInput(_ input: SearchEngineInput) -> SolaraOmnibox.EngineInput {

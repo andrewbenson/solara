@@ -27,6 +27,7 @@ async function start(name) {
   const { dir } = DEV[name];
   const app = (apps[name] = await launch(APP, {
     data: dir,
+    probe: true,
     env: { SOLARA_SYNC_DEFAULT_FOLDER: FOLDER, SOLARA_TEST_REAUTH: "granted", ...(process.env.SOLARA_NATIVE_BOOKMARKS ? { SOLARA_NATIVE_BOOKMARKS: process.env.SOLARA_NATIVE_BOOKMARKS } : {}) },
     ready: { timeout: 120_000, test: 'const native=globalThis.expo.modules.SolaraSettings; const s=ac.store.getState(); return !!globalThis.acSync && Object.keys(s.windows).length > 0 && native.bookmarkWriterState().state === "owned" && !!s.bookmarksReady.default' },
   }));
@@ -270,15 +271,16 @@ try {
   let extA = await until("A installs the Web Store extension", () => extension("A"));
   check("A installs a small Web Store extension through Chrome's updater, without a prompt", !!extA && extA.syncable, text(extA));
   if (!extA.approved) {
-    await ev("A", `acExtensionsApp.setEnabled("", "${EXT}", true); return true`);
-    await until("A shows Chrome's re-enable prompt", () => ev("A", "return !!acExtensionsUi.useExtensions.getState().install?.prompt"));
-    await ev("A", "return acExtensionsUi.confirmInstall().then(() => true)");
+    await ev("A", `ac.extensions.setEnabled("", "${EXT}", true); return true`);
+    const receipt = await until("A shows Chrome's re-enable prompt", () =>
+      ev("A", 'return expo.modules.SolaraToolbar.devExtensionSheet("read", null, null)'));
+    await ev("A", `return expo.modules.SolaraToolbar.devExtensionSheet("accept", ${JSON.stringify(receipt.requestId)}, null)`);
     extA = await until("A's permissions are approved", async () => ((await extension("A"))?.approved ? extension("A") : null));
   }
   check("A's approval: its permissions are granted and it's on", extA.approved && extA.enabled, text(extA));
   let extB = await until("the extension reaches B", async () => ((await extension("B"))?.approved ? extension("B") : null), ["A", "B"]);
   check("install on A appears on B, approved and on (same version, same permissions)", extB.enabled && extB.version === extA.version, text(extB));
-  await ev("A", `return acExtensionsApp.setEnabled("", "${EXT}", false).then(() => true)`);
+  await ev("A", `return ac.extensions.setEnabled("", "${EXT}", false).then(() => true)`);
   extB = await until("B follows A's disable", async () => ((await extension("B"))?.userDisabled ? extension("B") : null), ["A", "B"]);
   check("disable on A turns it off on B", !extB.enabled && extB.userDisabled, text(extB));
   const EXT2 = "aapbdbdomjkkjkaonfhkkikfgjllcleb";
@@ -293,7 +295,7 @@ try {
   await start("B");
   const secondB = await until("B installs the second extension after a restart mid-install", () => secondExtension("B"), ["B"]);
   check("B quit while an install was pending installs it after relaunching", !!secondB, text({ pendingOnB, secondB }));
-  await ev("B", `return acExtensionsApp.setEnabled("", "${EXT}", true).then(() => acExtensionsApp.setPinned("", "${EXT}", true)).then(() => true)`);
+  await ev("B", `return ac.extensions.setEnabled("", "${EXT}", true).then(() => ac.extensions.setPinned("", "${EXT}", true)).then(() => true)`);
   extA = await until("A follows B's enable and pin", async () => { const e = await extension("A"); return e?.enabled && e.pinned ? e : null; }, ["B", "A"]);
   check("enable and pin on B reach A", extA.enabled && extA.pinned, text(extA));
   await ev("B", `return globalThis.acExtensions.uninstall("${EXT}", "").then(() => true)`);

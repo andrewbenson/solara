@@ -78,15 +78,6 @@ try {
   for (const id of installed) await run(`return T.extensionCommand(JSON.stringify({ command: "setPinned", profile: "", id: ${JSON.stringify(id)}, pinned: true })).then(() => true);`);
   assert.equal(await run('return T.devExtensionCatalog().then((catalog) => catalog.native);'), true, "native catalog owns the workspace");
   if (process.env.SOLARA_EXTENSION_ACTION_POLL === "on") assert.equal(await run('return T.devExtensionCatalog().then((catalog) => catalog.polling);'), true, "polling override is native");
-  await run(`
-    const store = E.useExtensions;
-    const write = store.setState;
-    store.setState = (update) => {
-      const { lists, actions, popup, ...retained } = typeof update === "function" ? update(store.getState()) : update;
-      write(retained);
-    };
-    return true;
-  `);
   const id = installed[0];
   await rep.check("popup-without-js-lifetime", async () => {
     await run(`return T.extensionCommand(JSON.stringify({ command: "openExtension", windowId: "w1", tabId: "a", id: ${JSON.stringify(id)} })).then(() => true);`);
@@ -172,8 +163,16 @@ try {
     await menuArm("pin");
     await click(button);
     assert.equal((await menuWait()).accepted, true);
-    await until("native pin sheet requested", 'return E.useExtensions.getState().pinDialog?.windowId === "w1";');
-    await run('E.useExtensions.setState({ pinDialog: null }); return true;');
+    const deadline = Date.now() + 8000;
+    let sheet;
+    while (Date.now() < deadline) {
+      const state = await app.snapshot({ fields: ["windows.sheet"] });
+      sheet = state.windows.find((window) => window.id === "w1")?.sheet;
+      if (sheet?.kind === "pins") break;
+      await sleep(80);
+    }
+    assert.equal(sheet?.kind, "pins");
+    await run('return T.devExtensionSheet("dismissPins", null, "w1");');
     return { rows: rows(model), point: button.frame };
   });
   await rep.check("native-snapshot-consistent", async () => {
@@ -185,7 +184,7 @@ try {
 } finally {
   if (app) {
     await run('return D.devContextMenu("clear", null);').catch(() => null);
-    await run('E.closeExtensionPopup(); E.useExtensions.setState({ pinDialog: null }); return T.devSidePanel("w1", "close", null);').catch(() => null);
+    await run('return E.closeExtensionPopup().then(() => T.devExtensionSheet("dismissPins", null, "w1")).then(() => T.devSidePanel("w1", "close", null));').catch(() => null);
     for (const id of installed) await run(`return X.uninstall(${JSON.stringify(id)}, "");`).catch(() => null);
     await app.quit();
   }

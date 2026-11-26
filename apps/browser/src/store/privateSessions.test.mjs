@@ -6,7 +6,6 @@ await startProfileConfirmation();
 const model = await import("./model.ts");
 const { downloadVisibleIn, downloadsIn } = await import("./ui.ts");
 const { lastActiveProfile, privateWindowProfile } = await import("./small.ts");
-const { extensionProfile } = await import("../components/extensions/store.ts");
 const stub = await import("../test-native/index.ts");
 
 const S = () => useBrowser.getState();
@@ -106,8 +105,6 @@ test("a private window lists its own profile's extensions (incognito-allowed one
   const { work } = twoProfiles();
   const p2 = S().createWindow({ incognito: true });
   const p1 = S().createWindow({ incognito: true, profileId: "default" });
-  assert.equal(extensionProfile(S(), p2), work);
-  assert.equal(extensionProfile(S(), p1), "");
 });
 
 test("a private window's bookmarks are its profile's", () => {

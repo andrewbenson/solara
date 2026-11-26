@@ -1,3 +1,5 @@
+import { keepAlivePagesChanged } from "./nativeKeepAlive";
+import { usePages } from "../components/layout/pageState";
 import { startPinnedLinks } from "./pinnedLinks";
 import { sidebarIconsOnlyOf, sidebarPositionOf, sidebarPositionSupported } from "../store/sidebarRail";
 import { lastTabClosesWindow, onDownload, releaseProfile } from "@solara/solaracore";
@@ -53,7 +55,6 @@ import { setFocusSenders } from "./focusClaims";
 import { cancelAbandonedFocusMoves, settlingCommandFocus } from "./focusHandoff";
 import { flushPersistence, resumePersistence } from "./persist";
 import { startWindowCloseGuard } from "./windowClose";
-import { startExtensionsBridge } from "../components/extensions/bridge";
 import { PRODUCT } from "./productName";
 import { canToggleDeveloperModeFor, tabInDeveloperMode } from "../components/site/developerMode";
 
@@ -84,7 +85,7 @@ export function startNativeSync() {
   cancelAbandonedFocusMoves();
   onCommand((e) => settlingCommandFocus(e, runCommand));
   startWindowCloseGuard();
-  startExtensionsBridge();
+  usePages.subscribe(keepAlivePagesChanged);
   startPinnedLinks();
   onOpenURLs((urls, pointer, profile) => openExternalUrls(urls, pointer, profile));
   void lastTabClosesWindow().then((closes) => setLastTabKeepsWindow(!closes));

@@ -78,25 +78,9 @@ enum NativeExtensionCommands {
     let profile = menu?.engineProfile ?? input["profile"]?.string ?? NativeExtensionCatalog.profile(window)
     let ext = NativeExtensionCatalog.catalog.lists[profile]?.first { $0["id"]?.string == id }
     switch command {
-    case "loadUnpacked":
-      synchronous = false
-      Task { @MainActor in
-        let panel = NSOpenPanel()
-        panel.canChooseFiles = false
-        panel.canChooseDirectories = true
-        panel.allowsMultipleSelection = false
-        panel.prompt = "Select"
-        panel.message = "Choose an extension folder (with a manifest.json)"
-        if await panel.begin() == .OK, let path = panel.url?.path {
-          let package = SolaraCoreServices.inspectUnpacked(path)
-          if let error = ExtensionsAdapter.engineError(package) { SettingsJS.shared.fire("extensions.installError", window, profile, "unpacked", error) }
-          else { SettingsJS.shared.fire("extensions.installReady", window, profile, package) }
-        }
-        completion?(nil)
-      }
     case "webStoreDetail":
       guard let requestedURL = input["url"]?.string else { return }
-      guard let id = ExtensionWebStore.extensionId(requestedURL) else { SettingsJS.shared.fire("extensions.installError", window, profile, "webStore", "That isn't a link to an extension in the Chrome Web Store."); return }
+      guard let id = ExtensionWebStore.extensionId(requestedURL) else { return }
       let url = ExtensionWebStore.detailURL(id)
       let target = store.state.windows[window] != nil ? window : store.state.ui.focusOrder.first { id in
         store.state.windows[id]?.incognito != true && NativeExtensionCatalog.profile(id) == profile
@@ -116,8 +100,10 @@ enum NativeExtensionCommands {
     case "pinExtensions":
       guard let target = ExtensionPresentation.pinWindow(invoker: window, state: store.state, closing: store.memory.closingWindows) else { return }
       if target != window { ShellScripting.showWindow(target) }
-      SettingsJS.shared.fire("extensions.pin", target)
-    case "options": if let url = ext?["optionsUrl"]?.string { open(url, window: window, store: store) }
+      NativeExtensionSheets.showPins(target)
+    case "options":
+      if input["requiresVisible"] == true && !NativeExtensionCatalog.visible(window).contains(where: { $0["id"]?.string == id }) { return }
+      if let url = ext?["optionsUrl"]?.string { open(url, window: window, store: store) }
     case "openExtension":
       let rect = input["anchor"].flatMap { value -> CGRect? in
         guard let x = value["x"]?.number, let y = value["y"]?.number,

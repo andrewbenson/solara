@@ -3,26 +3,14 @@ import ExpoModulesCore
 public class ExtensionsModule: Module {
   public func definition() -> ModuleDefinition {
     Name("SolaraExtensions")
-    Events("onChanged", "onTabs", "onInstallPrompt", "onInstallPromptClosed")
+    Events("onChanged")
 
     OnCreate {
-      SolaraCoreHost.extensionsEventHandler = { [weak self] name, payload in
-        if name == "installPrompt" { self?.sendEvent("onInstallPrompt", payload) }
-        if name == "installPromptClosed" { self?.sendEvent("onInstallPromptClosed", payload) }
-      }
       SolaraCoreServices.extensionsHandler = { [weak self] name, payload in
-        switch name {
-        case "changed": self?.sendEvent("onChanged", payload)
-        case "tabs": self?.sendEvent("onTabs", payload)
-        case "installPrompt": self?.sendEvent("onInstallPrompt", payload)
-        default: break
-        }
+        if name == "changed" { self?.sendEvent("onChanged", payload) }
       }
     }
 
-    AsyncFunction("resolveInstallPrompt") { (requestId: String, accepted: Bool) in
-      SolaraCoreHost.resolveExtensionInstallPrompt(requestId, accepted: accepted)
-    }.runOnQueue(.main)
     AsyncFunction("list") { (profile: String, promise: Promise) in
       SolaraCoreServices.listExtensions(profile: profile) { promise.resolve($0) }
     }.runOnQueue(.main)

@@ -4,7 +4,8 @@ import { showMenu } from "@solara/shell";
 import { useEffect, useState } from "react";
 import { useTheme } from "../../lib/theme";
 import { toggleCastPicker, useCastRoutes } from "../media/cast";
-import type { Anchor } from "./store";
+
+type Anchor = { x: number; y: number; width: number; height: number };
 
 let nextHost = 0;
 

@@ -41,7 +41,6 @@ function bridge(dispatch, redesign) {
       nativeDispatch: dispatch,
       installPageReportWriter: () => {},
     },
-    "./closingWindowRestore": {},
     "../sync/redesignSwitch": { syncRedesign: { on: redesign } },
     "./syncOrigin": origins,
     "./nativeWorkspace": {},

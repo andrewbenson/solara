@@ -15,7 +15,13 @@ enum NativeSheets {
       return
     }
     guard let state = WindowSheetState.decode(json) else { return }
+    present(windowId, state)
+  }
+
+  static func present(_ windowId: String, _ state: WindowSheetState,
+    onEvent: ((String, String, [String: Any]) -> Void)? = nil) {
     let host = hosts[windowId] ?? SheetHost(windowId: windowId)
+    host.onEvent = onEvent
     hosts[windowId] = host
     host.apply(state)
   }
@@ -29,8 +35,8 @@ enum NativeSheets {
   #endif
 }
 
-fileprivate struct WindowSheetState: Decodable {
-  struct Style: Decodable {
+struct WindowSheetState: Decodable, Equatable {
+  struct Style: Decodable, Equatable {
     let dark: Bool
     let panel: String
     let panelBorder: String
@@ -75,6 +81,7 @@ fileprivate final class SheetHost {
   private var mounted = false
   private var ended = false
   private var placement = "window"
+  var onEvent: ((String, String, [String: Any]) -> Void)?
 
   init(windowId: String) {
     self.windowId = windowId
@@ -90,7 +97,7 @@ fileprivate final class SheetHost {
   }
 
   fileprivate func apply(_ next: WindowSheetState) {
-    guard !ended else { return }
+    guard !ended, state != next else { return }
     state = next
     if mounted {
       guard let window, view.window === window else { return end() }
@@ -214,9 +221,16 @@ fileprivate final class SheetHost {
 
   private func send(_ name: String, _ payload: [String: Any] = [:]) {
     guard !ended, mounted, let state else { return }
-    var body = payload
-    body["key"] = state.key
-    HostedViews.send(NativeSheets.kind, windowId: windowId, name, body)
+    emit(name, key: state.key, payload: payload)
+  }
+
+  private func emit(_ name: String, key: String, payload: [String: Any] = [:]) {
+    if let onEvent { onEvent(name, key, payload) }
+    else {
+      var body = payload
+      body["key"] = key
+      HostedViews.send(NativeSheets.kind, windowId: windowId, name, body)
+    }
   }
 
   func end() {
@@ -233,7 +247,7 @@ fileprivate final class SheetHost {
     body = nil
     state = nil
     NativeSheets.ended(windowId, host: self)
-    if let key { HostedViews.send(NativeSheets.kind, windowId: windowId, "closed", ["key": key]) }
+    if let key { emit("closed", key: key) }
   }
 
   #if SOLARA_PROBES

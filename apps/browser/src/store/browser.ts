@@ -2,7 +2,6 @@ import { nativeBookmarksSelected } from "./bookmarkProjection";
 import { create, type StateCreator } from "zustand";
 import { createBookmarksSlice, ensureRoots, type BookmarksSlice } from "./bookmarks";
 import { changedIds } from "./changes";
-import { clearClosingWindowRestores } from "./closingWindowRestore";
 import { createGroupsSlice, settleNesting, type GroupsSlice } from "./groups";
 import { createHistorySlice, type HistorySlice } from "./history";
 import { IDLE_LIVE, isIncognitoProfile, pinnedFirst } from "./model";
@@ -104,7 +103,6 @@ export const useBrowser = create<BrowserState>()(transactions.middleware(batched
   ...createPeekSlice(...a),
 
   hydrate(data) {
-    clearClosingWindowRestores();
     const [, get] = a;
     const s = get();
     const profiles = data.profiles && Object.keys(data.profiles).length ? data.profiles : { [DEFAULT_PROFILE.id]: DEFAULT_PROFILE };

@@ -104,7 +104,7 @@ SolaraCoreResult Dated(NSString *key, SolaraCoreResult completion) {
 }
 
 void (^gExtensionsHandler)(NSString *, NSDictionary *);
-BOOL (^gCloseCancelledHandler)(NSDictionary *);
+void (^gExtensionTabsHandler)(NSDictionary *);
 
 void Changed(NSString *profile, NSString *extensionId, NSString *event) {
   [NSNotificationCenter.defaultCenter postNotificationName:@"SolaraExtensionsChanged" object:nil
@@ -371,12 +371,12 @@ void solaracore_host::ApplyKeepAwakeSites(SolaraCoreProfile *profile) {
   [self call:@"ac_zoom_set" profile:profile args:@{@"host" : host, @"level" : @(level)} completion:^(NSDictionary *) {}];
 }
 
-+ (BOOL (^)(NSDictionary *))closeCancelledHandler {
-  return gCloseCancelledHandler;
++ (void (^)(NSDictionary *))extensionTabsHandler {
+  return gExtensionTabsHandler;
 }
 
-+ (void)setCloseCancelledHandler:(BOOL (^)(NSDictionary *))handler {
-  gCloseCancelledHandler = [handler copy];
++ (void)setExtensionTabsHandler:(void (^)(NSDictionary *))handler {
+  gExtensionTabsHandler = [handler copy];
 }
 
 + (void (^)(NSString *, NSDictionary *))extensionsHandler {

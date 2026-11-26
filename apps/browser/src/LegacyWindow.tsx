@@ -6,7 +6,6 @@ import { CommandPanel } from "./components/CommandPanel";
 import { ContentCard } from "./components/ContentCard";
 import { BookmarkDialog } from "./components/bookmarks/BookmarkDialog";
 import { EditBookmarkDialog } from "./components/bookmarks/EditBookmarkDialog";
-import { ExtensionOverlays } from "./components/extensions/ExtensionOverlays";
 import { requireNativeViewManager } from "expo-modules-core";
 import { DownloadMagnet, DownloadsPopover } from "./components/Downloads";
 import { OnboardingOverlay } from "./components/onboarding";
@@ -53,7 +52,6 @@ export function LegacyWindow() {
       </DockedLayout>}
       <CommandPanel windowWidth={width} />
       <DownloadsPopover />
-      <ExtensionOverlays />
       <DownloadMagnet />
       <BookmarkDialog />
       <EditBookmarkDialog />

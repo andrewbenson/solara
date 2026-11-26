@@ -2,7 +2,6 @@ import { setWindowSidebar, type WindowSidebarPatch } from "./sidebarRail";
 import type { StateCreator } from "zustand";
 import type { BrowserState } from "./browser";
 import { rejoinGroups } from "./groups";
-import { closingWindowUndos as closing, remapClosingWindow, undoClosingWindow } from "./closingWindowRestore";
 import { activeTabIdsWithoutPlaceholders, findLast,
   IDLE_LIVE,
   incognitoOriginal,
@@ -23,14 +22,13 @@ import { activeTabIdsWithoutPlaceholders, findLast,
 import { newTabSlot, nextToActive } from "./openers";
 import { groupWithOpener, nextPinChoice, placeChoiceKey, restoringGroup } from "./organize";
 import { hasLoadedPage, hasPage } from "./pageSession";
-import { withoutPeek } from "./peek";
 import { adoptParkedPins, parkWindowPins } from "./parkedPins";
 import { settleMovedPins } from "./pinMirror";
 import { holderOf, returnSharedPages, swapPinPage } from "./pinShare";
 import { sharedElsewhere, sharesTabs } from "./tabShare";
 import { isSmall, isSmallWindow, lastActiveProfile, linkProfileOf, mainWindowFor } from "./small";
-import { activated, apply, removeTabs, unloadPinnedTabs, withNewTab } from "./tabs";
-import type { BrowserWindow, ClosedTab, ClosedWindow, Frame, ParkedPins, SplitView, Tab, TabGroup } from "./types";
+import { activated, apply, removeTabs, withNewTab } from "./tabs";
+import type { BrowserWindow, ClosedTab, ClosedWindow, Frame, ParkedPins, Tab, TabGroup } from "./types";
 
 export type CreateWindowOptions = {
   newTabCommand?: boolean;
@@ -55,7 +53,6 @@ export type WindowsSlice = {
 
   createWindow(options?: CreateWindowOptions): string;
   closeWindow(id: string): void;
-  restoreClosingWindow(snapshot: ClosingWindowSnapshot, chromeWindow: string, liveTabIds: string[]): string | null;
   forgetClosedWindow(id: string): void;
   setWindowKeptOnClose(id: string, on: boolean): void;
   setWindowFrame(id: string, frame: Frame): void;
@@ -71,7 +68,6 @@ export type WindowsSlice = {
   restoreClosed(entryId: string, windowId?: string | null): void;
 };
 
-export type ClosingWindowSnapshot = { window: BrowserWindow; tabs: Tab[]; groups: TabGroup[]; splits: SplitView[] };
 
 const MAX_CLOSED_WINDOWS = 10;
 
@@ -180,42 +176,6 @@ export const createWindowsSlice: StateCreator<BrowserState, [], [], WindowsSlice
     return id;
   },
 
-  restoreClosingWindow(snapshot, chromeWindow, liveTabIds) {
-    const s = get();
-    const live = new Set(snapshot.tabs.filter((t) => liveTabIds.includes(t.id)).map((t) => t.id));
-    if (!live.size) return null;
-    for (const [key, entry] of closing) if (Date.now() - entry.closedAt > 30_000) closing.delete(key);
-    const undo = closing.get(snapshot.window.id);
-    if (!undo || Date.now() - undo.closedAt > 30_000) return null;
-    const profileId = snapshot.window.incognito ? snapshot.window.originalProfileId ?? incognitoOriginal(snapshot.window.profileId) : snapshot.window.profileId;
-    if (!s.profiles[profileId] || undo.before.windows[snapshot.window.id]!.tabIds.some((id) => {
-      const tab = undo.before.tabs[id];
-      return !tab || !s.profiles[isIncognitoProfile(tab.profileId) ? incognitoOriginal(tab.profileId) : tab.profileId];
-    })) return null;
-    const next = undoClosingWindow(s, undo, snapshot);
-    if (!next) return null;
-    const id = newId("w");
-    closing.delete(snapshot.window.id);
-    let restored = remapClosingWindow(next, snapshot.window.id, id, chromeWindow);
-    const window = restored.windows[id]!;
-    const survivors = window.tabIds.filter((tabId) => live.has(tabId));
-    const activeTabIds: Record<string, string> = {};
-    for (const tabId of survivors) {
-      const profile = restored.tabs[tabId]!.profileId;
-      if (!activeTabIds[profile] || window.activeTabIds[profile] === tabId) activeTabIds[profile] = tabId;
-    }
-    const missing = window.tabIds.filter((tabId) => !live.has(tabId));
-    restored = { ...restored, windows: { ...restored.windows, [id]: { ...window, activeTabIds, profileId: activeTabIds[window.profileId] ? window.profileId : restored.tabs[survivors[0]!]!.profileId } } };
-    if (restored.ui.focusedWindowId === id && restored.windows[id]!.profileId !== window.profileId && !window.incognito) restored = { ...restored, ui: { ...restored.ui, lastProfileId: restored.windows[id]!.profileId } };
-    const peek = restored.peeks[id];
-    if (peek && !live.has(peek.tabId)) restored = withoutPeek(restored, id);
-    restored = unloadPinnedTabs(restored, missing, false);
-    restored = removeTabs(restored, missing.filter((tabId) => !inPinnedContainer(restored, tabId)), true);
-    if (missing.includes(restored.selectionAnchors[id] ?? "")) restored = { ...restored, selectionAnchors: without(restored.selectionAnchors, [id]) };
-    set(restored);
-    return id;
-  },
-
   setWindowSidebar(windowId, patch) {
     setWindowSidebar(windowId, patch);
   },
@@ -259,9 +219,6 @@ export const createWindowsSlice: StateCreator<BrowserState, [], [], WindowsSlice
         lastProfileId: lastProfileAfterClosing(s, id),
       },
     });
-    for (const [key, entry] of closing) if (Date.now() - entry.closedAt > 30_000 || get().windows[key]) closing.delete(key);
-    closing.set(id, { before, after: get(), closedAt: Date.now() });
-    while (closing.size > MAX_CLOSED_WINDOWS) closing.delete(closing.keys().next().value!);
   },
 
   forgetClosedWindow(id) {

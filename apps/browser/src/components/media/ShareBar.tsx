@@ -6,7 +6,7 @@ import { pagesPooledIn } from "../../lib/pagesPool";
 import { useTheme } from "../../lib/theme";
 import { useBrowser } from "../../store/browser";
 import { engineProfile } from "../../store/model";
-import { browserIdOf } from "../extensions/state";
+import { browserIdOf } from "../layout/pageState";
 import { pageOf, usePages } from "../layout/pageState";
 import { addMediaActions, mediaTheme, NativeMediaView } from "./nativeMedia";
 import { useMedia, type TabShare } from "./state";

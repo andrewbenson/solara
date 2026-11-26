@@ -193,7 +193,7 @@ public final class SidebarAddressBarView: NSView {
 public final class SidebarAddressBars {
   public static let shared = SidebarAddressBars()
 
-  public var onClick: (String, ToolbarClick) -> Void = { _, _ in }
+  public var onClick: (String, SidebarAddressBarView, ToolbarClick) -> Void = { _, _, _ in }
   public var onAnchors: (String, [String: CGRect]) -> Void = { _, _ in }
 
   public private(set) var anchors: [String: [String: CGRect]] = [:]
@@ -208,7 +208,10 @@ public final class SidebarAddressBars {
   public func view(_ windowId: String) -> SidebarAddressBarView {
     if let view = views[windowId] { return view }
     let view = SidebarAddressBarView(frame: CGRect(x: 0, y: 0, width: 0, height: SidebarHeaderMetrics.height))
-    view.onClick = { [weak self] click in self?.onClick(windowId, click) }
+    view.onClick = { [weak self, weak view] click in
+      guard let self, let view, self.views[windowId] === view else { return }
+      self.onClick(windowId, view, click)
+    }
     view.onAnchors = { [weak self] anchors in
       guard let self else { return }
       self.anchors[windowId] = anchors
@@ -225,7 +228,10 @@ public final class SidebarAddressBars {
     if let view = navigationViews[windowId] { return view }
     let view = SidebarAddressBarView(frame: .zero)
     view.navigationOnly = true
-    view.onClick = { [weak self] click in self?.onClick(windowId, click) }
+    view.onClick = { [weak self, weak view] click in
+      guard let self, let view, self.navigationViews[windowId] === view else { return }
+      self.onClick(windowId, view, click)
+    }
     if let state = states[windowId] { view.update(state) }
     navigationViews[windowId] = view
     return view

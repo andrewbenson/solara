@@ -182,7 +182,53 @@ try {
     const ids = await run("return ac.shell.windowIds();");
     return ids.includes("w1") && ids.includes("w2");
   });
-  await capture("native layout and command ownership", { layout: await run('return expo.modules.SolaraWindowShell.nativeLayout("w1");') });
+  const nativeLayout = await run('return expo.modules.SolaraWindowShell.nativeLayout("w1");');
+  await capture("native layout and command ownership", { layout: nativeLayout });
+  if (nativeLayout && !baseline) {
+    const inventory = await run('return expo.modules.SolaraApp.devWindowLifecycle("inventory", false);');
+    const number = inventory.windows.find(({ id }) => id === "w1")?.number;
+    assert.ok(Number.isInteger(number), "missing toolbar fixture NSWindow");
+    const clickSidebar = async (label, selectedBefore) => {
+      await renderedSelection(label, selectedBefore);
+      let point;
+      await until(label + ": native sidebar button laid out", async (state) => {
+        const toolbar = await run('return expo.modules.SolaraToolbar.devToolbar("w1", "a").then(JSON.parse);');
+        point = toolbar?.sidebarButtonPoint;
+        return active(state) === selectedBefore && point?.length === 2;
+      });
+      const before = await nativeState();
+      assert.equal(active(before.data), selectedBefore);
+      const sidebarOpen = !before.data.windows.w1.sidebarOpen;
+      const otherOpen = before.data.windows.w2.sidebarOpen;
+      const hit = await run(`return expo.modules.SolaraCEF.devWindow(${number}, "click:${point.join(",")}");`);
+      assert.match(hit, /ToolbarButtonView/, `${label}: sidebar toolbar button hit`);
+      await until(label, (state) => active(state) === "a" && state.windows.w1.sidebarOpen === sidebarOpen);
+      await renderedSelection(label, "a");
+      await sleep(300);
+      const { patches } = await run(`return JSON.parse(expo.modules.SolaraStoreAdapter.catchUp(${before.rev}));`);
+      assert.ok(Array.isArray(patches), `${label}: native change history unavailable`);
+      const changes = (id, initial) => {
+        let previous = initial;
+        return patches.flatMap((patch) => {
+          const window = patch.windows?.upsert?.find((window) => window.id === id);
+          if (!window || window.sidebarOpen === previous) return [];
+          previous = window.sidebarOpen;
+          return [window];
+        });
+      };
+      const toggles = changes("w1", before.data.windows.w1.sidebarOpen);
+      assert.equal(toggles.length, 1, `${label}: exactly one sidebar transition`);
+      assert.equal(toggles[0].activeTabIds[toggles[0].profileId], "a", `${label}: pane active in toggle commit`);
+      assert.deepEqual(changes("w2", otherOpen), [], `${label}: second window sidebar changed`);
+      await capture(label, { hit, toggles });
+    };
+    await clickSidebar("native toolbar toggles one window's sidebar once", "a");
+    const split = await run('const s = ac.store.getState(); const id = s.createSplit(["a", "b"]); s.activate("b"); return id;');
+    assert.ok(split, "sidebar toolbar split created");
+    await clickSidebar("unfocused split toolbar activates its pane and toggles once", "b");
+    await setup(`ac.store.getState().separateSplit(${JSON.stringify(split)})`);
+    await until("sidebar toolbar split removed", (state) => !state.splits[split]);
+  }
   const pickers = (id = "w1") => run(`return expo.modules.SolaraHosted.tabPickers(${JSON.stringify(id)}).then(JSON.parse);`);
   const release = () => run(baseline ? "ac.switcher.commitSwitcher(); return true;" : "return expo.modules.SolaraHosted.devReleaseTabSwitcher();");
   for (const source of ["menu", "bridge", "key"]) {

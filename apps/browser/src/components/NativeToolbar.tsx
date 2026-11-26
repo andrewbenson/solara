@@ -4,6 +4,7 @@ import { translation, WindowDragRegion } from "@solara/shell";
 import { useEffect, useMemo } from "react";
 import { StyleSheet, View } from "react-native";
 import { useShortcutHint, withShortcut } from "../lib/commandShortcuts";
+import { runCommand } from "../lib/commands";
 import { withLivePage } from "../lib/livePage";
 import { layout, useTheme } from "../lib/theme";
 import { webviews } from "../lib/webviews";
@@ -258,7 +259,7 @@ export function useNativeToolbarModel({ tabId, geometry, windowId, inSplit, focu
     const m = { metaKey: c.meta, altKey: c.alt, shiftKey: c.shift };
     switch (c.id) {
       case "sidebar":
-        return useBrowser.getState().toggleSidebar(windowId);
+        return runCommand({ command: "toggleSidebar", arg: null, windowId });
       case "back":
       case "forward": {
         const direction = c.id === "back" ? -1 : 1;

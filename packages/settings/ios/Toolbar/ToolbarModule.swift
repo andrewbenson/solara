@@ -106,12 +106,18 @@ public class ToolbarModule: Module {
       MainActor.assumeIsolated {
         #if DEBUG
         let toolbar = NativeToolbarHostView.toolbar(windowId: windowId, tabId: tabId)
-        let out: [String: Any] = [
+        var out: [String: Any] = [
           "extensions": toolbar?.describeExtensions() ?? [],
           "urlRight": toolbar?.state.map { $0.geometry.urlRight as Any } ?? NSNull(),
           "infoPopover": ToolbarInfoPopover.describe() ?? NSNull(),
           "urlEditor": toolbar.map { containsDeveloperUrlField($0) } ?? false,
         ]
+        if SolaraCoreTestHooksAllowed(), let toolbar, !toolbar.isHiddenOrHasHiddenAncestor,
+          let frameView = toolbar.window?.contentView?.superview,
+          let button = toolbar.layoutAnchors["button:sidebar"], !button.isEmpty {
+          let point = toolbar.convert(CGPoint(x: button.midX, y: button.midY), to: nil)
+          out["sidebarButtonPoint"] = [point.x, frameView.bounds.height - point.y]
+        }
         return (try? JSONSerialization.data(withJSONObject: out)).flatMap { String(data: $0, encoding: .utf8) } ?? "null"
         #else
         return "null"
@@ -212,6 +218,8 @@ final class NativeToolbarHostView: ExpoView {
     toolbar.onClick = { [weak self] click in
       MainActor.assumeIsolated {
         guard let self else { return }
+        if NativeToolbarActions.perform(click, source: self.toolbar,
+          target: self.toolbar.state.map { .pane($0.tabId) }) { return }
         if let tabId = self.toolbar.state?.tabId,
           click.id == "urlEdit" || click.kind == .menu || self.toolbar.state?.url?.developer == nil,
           NativeOmniboxActions.addressClick(click, windowId: self.toolbarShell?.windowId ?? NativeStoreHandle.store?.state.tabs[tabId]?.windowId ?? "", tabId: tabId, view: self.toolbar) {
@@ -331,7 +339,8 @@ enum SidebarAddressBridge {
   static func install() {
     guard !installed else { return }
     installed = true
-    SidebarAddressBars.shared.onClick = { windowId, click in
+    SidebarAddressBars.shared.onClick = { windowId, source, click in
+      if NativeToolbarActions.perform(click, source: source, windowId: windowId, target: .window) { return }
       let bar = SidebarAddressBars.shared.existing(windowId)
       if NativeOmniboxActions.ownsActions, click.id == "url" || click.id == "urlEdit",
         NativeStoreHandle.store?.state.activeTabId(windowId) == nil { return }

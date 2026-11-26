@@ -36,6 +36,7 @@ const actions = [
   ["openImport", {}, "Open Import"],
   ["installCli", {}, "CLI control"],
   ["cliStatus", {}, "CLI control"],
+  ["layout", { layout: "top" }, "Tab layout"],
 ];
 
 function assertNewTabs(before, after, window, expectedURLs) {
@@ -121,6 +122,50 @@ try {
       test: `return ${writesSource("cliStatus")}.then(state => !state.cli.installing && state)`,
     });
     assert.equal(settled.cli.error, installError);
+  });
+  await rep.check("each global tab layout choice updates the expected native windows", async () => {
+    const ids = await app.eval(`
+      const store = ac.store.getState();
+      store.updateSettings({ tabLayout: "sidebar" });
+      const explicitTop = store.createWindow({});
+      const privateWindow = store.createWindow({ incognito: true });
+      const little = store.createWindow({ small: true, url: "data:text/plain,little" });
+      const explicitSidebar = store.createWindow({});
+      const lastInherited = store.createWindow({});
+      const native = expo.modules.SolaraStoreAdapter;
+      for (const [id, layout] of [[explicitTop, "top"], [explicitSidebar, "sidebar"]]) {
+        const { rev } = JSON.parse(native.snapshot());
+        const result = JSON.parse(native.dispatch(JSON.stringify({ name: "setWindowLayout", args: [id, layout] }), rev));
+        if (result.error || result.busy) throw new Error(JSON.stringify(result));
+      }
+      return { explicitTop, privateWindow, little, explicitSidebar, lastInherited };
+    `);
+    const nativeState = () => app.eval("return JSON.parse(expo.modules.SolaraStoreAdapter.snapshot()).data");
+    const before = await nativeState();
+    assert.equal(before.windows[ids.privateWindow]?.incognito, true);
+    assert.equal(before.windows[ids.little]?.kind, "small");
+    assert.deepEqual(new Map(Object.values(before.windows).map((w) => [w.id, w.tabLayout ?? null])), new Map([
+      [window.id, null],
+      [ids.explicitTop, "top"],
+      [ids.privateWindow, null],
+      [ids.little, null],
+      [ids.explicitSidebar, "sidebar"],
+      [ids.lastInherited, null],
+    ]));
+
+    for (const layout of ["top", "sidebar"]) {
+      assert.equal((await writes("layout", { layout })).direct, true);
+      const state = await nativeState();
+      assert.equal(state.settings.tabLayout, layout);
+      assert.deepEqual(new Map(Object.values(state.windows).map((w) => [w.id, w.tabLayout ?? state.settings.tabLayout])), new Map([
+        [window.id, "sidebar"],
+        [ids.explicitTop, layout],
+        [ids.privateWindow, layout],
+        [ids.little, "sidebar"],
+        [ids.explicitSidebar, layout],
+        [ids.lastInherited, "sidebar"],
+      ]));
+    }
   });
 } finally {
   await app?.quit();

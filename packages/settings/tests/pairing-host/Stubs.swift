@@ -70,10 +70,8 @@ typealias AutofillAdapter = StubAdapter
 typealias ExtensionsAdapter = StubAdapter
 typealias ShortcutsAdapter = StubAdapter
 typealias ProfilesAdapter = StubAdapter
-enum SettingsDirectWrites {
-  static func chooseTabLayout(_ layout: String) -> Bool { false }
-}
 typealias LiveAdapter = StubAdapter
+@MainActor enum NativeExtensionCommands { static var focusedProfile: String? { nil } }
 @MainActor enum NativeOnboarding { static func register() {} }
 @MainActor enum NativeWorkspaceCommands { static func install() {} }
 @MainActor final class StubStartup {

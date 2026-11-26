@@ -233,12 +233,6 @@ enum SettingsDirectWrites {
     guard let store else { return nil }
     return SettingsOpening(state: { store.state }, run: { write(store, $0) }, focus: { ShellScripting.showWindow($0) })
   }
-
-  static func chooseTabLayout(_ layout: String) -> Bool {
-    guard let store else { return false }
-    for command in SettingsWrites.chooseTabLayout(layout, in: store.state) { write(store, command) }
-    return true
-  }
 }
 
 #if DEBUG
@@ -289,7 +283,9 @@ enum SettingsWritesDev {
     case "reorder":
       if viaJS { _ = await SettingsAdapters.js("profiles.reorder", args.strings("ids")) } else { adapter.reorderProfiles(args.strings("ids")) }
     case "layout":
-      if viaJS { _ = await SettingsAdapters.js("tabs.chooseLayout", args.string("layout") ?? "sidebar") } else { source.chooseTabLayout(args.string("layout") ?? "sidebar") }
+      guard !viaJS else { return #"{"error":"Tab layout is native only"}"# }
+      out["direct"] = !NativeStoreHandle.frozen && NativeStoreHandle.ownsWorkspace && NativeStoreHandle.store != nil
+      source.chooseTabLayout(args.string("layout") ?? "sidebar")
     case "openURLs":
       guard !viaJS else { return #"{"error":"Open URLs is native only"}"# }
       out["opened"] = SettingsDirectWrites.opening?.openURLs(args.strings("urls")) ?? false

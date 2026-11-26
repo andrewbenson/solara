@@ -72,32 +72,110 @@ import Testing
     #expect(direct.state.orphanedProfileData == bridge.state.orphanedProfileData)
   }
 
-  @Test func chooseTabLayoutTogglesWindowsThatDifferFromTheOldChoice() throws {
-    let s = store()
-    let plain = try s.dispatch(Command("createWindow", [[:]])).result!.string!
-    let top = try s.dispatch(Command("createWindow", [[:]])).result!.string!
-    try s.dispatch(Command("setWindowLayout", [.string(top), "top"]))
-    let commands = SettingsWrites.chooseTabLayout("top", in: s.state)
-    let choose = try bridged(#"{"name":"updateSettings","args":[{"tabLayout":"top"}]}"#)
-    #expect(commands == [choose, Command("toggleTabLayout", [.string(plain)]), choose])
-    for command in commands { try s.dispatch(command) }
-    #expect(s.state.settings.string("tabLayout") == "top")
-    #expect(s.state.windows[top]?.tabLayout == "top")
-    #expect(s.state.windows[plain]?.tabLayout == "sidebar")
+  @MainActor private func withLayoutStore(_ store: Store, run: () throws -> Void) rethrows {
+    let previousOwns = NativeStoreHandle.ownsWorkspace
+    let previousResolve = NativeStoreHandle.resolve
+    defer {
+      NativeStoreHandle.ownsWorkspace = previousOwns
+      NativeStoreHandle.resolve = previousResolve
+    }
+    NativeStoreHandle.resolve = { store }
+    NativeStoreHandle.ownsWorkspace = true
+    try run()
   }
 
-  @Test func chooseTabLayoutBackToSidebarTogglesOverriddenWindows() throws {
+  @MainActor @Test func chooseTabLayoutUsesOriginalWindowsAndTogglesInOrder() throws {
     let s = store()
-    let plain = try s.dispatch(Command("createWindow", [[:]])).result!.string!
-    let top = try s.dispatch(Command("createWindow", [[:]])).result!.string!
+    let inherited = try #require(try s.dispatch(Command("createWindow", [[:]])).result?.string)
+    let explicitTop = try #require(try s.dispatch(Command("createWindow", [[:]])).result?.string)
+    let privateWindow = try #require(try s.dispatch(Command("createWindow", [["incognito": true]])).result?.string)
+    let little = try #require(try s.dispatch(Command("createWindow", [["small": true, "url": "https://example.test"]])).result?.string)
+    let explicitSidebar = try #require(try s.dispatch(Command("createWindow", [[:]])).result?.string)
+    let lastInherited = try #require(try s.dispatch(Command("createWindow", [[:]])).result?.string)
+    try s.dispatch(Command("setWindowLayout", [.string(explicitTop), "top"]))
+    try s.dispatch(Command("setWindowLayout", [.string(explicitSidebar), "sidebar"]))
+
+    try withLayoutStore(s) {
+      let choseTop = try SettingsWrites.chooseTabLayout("top")
+      #expect(choseTop)
+    }
+
+    #expect(s.state.settings.string("tabLayout") == "top")
+    #expect(s.state.windows[inherited]?.tabLayout == "sidebar")
+    #expect(s.state.windows[explicitTop]?.tabLayout == "top")
+    #expect(s.state.windows[privateWindow]?.incognito == true)
+    #expect(s.state.windows[privateWindow]?.tabLayout == "top")
+    #expect(s.state.windows[little]?.isSmall == true)
+    #expect(s.state.windows[little]?.tabLayout == "sidebar")
+    #expect(s.state.windows[explicitSidebar]?.tabLayout == "top")
+    #expect(s.state.windows[lastInherited]?.tabLayout == "sidebar")
+  }
+
+  @MainActor @Test func choosingTheCurrentDefaultTogglesOnlyDifferingOverrides() throws {
+    let s = store()
+    let inherited = try #require(try s.dispatch(Command("createWindow", [[:]])).result?.string)
+    let top = try #require(try s.dispatch(Command("createWindow", [[:]])).result?.string)
     try s.dispatch(Command("setWindowLayout", [.string(top), "top"]))
-    let commands = SettingsWrites.chooseTabLayout("sidebar", in: s.state)
-    let choose = try bridged(#"{"name":"updateSettings","args":[{"tabLayout":"sidebar"}]}"#)
-    #expect(commands == [choose, Command("toggleTabLayout", [.string(top)]), choose])
-    for command in commands { try s.dispatch(command) }
+
+    try withLayoutStore(s) {
+      let choseSidebar = try SettingsWrites.chooseTabLayout("sidebar")
+      #expect(choseSidebar)
+    }
+
     #expect(s.state.settings.string("tabLayout") == "sidebar")
     #expect(s.state.windows[top]?.tabLayout == "sidebar")
-    #expect(s.state.windows[plain]?.tabLayout == nil)
+    #expect(s.state.windows[inherited]?.tabLayout == nil)
+  }
+
+  @MainActor @Test func aFileOwnedLayoutRefusesTheSettingsChoice() throws {
+    let s = store()
+    let inherited = try #require(try s.dispatch(Command("createWindow", [[:]])).result?.string)
+    let explicit = try #require(try s.dispatch(Command("createWindow", [[:]])).result?.string)
+    try s.dispatch(Command("setWindowLayout", [.string(explicit), "sidebar"]))
+    try s.applyConfig(ConfigApplyTests.contents(settings: ["tabLayout": "top"]), source: ConfigApplyTests.source)
+
+    try withLayoutStore(s) {
+      let choseSidebar = try SettingsWrites.chooseTabLayout("sidebar")
+      #expect(!choseSidebar)
+    }
+
+    #expect(s.state.settings.string("tabLayout") == "top")
+    #expect(s.state.settings.ownValues["tabLayout"] == "sidebar")
+    #expect(s.state.settings.chosen?.contains("tabLayout") == false)
+    #expect(s.state.windows[inherited]?.tabLayout == nil)
+    #expect(s.state.windows[explicit]?.tabLayout == "sidebar")
+  }
+
+  @MainActor @Test func aFrozenOrUnownedStoreRefusesTheSettingsChoice() throws {
+    let s = store()
+    let inherited = try #require(try s.dispatch(Command("createWindow", [[:]])).result?.string)
+
+    try withLayoutStore(s) {
+      NativeStoreHandle.ownsWorkspace = false
+      let choseTopUnowned = try SettingsWrites.chooseTabLayout("top")
+      #expect(!choseTopUnowned)
+      NativeStoreHandle.ownsWorkspace = true
+      NativeStoreHandle.markFrozen()
+      defer { NativeStoreHandle.thawForTests() }
+      let choseTopFrozen = try SettingsWrites.chooseTabLayout("top")
+      #expect(!choseTopFrozen)
+    }
+
+    #expect(s.state.settings.string("tabLayout") == "sidebar")
+    #expect(s.state.windows[inherited]?.tabLayout == nil)
+  }
+
+  @MainActor @Test func anOwnedSafeModeStoreAcceptsTheSettingsChoice() throws {
+    var config = StoreConfig()
+    config.safeMode = true
+    let s = Store(state: BrowserState(settings: Settings.hydrated(from: nil)), config: config)
+
+    try withLayoutStore(s) {
+      let choseTop = try SettingsWrites.chooseTabLayout("top")
+      #expect(choseTop)
+    }
+
+    #expect(s.state.settings.string("tabLayout") == "top")
   }
 
   @MainActor @Test func directStoreFollowsOwnershipSafeModeAndFreeze() {

@@ -31,8 +31,11 @@ final class StoreSettingsSource: SettingsStoreSource {
   var topTabLayout: Bool { model.value("tabLayout")?.string == "top" }
 
   func chooseTabLayout(_ layout: String) {
-    guard !SettingsDirectWrites.chooseTabLayout(layout) else { return }
-    SettingsJS.shared.fire("tabs.chooseLayout", layout)
+    do {
+      try SettingsWrites.chooseTabLayout(layout)
+    } catch {
+      NSLog("[settings] tab layout failed: %@", String(describing: error))
+    }
   }
 
   var sidebarPositionAvailable: Bool { NativeSidebarPositionCapability.enabled && NativeStoreHandle.ownsWorkspace }

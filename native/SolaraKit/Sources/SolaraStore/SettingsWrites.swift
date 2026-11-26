@@ -23,11 +23,21 @@ public enum SettingsWrites {
     Command("reorderProfiles", [.array(ids.map(JSONValue.string))])
   }
 
-  public static func chooseTabLayout(_ layout: String, in state: BrowserState) -> [Command] {
-    let choose = Command("updateSettings", [["tabLayout": .string(layout)]])
-    let current = state.settings.string("tabLayout")
-    let toggles = state.windows.values.filter { ($0.tabLayout ?? current) != layout }.map { Command("toggleTabLayout", [.string($0.id)]) }
-    return [choose] + toggles + [choose]
+  @MainActor @discardableResult
+  public static func chooseTabLayout(_ layout: String) throws -> Bool {
+    guard layout == "sidebar" || layout == "top",
+          !NativeStoreHandle.frozen, NativeStoreHandle.ownsWorkspace, let store = NativeStoreHandle.store else { return false }
+    return try store.sequence {
+      let state = store.state
+      guard !NativeStoreHandle.frozen, state.settings.fileSource("tabLayout") == nil else { return false }
+      let choose = Command("updateSettings", [["tabLayout": .string(layout)]])
+      let current = state.settings.string("tabLayout")
+      let toggles = state.windows.values
+        .filter { ($0.tabLayout ?? current) != layout }
+        .map { Command("toggleTabLayout", [.string($0.id)]) }
+      try store.dispatch([choose] + toggles + [choose])
+      return true
+    }
   }
 }
 

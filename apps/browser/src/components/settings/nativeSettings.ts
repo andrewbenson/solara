@@ -1,8 +1,6 @@
 import { nativeSettingsAvailable, publishSettingsTopic, serveNativeSettings, type SettingsHandler } from "@solara/settings";
 import { useCli } from "../../lib/cliControl";
 import { compactMemory } from "../../lib/memoryTrim";
-import { useBrowser } from "../../store/browser";
-import { extensionsProfileId } from "../extensions/store";
 import { autofillHandlers } from "./native/autofill";
 import { extensionsHandlers } from "./native/extensions";
 import { replicaHandlers } from "./native/replica";
@@ -27,18 +25,7 @@ export function addNativeSettingsHandlers(added: Record<string, SettingsHandler>
   if (started) publish();
 }
 
-function chooseTabLayout(layout: "sidebar" | "top") {
-  const s = useBrowser.getState();
-  s.updateSettings({ tabLayout: layout });
-  for (const w of Object.values(s.windows)) {
-    if ((w.tabLayout ?? s.settings.tabLayout) !== layout) useBrowser.getState().toggleTabLayout(w.id);
-  }
-  useBrowser.getState().updateSettings({ tabLayout: layout });
-}
-
 const coreHandlers: Record<string, SettingsHandler> = {
-  "tabs.chooseLayout": (layout: "sidebar" | "top") => chooseTabLayout(layout),
-
   "memory.compact": () => compactMemory(),
 };
 

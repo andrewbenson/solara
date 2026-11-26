@@ -730,3 +730,16 @@ actions for URL batches, extension tabs, Live links, internal pages, Import, CLI
 install and CLI status. Check each retired `viaJS` reply, the tab URLs and their
 native window and profile, History tab reuse, the native Import window and the
 CLI status transition from an isolated installer fixture.
+
+## E8 Settings Tabs layout choice
+
+Run `SettingsWritesTests`, `SettingsModelTests` and `SettingsRevealTests` in SolaraKit
+with `-Xswiftc -DSOLARA_PROBES`. The layout tests pin the order-dependent result of the
+previous Settings action for inherited and explicit layouts, including private and
+Little Solara window state. They also cover a file-owned layout, frozen and unowned
+stores, and an owned store in safe mode.
+
+Run `node packages/settings/scripts/settings-utilities-test.mjs <Debug app> <scratch directory>`
+with matching native and JS builds in window layouts 0 and 1. The layout check calls
+`devSettingsWrites("layout")` for both choices and asserts each window's effective
+layout from the native Store snapshot. The `viaJS` route must return the retirement error.

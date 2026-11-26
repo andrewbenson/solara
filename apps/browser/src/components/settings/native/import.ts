@@ -4,6 +4,7 @@ import { publishSettingsTopic, type SettingsHandler } from "@solara/settings";
 import { allArcHolders, restoreArcFoldersSettled } from "../../../lib/bookmarkGroups";
 import { reportBookmarkFailure } from "../../../lib/bookmarkWriter";
 import { adoptFaviconCache } from "../../../lib/favicons";
+import { adoptProfileThemeForImport } from "../../../sync/engine";
 import { nativeSafeMode } from "../../../store/nativeStore";
 import { useBrowser } from "../../../store/browser";
 import { MAX_DRAFT_LINKS } from "../../../store/draftGroups";
@@ -392,6 +393,7 @@ export const importHandlers: Record<string, SettingsHandler> = {
     useBrowser.getState().adoptImportedHistory(profileId, Array.isArray(rows) ? rows : []);
     return (useBrowser.getState().history[profileId]?.length ?? 0) - before;
   },
+  "import.adoptProfileTheme": (profileId: string) => adoptProfileThemeForImport(profileId),
   "import.adoptFavicons": (profileId: string, favicons: { page: string; icon: string; png: string }[]) => {
     adoptFaviconCache(profileId, Array.isArray(favicons) ? favicons : []);
     return true;

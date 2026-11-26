@@ -1353,6 +1353,50 @@ export function adoptProfileTheme(profileId: string) {
   if (doc.enabled) scheduleSync(AFTER_EDIT_MS);
 }
 
+let importThemeAdoptions: Promise<unknown> = Promise.resolve();
+
+export function adoptProfileThemeForImport(profileId: string): Promise<boolean> {
+  const operation = importThemeAdoptions.catch(() => {}).then(async () => {
+    if (persistenceRefused()) return false;
+    if (!metadataLoaded) load();
+    if (newerFormat || syncHeld() || (doc.v === 2 && (pairingPending() || !pairingAdmitted))) return false;
+    const profile = useBrowser.getState().profiles[profileId];
+    if (!profile || isIncognitoProfile(profileId)) return false;
+    const expected = generation;
+    const link = doc.profiles[profileId];
+    const marker = link?.themeAdopting;
+    if (link) delete link.themeAdopting;
+    let accepted = false;
+    try {
+      if (doc.v === 2) {
+        await writePairingDoc({ ...doc }, expected, false);
+      } else {
+        for (let attempt = 0; attempt < 3; attempt++) {
+          const { scopes, ...meta } = doc;
+          const json = JSON.stringify(loaded ? { ...meta, seqs: Object.fromEntries(Object.entries(scopes).map(([key, state]) => [key, writtenSeq(state)])) } : meta);
+          if (await saveDocument(DOC, json) === false || expected !== generation || persistenceRefused()) return false;
+          if (readDocument(DOC) !== json) return false;
+          const { scopes: currentScopes, ...currentMeta } = doc;
+          const current = JSON.stringify(loaded ? { ...currentMeta, seqs: Object.fromEntries(Object.entries(currentScopes).map(([key, state]) => [key, writtenSeq(state)])) } : currentMeta);
+          if (current !== json) continue;
+          savedJson = json;
+          break;
+        }
+      }
+      const persisted = JSON.parse(readDocument(DOC) ?? "null");
+      accepted = expected === generation && !persistenceRefused() && !!persisted && !persisted.profiles?.[profileId]?.themeAdopting && !doc.profiles[profileId]?.themeAdopting;
+      if (accepted && doc.enabled) scheduleSync(AFTER_EDIT_MS);
+      return accepted;
+    } catch {
+      return false;
+    } finally {
+      if (!accepted && marker && link && doc.profiles[profileId] === link && expected === generation) link.themeAdopting = marker;
+    }
+  });
+  importThemeAdoptions = operation;
+  return operation;
+}
+
 function linkProfiles(app: ScopeState) {
   if (newerFormat || pairingPending()) return;
   const s = useBrowser.getState();

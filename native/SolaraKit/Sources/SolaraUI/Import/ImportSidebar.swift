@@ -86,6 +86,7 @@ extension ImportRunner {
   }
 
   func placeSidebarSpace(_ space: ImportSpaceRow, profile: String, favicons: [ImportFaviconRow], control: ImportRunControl) async -> ImportWorkspaceWritten? {
+    themeAdoptionFailed = false
     guard admitsDestination(profile, control: control) else { return nil }
     runs.traceStep("favicons")
     let chosen = ImportFavicons.chosen(favicons, pages: ImportFavicons.links(space.pinned) + space.tabs.map(\.url))
@@ -99,8 +100,30 @@ extension ImportRunner {
       }
     }
     guard admitsDestination(profile, control: control) else { return nil }
+    var theme = space.theme.flatMap(ImportArcTheme.parse)
+    if theme != nil {
+      let acknowledgement = ImportThemeAcknowledgement()
+      let adoption = runs.track { [self] in
+        guard admitsDestination(profile, control: control) else { return }
+        do { acknowledgement.accepted = try await engine.adoptProfileTheme(profile: profile) }
+        catch { acknowledgement.accepted = false }
+      }
+      let deadline: Duration
+      #if DEBUG
+      deadline = runs.themeAdoptionDeadline
+      #else
+      deadline = .seconds(10)
+      #endif
+      let completed = await runs.settle(adoption, within: deadline, until: control)
+      guard admitsDestination(profile, control: control) else { return nil }
+      if !completed || !acknowledgement.accepted {
+        theme = nil
+        themeAdoptionFailed = true
+      }
+    }
+    guard admitsDestination(profile, control: control) else { return nil }
     runs.traceStep("workspace")
-    return engine.placeWorkspace(profile: profile, windows: ImportSidebarPlacement.windows(space), theme: nil)
+    return engine.placeWorkspace(profile: profile, windows: ImportSidebarPlacement.windows(space), theme: theme)
   }
 }
 

@@ -463,6 +463,11 @@ final class ImportRunEngine: ImportEngine {
     return ImportWorkspaceWritten(tabs: Int(tabs), skipped: Int(skipped))
   }
 
+  func adoptProfileTheme(profile: String) async throws -> Bool {
+    guard !safeMode, profileExists(profile), !isPrivateProfile(profile) else { return false }
+    return try await SettingsJS.shared.invoke("import.adoptProfileTheme", [profile], timeout: nil) as? Bool == true
+  }
+
   func importPullRequestsFolder(profile: String, source: String) async {
     guard !safeMode, profileExists(profile), !isPrivateProfile(profile),
       let payload = try? JSONSerialization.data(withJSONObject: ["profileId": profile, "kind": "pullRequests", "source": source]) else { return }

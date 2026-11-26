@@ -396,3 +396,76 @@ for (const lane of [false, true]) {
     });
   }
 }
+
+function seedImportThemeMetadata() {
+  S().hydrate({});
+  useBrowser.setState({ bookmarksReady: { default: true } });
+  S().updateProfile("default", { theme: THEME_A });
+  shell.docs.clear();
+  shell.docs.set("sync.json", JSON.stringify({ v: 1, enabled: false, profiles: { default: { syncId: "import-theme", themeAdopting: true } } }));
+}
+
+test("import theme adoption acknowledges actual persisted metadata and survives a fresh engine", async () => {
+  seedImportThemeMetadata();
+  const engine = await import("./engine.ts?importThemeSuccess");
+  assert.equal(JSON.parse(shell.docs.get("sync.json")).profiles.default.themeAdopting, true);
+  assert.equal(await engine.adoptProfileThemeForImport("default"), true);
+  assert.equal(JSON.parse(shell.docs.get("sync.json")).profiles.default.themeAdopting, undefined);
+  assert.deepEqual(S().profiles.default.theme, THEME_A);
+  const relaunched = await import("./engine.ts?importThemeRelaunch");
+  assert.equal(await relaunched.adoptProfileThemeForImport("default"), true);
+  assert.equal(JSON.parse(shell.docs.get("sync.json")).profiles.default.themeAdopting, undefined);
+  assert.deepEqual(S().profiles.default.theme, THEME_A);
+});
+
+test("import theme adoption returns false on disk failure and a retry persists the seeded marker removal", async () => {
+  seedImportThemeMetadata();
+  const engine = await import("./engine.ts?importThemeFailure");
+  shell.heldSaves.fail = true;
+  try {
+    assert.equal(await engine.adoptProfileThemeForImport("default"), false);
+    assert.equal(JSON.parse(shell.docs.get("sync.json")).profiles.default.themeAdopting, true);
+    assert.deepEqual(S().profiles.default.theme, THEME_A);
+  } finally {
+    shell.heldSaves.fail = false;
+  }
+  assert.equal(await engine.adoptProfileThemeForImport("default"), true);
+  assert.equal(JSON.parse(shell.docs.get("sync.json")).profiles.default.themeAdopting, undefined);
+});
+
+test("a held import acknowledgement changes no theme even after it lands late", async () => {
+  seedImportThemeMetadata();
+  const engine = await import("./engine.ts?importThemeLate");
+  shell.heldSaves.on = true;
+  shell.heldSaves.only = "sync.json";
+  let settled = false;
+  const pending = engine.adoptProfileThemeForImport("default").then((value) => { settled = true; return value; });
+  try {
+    for (let i = 0; i < 20 && shell.heldSaves.queue.length === 0; i++) await new Promise((done) => setImmediate(done));
+    assert.equal(shell.heldSaves.queue.length, 1);
+    assert.equal(settled, false);
+    assert.equal(JSON.parse(shell.docs.get("sync.json")).profiles.default.themeAdopting, true);
+    assert.deepEqual(S().profiles.default.theme, THEME_A);
+    shell.heldSaves.queue.shift()();
+    assert.equal(await pending, true);
+    assert.equal(JSON.parse(shell.docs.get("sync.json")).profiles.default.themeAdopting, undefined);
+    assert.deepEqual(S().profiles.default.theme, THEME_A);
+    const relaunched = await import("./engine.ts?importThemeLateRelaunch");
+    shell.heldSaves.on = false;
+    assert.equal(await relaunched.adoptProfileThemeForImport("default"), true);
+    assert.deepEqual(S().profiles.default.theme, THEME_A);
+  } finally {
+    shell.heldSaves.on = false;
+    shell.heldSaves.only = null;
+    for (const release of shell.heldSaves.queue.splice(0)) release();
+  }
+});
+
+test("an import cannot adopt theme metadata for a missing or private destination", async () => {
+  seedImportThemeMetadata();
+  const before = shell.docs.get("sync.json");
+  const engine = await import("./engine.ts?importThemePrivate");
+  assert.equal(await engine.adoptProfileThemeForImport("missing"), false);
+  assert.equal(await engine.adoptProfileThemeForImport("incognito:default"), false);
+  assert.equal(shell.docs.get("sync.json"), before);
+});

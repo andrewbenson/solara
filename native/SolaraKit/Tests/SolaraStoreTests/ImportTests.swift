@@ -242,4 +242,18 @@ import Testing
     #expect(Invariants.violations(store.state).isEmpty)
   }
 
+  @Test func sidebarThemePreservesFileOwnershipAndUpdatesOnlyOwnTheme() throws {
+    let old: JSONValue = ["mode": "auto", "intensity": 0.2]
+    let file: JSONValue = ["mode": "dark", "intensity": 0.4]
+    let imported: JSONValue = ["mode": "light", "intensity": 0.8]
+    var state = BrowserState(settings: Settings.hydrated(from: nil))
+    state.profiles["default"]!.theme = old
+    state.profiles["default"] = state.profiles["default"]!.applyingFileTheme(file, name: "File", source: "fixture")
+    let store = Store(state: state, checksInvariants: true)
+    try store.dispatch(Command("importWorkspace", [["profileId": "default", "theme": imported, "windows": []]]))
+    #expect(store.state.profiles["default"]?.theme == file)
+    #expect(store.state.profiles["default"]?.ownTheme == imported)
+    #expect(store.state.profiles["default"]?.fileTheme?.name == "File")
+  }
+
 }

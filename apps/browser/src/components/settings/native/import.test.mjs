@@ -28,6 +28,7 @@ function handlerFixture(options = {}) {
     "../../../lib/bookmarkGroups": {},
     "../../../lib/bookmarkWriter": { reportBookmarkFailure: () => {} },
     "../../../lib/favicons": { adoptFaviconCache: () => null },
+    "../../../sync/engine": { adoptProfileThemeForImport: async () => true },
     "../../../store/nativeStore": { nativeSafeMode: () => false },
     "../../../store/browser": { useBrowser: { getState: () => options.state ?? ({ profileOrder: [], profiles: {}, ui: {}, windows: {}, settings: { defaultProfileId: "existing" }, createProfile: () => { throw new Error("Profile data is deleted"); } }) } },
     "../../../store/draftGroups": {},

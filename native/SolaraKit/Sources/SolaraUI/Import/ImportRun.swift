@@ -167,6 +167,7 @@ public protocol ImportEngine: AnyObject {
   func importWorkspace(profile: String, windows: [JSONValue]) -> Int?
   func placeWorkspace(profile: String, windows: [JSONValue], theme: JSONValue?) -> ImportWorkspaceWritten?
   func importPullRequestsFolder(profile: String, source: String) async
+  func adoptProfileTheme(profile: String) async throws -> Bool
   func adoptHistory(profile: String, rows: [ImportHistoryRow], deadline: TimeInterval) async -> Int?
   func importHistory(engineProfile: String, rows: [ImportHistoryRow]) async
   func adoptFavicons(profile: String, favicons: [ImportFaviconRow]) async
@@ -294,6 +295,7 @@ public final class ImportRuns {
   #if DEBUG
   public var forceScript = false
   public var devTrace: [String] = []
+  var themeAdoptionDeadline: Duration = .seconds(10)
   #endif
 
   func traceStep(_ step: String) {
@@ -478,6 +480,7 @@ final class ImportRunner {
   private var preparing = 0
   private var status: [ImportKind: ImportStatus] = [:]
   private var finished = false
+  var themeAdoptionFailed = false
 
   init(runs: ImportRuns, engine: ImportEngine, session: Int) {
     self.runs = runs
@@ -608,6 +611,10 @@ final class ImportRunner {
               throw ImportSidebarFailure.workspace(name)
             }
             total.tabs += written.tabs
+            if themeAdoptionFailed {
+              for kind in profileKinds where [.tabs, .spaces, .pinnedTabs].contains(kind) { fail(kind, profile.name) }
+              notes.append("The imported theme could not be adopted; the existing theme was kept.")
+            }
             if written.skipped > 0 { notes.append(ImportSidebarPlacement.skippedNote(written.skipped, name: name)) }
             try requireDestination(destination, name: name, control: control)
           }

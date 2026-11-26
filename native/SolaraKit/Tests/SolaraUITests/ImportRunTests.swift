@@ -40,6 +40,10 @@ final class FakeImportEngine: ImportEngine {
   var workspaces: [(String, [JSONValue])] = []
   var workspaceResult: Int? = 2
   var workspaceSkipped = 0
+  var themeAnswer = true
+  var themeThrows = false
+  var themeAdoptions: [String] = []
+  var onThemeAdopt: (() async -> Void)?
   var workspaceThemes: [JSONValue?] = []
   var liveImports: [(String, String)] = []
   var onLive: (() async -> Void)?
@@ -206,6 +210,13 @@ final class FakeImportEngine: ImportEngine {
 
   func storeFavicons(profile: String, engineProfile: String, favicons: [ImportFaviconRow]) async {
     faviconStores.append((engineProfile, favicons))
+  }
+
+  func adoptProfileTheme(profile: String) async throws -> Bool {
+    themeAdoptions.append(profile)
+    await onThemeAdopt?()
+    if themeThrows { throw ImportReadFailure.failed }
+    return themeAnswer
   }
 
   func placeWorkspace(profile: String, windows: [JSONValue], theme: JSONValue?) -> ImportWorkspaceWritten? {

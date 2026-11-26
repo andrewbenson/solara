@@ -79,6 +79,32 @@ private func pinnedURLs(_ state: BrowserState, _ window: String) -> [String] {
 }
 
 @Suite struct RelaunchPersistenceTests {
+  @Test func sidebarThemeUsesOwnThemeAndSurvivesRelaunch() throws {
+    let h = try RelaunchWorkspace()
+    let old: JSONValue = ["stops": [["color": ["r": 0, "g": 0, "b": 1, "a": 1], "x": 0.5, "y": 0.5]], "mode": "auto"]
+    let imported: JSONValue = ["stops": [["color": ["r": 1, "g": 0, "b": 0, "a": 1], "x": 1, "y": 0.5]], "mode": "light"]
+    try h.call("updateProfile", ["default", ["theme": old]])
+    try h.call("importWorkspace", [["profileId": "default", "theme": imported, "windows": [["tabs": [["url": "https://theme.example/", "title": "Theme", "pinned": true, "row": true]]]]]])
+    #expect(h.store.state.profiles["default"]?.ownTheme == imported)
+    _ = try h.save()
+    let next = try h.reopen()
+    defer { try? next.database.close() }
+    #expect(next.state.profiles["default"]?.ownTheme == imported)
+    #expect(next.state.tabs.values.contains { $0.url == "https://theme.example/" && $0.pinnedAsRow == true })
+  }
+
+  @Test func omittedFailedThemePreservesOldThemeWhileTabsPersist() throws {
+    let h = try RelaunchWorkspace()
+    let old: JSONValue = ["stops": [["color": ["r": 0, "g": 0, "b": 1, "a": 1], "x": 0.5, "y": 0.5]], "mode": "auto"]
+    try h.call("updateProfile", ["default", ["theme": old]])
+    try h.call("importWorkspace", [["profileId": "default", "windows": [["tabs": [["url": "https://kept.example/", "title": "Kept"]], "group": "Imported"]]]])
+    _ = try h.save()
+    let next = try h.reopen()
+    defer { try? next.database.close() }
+    #expect(next.state.profiles["default"]?.ownTheme == old)
+    #expect(next.state.tabs.values.contains { $0.url == "https://kept.example/" })
+  }
+
   @Test func fullScreenOrderSurvivesRelaunch() throws {
     let clock = RelaunchClock()
     let h = try RelaunchWorkspace(clock: { clock.milliseconds })

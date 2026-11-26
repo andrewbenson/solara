@@ -132,3 +132,22 @@ test("a colour can go black, keeps its brightness and alpha while moved, and get
   assert.equal(withStopLightness(translucent, 0, 0.2).stops[0].color.a, 0.5);
   near(Object.values(withStopLightness(moved, 0, 0.6).stops[0].color).slice(0, 3), Object.values(padColor(0.2, 0.3)).slice(0, 3), 1e-9, "hue back");
 });
+
+test("the Swift import and TypeScript parser share complete structural and numeric goldens", () => {
+  const goldens = JSON.parse(readFileSync(new URL("arc-theme-goldens.json", fixtures), "utf8"));
+  function compare(actual, expected, path) {
+    if (typeof expected === "number") {
+      assert.equal(typeof actual, "number", path);
+      assert.ok(Math.abs(actual - expected) <= 1e-12, path);
+      return;
+    }
+    if (expected && typeof expected === "object") {
+      assert.equal(Array.isArray(actual), Array.isArray(expected), path);
+      assert.deepEqual(Object.keys(actual).sort(), Object.keys(expected).sort(), path);
+      for (const key of Object.keys(expected)) compare(actual[key], expected[key], `${path}.${key}`);
+      return;
+    }
+    assert.equal(actual, expected, path);
+  }
+  for (const golden of goldens) compare(parseArcTheme(JSON.stringify(golden.input)), golden.expected, golden.name);
+});

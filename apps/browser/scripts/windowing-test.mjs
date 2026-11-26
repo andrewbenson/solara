@@ -308,8 +308,19 @@ try {
     assert.ok(browser, "m1 is live");
     const w2 = await run(`return st().windows.w2.frame;`);
     const w1 = await run(`return st().windows.w1.frame;`);
-    const target = [w1[0] + 110 - w2[0], (w2[1] + w2[3]) - (w1[1] + w1[3] - 160)];
-    const path = `70,70;70,100;-300,150;${target[0] + 30},${target[1]};${target.join(",")};${target[0] + 2},${target[1] + 2};${target.join(",")}`;
+    const rowPoint = async (windowId, tabId) => {
+      const row = await run(`return expo.modules.SolaraHosted.sidebarRowFrame(${JSON.stringify(windowId)}, ${JSON.stringify(tabId)});`);
+      assert.ok(row?.width > 0 && row.height > 0, `${tabId} has a laid-out sidebar row in ${windowId}`);
+      const point = [Math.round(row.x + row.width / 2), Math.round(row.y + row.height / 2)];
+      const hit = await run(`return act(${JSON.stringify(windowId)}, "hit:${point.join(",")}");`);
+      assert.match(hit, /\bTabRowView\b/, `${tabId}'s sidebar row is hittable`);
+      return point;
+    };
+    const source = await rowPoint("w2", "m1");
+    const destination = await rowPoint("w1", "b1");
+    const target = [w1[0] + destination[0] - w2[0], w2[1] + w2[3] - w1[1] - w1[3] + destination[1]];
+    const path = [source, [source[0], source[1] + 30], [-300, source[1] + 80], [target[0] + 30, target[1]], target,
+      [target[0] + 2, target[1] + 2], target].map((point) => point.join(",")).join(";");
     const go = () => run(`return act("w2", "drag:${path}").then(() => settle(${7 * 12 * 16 + 1200}));`);
     const frames = noScreen ? (await go(), null) : await record(4.5, go);
     drop = { frames, w1, w2 };

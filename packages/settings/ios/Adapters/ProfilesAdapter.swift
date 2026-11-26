@@ -42,25 +42,15 @@ final class ProfilesAdapter: ProfilesServices {
   }
 
   func createProfile(name: String, color: ProfileColorValue, shareWith: String?) -> String {
-    guard let store = SettingsDirectWrites.store else {
-      SettingsJS.shared.fire("profiles.create", name, color.rawValue, jsonArg(shareWith))
-      return ""
+    guard !refuseInSafeMode(ProfileWriteSafeModeAlert.creationMessage) else { return "" }
+    let commit = writeProfile("createProfile") {
+      try store.model.writeProfile(SettingsWrites.createProfile(name: name, color: color.rawValue, shareWith: shareWith))
     }
-    return SettingsDirectWrites.write(store, SettingsWrites.createProfile(name: name, color: color.rawValue, shareWith: shareWith))?.result?.string ?? ""
+    return commit?.result?.string ?? ""
   }
 
   func updateProfile(_ id: String, _ patch: ProfilePatch) {
-    var arg: [String: Any] = [:]
-    if let name = patch.name { arg["name"] = name }
-    if let color = patch.color { arg["color"] = color.rawValue }
-    if let icon = patch.icon { arg["icon"] = jsonArg(icon) }
-    if let theme = patch.theme { arg["theme"] = theme.flatMap(Self.json) ?? NSNull() }
-    guard !arg.isEmpty else { return }
-    if SolaraCoreHost.safeMode {
-      SettingsJS.shared.fire("profiles.update", id, arg)
-      return
-    }
-    let store = SettingsDirectWrites.store
+    guard patch != ProfilePatch(), !refuseInSafeMode(ProfileWriteSafeModeAlert.editMessage) else { return }
     if let index = profiles.firstIndex(where: { $0.id == id }) {
       var profile = profiles[index]
       if let name = patch.name { profile.name = name }
@@ -69,12 +59,8 @@ final class ProfilesAdapter: ProfilesServices {
       if let theme = patch.theme { profile.theme = theme }
       profiles[index] = profile
     }
-    guard let store, let fields = Self.fields(patch) else {
-      SettingsJS.shared.fire("profiles.update", id, arg)
-      return
-    }
-    guard let command = ProfileThemeEdit.command(profileId: id, fields: fields, state: store.state) else { return }
-    SettingsDirectWrites.write(store, command)
+    guard let fields = Self.fields(patch) else { return }
+    writeProfile("updateProfile") { try store.model.editProfile(id, fields: fields) }
   }
 
   func deleteProfile(_ id: String, completion: @escaping @MainActor (Bool) -> Void) {
@@ -95,17 +81,33 @@ final class ProfilesAdapter: ProfilesServices {
   }
 
   func reorderProfiles(_ ids: [String]) {
-    if SolaraCoreHost.safeMode {
-      SettingsJS.shared.fire("profiles.reorder", ids)
-      return
-    }
+    guard !refuseInSafeMode(ProfileWriteSafeModeAlert.editMessage) else { return }
     let known = ids.compactMap { id in profiles.first { $0.id == id } }
     profiles = known + profiles.filter { !ids.contains($0.id) }
-    guard let store = SettingsDirectWrites.store else {
-      Task { _ = await SettingsAdapters.js("profiles.reorder", ids) }
-      return
+    writeProfile("reorderProfiles") { try store.model.writeProfile(SettingsWrites.reorderProfiles(ids)) }
+  }
+
+  private func refuseInSafeMode(_ message: String) -> Bool {
+    guard SolaraCoreHost.safeMode else { return false }
+    DispatchQueue.main.async {
+      let alert = NSAlert()
+      alert.messageText = ProfileWriteSafeModeAlert.title
+      alert.informativeText = message
+      alert.addButton(withTitle: "OK")
+      alert.addButton(withTitle: "Cancel")
+      alert.runModal()
     }
-    SettingsDirectWrites.write(store, SettingsWrites.reorderProfiles(ids))
+    return true
+  }
+
+  @discardableResult
+  private func writeProfile(_ name: String, _ write: () throws -> Commit?) -> Commit? {
+    do {
+      return try write()
+    } catch {
+      NSLog("[settings] %@ failed: %@", name, String(describing: error))
+      return nil
+    }
   }
 
   func setDefaultProfile(_ id: String) { store.set("defaultProfileId", id) }
@@ -205,11 +207,6 @@ final class ProfilesAdapter: ProfilesServices {
           let data = try? JSONSerialization.data(withJSONObject: value) else { return nil }
     return try? JSONDecoder().decode(ProfileThemeValue.self, from: data)
   }
-
-  static func json(_ theme: ProfileThemeValue) -> Any? {
-    guard let data = try? JSONEncoder().encode(theme) else { return nil }
-    return try? JSONSerialization.jsonObject(with: data)
-  }
 }
 
 @MainActor
@@ -251,24 +248,14 @@ enum SettingsWritesDev {
     var out: [String: Any] = ["direct": SettingsDirectWrites.store != nil && !viaJS]
     switch action {
     case "create":
+      guard !viaJS else { return #"{"error":"Create Profile is native only"}"# }
       let color = ProfileColorValue(rawValue: args.string("color") ?? "") ?? .blue
-      if viaJS {
-        out["id"] = await SettingsAdapters.js("profiles.create", args.string("name") ?? "", color.rawValue, jsonArg(args.string("shareWith"))) ?? NSNull()
-      } else {
-        out["id"] = adapter.createProfile(name: args.string("name") ?? "", color: color, shareWith: args.string("shareWith"))
-      }
+      out["id"] = adapter.createProfile(name: args.string("name") ?? "", color: color, shareWith: args.string("shareWith"))
     case "update":
+      guard !viaJS else { return #"{"error":"Update Profile is native only"}"# }
       let icon: String?? = args.keys.contains("icon") ? .some(args.string("icon")) : .none
       let patch = ProfilePatch(name: args.string("name"), color: args.string("color").flatMap(ProfileColorValue.init(rawValue:)), icon: icon)
-      if viaJS {
-        var arg: [String: Any] = [:]
-        if let name = patch.name { arg["name"] = name }
-        if let color = patch.color { arg["color"] = color.rawValue }
-        if let icon = patch.icon { arg["icon"] = jsonArg(icon) }
-        _ = await SettingsAdapters.js("profiles.update", id, arg)
-      } else {
-        adapter.updateProfile(id, patch)
-      }
+      adapter.updateProfile(id, patch)
     case "delete":
       if viaJS {
         do {
@@ -281,7 +268,8 @@ enum SettingsWritesDev {
         out["deleted"] = await withCheckedContinuation { (done: CheckedContinuation<Bool, Never>) in adapter.deleteProfile(id) { done.resume(returning: $0) } }
       }
     case "reorder":
-      if viaJS { _ = await SettingsAdapters.js("profiles.reorder", args.strings("ids")) } else { adapter.reorderProfiles(args.strings("ids")) }
+      guard !viaJS else { return #"{"error":"Reorder Profiles is native only"}"# }
+      adapter.reorderProfiles(args.strings("ids"))
     case "layout":
       guard !viaJS else { return #"{"error":"Tab layout is native only"}"# }
       out["direct"] = !NativeStoreHandle.frozen && NativeStoreHandle.ownsWorkspace && NativeStoreHandle.store != nil

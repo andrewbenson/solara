@@ -10,7 +10,7 @@ import Testing
     let before = store.state
     let ids = store.memory.ids
     do {
-      try store.dispatch(Command("createProfile", [["name": "Refused", "shareWith": "default"]]))
+      try store.dispatch(SettingsWrites.createProfile(name: "Refused", color: "blue", shareWith: "default"), origin: .native)
       Issue.record("Safe profile creation reported success")
     } catch let error as CommandError {
       #expect(error.description.contains("safe mode"))

@@ -3,6 +3,12 @@ import Testing
 
 @MainActor
 struct SafeProfileEditsTests {
+  @Test func safeProfileWriteAlertsRetainTheirCopy() {
+    #expect(ProfileWriteSafeModeAlert.title == "Safe Mode")
+    #expect(ProfileWriteSafeModeAlert.creationMessage == "New profiles cannot be saved in safe mode. Open Solara normally to create one and keep its bookmarks, passwords and Live folders.")
+    #expect(ProfileWriteSafeModeAlert.editMessage == "Profile edits can't be saved in safe mode while the saved session and launch appearance are kept unchanged. Open Solara normally to edit profiles.")
+  }
+
   @Test(arguments: ["name", "icon", "preset", "theme", "arc", "order"])
   func safeProfileEditsExplainRefusalBeforeChangingTheSettingsModel(action: String) {
     let store = FakeSettingsStore()

@@ -16,6 +16,7 @@ final class FakeProfilesServices: ProfilesServices {
   var arcChoices: [ArcThemeChoice] = []
   var heldKeyLook = false
   var createdIds = 0
+  var acceptsUpdates = true
 
   init(store: FakeSettingsStore, profiles: [ProfileSummary] = ProfilesFixture.profiles) {
     self.store = store
@@ -44,7 +45,7 @@ final class FakeProfilesServices: ProfilesServices {
   }
 
   func updateProfile(_ id: String, _ patch: ProfilePatch) {
-    guard let index = profiles.firstIndex(where: { $0.id == id }) else { return }
+    guard acceptsUpdates, let index = profiles.firstIndex(where: { $0.id == id }) else { return }
     if let name = patch.name { profiles[index].name = name }
     if let color = patch.color { profiles[index].color = color }
     if let icon = patch.icon { profiles[index].icon = icon }
@@ -200,6 +201,13 @@ struct ProfilesPaneTests {
     #expect(services.calls.isEmpty)
     #expect(model.updateName("work", " Office ") == "Office")
     #expect(model.profile("work")?.name == "Office")
+  }
+
+  @Test func renameKeepsTheSubmittedDraftWithoutACommittedUpdate() {
+    let (model, services, _) = make()
+    services.acceptsUpdates = false
+    #expect(model.updateName("work", " Office ") == "Office")
+    #expect(model.profile("work")?.name == "Work")
   }
 
   @Test func clearDataClearsHistoryThenEngineData() async {

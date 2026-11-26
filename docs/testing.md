@@ -760,3 +760,21 @@ Run `node packages/settings/scripts/settings-utilities-test.mjs <Debug app> <scr
 with matching native and JS builds in window layouts 0 and 1. The layout check calls
 `devSettingsWrites("layout")` for both choices and asserts each window's effective
 layout from the native Store snapshot. The `viaJS` route must return the retirement error.
+
+## E8 Settings profile writes
+
+Run `SettingsWritesTests`, `SafeProfileCreationTests`, `SafeProfileEditsTests`,
+`ProfilesPaneTests` and `ProfileIconTests` in SolaraKit with `-Xswiftc -DSOLARA_PROBES`.
+These checks cover shared and independent creation, explicit profile edits, icon
+omission and clearing, concurrent edits and reorder, stale Settings projections,
+and Safe Mode refusal. Frozen or unowned stores refuse the write. The pane keeps
+the submitted rename draft, and the Settings adapter retains its pending profile
+summaries until the underlying model changes.
+
+Run `node packages/settings/scripts/settings-utilities-test.mjs <Debug app> <scratch directory>`
+with matching API 84 native and JS builds in window layouts 0 and 1. The
+`devSettingsWrites` profile legs check native create, rename and recolor, reorder,
+unchanged window selections, and the three `viaJS` retirement replies. In Safe Mode,
+submit Create Profile through the pane and verify that the sheet dismisses and the
+native Safe Mode alert appears. Check the Profiles pane in settings-shift and run
+pages-test's Create a Profile legs, profile-dots-launch, config-files and lazy-profiles.

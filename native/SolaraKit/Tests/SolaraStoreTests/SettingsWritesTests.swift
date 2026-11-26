@@ -205,6 +205,99 @@ import Testing
     #expect(SettingsWrites.directStore == nil)
   }
 
+  @MainActor @Test func settingsProfileCreationProjectsSharedAndIndependentProfilesImmediately() throws {
+    let s = store()
+    let window = try s.dispatch(Command("createWindow", [[:]]))
+    let before = window.state
+    let model = SettingsModel(store: s)
+
+    try withLayoutStore(s) {
+      let sharedCommit = try model.writeProfile(SettingsWrites.createProfile(name: "  Work  ", color: "blue", shareWith: "default"))
+      let shared = try #require(sharedCommit?.result?.string)
+      #expect(sharedCommit?.origin == .native)
+      #expect(sharedCommit?.effects == [.profileCreated(profileId: shared, sharedWith: "default")])
+      #expect(model.profiles.map(\.id) == ["default", shared])
+      #expect(model.profiles.last?.name == "Work")
+      #expect(model.profiles.last?.color == "blue")
+      #expect(model.profiles.last?.dataId == "default")
+
+      let independentCommit = try model.writeProfile(SettingsWrites.createProfile(name: "  ", color: "green", shareWith: "missing"))
+      let independent = try #require(independentCommit?.result?.string)
+      #expect(independentCommit?.effects == [.profileCreated(profileId: independent, sharedWith: nil)])
+      #expect(model.profiles.map(\.id) == ["default", shared, independent])
+      #expect(model.profiles.last?.name == "Profile 3")
+      #expect(model.profiles.last?.dataId == nil)
+    }
+    #expect(s.state.windows == before.windows)
+    #expect(s.state.tabs == before.tabs)
+    #expect(s.state.ui.focusedWindowId == before.ui.focusedWindowId)
+    #expect(s.state.settings.defaultProfileId == before.settings.defaultProfileId)
+  }
+
+  @MainActor @Test func settingsProfileWritesRefuseAnUnownedFrozenOrReplacedStore() throws {
+    let s = store()
+    let model = SettingsModel(store: s)
+    let replacement = store()
+    let before = s.state
+    try withLayoutStore(s) {
+      NativeStoreHandle.ownsWorkspace = false
+      let unowned = try model.writeProfile(SettingsWrites.createProfile(name: "Work", color: "blue", shareWith: nil))
+      #expect(unowned == nil)
+      NativeStoreHandle.ownsWorkspace = true
+      NativeStoreHandle.markFrozen()
+      let frozen: Commit?
+      do {
+        defer { NativeStoreHandle.thawForTests() }
+        frozen = try model.editProfile("default", fields: ["name": "Refused"])
+      }
+      #expect(frozen == nil)
+      NativeStoreHandle.resolve = { replacement }
+      let replaced = try model.writeProfile(SettingsWrites.reorderProfiles(["default"]))
+      #expect(replaced == nil)
+    }
+    #expect(s.state == before)
+    #expect(s.rev == 0)
+    #expect(replacement.rev == 0)
+  }
+
+  @MainActor @Test func profileEditsAndReordersKeepTheLatestProjection() throws {
+    let s = store()
+    let added = try s.dispatch(SettingsWrites.createProfile(name: "Work", color: "blue", shareWith: nil))
+    let id = try #require(added.result?.string)
+    let model = SettingsModel(store: s)
+    let stale = try s.dispatch(SettingsWrites.updateProfile(id, ["name": "Earlier"]), origin: .native)
+
+    try withLayoutStore(s) {
+      let edit = try model.editProfile(id, fields: ["name": "Office", "color": "green"])
+      let reorder = try model.writeProfile(SettingsWrites.reorderProfiles(["unknown", id]))
+      #expect(edit?.origin == .native)
+      #expect(reorder?.origin == .native)
+      model.adopt(stale)
+      #expect(model.profiles.map(\.id) == [id, "default"])
+      #expect(model.profiles.first?.name == "Office")
+      #expect(model.profiles.first?.color == "green")
+      let missing = try model.editProfile("missing", fields: ["name": "Nobody"])
+      #expect(missing == nil)
+    }
+  }
+
+  @Test func concurrentNativeProfileEditsAndReordersPreserveBothWrites() async throws {
+    let s = store()
+    let added = try s.dispatch(SettingsWrites.createProfile(name: "Work", color: "blue", shareWith: nil))
+    let id = try #require(added.result?.string)
+    let before = s.state
+
+    async let edit = s.dispatch(SettingsWrites.updateProfile(id, ["name": "Office", "color": "green"]), origin: .native)
+    async let reorder = s.dispatch(SettingsWrites.reorderProfiles([id, "unknown"]), origin: .native)
+    let (edited, reordered) = try await (edit, reorder)
+
+    #expect(edited.rev != reordered.rev)
+    #expect(s.state.profileOrder == [id, "default"])
+    #expect(s.state.profiles[id]?.name == "Office")
+    #expect(s.state.profiles[id]?.color == "green")
+    #expect(s.state.settings.defaultProfileId == before.settings.defaultProfileId)
+  }
+
   private func opening(_ s: Store, focused: @escaping (String) -> Void = { _ in }) -> SettingsOpening {
     SettingsOpening(state: { s.state }, run: { try? s.dispatch($0) }, focus: focused)
   }

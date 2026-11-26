@@ -104,6 +104,12 @@ public protocol ProfilesServices: AnyObject {
   func hapticTick()
 }
 
+public enum ProfileWriteSafeModeAlert {
+  public static let title = "Safe Mode"
+  public static let creationMessage = "New profiles cannot be saved in safe mode. Open Solara normally to create one and keep its bookmarks, passwords and Live folders."
+  public static let editMessage = "Profile edits can't be saved in safe mode while the saved session and launch appearance are kept unchanged. Open Solara normally to edit profiles."
+}
+
 public struct ProfileDeletePrompt: Identifiable, Hashable, Sendable {
   public var id: String { profileId }
   public let profileId: String
@@ -212,7 +218,7 @@ public final class ProfilesPaneModel: SettingsPaneProvider {
   func refuseProfileEdit(_ id: String) -> Bool {
     guard safeMode else { return false }
     deletePrompt = ProfileDeletePrompt(
-      profileId: id, title: "Safe Mode", message: "Profile edits can't be saved in safe mode while the saved session and launch appearance are kept unchanged. Open Solara normally to edit profiles.",
+      profileId: id, title: ProfileWriteSafeModeAlert.title, message: ProfileWriteSafeModeAlert.editMessage,
       fromDetails: false, canDelete: false)
     return true
   }

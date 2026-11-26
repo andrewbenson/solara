@@ -30,11 +30,11 @@ import Testing
     let id = try #require(original.profileOrder.first)
     let value: JSONValue = field == "name" ? "Renamed" : field == "color" ? "green" : field == "icon" ? "star" : ["mode": "dark", "stops": [["color": ["r": 0.1, "g": 0.2, "b": 0.3, "a": 1]]]]
     let command = field == "order"
-      ? Command("reorderProfiles", [JSONValue(Array(original.profileOrder.reversed()))])
-      : Command("updateProfile", [.string(id), .object(JSONObject([(field, value)]))])
+      ? SettingsWrites.reorderProfiles(Array(original.profileOrder.reversed()))
+      : SettingsWrites.updateProfile(id, JSONObject([(field, value)]))
     var refusal: String?
     do {
-      try safeStore.dispatch(command)
+      try safeStore.dispatch(command, origin: .native)
     } catch let error as CommandError {
       refusal = String(describing: error)
     }

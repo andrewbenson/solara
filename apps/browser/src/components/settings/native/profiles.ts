@@ -4,19 +4,13 @@ import { pruneProfileFavicons } from "../../../lib/favicons";
 import { sanitizeTheme } from "../../../lib/profileTheme";
 import { useBrowser, type BrowserState } from "../../../store/browser";
 import { refuseSafeHistoryDeletion } from "../../../store/safeLibraryEdits";
-import type { Profile, ProfileColor, ProfileTheme } from "../../../store/types";
+import type { ProfileTheme } from "../../../store/types";
 import { adoptProfileTheme } from "../../../sync/engine";
 import { parseArcTheme } from "../../../lib/arcTheme";
 import { importModule } from "../../import/module";
 
-type ProfilePatch = Partial<Pick<Profile, "name" | "color" | "icon" | "theme">>;
-
 export const profilesHandlers: Record<string, SettingsHandler> = {
-  "profiles.create": (name: string, color: ProfileColor, shareWith: string | null) =>
-    useBrowser.getState().createProfile({ name, color, shareWith }),
-  "profiles.update": (id: string, patch: ProfilePatch) => useBrowser.getState().updateProfile(id, patch),
   "profiles.delete": (id: string) => useBrowser.getState().deleteProfile(id),
-  "profiles.reorder": (ids: string[]) => useBrowser.getState().reorderProfiles(ids),
   "profiles.clearHistory": (profileId: string, since: number | null) => useBrowser.getState().clearHistory(profileId, since ?? undefined),
   "profiles.pruneFavicons": (profileId: string) => pruneProfileFavicons(profileId),
   "profiles.clearBrowsingData": (profile: string, kinds: BrowsingDataType[], since: number | null) => {

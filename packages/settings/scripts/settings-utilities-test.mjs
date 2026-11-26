@@ -27,6 +27,7 @@ let app;
 const writesSource = (action, args = {}) =>
   `globalThis.expo.modules.SolaraSettings.devSettingsWrites(${JSON.stringify(action)}, ${JSON.stringify(JSON.stringify(args))}).then(JSON.parse)`;
 const writes = (action, args) => app.eval(`return ${writesSource(action, args)}`);
+const nativeState = () => app.eval("return JSON.parse(expo.modules.SolaraStoreAdapter.snapshot()).data");
 const fixtureURL = (name) => `data:text/plain,${name}`;
 const actions = [
   ["openURLs", { urls: [fixtureURL("settings-a"), fixtureURL("settings-b")] }, "Open URLs"],
@@ -37,6 +38,9 @@ const actions = [
   ["installCli", {}, "CLI control"],
   ["cliStatus", {}, "CLI control"],
   ["layout", { layout: "top" }, "Tab layout"],
+  ["create", { name: "Retired", color: "blue" }, "Create Profile"],
+  ["update", { id: "default", name: "Retired" }, "Update Profile"],
+  ["reorder", { ids: ["default"] }, "Reorder Profiles"],
 ];
 
 function assertNewTabs(before, after, window, expectedURLs) {
@@ -78,6 +82,58 @@ try {
     for (const [action, args, label] of actions) {
       assert.deepEqual(await writes(action, { ...args, viaJS: true }), { error: `${label} is native only` });
     }
+  });
+
+  let workId, sharedId;
+  await rep.check("create appends independent and shared profiles in the native workspace", async () => {
+    const before = await nativeState();
+    const work = await writes("create", { name: "  Settings Work  ", color: "blue" });
+    assert.equal(work.direct, true);
+    assert.ok(work.id);
+    workId = work.id;
+    const shared = await writes("create", { name: " ", color: "green", shareWith: workId });
+    assert.equal(shared.direct, true);
+    assert.ok(shared.id && shared.id !== workId);
+    sharedId = shared.id;
+    const after = await nativeState();
+    assert.deepEqual(after.profileOrder, [...before.profileOrder, workId, sharedId]);
+    assert.equal(after.profiles[workId]?.name, "Settings Work");
+    assert.equal(after.profiles[workId]?.color, "blue");
+    assert.equal(after.profiles[workId]?.dataId ?? null, null);
+    assert.equal(after.profiles[sharedId]?.name, `Profile ${before.profileOrder.length + 2}`);
+    assert.equal(after.profiles[sharedId]?.color, "green");
+    assert.equal(after.profiles[sharedId]?.dataId, workId);
+    assert.deepEqual(shared.windows, initial.windows);
+    assert.deepEqual(shared.tabs, initial.tabs);
+    assert.equal(shared.focusedWindow, initial.focusedWindow);
+    assert.equal(after.settings.defaultProfileId, before.settings.defaultProfileId);
+  });
+
+  await rep.check("update renames and recolors only the named native profile", async () => {
+    assert.ok(workId, "create fixture");
+    const before = await nativeState();
+    const out = await writes("update", { id: workId, name: "Settings Office", color: "orange" });
+    assert.equal(out.direct, true);
+    const after = await nativeState();
+    assert.deepEqual(after.profileOrder, before.profileOrder);
+    assert.deepEqual(after.profiles, {
+      ...before.profiles,
+      [workId]: { ...before.profiles[workId], name: "Settings Office", color: "orange" },
+    });
+  });
+
+  await rep.check("reorder moves known profiles and appends the omitted ones in native order", async () => {
+    assert.ok(workId && sharedId, "create fixtures");
+    const before = await nativeState();
+    const out = await writes("reorder", { ids: [sharedId, "missing-profile", workId] });
+    assert.equal(out.direct, true);
+    const after = await nativeState();
+    assert.deepEqual(after.profileOrder, [sharedId, workId, ...before.profileOrder.filter((id) => id !== sharedId && id !== workId)]);
+    assert.deepEqual(after.profiles, before.profiles);
+    assert.deepEqual(out.windows, initial.windows);
+    assert.deepEqual(out.tabs, initial.tabs);
+    assert.equal(out.focusedWindow, initial.focusedWindow);
+    assert.equal(after.settings.defaultProfileId, before.settings.defaultProfileId);
   });
 
   for (const [action, args] of actions.slice(0, 3)) {
@@ -140,7 +196,6 @@ try {
       }
       return { explicitTop, privateWindow, little, explicitSidebar, lastInherited };
     `);
-    const nativeState = () => app.eval("return JSON.parse(expo.modules.SolaraStoreAdapter.snapshot()).data");
     const before = await nativeState();
     assert.equal(before.windows[ids.privateWindow]?.incognito, true);
     assert.equal(before.windows[ids.little]?.kind, "small");

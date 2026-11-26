@@ -4,6 +4,7 @@ Ideas the owner wants kept, not scheduled. Newest first. Move an item into a pla
 
 | Added | Item | Priority | Notes |
 |---|---|---|---|
+| 2026-11-26 | Settings: after a refused profile edit or reorder, the pane keeps showing the pending name, colour or order until the next change; fix after the port | Low | E8 slice 4 preserves the current Settings display. |
 | 2026-11-26 | Tests: `StripPeekTests.postedAppKitMouseMovesShowHoldAndDismissThePeekWithoutAPointerOverride` fails at `!view.live` (`StripPeekTests.swift:142`) when someone moves the real pointer on the Hill Studio desktop | Low | Post the synthetic mouse moves to a window the real pointer cannot reach |
 | 2026-11-26 | Tests: `packages/sync` test `PairingCoordinatorTests.testReplacementMailboxUsesActualNewFolderAndRejectsWrongCID` (`PairingCoordinatorTests.swift:1958`) fails in about 3.7 s while another Swift test loads the machine | Low | Passes when run alone (557/557) |
 | 2026-11-26 | Tests: in the full parallel SolaraKit run, main-actor listener tasks in the Calendar, Live Folders and Sync pane tests start 50+ s late, queued behind other UI tests (the pane tests now allow 3 minutes). Find which tests hold the main actor that long, and whether app code does the same under load | Low | ntp49/codex/swdiag/result.md on the Hill Studio |

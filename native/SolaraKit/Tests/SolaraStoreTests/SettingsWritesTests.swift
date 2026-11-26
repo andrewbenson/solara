@@ -84,7 +84,7 @@ import Testing
     try run()
   }
 
-  @MainActor @Test func chooseTabLayoutUsesOriginalWindowsAndTogglesInOrder() throws {
+  @MainActor @Test func choosingTopPreservesInheritedAndExplicitLayouts() throws {
     let s = store()
     let inherited = try #require(try s.dispatch(Command("createWindow", [[:]])).result?.string)
     let explicitTop = try #require(try s.dispatch(Command("createWindow", [[:]])).result?.string)
@@ -101,17 +101,17 @@ import Testing
     }
 
     #expect(s.state.settings.string("tabLayout") == "top")
-    #expect(s.state.windows[inherited]?.tabLayout == "sidebar")
+    #expect(s.state.windows[inherited]?.tabLayout == nil)
     #expect(s.state.windows[explicitTop]?.tabLayout == "top")
     #expect(s.state.windows[privateWindow]?.incognito == true)
-    #expect(s.state.windows[privateWindow]?.tabLayout == "top")
+    #expect(s.state.windows[privateWindow]?.tabLayout == nil)
     #expect(s.state.windows[little]?.isSmall == true)
-    #expect(s.state.windows[little]?.tabLayout == "sidebar")
-    #expect(s.state.windows[explicitSidebar]?.tabLayout == "top")
-    #expect(s.state.windows[lastInherited]?.tabLayout == "sidebar")
+    #expect(s.state.windows[little]?.tabLayout == nil)
+    #expect(s.state.windows[explicitSidebar]?.tabLayout == "sidebar")
+    #expect(s.state.windows[lastInherited]?.tabLayout == nil)
   }
 
-  @MainActor @Test func choosingTheCurrentDefaultTogglesOnlyDifferingOverrides() throws {
+  @MainActor @Test func choosingTheCurrentDefaultPreservesDifferingOverrides() throws {
     let s = store()
     let inherited = try #require(try s.dispatch(Command("createWindow", [[:]])).result?.string)
     let top = try #require(try s.dispatch(Command("createWindow", [[:]])).result?.string)
@@ -123,8 +123,30 @@ import Testing
     }
 
     #expect(s.state.settings.string("tabLayout") == "sidebar")
-    #expect(s.state.windows[top]?.tabLayout == "sidebar")
+    #expect(s.state.windows[top]?.tabLayout == "top")
     #expect(s.state.windows[inherited]?.tabLayout == nil)
+  }
+
+  @MainActor @Test func sixWindowsKeepFollowingTheirOwnOrGlobalLayoutAcrossChoices() throws {
+    let s = store()
+    let ids = try (0..<6).map { _ in
+      try #require(try s.dispatch(Command("createWindow", [[:]])).result?.string)
+    }
+    try s.dispatch(Command("setWindowLayout", [.string(ids[1]), "top"]))
+    try s.dispatch(Command("setWindowLayout", [.string(ids[4]), "sidebar"]))
+    let overrides: [String?] = [nil, "top", nil, nil, "sidebar", nil]
+
+    try withLayoutStore(s) {
+      for layout in ["top", "sidebar"] {
+        let choseLayout = try SettingsWrites.chooseTabLayout(layout)
+        #expect(choseLayout)
+        let state = s.state
+        #expect(state.settings.string("tabLayout") == layout)
+        #expect(ids.map { state.windows[$0]?.tabLayout } == overrides)
+        #expect(ids.map { state.windows[$0]?.tabLayout ?? state.settings.string("tabLayout") } ==
+                [layout, "top", layout, layout, "sidebar", layout])
+      }
+    }
   }
 
   @MainActor @Test func aFileOwnedLayoutRefusesTheSettingsChoice() throws {

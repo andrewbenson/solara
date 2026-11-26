@@ -751,15 +751,17 @@ CLI status transition from an isolated installer fixture.
 ## E8 Settings Tabs layout choice
 
 Run `SettingsWritesTests`, `SettingsModelTests` and `SettingsRevealTests` in SolaraKit
-with `-Xswiftc -DSOLARA_PROBES`. The layout tests pin the order-dependent result of the
-previous Settings action for inherited and explicit layouts, including private and
-Little Solara window state. They also cover a file-owned layout, frozen and unowned
+with `-Xswiftc -DSOLARA_PROBES`. The layout tests verify that inherited windows follow
+both global choices while explicit layouts stay fixed, including coverage of private
+and Little Solara windows. They also cover a file-owned layout, frozen and unowned
 stores, and an owned store in safe mode.
 
 Run `node packages/settings/scripts/settings-utilities-test.mjs <Debug app> <scratch directory>`
 with matching native and JS builds in window layouts 0 and 1. The layout check calls
-`devSettingsWrites("layout")` for both choices and asserts each window's effective
-layout from the native Store snapshot. The `viaJS` route must return the retirement error.
+`devSettingsWrites("layout")` for both choices and checks the global value and every
+window's override in the native Store snapshot. In native window layout 1 it also
+checks the running window shells for the expected tab strip. The `viaJS` route must
+return the retirement error.
 
 ## E8 Settings profile writes
 

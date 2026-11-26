@@ -199,27 +199,33 @@ try {
     const before = await nativeState();
     assert.equal(before.windows[ids.privateWindow]?.incognito, true);
     assert.equal(before.windows[ids.little]?.kind, "small");
-    assert.deepEqual(new Map(Object.values(before.windows).map((w) => [w.id, w.tabLayout ?? null])), new Map([
+    const overrides = new Map([
       [window.id, null],
       [ids.explicitTop, "top"],
       [ids.privateWindow, null],
       [ids.little, null],
       [ids.explicitSidebar, "sidebar"],
       [ids.lastInherited, null],
-    ]));
+    ]);
+    const windowOverrides = (state) => new Map(Object.values(state.windows).map((w) => [w.id, w.tabLayout ?? null]));
+    assert.deepEqual(windowOverrides(before), overrides);
 
     for (const layout of ["top", "sidebar"]) {
       assert.equal((await writes("layout", { layout })).direct, true);
       const state = await nativeState();
       assert.equal(state.settings.tabLayout, layout);
-      assert.deepEqual(new Map(Object.values(state.windows).map((w) => [w.id, w.tabLayout ?? state.settings.tabLayout])), new Map([
-        [window.id, "sidebar"],
-        [ids.explicitTop, layout],
-        [ids.privateWindow, layout],
-        [ids.little, "sidebar"],
-        [ids.explicitSidebar, layout],
-        [ids.lastInherited, "sidebar"],
-      ]));
+      assert.deepEqual(windowOverrides(state), overrides);
+      if (process.env.SOLARA_NATIVE_WINDOW_LAYOUT === "1") {
+        const expected = [[window.id, layout], [ids.lastInherited, layout], [ids.explicitTop, "top"], [ids.explicitSidebar, "sidebar"]];
+        await app.ready({
+          timeout: 10000,
+          test: `const expected = ${JSON.stringify(expected)};
+            const shell = expo.modules.SolaraWindowShell;
+            return Promise.all(expected.map(([id]) => shell.describe(id).then(JSON.parse))).then(windows =>
+              windows.every((w, i) => w?.nativeLayout && w.layout?.current &&
+                Array.isArray(w.topStrip) === (expected[i][1] === "top")));`,
+        });
+      }
     }
   });
 } finally {

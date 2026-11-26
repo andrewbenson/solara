@@ -28,14 +28,8 @@ public enum SettingsWrites {
     guard layout == "sidebar" || layout == "top",
           !NativeStoreHandle.frozen, NativeStoreHandle.ownsWorkspace, let store = NativeStoreHandle.store else { return false }
     return try store.sequence {
-      let state = store.state
-      guard !NativeStoreHandle.frozen, state.settings.fileSource("tabLayout") == nil else { return false }
-      let choose = Command("updateSettings", [["tabLayout": .string(layout)]])
-      let current = state.settings.string("tabLayout")
-      let toggles = state.windows.values
-        .filter { ($0.tabLayout ?? current) != layout }
-        .map { Command("toggleTabLayout", [.string($0.id)]) }
-      try store.dispatch([choose] + toggles + [choose])
+      guard !NativeStoreHandle.frozen, store.state.settings.fileSource("tabLayout") == nil else { return false }
+      try store.dispatch(Command("updateSettings", [["tabLayout": .string(layout)]]))
       return true
     }
   }

@@ -116,6 +116,8 @@ public final class PageHostBinding {
 @MainActor
 public final class PageIssuer {
   public static var shared: PageIssuer?
+  public static var consumeLifecycleEvent: (@MainActor (PageIssuer, PageHostBinding, String, JSONValue) -> Bool)?
+  public static var lifecycleEvent: (@MainActor (PageIssuer, PageHostBinding, String, JSONValue) -> Void)?
   private struct RuntimeOwner {
     weak var owner: AnyObject?
     let id: UUID
@@ -393,6 +395,8 @@ public final class PageIssuer {
   public func reserveEvent(_ binding: PageHostBinding, name: String, payload: JSONValue) -> Int? {
     let sequence = reserveEventInScope(binding, name: name, payload: payload)
     if sequence != nil, name == "onNowPlaying" { NowPlayingStore.shared.report(tabId: binding.tabId, NowPlayingReport(json: payload)) }
+    if sequence != nil, Self.consumeLifecycleEvent?(self, binding, name, payload) == true { return nil }
+    if sequence != nil { Self.lifecycleEvent?(self, binding, name, payload) }
     return sequence
   }
 

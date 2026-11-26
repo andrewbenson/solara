@@ -1,3 +1,4 @@
+import { onPanePopoversChanged, panePopovers, setPanePopover } from "@solara/settings";
 import type { AutofillPrompt, BlockedPopup, CrashInfo, ExternalAppRequest, MediaAccess, NavigationState, PageEngine, PasswordPrompt, PermissionRequest, SecurityInfo } from "@solara/solaracore";
 import { create } from "zustand";
 import { useBrowser } from "../../store/browser";
@@ -55,7 +56,8 @@ type Store = {
   popover: Record<string, "siteControls" | "popups" | "zoom" | null>;
 };
 
-export const usePages = create<Store>()(() => ({ pages: {}, browsers: {}, popover: {} }));
+export const usePages = create<Store>()(() => ({ pages: {}, browsers: {}, popover: panePopovers() }));
+onPanePopoversChanged((popover) => usePages.setState({ popover }));
 
 export function patchPage(tabId: string, patch: Partial<PageState>) {
   usePages.setState((s) => {
@@ -87,7 +89,7 @@ export function setBrowserId(tabId: string, browserId: number) {
 export const tabForBrowser = (browserId: number): string | undefined => usePages.getState().browsers[browserId];
 
 export function setPopover(tabId: string, popover: Store["popover"][string]) {
-  usePages.setState((s) => ({ popover: { ...s.popover, [tabId]: popover } }));
+  usePages.setState({ popover: setPanePopover(tabId, popover) });
 }
 
 export function useFullscreenTab(windowId: string): string | undefined {

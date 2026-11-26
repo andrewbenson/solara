@@ -218,7 +218,7 @@ try {
     await rep.check(`${panes}-peek-draws-site-controls-once-every-frame`, async () => {
       await run(`S().updateSettings({ addressBar: "sidebar" }); if (S().windows.w1.sidebarOpen) S().toggleSidebar("w1"); return true;`);
       await sleep(1200);
-      await run(`acLayout.pages.setState((s) => ({ popover: { ...s.popover, a: "siteControls" } })); return true;`);
+      await run(`acLayout.pages.setState({ popover: expo.modules.SolaraSettings.setPanePopover("a", "siteControls") }); return true;`);
       await until("site controls open", `return openControls() >= 1 || null;`);
       const counts = await run(`
         const out = [];
@@ -230,7 +230,7 @@ try {
         const beside = () => acPerf.findFibers("BesidePeekPopovers", 10).length;
         const sample = (n) => n ? frame().then(() => { out.push([openControls(), beside()]); return sample(n - 1); }) : Promise.resolve(out);
         return show().then(() => sample(rnPeek ? 30 : 90)).then((o) => hide().then(() => o));`);
-      await run(`acLayout.pages.setState((s) => ({ popover: { ...s.popover, a: null } })); return true;`);
+      await run(`acLayout.pages.setState({ popover: expo.modules.SolaraSettings.setPanePopover("a", null) }); return true;`);
       const bad = counts.filter(([n]) => n !== 1);
       if (bad.length) throw new Error(`Site Controls drawn ${JSON.stringify(counts.map(([n]) => n))} times per frame`);
       const besideFrames = counts.filter(([, b]) => b > 0).length;

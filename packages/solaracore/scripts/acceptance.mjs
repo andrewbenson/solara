@@ -986,7 +986,7 @@ const startVideo = async (tabId, audio) => {
   return t;
 };
 const pipByHand = async (tabId) => {
-  await evalApp(`ac.pageState.setState((s) => ({ popover: { ...s.popover, ${JSON.stringify(tabId)}: "siteControls" } })); return true`);
+  await evalApp(`ac.pageState.setState({ popover: expo.modules.SolaraSettings.setPanePopover(${JSON.stringify(tabId)}, "siteControls") }); return true`);
   return until("a click on Site Controls › Picture in Picture", async () => {
     const click = await evalApp(`return ac.shell.devClick(${JSON.stringify(mainWindow)}, { label: "Picture in Picture", queued: true, wait: 300 })`);
     return click?.error ? null : click;

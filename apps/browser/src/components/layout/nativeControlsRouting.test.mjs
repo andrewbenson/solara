@@ -73,16 +73,16 @@ test("toolbar and site panel keep their native controls when toolbar capability 
   assert.equal(SiteControls({ tabId: "a", open: false, top: 8 }), null);
 });
 
-test("inline zoom keeps native controls and forwards reset, steps and dismissal", () => {
+test("inline zoom supplies theme and placement to the native lifecycle owner", () => {
   const f = fixture();
-  const { ZoomPopover } = compile("apps/browser/src/components/site/ZoomControls.tsx", f.modules);
+  const { ZoomPopover } = compile("apps/browser/src/components/site/ZoomHost.tsx", f.modules);
   const view = ZoomPopover({ tabId: "a", top: 8, right: 8 });
   assert.equal(view.type, "NativePanelView");
   assert.deepEqual(JSON.parse(view.props.state).popover, { width: 236, top: 8, left: null, right: 8 });
   f.effects.length = 0;
-  for (const step of [-4, 0, 7]) view.props.onPanelEvent({ nativeEvent: { kind: "step", step } });
-  view.props.onPanelEvent({ nativeEvent: { kind: "dismiss" } });
-  assert.deepEqual(f.effects, [["zoom", -1], ["zoom", 0], ["zoom", 1], ["popover", "a", null]]);
+  assert.equal(view.props.onPanelEvent, undefined);
+  assert.equal(JSON.parse(view.props.state).tabId, "a");
+  assert.deepEqual(f.effects, []);
 });
 
 test("inline history forwards native modifier actions and keeps background opens visible", () => {

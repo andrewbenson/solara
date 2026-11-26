@@ -23,7 +23,6 @@ import { patchPage, pageOf, setBrowserId, setPopover, usePages } from "./layout/
 import { openFromPage } from "./layout/openFromPage";
 import { closeFolderPanelIn } from "./sidebar/tileFolderUi";
 import { answerExternalApp, shouldPromptForPopups, showAutofillPrompt, showPasswordPrompt } from "./site/Prompts";
-import { searchSelection, setPageSelection, type PageSelection } from "./site/selection";
 import { requestDisplayMedia } from "./media/SharePicker";
 import { setNowPlaying, setPictureInPictureState } from "./media/state";
 import { noteScroll, revealToolbar } from "./layout/toolbarAutoHide";
@@ -297,7 +296,6 @@ export function pageEventHandlers(session: PageSession): PageEventHandlers {
         if (pageOf(tabId).externalApp && hostOf(url) !== hostOf(lastPage)) answerExternalApp(tabId, false);
         dismissPermissions(tabId);
         setPopover(tabId, null);
-        setPageSelection(tabId, null);
         clearEngineOffer(tabId);
         patchPage(tabId, { popups: [], passwordPrompt: null, crashed: null, status: "" });
         revealToolbar(tabId);
@@ -377,14 +375,12 @@ export function pageEventHandlers(session: PageSession): PageEventHandlers {
       if (!isQuitting()) store().closeTabs([tabId], { lastClosesWindow: true, windowClosedByChrome: withWindow });
     },
     onCommand: ({ command, text, modifiers }) => {
-      if (command === "search") searchSelection(tabId, text, modifiers);
-      else if (command === "copyLinkToHighlight") void nativeWorkspaceCommand("copyQuoteLink", JSON.stringify({ tabId }), null);
+      if (command === "copyLinkToHighlight") void nativeWorkspaceCommand("copyQuoteLink", JSON.stringify({ tabId }), null);
       else if (command === "escape" && usePages.getState().popover[tabId]) setPopover(tabId, null);
       else if (command === "escape" && !closeFolderPanelIn(tab()?.windowId) && !closePeekOnEscape(tabId)) closeLittleSolaraOnEscape(tabId);
     },
     onPageMessage: (kind, data) => {
-      if (kind === "selection") setPageSelection(tabId, data as PageSelection | null);
-      else if (kind === "scroll") noteScroll(tabId, data);
+      if (kind === "scroll") noteScroll(tabId, data);
       else if (kind === "drm") offerWebKit(tabId, data);
     },
     onDiscarded: (url) => {

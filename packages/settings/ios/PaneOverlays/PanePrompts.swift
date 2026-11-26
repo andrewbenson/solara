@@ -22,8 +22,6 @@ enum PanePrompts {
   private static var windows: [String: [String: Any]] = [:]
   private static var browsers = PaneBrowsers()
   private static var windowOfTab: [String: String] = [:]
-  private static var selectionShown: [String: PaneSelection] = [:]
-  private static var selectionGenerations: [String: Int] = [:]
   private static var engineRemember: [String: (site: String, on: Bool)] = [:]
   private static var cliShown: [String: Bool] = [:]
   private static var cliRevealed: Set<String> = []
@@ -63,7 +61,7 @@ enum PanePrompts {
   static func holds(_ windowId: String) -> Bool { !tabs(in: windowId) { $0.shown != PanePromptPage().shown }.isEmpty }
 
   static func draws(_ windowId: String) -> Bool {
-    if holds(windowId) || selectionShown.keys.contains(where: { TabPoolHost.shared.windowOf($0) == windowId }) { return true }
+    if holds(windowId) || !selections(in: windowId).isEmpty { return true }
     guard let window = windows[windowId] else { return false }
     let panes = window["panes"] as? [String: [String: Any]] ?? [:]
     if panes.values.contains(where: { $0["popups"] is [String: Any] || $0["engineOffer"] is [String: Any] }) { return true }
@@ -96,64 +94,29 @@ enum PanePrompts {
     }
     if name == "onPageGone" {
       browsers.gone(tabId)
-      let barShown = selectionShown.removeValue(forKey: tabId) != nil
-      selectionGenerations[tabId] = nil
       engineRemember[tabId] = nil
       let gone = pages.removeValue(forKey: tabId)
       let windowId = windowOfTab.removeValue(forKey: tabId) ?? TabPoolHost.shared.windowOf(tabId)
-      guard barShown || (gone.map { $0.shown != PanePromptPage().shown } ?? false) else { return }
+      guard gone.map({ $0.shown != PanePromptPage().shown }) ?? false else { return }
       return NativePaneOverlays.refreshShowing(tabId, lastWindow: windowId)
     }
     var page = pages[tabId] ?? PanePromptPage()
     let shown = page.shown
-    let selection = page.selection
     guard page.take(name, payload) else {
       if pages[tabId] != nil { pages[tabId] = page }
       return
     }
     pages[tabId] = page
-    if page.selection != selection { selectionChanged(tabId, page.selection) }
     if page.shown != shown { changed(tabId) }
   }
 
-  private static func selectionChanged(_ tabId: String, _ selection: PaneSelection?) {
-    guard let selection else {
-      if selectionShown.removeValue(forKey: tabId) != nil { changed(tabId) }
-      return
-    }
-    let generation = (selectionGenerations[tabId] ?? 0) + 1
-    selectionGenerations[tabId] = generation
-    DispatchQueue.main.asyncAfter(deadline: .now() + PanePromptSpecs.selectionDelay) {
-      MainActor.assumeIsolated {
-        guard generation == selectionGenerations[tabId], pages[tabId]?.selection == selection else { return }
-        selectionShown[tabId] = selection
-        changed(tabId)
-      }
-    }
-  }
-
   static func selections(in windowId: String) -> [(tabId: String, state: SelectionBarState)] {
-    guard let window = windows[windowId], let theme = window["theme"] as? [String: Any], let search = theme["search"] as? [String: Any], search["enabled"] as? Bool == true else { return [] }
-    let panes = window["panes"] as? [String: [String: Any]] ?? [:]
-    let engine = search["engine"] as? String ?? ""
-    return selectionShown.keys.sorted().compactMap { tabId in
-      guard owns(tabId), TabPoolHost.shared.windowOf(tabId) == windowId, let selection = selectionShown[tabId] else { return nil }
-      let zoom = (panes[tabId]?["zoom"] as? NSNumber)?.doubleValue ?? 1
-      let state = PanePromptSpecs.selectionBar(selection, zoom: zoom, engine: engine, dark: theme["dark"] as? Bool ?? false, icon: theme["icon"] as? String ?? "", textPrimary: theme["textPrimary"] as? String ?? "")
-      return (tabId, state)
+    guard let window = windows[windowId], let theme = window["theme"] as? [String: Any],
+      let store = NativeStoreHandle.store else { return [] }
+    return store.state.tabs.values.compactMap { tab in
+      guard owns(tab.id), tab.windowId == windowId, let state = NativeSelectionTools.state(tab.id, theme: theme) else { return nil }
+      return (tab.id, state)
     }
-  }
-
-  static func searchSelection(_ windowId: String, _ tabId: String, _ click: [String: Bool]) -> Bool {
-    guard let selection = selectionShown[tabId] else { return false }
-    selectionShown[tabId] = nil
-    if var page = pages[tabId] {
-      page.selection = nil
-      pages[tabId] = page
-    }
-    changed(tabId)
-    js("pane.searchSelection", windowId, tabId, selection.text, click)
-    return true
   }
 
   static func coreEvent(_ name: String, _ payload: [String: Any]) {

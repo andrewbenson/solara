@@ -857,3 +857,12 @@ Extension search refresh: `extensions/searchEngines.ts` is deleted. Native notif
 debounce/reread, parsing, merging and settings writes replace its store subscription
 and mirror read. The extension catalog still supplies initial/change-driven listing;
 its JS store, popup, install and side-panel ownership remain for subsequent slices.
+
+Selection and zoom lifecycle slice 3: SelectionHost and ZoomHost retain theme,
+placement and host-lane decoration. NativeSelectionTools owns accepted selection
+publication, the 150 ms delay, settings/default-engine feed, search dispositions,
+page-fenced zoom steps and zoom dismissal. PanePopoverLifecycle owns the shared
+popover choice so existing toolbar readers receive a projection; zoom scrim and
+Escape dismissal call no JS action adapter. Find field scripts run through
+PageIssuer. Find's forwarding API, shared popover readers and unrelated prompt,
+site, media and extension behavior remain for their later slices.

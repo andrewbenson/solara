@@ -5,6 +5,8 @@ type SettingsCall = { id: number; name: string; args: string };
 type NativeSettingsModule = {
   available(): boolean;
   servicesActive?(): boolean;
+  panePopovers?(): Record<string, PanePopoverKind>;
+  setPanePopover?(tabId: string, value: PanePopoverKind | null): Record<string, PanePopoverKind>;
   startAppStartup(optionsJSON: string): Promise<string>;
   completeAppStartup(): Promise<void>;
   cancelOnboardingReplay(requestId: string): Promise<void>;
@@ -41,6 +43,7 @@ type NativeSettingsModule = {
   libraryCommand?(kind: string, engineProfile: string, payload: Record<string, unknown>): Promise<unknown>;
   reply(id: number, resultJSON: string | null, error: string | null): Promise<void>;
   publish(topic: string, json: string): Promise<void>;
+  addListener(event: "onPanePopoversChanged", listener: (event: { values: Record<string, PanePopoverKind> }) => void): EventSubscription;
   addListener(event: "onAppIntegrationPresentation", listener: (event: AppIntegrationPresentation) => void): EventSubscription;
   addListener(event: "onBookmarkWriterState", listener: (state: BookmarkWriterState) => void): EventSubscription;
   addListener(event: "onSettingsCall", listener: (call: SettingsCall) => void): EventSubscription;
@@ -386,3 +389,9 @@ export * from "./littleSolara";
 export * from "./cliIndicator";
 export * from "./topStrip";
 export * from "./pages";
+
+export type PanePopoverKind = "zoom" | "siteControls" | "popups";
+export const panePopovers = () => native?.panePopovers?.() ?? {};
+export const setPanePopover = (tabId: string, value: PanePopoverKind | null) => native?.setPanePopover?.(tabId, value) ?? {};
+export const onPanePopoversChanged = (listener: (values: Record<string, PanePopoverKind>) => void) =>
+  native?.addListener("onPanePopoversChanged", ({ values }) => listener(values)) ?? null;

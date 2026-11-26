@@ -85,7 +85,7 @@ try {
     await until("page A", `return ac.store.getState().tabs.a?.title === "A" || null;`, 15000);
 
     await rep.check(`${tag}-opens`, async () => {
-      await run(`ac.pageState.setState((s) => ({ popover: { ...s.popover, a: "zoom" } })); return true;`);
+      await run(`ac.pageState.setState({ popover: expo.modules.SolaraSettings.setPanePopover("a", "zoom") }); return true;`);
       areas[tag] = await until("the popover's area", `const [f] = fibers("ZoomPopover"); return f ? measure(f) : null;`);
       if (!nativeShell) return { area: areas[tag] };
       const zoom = await until("the native zoom popover", `return native().then((d) => d && d.tabs.a && d.tabs.a.zoom && d.tabs.a.zoom.opacity === 1 ? d : null);`, 3000);

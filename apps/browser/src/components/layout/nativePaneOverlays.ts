@@ -5,12 +5,9 @@ import type { View } from "react-native";
 import { webviews } from "../../lib/webviews";
 import type { Theme } from "../../lib/theme";
 import { addNativeSettingsHandlers } from "../settings/nativeSettings";
-import { pageOf, patchPage, setPopover, usePage } from "./pageState";
+import { pageOf, patchPage, usePage } from "./pageState";
 import { answerBlockedPopups, openOneBlockedPopup, type BlockedPopupsAnswer } from "../site/Prompts";
 import { answerPermission } from "../site/permissions";
-import { searchSelection, type ClickModifiers } from "../site/selection";
-import { useBrowser } from "../../store/browser";
-import { defaultSearchEngine } from "../../store/settings";
 import { cliCommand, cliProduct, useCliIndicator } from "../../lib/cliControl";
 import { mediaTheme } from "../media/nativeMedia";
 import { acceptEngineOffer, stayOnPage } from "../../lib/engines";
@@ -54,7 +51,6 @@ addNativeSettingsHandlers({
     }
   },
   "pane.history": (windowId: string, tabId: string, event: PaneHistoryEvent) => handlers.get(`history:${windowId}:${tabId}`)?.current?.(event as never),
-  "pane.selection": (windowId: string, tabId: string, click: PaneClick) => handlers.get(`selection:${windowId}:${tabId}`)?.current?.(click as never),
   "pane.password": (_windowId: string, tabId: string, action: PasswordPromptAnswer, username: string, key?: string) => {
     const shown = pageOf(tabId).passwordPrompt;
     if (shown && key !== undefined && passwordPromptKey(shown) !== key) return;
@@ -73,15 +69,10 @@ addNativeSettingsHandlers({
     if (action === "webkit") void acceptEngineOffer(tabId);
     else stayOnPage(tabId, action === "stay" && remember);
   },
-  "pane.searchSelection": (_windowId: string, tabId: string, text: string, click: ClickModifiers) => searchSelection(tabId, text, click),
   "pane.permission": (_windowId: string, tabId: string, id: string, result: PermissionResult) => answerPermission(tabId, id, result),
   "pane.popups": (_windowId: string, tabId: string, action: string, id: string) => {
     if (action === "row") openOneBlockedPopup(tabId, id);
     else answerBlockedPopups(tabId, action as BlockedPopupsAnswer);
-  },
-  "pane.zoom": (_windowId: string, tabId: string, kind: string, step: number) => {
-    if (kind === "dismiss") return setPopover(tabId, null);
-    if (kind === "step") void webviews.get(tabId)?.zoomStep(Math.sign(Number(step)) as -1 | 0 | 1);
   },
 });
 
@@ -163,12 +154,9 @@ export function useNativePanePromptsTheme(active: boolean, windowId: string, the
     goButton,
     goButtonText,
   };
-  const engine = useBrowser((s) => defaultSearchEngine(s.settings).name);
-  const searchEnabled = useBrowser((s) => !!s.settings.showSelectionSearch);
-  const search = { engine, enabled: searchEnabled };
   const cliShown = useCliIndicator((s) => s.shown);
   const cli = { shown: cliShown, command: cliCommand(), product: cliProduct(), theme: mediaTheme(theme) };
-  const key = JSON.stringify({ dark, textPrimary, textSecondary, icon, panel, panelBorder, panelShadowOpacity, goButton, goButtonText, prompt, search, cli });
+  const key = JSON.stringify({ dark, textPrimary, textSecondary, icon, panel, panelBorder, panelShadowOpacity, goButton, goButtonText, prompt, cli });
   useEffect(() => {
     if (!active) return;
     (promptWindows[windowId] ??= { panes: {} }).theme = JSON.parse(key);

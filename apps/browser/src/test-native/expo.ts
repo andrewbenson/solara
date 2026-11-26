@@ -27,7 +27,16 @@ const testBookmarkWriter = (): TestBookmarkWriter => {
   return writer;
 };
 
+const testPanePopovers: Record<string, string> = {};
 const settingsModule = {
+  panePopovers: () => ({ ...testPanePopovers }),
+  setPanePopover: (tabId: string, value: string | null) => {
+    if (value) testPanePopovers[tabId] = value;
+    else delete testPanePopovers[tabId];
+    const values = { ...testPanePopovers };
+    liveListeners.get("onPanePopoversChanged")?.({ values });
+    return values;
+  },
   get presentStoreUnavailable() {
     return (globalThis as { acTestPresentStoreUnavailable?: (detail: string) => boolean }).acTestPresentStoreUnavailable;
   },

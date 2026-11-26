@@ -14,6 +14,8 @@ enum HostedSelectionBar {
     weak var view: SelectionBarView?
     var tabId = ""
     var ended = false
+    var theme: [String: Any] = [:]
+    var observer: UUID?
 
     init(windowId: String, view: SelectionBarView) {
       self.windowId = windowId
@@ -23,7 +25,9 @@ enum HostedSelectionBar {
 
   private struct State: Decodable {
     var tabId: String
-    var selection: SelectionBarState?
+    var dark: Bool
+    var icon: String
+    var textPrimary: String
   }
 
   static func register() {
@@ -36,14 +40,19 @@ enum HostedSelectionBar {
       #if DEBUG
         entries[id] = entry
       #endif
+      entry.observer = NativeSelectionTools.observe { [weak entry] in
+        guard let entry, !entry.ended else { return }
+        entry.view?.update(NativeSelectionTools.state(entry.tabId, theme: entry.theme))
+      }
       view.onSearch = { [weak entry] click in
         guard let entry, entry.view?.state != nil else { return }
-        HostedViews.send(kind, windowId: entry.windowId, "search", ["tabId": entry.tabId, "metaKey": click.meta, "shiftKey": click.shift, "altKey": click.alt])
+        NativeSelectionTools.search(entry.tabId, click: ["metaKey": click.meta, "shiftKey": click.shift, "altKey": click.alt])
       }
       return HostedContent(
         view: view,
         onUnmount: { [weak view] in
           entry.ended = true
+          if let observer = entry.observer { NativeSelectionTools.stopObserving(observer) }
           #if DEBUG
             entries[id] = nil
           #endif
@@ -59,7 +68,8 @@ enum HostedSelectionBar {
             return
           }
           entry.tabId = state.tabId
-          view?.update(state.selection)
+          entry.theme = ["dark": state.dark, "icon": state.icon, "textPrimary": state.textPrimary]
+          view?.update(NativeSelectionTools.state(entry.tabId, theme: entry.theme))
         })
     }
   }

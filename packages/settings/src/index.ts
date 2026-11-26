@@ -4,7 +4,10 @@ type SettingsCall = { id: number; name: string; args: string };
 
 type NativeSettingsModule = {
   available(): boolean;
+  replacePageField(tabId: string, query: string, replacement: string, all: boolean): Promise<{ field: boolean; count: number }>;
   servicesActive?(): boolean;
+  panePopovers?(): Record<string, PanePopoverKind>;
+  setPanePopover?(tabId: string, value: PanePopoverKind | null): Record<string, PanePopoverKind>;
   setPreferredImportSource?(browserId: string | null): void;
   workspaceCommand?(command: string, arg: string | null, windowId: string | null): boolean;
   presentStoreUnavailable?(detail: string): boolean;
@@ -46,6 +49,7 @@ type NativeSettingsModule = {
   libraryCommand?(kind: string, engineProfile: string, payload: Record<string, unknown>): Promise<unknown>;
   reply(id: number, resultJSON: string | null, error: string | null): Promise<void>;
   publish(topic: string, json: string): Promise<void>;
+  addListener(event: "onPanePopoversChanged", listener: (event: { values: Record<string, PanePopoverKind> }) => void): EventSubscription;
   addListener(event: "onAppIntegrationPresentation", listener: (event: AppIntegrationPresentation) => void): EventSubscription;
   addListener(event: "onBookmarkProjectionChanged", listener: (event: Record<string, never>) => void): EventSubscription;
   addListener(event: "onBookmarkWriterState", listener: (state: BookmarkWriterState) => void): EventSubscription;
@@ -490,3 +494,13 @@ export * from "./pages";
 export function nativeWorkspaceCommand(command: string, arg: string | null | undefined, windowId: string | null): boolean {
   return native?.workspaceCommand?.(command, arg ?? null, windowId) ?? false;
 }
+
+export function replacePageField(tabId: string, query: string, replacement: string, all: boolean): Promise<{ field: boolean; count: number }> {
+  return native?.replacePageField(tabId, query, replacement, all) ?? Promise.resolve({ field: false, count: 0 });
+}
+
+export type PanePopoverKind = "zoom" | "siteControls" | "popups";
+export const panePopovers = () => native?.panePopovers?.() ?? {};
+export const setPanePopover = (tabId: string, value: PanePopoverKind | null) => native?.setPanePopover?.(tabId, value) ?? {};
+export const onPanePopoversChanged = (listener: (values: Record<string, PanePopoverKind>) => void) =>
+  native?.addListener("onPanePopoversChanged", ({ values }) => listener(values)) ?? null;

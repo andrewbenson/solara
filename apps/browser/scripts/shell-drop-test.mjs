@@ -76,7 +76,7 @@ async function open(env, dir) {
     });
     return frame;
   };
-  const zoom = (on) => app.eval(`ac.pageState.setState((s) => ({ popover: { ...s.popover, [${JSON.stringify(tab)}]: ${on ? '"zoom"' : "null"} } })); return true`);
+  const zoom = (on) => app.eval(`ac.pageState.setState({ popover: expo.modules.SolaraSettings.setPanePopover(${JSON.stringify(tab)}, ${on ? '"zoom"' : "null"}) }); return true`);
   return { app, read, w, h, tab, windowId, target, frameOf, zoom, untilSnapshot };
 }
 

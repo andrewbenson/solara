@@ -4,6 +4,7 @@ import SolaraCore
 import SolaraEngine
 import SolaraLive
 import SolaraStore
+import SolaraUI
 import SolaraSyncAdapter
 
 public class SettingsModule: Module {
@@ -13,7 +14,7 @@ public class SettingsModule: Module {
   public func definition() -> ModuleDefinition {
     Name("SolaraSettings")
 
-    Events("onBookmarkProjectionChanged", "onAppIntegrationPresentation", "onSettingsCall", "onLiveReplica", "onLiveAuthRequest", "onLiveCloseGroup", "onBookmarkWriterState")
+    Events("onPanePopoversChanged", "onBookmarkProjectionChanged", "onAppIntegrationPresentation", "onSettingsCall", "onLiveReplica", "onLiveAuthRequest", "onLiveCloseGroup", "onBookmarkWriterState")
 
     OnCreate {
       NativeBookmarkLaunch.select()
@@ -27,6 +28,10 @@ public class SettingsModule: Module {
         PictureInPictureAdapter.install()
         NativeMediaPreferences.start()
         NativeExtensionSearchEngines.start()
+        NativeSelectionTools.popoversChanged = { values in
+          projectionSink.module?.sendEvent("onPanePopoversChanged", ["values": values])
+        }
+        NativeSelectionTools.start()
         NativeSettingsWindow.install()
         NativeConfigNotifier.install()
         NativeTabPictures.install()
@@ -56,9 +61,32 @@ public class SettingsModule: Module {
       ImportPreferredSource.shared.set(browserId)
     }
 
+    Function("panePopovers") { () -> [String: String] in
+      if Thread.isMainThread { return MainActor.assumeIsolated { NativeSelectionTools.popoverSnapshot() } }
+      return DispatchQueue.main.sync { MainActor.assumeIsolated { NativeSelectionTools.popoverSnapshot() } }
+    }
+
+    Function("setPanePopover") { (tabId: String, value: String?) -> [String: String] in
+      if Thread.isMainThread { return MainActor.assumeIsolated { NativeSelectionTools.setPopover(tabId, value: value) } }
+      return DispatchQueue.main.sync { MainActor.assumeIsolated { NativeSelectionTools.setPopover(tabId, value: value) } }
+    }
+
     Function("servicesActive") { () -> Bool in
       NativeCliControl.active
     }
+
+    AsyncFunction("replacePageField") { (tabId: String, query: String, replacement: String, all: Bool, promise: Promise) in
+      nonisolated(unsafe) let reply = promise
+      MainActor.assumeIsolated {
+        guard let issuer = PageIssuer.shared, let binding = issuer.binding(tabId: tabId), issuer.isCurrent(binding) else {
+          reply.resolve(["field": false, "count": 0]); return
+        }
+        issuer.issue(tabId: tabId, identity: binding.identity, command: .evaluate(FindEditingScript.replace(query: query, replacement: replacement, all: all))) { result in
+          if case .success(let value) = result { reply.resolve(value.foundation) }
+          else { reply.resolve(["field": false, "count": 0]) }
+        }
+      }
+    }.runOnQueue(.main)
 
     AsyncFunction("startAppStartup") { (optionsJSON: String, promise: Promise) in
       nonisolated(unsafe) let reply = promise

@@ -142,10 +142,10 @@ try {
           await until("the native sad tab", `return native().then((d) => d && d.tabs.a && d.tabs.a.sadTab && !d.tabs.a.sadTab.hidden && d.tabs.a.sadTab.mode === ${JSON.stringify(name)} || null);`, 35000);
           const wrappers = await run(`return acPerf.findFibers("SadTab", 5).length;`);
           if (wrappers) throw new Error(`RN still mounts ${wrappers} SadTab wrapper(s) for the pooled pane`);
-          await run(`ac.pageState.setState((s) => ({ popover: { ...s.popover, a: "zoom" } })); return true;`);
+          await run(`ac.pageState.setState({ popover: expo.modules.SolaraSettings.setPanePopover("a", "zoom") }); return true;`);
           await sleep(600);
           const kept = await run(`return native().then((d) => !!(d && d.tabs.a && d.tabs.a.sadTab && !d.tabs.a.sadTab.hidden));`);
-          await run(`ac.pageState.setState((s) => ({ popover: { ...s.popover, a: null } })); return true;`);
+          await run(`ac.pageState.setState({ popover: expo.modules.SolaraSettings.setPanePopover("a", null) }); return true;`);
           if (!kept) throw new Error("an unrelated pane overlay publish took the native sad tab down");
           await untilSnapshot("the sad tab survives a zoom publish", (state) => nativeSad(state)?.visible && nativeSad(state)?.mode === name);
           await sleep(300);

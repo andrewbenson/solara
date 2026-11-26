@@ -2,6 +2,7 @@ import AppKit
 import ExpoModulesCore
 import Foundation
 import SolaraUI
+import SolaraStore
 
 public class PromptModule: Module {
   public func definition() -> ModuleDefinition {
@@ -171,9 +172,14 @@ final class NativePanelView: ExpoView {
   private var json = ""
   private var applied = ""
   private var zoom: ZoomPanelView?
+  private var zoomObserver: UUID?
   private var history: HistoryPanelView?
   private var markUri: String?
   private var popover: PopoverView?
+
+  isolated deinit {
+    if let zoomObserver { NativeSelectionTools.stopObserving(zoomObserver) }
+  }
 
   override var isFlipped: Bool { true }
 
@@ -205,13 +211,33 @@ final class NativePanelView: ExpoView {
     defer { placePopover(data) }
     switch kind {
     case "zoom":
-      guard let state = try? JSONDecoder().decode(ZoomPanelState.self, from: data) else { return }
+      guard var state = try? JSONDecoder().decode(ZoomPanelState.self, from: data) else { return }
       let body = zoom ?? make { ZoomPanelView(frame: .zero) }
       zoom = body
-      body.onEvent = { [weak self] e in
-        switch e {
-        case .step(let step): self?.onPanelEvent(["kind": "step", "step": step])
+      if zoomObserver == nil {
+        zoomObserver = NativeSelectionTools.observe { [weak self] in
+          guard let self else { return }
+          self.applied = ""
+          self.apply()
         }
+      }
+      let tabId = (try? JSONSerialization.jsonObject(with: data) as? [String: Any])?["tabId"] as? String
+      let identity = tabId.flatMap { PageIssuer.shared?.binding(tabId: $0)?.identity }
+      body.onEvent = { e in
+        switch e {
+        case .step(let step):
+          guard let tabId else { return }
+          NativeSelectionTools.zoom(tabId, identity: identity, step: Double(step))
+        }
+      }
+      if let tabId = (try? JSONSerialization.jsonObject(with: data) as? [String: Any])?["tabId"] as? String {
+        state.zoom = NativeStoreHandle.store?.state.tabs[tabId]?.zoom ?? 1
+      }
+      let revision = tabId.map { NativeSelectionTools.zoomRevision($0) } ?? 0
+      popover?.isHidden = tabId.map { !NativeSelectionTools.zoomShown($0) } ?? true
+      popover?.onDismiss = {
+        guard let tabId else { return }
+        NativeSelectionTools.dismissZoom(tabId, revision: revision)
       }
       body.update(state)
     case "history":

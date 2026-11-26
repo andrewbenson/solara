@@ -26,8 +26,8 @@ import { InternalPage } from "./pages";
 import { AutofillPrompt, BLOCKED_POPUPS_WIDTH, BlockedPopupsPrompt, ExternalAppPrompt, PasswordPrompt, PermissionPrompt } from "./site/Prompts";
 import { SiteControls } from "./site/SiteControls";
 import { SITE_PANEL } from "./site/SiteControlsParts";
-import { ZOOM_POPOVER_WIDTH, ZoomPopover } from "./site/ZoomControls";
-import { SelectionPopover } from "./site/SelectionPopover";
+import { ZOOM_POPOVER_WIDTH, ZoomPopover } from "./site/ZoomHost";
+import { SelectionHost } from "./site/SelectionHost";
 import { SharePicker } from "./media/SharePicker";
 import { ShareBar } from "./media/ShareBar";
 import { CastPicker } from "./media/CastPicker";
@@ -95,7 +95,7 @@ export function PageOverlays({
       {!newTabShown && !nativePrompts && <DeviceChooser tabId={tabId} left={Math.max(POPOVER_MARGIN, Math.min(geometry.urlLeft, width - 348))} top={POPOVER_MARGIN} />}
       <CastPicker tabId={tabId} paneWidth={width} nativeAllowed={!peek} />
       <NavigationOverlays tabId={tabId} windowId={windowId} geometry={geometry} peek={peek} />
-      {!nativePrompts && <SelectionPopover tabId={tabId} zoom={zoom} nativeAllowed={!peek} />}
+      {!nativePrompts && <SelectionHost tabId={tabId} nativeAllowed={!peek} />}
     </>
   );
 }

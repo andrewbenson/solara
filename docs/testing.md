@@ -651,6 +651,15 @@ and removes it, and checks that another profile's rows survive. Native ownership
 store replacement and delayed engine callbacks still require host-level verification.
 No runtime verification claimed.
 
+Lifecycle slice 3 uses SelectionLifecycleTests, ZoomLifecycleTests and
+SelectionBarTests. Coverage includes the 150 ms delay, stale-page admission,
+disable/re-enable, ECMAScript whitespace, modifier precedence, native focus
+retention, clamped SelectionBarView placement, stale dismissal and Escape
+consumption before JS page-event delivery. Run PageIssuerTests alongside them,
+then the full SolaraKit suite. The Expo adapters still require typecheck-pod
+SolaraSettingsAdapter and the selection-popover, native-find-commands and
+acceptance zoom-levels drivers in both window layouts before landing.
+
 ### Slice 7: shared pinned pages
 
 Pinned reload/home and activation capture a native family, ownership generation, interaction serial and exact page registration. Capture, paint and arrival are bounded; the pool must retain the physical page before a deferred reload. Frozen presentation is native in both layouts. The shared JS history adapter still imports livePage until slice 9.

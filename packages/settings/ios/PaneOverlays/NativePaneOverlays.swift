@@ -315,13 +315,20 @@ final class PaneOverlayHost {
         sad.insert(tabId)
         (sadTabs[tabId] ?? makeSadTab(tabId)).update(state)
       }
-      if let data = entry(value, kind: "zoom", tabId: tabId), let state = try? JSONDecoder().decode(ZoomPanelState.self, from: data), let placement = PanelPopover.placement(data) {
+      if NativeSelectionTools.zoomShown(tabId), let data = entry(value, kind: "zoom", tabId: tabId), var state = try? JSONDecoder().decode(ZoomPanelState.self, from: data), let placement = PanelPopover.placement(data) {
         zoomed.insert(tabId)
         let zoom = zooms[tabId] ?? makeZoom(tabId)
+        state.zoom = NativeStoreHandle.store?.state.tabs[tabId]?.zoom ?? 1
+        let identity = PageIssuer.shared?.binding(tabId: tabId)?.identity
+        let revision = NativeSelectionTools.zoomRevision(tabId)
+        zoom.popover.onDismiss = { NativeSelectionTools.dismissZoom(tabId, revision: revision) }
+        zoom.body.onEvent = { event in
+          if case .step(let step) = event { NativeSelectionTools.zoom(tabId, identity: identity, step: Double(step)) }
+        }
         zoom.body.update(state)
         zoom.popover.set(placement: placement, dark: state.dark)
       }
-      if let data = entry(value, kind: "selection", tabId: tabId), let state = try? JSONDecoder().decode(SelectionBarState.self, from: data) {
+      if let data = entry(value, kind: "selection", tabId: tabId), let theme = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any], let state = NativeSelectionTools.state(tabId, theme: theme) {
         selected.insert(tabId)
         (selections[tabId] ?? makeSelection(tabId)).update(state)
       }
@@ -468,14 +475,7 @@ final class PaneOverlayHost {
 
   private func makeZoom(_ tabId: String) -> PanePopover<ZoomPanelView> {
     let zoom = PanePopover(ZoomPanelView(frame: .zero))
-    let windowId = windowId
     zoom.body.onHeight = { [weak zoom] h in zoom?.setHeight(h) }
-    zoom.popover.onDismiss = { Task { @MainActor in _ = await SettingsAdapters.js("pane.zoom", windowId, tabId, "dismiss", 0) } }
-    zoom.body.onEvent = { event in
-      switch event {
-      case .step(let step): Task { @MainActor in _ = await SettingsAdapters.js("pane.zoom", windowId, tabId, "step", step) }
-      }
-    }
     zoom.wrap.autoresizingMask = [.width, .height]
     zooms[tabId] = zoom
     return zoom
@@ -483,10 +483,8 @@ final class PaneOverlayHost {
 
   private func makeSelection(_ tabId: String) -> SelectionBarView {
     let bar = SelectionBarView(frame: .zero)
-    let windowId = windowId
     bar.onSearch = { click in
-      if PanePrompts.searchSelection(windowId, tabId, ["metaKey": click.meta, "shiftKey": click.shift, "altKey": click.alt]) { return }
-      Task { @MainActor in _ = await SettingsAdapters.js("pane.selection", windowId, tabId, ["metaKey": click.meta, "shiftKey": click.shift, "altKey": click.alt]) }
+      NativeSelectionTools.search(tabId, click: ["metaKey": click.meta, "shiftKey": click.shift, "altKey": click.alt])
     }
     bar.autoresizingMask = [.width, .height]
     selections[tabId] = bar

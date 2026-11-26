@@ -5,6 +5,7 @@ import SwiftUI
 @MainActor
 public protocol ExtensionsServices: AnyObject {
   var focusedWindowProfileId: String? { get }
+  var ownershipGeneration: Int? { get }
   func listExtensions(profile: String) async throws -> [InstalledExtension]
   func setExtensionEnabled(_ id: String, enabled: Bool, profile: String) async throws
   func uninstallExtension(_ id: String, profile: String) async throws
@@ -14,7 +15,6 @@ public protocol ExtensionsServices: AnyObject {
   func inspectUnpackedExtension(path: String) async throws -> ExtensionPackage
   func installExtension(path: String, profile: String) async throws
   func extensionChanges() -> AsyncStream<ExtensionsChange>
-  func closeExtensionSurfaces(_ id: String, profile: String)
   func openWebStoreDetail(_ url: String, profile: String)
   func openInNewTab(_ url: String)
 }
@@ -36,9 +36,24 @@ public final class ExtensionsPaneModel: SettingsPaneProvider {
   @ObservationIgnored private var loading: [String: Task<[InstalledExtension], Never>] = [:]
   @ObservationIgnored private var trailing: [String: Task<[InstalledExtension], Never>] = [:]
   @ObservationIgnored private var watching: Task<Void, Never>?
-  var lists: [String: [InstalledExtension]] = [:]
-  var install: ExtensionInstallRequest?
-  var removal: ExtensionRemoval?
+  private var generation: Int?
+  private var cachedLists: [String: [InstalledExtension]] = [:]
+  private var pendingInstall: ExtensionInstallRequest?
+  private var pendingRemoval: ExtensionRemoval?
+
+  var lists: [String: [InstalledExtension]] {
+    generation == services.ownershipGeneration ? cachedLists : [:]
+  }
+
+  var install: ExtensionInstallRequest? {
+    get { generation == services.ownershipGeneration ? pendingInstall : nil }
+    set { if synchronizeOwnership() != nil { pendingInstall = newValue } }
+  }
+
+  var removal: ExtensionRemoval? {
+    get { generation == services.ownershipGeneration ? pendingRemoval : nil }
+    set { if synchronizeOwnership() != nil { pendingRemoval = newValue } }
+  }
 
   public init(services: ExtensionsServices, store: SettingsStoreSource) {
     self.services = services
@@ -47,6 +62,19 @@ public final class ExtensionsPaneModel: SettingsPaneProvider {
 
   isolated deinit {
     watching?.cancel()
+  }
+
+  private func synchronizeOwnership() -> Int? {
+    let current = services.ownershipGeneration
+    if generation != current {
+      generation = current
+      cachedLists.removeAll()
+      loading.removeAll()
+      trailing.removeAll()
+      pendingInstall = nil
+      pendingRemoval = nil
+    }
+    return current
   }
 
   func profileId(for place: SettingsPlace) -> String {
@@ -76,6 +104,8 @@ public final class ExtensionsPaneModel: SettingsPaneProvider {
     watching = Task { [weak self] in
       for await change in changes {
         guard let self else { return }
+        guard self.synchronizeOwnership() != nil,
+          self.cachedLists[change.profile] != nil || self.loading[change.profile] != nil else { continue }
         await self.refreshAfterChange(change.profile)
       }
     }
@@ -83,21 +113,20 @@ public final class ExtensionsPaneModel: SettingsPaneProvider {
 
   @discardableResult
   func refresh(_ profile: String) async -> [InstalledExtension] {
+    guard let generation = synchronizeOwnership() else { return [] }
     if let running = loading[profile] { return await running.value }
-    let job = Task { [services] () -> [InstalledExtension]? in
-      try? await services.listExtensions(profile: profile)
-    }
-    let result = Task { [weak self] () -> [InstalledExtension] in
-      let fetched = await job.value
-      guard let self else { return fetched ?? [] }
+    let result = Task { [weak self, services] () -> [InstalledExtension] in
+      guard services.ownershipGeneration == generation else { return [] }
+      let fetched = try? await services.listExtensions(profile: profile)
+      guard let self, self.services.ownershipGeneration == generation else { return [] }
       self.loading[profile] = nil
       if let fetched {
         let sorted = Self.sorted(fetched)
-        self.lists[profile] = sorted
+        self.cachedLists[profile] = sorted
         return sorted
       }
-      let kept = self.lists[profile] ?? []
-      self.lists[profile] = kept
+      let kept = self.cachedLists[profile] ?? []
+      self.cachedLists[profile] = kept
       return kept
     }
     loading[profile] = result
@@ -105,6 +134,7 @@ public final class ExtensionsPaneModel: SettingsPaneProvider {
   }
 
   func refreshAfterChange(_ profile: String) async {
+    guard let generation = synchronizeOwnership() else { return }
     guard let running = loading[profile] else {
       await refresh(profile)
       return
@@ -115,7 +145,7 @@ public final class ExtensionsPaneModel: SettingsPaneProvider {
     }
     let next = Task { [weak self] () -> [InstalledExtension] in
       _ = await running.value
-      guard let self else { return [] }
+      guard let self, self.services.ownershipGeneration == generation else { return [] }
       self.trailing[profile] = nil
       return await self.refresh(profile)
     }
@@ -130,35 +160,39 @@ public final class ExtensionsPaneModel: SettingsPaneProvider {
   private func patch(_ profile: String, _ id: String, _ change: (inout InstalledExtension) -> Void) {
     guard var list = lists[profile], let index = list.firstIndex(where: { $0.id == id }) else { return }
     change(&list[index])
-    lists[profile] = list
+    cachedLists[profile] = list
   }
 
   func setEnabled(_ profile: String, _ id: String, _ enabled: Bool) async {
+    guard let generation = synchronizeOwnership() else { return }
     patch(profile, id) {
       $0.enabled = enabled
       $0.state = enabled ? "ENABLED" : "DISABLED"
     }
     try? await services.setExtensionEnabled(id, enabled: enabled, profile: profile)
-    await refresh(profile)
+    if services.ownershipGeneration == generation { await refreshAfterChange(profile) }
   }
 
   func setPinned(_ profile: String, _ id: String, _ pinned: Bool) async {
+    guard let generation = synchronizeOwnership() else { return }
     patch(profile, id) { $0.pinned = pinned }
     do {
       try await services.configureExtension(id, profile: profile, options: ExtensionConfiguration(pinned: pinned))
     } catch {
-      await refresh(profile)
+      if services.ownershipGeneration == generation { await refreshAfterChange(profile) }
     }
   }
 
   func configure(_ profile: String, _ id: String, _ options: ExtensionConfiguration) async {
+    guard let generation = synchronizeOwnership() else { return }
     try? await services.configureExtension(id, profile: profile, options: options)
-    await refresh(profile)
+    if services.ownershipGeneration == generation { await refreshAfterChange(profile) }
   }
 
   func reload(_ profile: String, _ id: String) async {
+    guard let generation = synchronizeOwnership() else { return }
     try? await services.reloadExtension(id, profile: profile)
-    await refresh(profile)
+    if services.ownershipGeneration == generation { await refreshAfterChange(profile) }
   }
 
   func requestRemoval(_ ext: InstalledExtension, profile: String) {
@@ -166,11 +200,10 @@ public final class ExtensionsPaneModel: SettingsPaneProvider {
   }
 
   func confirmRemoval() async {
-    guard let removal else { return }
-    self.removal = nil
-    services.closeExtensionSurfaces(removal.ext.id, profile: removal.profile)
+    guard let generation = synchronizeOwnership(), let removal else { return }
+    pendingRemoval = nil
     try? await services.uninstallExtension(removal.ext.id, profile: removal.profile)
-    await refresh(removal.profile)
+    if services.ownershipGeneration == generation { await refreshAfterChange(removal.profile) }
   }
 
   func openWebStore() {
@@ -193,24 +226,30 @@ public final class ExtensionsPaneModel: SettingsPaneProvider {
   }
 
   func loadUnpacked(profile: String) async {
-    guard let path = await services.chooseExtensionFolder() else { return }
+    guard let generation = synchronizeOwnership(), let path = await services.chooseExtensionFolder(),
+      services.ownershipGeneration == generation else { return }
     do {
       let package = try await services.inspectUnpackedExtension(path: path)
+      guard services.ownershipGeneration == generation else { return }
       install = ExtensionInstallRequest(profile: profile, source: .unpacked, status: .ready, package: package)
     } catch {
+      guard services.ownershipGeneration == generation else { return }
       install = ExtensionInstallRequest(profile: profile, source: .unpacked, status: .error(ExtensionServiceError.message(error)), package: nil)
     }
   }
 
   func confirmInstall() async {
-    guard var request = install, let package = request.package, request.status == .ready else { return }
+    guard let generation = synchronizeOwnership(), var request = install, let package = request.package,
+      request.status == .ready else { return }
     request.status = .installing
     install = request
     do {
       try await services.installExtension(path: package.path, profile: request.profile)
+      guard services.ownershipGeneration == generation else { return }
       if install?.id == request.id { install = nil }
-      await refresh(request.profile)
+      await refreshAfterChange(request.profile)
     } catch {
+      guard services.ownershipGeneration == generation else { return }
       request.status = .error(ExtensionServiceError.message(error))
       if install?.id == request.id { install = request }
     }
@@ -258,6 +297,7 @@ struct ExtensionsPane: View {
         ExtensionsList(model: model, profileId: profileId, profile: profile)
       }
     }
+    .task(id: model.services.ownershipGeneration) { await model.prepare(place) }
     .sheet(item: $model.install) { request in
       ExtensionInstallSheet(model: model, request: request)
     }

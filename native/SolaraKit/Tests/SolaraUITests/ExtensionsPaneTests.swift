@@ -7,6 +7,9 @@ import Testing
 @MainActor
 final class FakeExtensionsServices: ExtensionsServices {
   var focusedWindowProfileId: String?
+  var ownershipGeneration: Int? = 0
+  var onList: (() -> Void)?
+  var onInstall: (() -> Void)?
   var lists: [String: [InstalledExtension]] = ["default": ExtensionsFixture.installed, "work": []]
   var calls: [String] = []
   var folder: String? = "/Users/owner/Code/tab-notes"
@@ -17,6 +20,7 @@ final class FakeExtensionsServices: ExtensionsServices {
 
   func listExtensions(profile: String) async throws -> [InstalledExtension] {
     calls.append("list \(profile)")
+    onList?()
     return lists[profile] ?? []
   }
 
@@ -46,6 +50,7 @@ final class FakeExtensionsServices: ExtensionsServices {
 
   func installExtension(path: String, profile: String) async throws {
     calls.append("install \(path) \(profile)")
+    onInstall?()
     if let installError { throw installError }
   }
 
@@ -55,7 +60,6 @@ final class FakeExtensionsServices: ExtensionsServices {
     return stream
   }
 
-  func closeExtensionSurfaces(_ id: String, profile: String) { calls.append("close \(id) \(profile)") }
   func openWebStoreDetail(_ url: String, profile: String) { calls.append("store \(url) \(profile)") }
   func openInNewTab(_ url: String) { calls.append("tab \(url)") }
 }
@@ -223,6 +227,47 @@ struct ExtensionsPaneTests {
     #expect(model.install == nil)
   }
 
+  @Test func anInstallCallbackFromTheOldOwnerDoesNotRefreshOrShowItsError() async {
+    let (model, _, services) = await model()
+    await model.loadUnpacked(profile: "default")
+    services.calls = []
+    services.installError = ExtensionServiceError("Old install failed")
+    services.onInstall = {
+      services.ownershipGeneration = 1
+    }
+    await model.confirmInstall()
+    #expect(services.calls == ["install /Users/owner/Code/tab-notes default"])
+    #expect(model.install == nil)
+    #expect(!model.isLoaded(SettingsPlace(pane: .extensions, profileId: "default")))
+    services.onInstall = nil
+  }
+
+  @Test func aListFromTheOldOwnerDoesNotPopulateTheNewOwnersPane() async {
+    let (model, _, services) = await model()
+    let place = SettingsPlace(pane: .extensions, profileId: "work")
+    services.lists["work"] = ExtensionsFixture.installed
+    services.onList = {
+      services.ownershipGeneration = 1
+    }
+    await model.prepare(place)
+    #expect(!model.isLoaded(place))
+    services.onList = nil
+    services.lists["work"] = []
+    await model.prepare(place)
+    #expect(model.isLoaded(place))
+    #expect(model.lists["work"] == [])
+  }
+
+  @Test func aRemovalConfirmationFromTheOldOwnerDoesNotUninstall() async {
+    let (model, _, services) = await model()
+    model.requestRemoval(ExtensionsFixture.installed[0], profile: "default")
+    services.calls = []
+    services.ownershipGeneration = 1
+    await model.confirmRemoval()
+    #expect(services.calls.isEmpty)
+    #expect(model.removal == nil)
+  }
+
   @Test func togglingPatchesAtOnceThenRefreshes() async {
     let (model, _, services) = await model()
     services.calls = []
@@ -247,7 +292,7 @@ struct ExtensionsPaneTests {
     #expect(services.calls == ["reload abcdefghijklmnopabcdefghijklmnop default", "list default"])
   }
 
-  @Test func removingAsksFirstThenClosesItsSurfacesAndUninstalls() async {
+  @Test func removingAsksFirstThenUninstallsTheSelectedProfile() async {
     let (model, _, services) = await model()
     let ext = ExtensionsFixture.installed[0]
     model.requestRemoval(ext, profile: "default")
@@ -256,7 +301,7 @@ struct ExtensionsPaneTests {
     #expect(ExtensionRemoval(profile: "default", ext: ExtensionsFixture.installed[2]).message == "The extension's folder stays on your Mac.")
     services.calls = []
     await model.confirmRemoval()
-    #expect(services.calls == ["close cjpalhdlnbpafiamejdnhcphjbkeiagm default", "uninstall cjpalhdlnbpafiamejdnhcphjbkeiagm default", "list default"])
+    #expect(services.calls == ["uninstall cjpalhdlnbpafiamejdnhcphjbkeiagm default", "list default"])
     #expect(model.lists["default"]?.count == 2)
     #expect(model.removal == nil)
   }

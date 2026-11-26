@@ -78,19 +78,6 @@ enum NativeExtensionCommands {
     let profile = menu?.engineProfile ?? input["profile"]?.string ?? NativeExtensionCatalog.profile(window)
     let ext = NativeExtensionCatalog.catalog.lists[profile]?.first { $0["id"]?.string == id }
     switch command {
-    case "webStoreDetail":
-      guard let requestedURL = input["url"]?.string else { return }
-      guard let id = ExtensionWebStore.extensionId(requestedURL) else { return }
-      let url = ExtensionWebStore.detailURL(id)
-      let target = store.state.windows[window] != nil ? window : store.state.ui.focusOrder.first { id in
-        store.state.windows[id]?.incognito != true && NativeExtensionCatalog.profile(id) == profile
-      }
-      if let target { open(url, window: target, store: store) }
-      else {
-        var options: JSONObject = ["url": .string(url)]
-        if let profileId = store.state.profileOrder.first(where: { store.state.engineProfile($0) == profile }) { options["profileId"] = .string(profileId) }
-        _ = try? store.dispatch(Command("createWindow", [.object(options)]), origin: .native)
-      }
     case "addExtension": open("https://chromewebstore.google.com/category/extensions", window: window, store: store)
     case "manageExtensions":
       let own = store.state.windows[window]?.profileId
@@ -161,9 +148,7 @@ enum NativeExtensionCommands {
         guard response == .alertFirstButtonReturn, NativeExtensionCatalog.current, NativeStoreHandle.store === store,
           NativeStoreHandle.ownershipGeneration == generation, menu?.matches(state: state) != false,
           ExtensionPresentation.WindowContext.profileExists(state: state, engineProfile: profile) else { completion?(nil); return }
-        NativeExtensionActionPopup.extensionRemoved(id, profile: profile)
-        NativeExtensionSidePanel.extensionRemoved(id, profile: profile)
-        SolaraCoreServices.uninstallExtension(id, profile: profile) { result in
+        uninstall(id, profile: profile) { result in
           let error = ExtensionsAdapter.engineError(result)
           Task { @MainActor in
             if NativeExtensionCatalog.current, NativeStoreHandle.store === store, NativeStoreHandle.ownershipGeneration == generation { _ = await NativeExtensionCatalog.refreshAndWait(profile, afterChange: false) }
@@ -174,6 +159,26 @@ enum NativeExtensionCommands {
       if let host = ShellDrag.window(window) { alert.beginSheetModal(for: host, completionHandler: accepted) }
       else { accepted(alert.runModal()) }
     default: break
+    }
+  }
+
+  static func uninstall(_ id: String, profile: String, completion: @escaping ([String: Any]) -> Void) {
+    NativeExtensionActionPopup.extensionRemoved(id, profile: profile)
+    NativeExtensionSidePanel.extensionRemoved(id, profile: profile)
+    SolaraCoreServices.uninstallExtension(id, profile: profile) { completion($0) }
+  }
+
+  static func openWebStoreDetail(_ requestedURL: String, profile: String) {
+    guard NativeExtensionCatalog.current, let store = NativeStoreHandle.store,
+      let id = ExtensionWebStore.extensionId(requestedURL) else { return }
+    let state = store.state
+    guard let profileId = state.profileOrder.first(where: { state.profiles[$0] != nil && state.engineProfile($0) == profile }) else { return }
+    let url = ExtensionWebStore.detailURL(id)
+    if let window = state.ui.focusOrder.first(where: { state.windows[$0]?.incognito == false && NativeExtensionCatalog.profile($0) == profile }) {
+      open(url, window: window, store: store)
+    } else {
+      let options: JSONObject = ["url": .string(url), "profileId": .string(profileId)]
+      _ = try? store.dispatch(Command("createWindow", [.object(options)]), origin: .native)
     }
   }
 

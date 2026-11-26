@@ -53,7 +53,7 @@ enum NativeExtensionCatalog {
     })
     observers.append(NotificationCenter.default.addObserver(forName: Notification.Name("SolaraExtensionsChanged"), object: nil, queue: .main) { note in
       let profile = note.userInfo?["profile"] as? String ?? ""
-      MainActor.assumeIsolated { if current { refresh(profile) } }
+      MainActor.assumeIsolated { if current { refresh(profile, afterChange: true) } }
     })
     PageRegistry.shared.observe { event in
       guard current, case .retired(let registration) = event, actionCache.retire(registration) else { return }

@@ -10,6 +10,8 @@ import SolaraStore
 @Observable
 final class ExtensionsAdapter: ExtensionsServices {
   private(set) var focusedWindowProfileId: String?
+  private(set) var ownershipGeneration: Int?
+  @ObservationIgnored private var generation = 0
   @ObservationIgnored private var observer: Int?
   @ObservationIgnored private var observed: Store?
   @ObservationIgnored private var subscription: Int?
@@ -23,6 +25,8 @@ final class ExtensionsAdapter: ExtensionsServices {
     if observed !== next {
       if let subscription { observed?.unsubscribe(subscription) }
       observed = next
+      generation += 1
+      ownershipGeneration = next == nil ? nil : generation
       if let next {
         subscription = next.sequence {
           let revision = next.rev
@@ -49,7 +53,7 @@ final class ExtensionsAdapter: ExtensionsServices {
   }
 
   private func updateFocusedProfile() {
-    let profile = NativeExtensionCommands.focusedProfile
+    let profile = observed == nil ? nil : NativeExtensionCommands.focusedProfile
     if focusedWindowProfileId != profile { focusedWindowProfileId = profile }
   }
 
@@ -59,9 +63,11 @@ final class ExtensionsAdapter: ExtensionsServices {
   }
 
   func listExtensions(profile: String) async throws -> [InstalledExtension] {
+    let generation = try requireOwner(profile)
     let listed = await EngineCalls.result({ done in SolaraCoreServices.listExtensions(profile: profile) { done($0) } }) {
       (error: Self.engineError($0), list: Self.sorted($0.list("extensions").compactMap(Self.installed)))
     }
+    guard try requireOwner(profile) == generation else { throw Self.unavailable }
     if let error = listed.error { throw ExtensionServiceError(error) }
     return listed.list
   }
@@ -71,7 +77,7 @@ final class ExtensionsAdapter: ExtensionsServices {
   }
 
   func uninstallExtension(_ id: String, profile: String) async throws {
-    try await changing(profile) { done in SolaraCoreServices.uninstallExtension(id, profile: profile) { done($0) } }
+    try await changing(profile) { done in NativeExtensionCommands.uninstall(id, profile: profile, completion: done) }
   }
 
   func reloadExtension(_ id: String, profile: String) async throws {
@@ -127,18 +133,28 @@ final class ExtensionsAdapter: ExtensionsServices {
     }
   }
 
-  func closeExtensionSurfaces(_ id: String, profile: String) { NativeExtensionSidePanel.extensionRemoved(id, profile: profile) }
-
-  func openWebStoreDetail(_ url: String, profile: String) { NativeExtensionCommands.run(["command": "webStoreDetail", "url": .string(url), "profile": .string(profile), "windowId": "settings"]) }
+  func openWebStoreDetail(_ url: String, profile: String) {
+    NativeExtensionCommands.openWebStoreDetail(url, profile: profile)
+  }
 
   func openInNewTab(_ url: String) {
     SettingsDirectWrites.opening?.openInNewTab(url)
   }
 
   private func changing(_ profile: String, _ start: (@escaping @Sendable ([String: Any]) -> Void) -> Void) async throws {
+    let generation = try requireOwner(profile)
     let error = await EngineCalls.result(start) { Self.engineError($0) }
-    NativeExtensionCatalog.refresh(profile)
+    guard try requireOwner(profile) == generation else { throw Self.unavailable }
     if let error { throw ExtensionServiceError(error) }
+  }
+
+  private static let unavailable = ExtensionServiceError("The extension profile is unavailable")
+
+  private func requireOwner(_ profile: String) throws -> Int {
+    guard let ownershipGeneration, let observed, NativeStoreHandle.ownsWorkspace,
+      NativeStoreHandle.store === observed, !NativeStoreHandle.frozen,
+      ExtensionPresentation.WindowContext.profileExists(state: observed.state, engineProfile: profile) else { throw Self.unavailable }
+    return ownershipGeneration
   }
 
   nonisolated static func engineError(_ result: [String: Any]) -> String? {

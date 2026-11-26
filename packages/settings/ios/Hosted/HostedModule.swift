@@ -5,10 +5,32 @@ import SolaraUI
 import SolaraShell
 
 public class HostedModule: Module {
+  private let themeFeed = ThemeScopeFeed()
+
   public func definition() -> ModuleDefinition {
     Name("SolaraHosted")
 
-    Events("onHostedEvent")
+    Events("onHostedEvent", "onThemeScopeChanged")
+
+    let themeFeed = self.themeFeed
+    Function("themeScopeSnapshot") { (windowId: String?, pageProfileId: String?) in
+      themeFeed.snapshot(windowId: windowId, pageProfileId: pageProfileId)
+    }
+
+    OnStartObserving("onThemeScopeChanged") {
+      let sink = HostedSink(self)
+      DispatchQueue.main.async {
+        themeFeed.start { sink.module?.sendEvent("onThemeScopeChanged", [:]) }
+      }
+    }
+
+    OnStopObserving("onThemeScopeChanged") {
+      DispatchQueue.main.async { themeFeed.stop() }
+    }
+
+    OnDestroy {
+      DispatchQueue.main.async { themeFeed.stop() }
+    }
 
     Function("bookmarkNativeSourceVersion") { 1 }
 

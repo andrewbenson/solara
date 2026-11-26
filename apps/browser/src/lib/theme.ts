@@ -1,7 +1,8 @@
 import type { AreaLightPalette } from "@solara/shaders";
-import { createContext, createElement, useContext, useMemo, type ReactNode } from "react";
-import { useBrowser, type BrowserState } from "../store/browser";
+import { requireOptionalNativeModule } from "expo-modules-core";
+import { createContext, createElement, useCallback, useContext, useMemo, useSyncExternalStore, type ReactNode } from "react";
 import { PageProfileContext, WindowContext } from "../store/hooks";
+import type { Settings } from "../store/settings";
 import type { Profile, ProfileColor, ProfileTheme } from "../store/types";
 import { opaqueThemeTint, PRESET_BACKDROP, resolveTheme, requestedDarkFor, rgbToHsl, shownLook, textInk, themeAccent, themeBackdrop, themePalette, type LookSource, type TextInkArea, type ThemeBackdropProps } from "./profileTheme";
 import { backdropTint, opaqueTint, tintForHue, type BackdropTint } from "./windowTint";
@@ -278,11 +279,7 @@ function customTheme(custom: ProfileTheme, color: ProfileColor, appDark: boolean
   return theme;
 }
 
-export function useAdjustedInk(): boolean {
-  return useBrowser((s) => !s.settings.lightColorsKeepWhiteText);
-}
-
-export function spaceLookSource(settings: Pick<BrowserState["settings"], "spacesFollowAppearance">): LookSource {
+export function spaceLookSource(settings: Pick<Settings, "spacesFollowAppearance">): LookSource {
   return settings.spacesFollowAppearance ? "app" : "own";
 }
 
@@ -297,26 +294,54 @@ export function profileAccent(profile: Pick<Profile, "color" | "theme"> | undefi
   return (PROFILE_COLORS[profile?.color ?? "plum"] ?? PROFILE_COLORS.plum).swatch;
 }
 
-function themeOf(s: BrowserState, windowId: string | null, page: string | null): Theme {
-  const w = s.windows[windowId ?? s.ui.focusedWindowId ?? ""];
-  if (w?.incognito) return themeFor("incognito");
-  return profileTheme(s.profiles[page ?? w?.profileId ?? s.settings.defaultProfileId], s.ui.appDark, windowId ? spaceLookSource(s.settings) : "utility");
-}
+type ThemeProjection = Pick<Theme, "dark" | "profileColor" | "backdrop" | "windowTint" | "powerUpColor" | "powerUpPalette">
+  & Partial<Pick<Theme, "custom" | "sidebarInk" | "stripInk">>
+  & { adjustInk: boolean };
+type ThemeScopeValue = { theme: Theme; adjustInk: boolean };
+type NativeThemeFeed = {
+  themeScopeSnapshot(windowId: string | null, pageProfileId: string | null): string | null;
+  addListener(event: "onThemeScopeChanged", listener: () => void): { remove(): void };
+};
 
-const ThemeContext = createContext<Theme | null>(null);
+const ThemeContext = createContext<ThemeScopeValue | null>(null);
+const subscribe = (listener: () => void) => {
+  const native = requireOptionalNativeModule<NativeThemeFeed>("SolaraHosted");
+  const subscription = native?.addListener("onThemeScopeChanged", listener);
+  return () => subscription?.remove();
+};
+const skipSubscription = () => () => {};
+const fallbackScope = { theme: themeFor("plum:dark"), adjustInk: true };
+
+function useThemeScope(windowId: string | null, pageProfileId: string | null, enabled: boolean): ThemeScopeValue {
+  const read = useCallback(() => enabled
+    ? requireOptionalNativeModule<NativeThemeFeed>("SolaraHosted")?.themeScopeSnapshot?.(windowId, pageProfileId) ?? null
+    : null, [windowId, pageProfileId, enabled]);
+  const snapshot = useSyncExternalStore(enabled ? subscribe : skipSubscription, read);
+  return useMemo(() => {
+    if (snapshot === null) return fallbackScope;
+    const { adjustInk, ...projection } = JSON.parse(snapshot) as ThemeProjection;
+    return { theme: { ...(projection.dark ? dark : light), custom: null, sidebarInk: null, stripInk: null, ...projection }, adjustInk };
+  }, [snapshot]);
+}
 
 export function ThemeScope({ children }: { children: ReactNode }) {
   const windowId = useContext(WindowContext);
-  const page = useContext(PageProfileContext);
-  const theme = useBrowser((s) => themeOf(s, windowId, page));
-  return createElement(ThemeContext.Provider, { value: theme }, children);
+  const pageProfileId = useContext(PageProfileContext);
+  const value = useThemeScope(windowId, pageProfileId, true);
+  return createElement(ThemeContext.Provider, { value }, children);
+}
+
+export function useAdjustedInk(): boolean {
+  const scope = useContext(ThemeContext);
+  const utility = useThemeScope(null, null, scope === null);
+  return (scope ?? utility).adjustInk;
 }
 
 export function useTheme(): Theme {
-  const scoped = useContext(ThemeContext);
-  if (scoped) return scoped;
-  if (__DEV__) console.warn("useTheme outside a ThemeScope");
-  return themeOf(useBrowser.getState(), null, null);
+  const scope = useContext(ThemeContext);
+  const utility = useThemeScope(null, null, scope === null);
+  if (!scope && __DEV__) console.warn("useTheme outside a ThemeScope");
+  return (scope ?? utility).theme;
 }
 
 export function selectedTabGlow(theme: Theme) {

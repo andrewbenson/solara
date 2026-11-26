@@ -377,10 +377,10 @@ public enum ThemeMath {
     hex(composite(theme, dark: dark, 0, 0))
   }
 
-  public static func textInk(_ theme: ProfileThemeValue, dark: Bool, strip: Bool) -> (dark: Bool, selectedDark: Bool) {
+  public static func textInk(_ theme: ProfileThemeValue, dark: Bool, strip: Bool, selectedAlpha: Double? = nil) -> (dark: Bool, selectedDark: Bool) {
     let points: [(Double, Double)] = strip ? [(0.1, 0.03), (0.5, 0.03), (0.9, 0.03)] : [(0.06, 0.1), (0.06, 0.5), (0.06, 0.9)]
     let colors = points.map { composite(theme, dark: dark, $0.0, $0.1) }
-    let a = dark ? 0.5 : 0.7
+    let a = selectedAlpha ?? (dark ? 0.5 : 0.7)
     let fill = dark ? 18.0 / 255 : 1.0
     let selected = colors.map { $0.map { clamp01($0) * (1 - a) + fill * a } }
     func black(_ colors: [[Double]]) -> Bool {

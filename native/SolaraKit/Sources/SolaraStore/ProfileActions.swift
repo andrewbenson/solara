@@ -17,6 +17,10 @@ func sharingProfiles(_ s: BrowserState, _ id: String) -> [String] {
 
 extension Session {
   public func createProfile(name: String, color: String?, icon: String?, shareWith: String?) throws -> String {
+    #if DEBUG
+    let importEnvironment = ProcessInfo.processInfo.environment
+    if !(importEnvironment["SOLARA_DATA_DIR"] ?? "").isEmpty, importEnvironment["SOLARA_IMPORT_TEST_REFUSE_CREATE"] == "1" { throw CommandError("Fixture profile refusal") }
+    #endif
     guard !config.safeMode else {
       throw CommandError("Profiles can't be created in safe mode. Quit and open Solara normally to create one.")
     }

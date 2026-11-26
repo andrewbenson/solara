@@ -109,7 +109,8 @@ async function destination(target: string, index: number, name: string, cancelle
 
 async function run(req: RunRequest, sessionId: number | undefined) {
   const generation = importGeneration;
-  const cancelled = () => generation !== importGeneration || !admitted(sessionId);
+  const abort = new AbortController();
+  const cancelled = () => abort.signal.aborted || generation !== importGeneration || !admitted(sessionId);
   const api = importModule();
   const source = session.browsers.find((b) => b.id === req.browserId);
   if (!api || !source) return { cancelled: true };
@@ -139,7 +140,6 @@ async function run(req: RunRequest, sessionId: number | undefined) {
   };
   publishSettingsTopic("import.progress", progress);
   session.abort?.abort();
-  const abort = new AbortController();
   session.abort = abort;
   const total = emptyCounts();
   const failed = new Map<ImportKind, string[]>(refused.map((k) => [k, selected.map((p) => p.name)]));
@@ -382,6 +382,7 @@ export const importHandlers: Record<string, SettingsHandler> = {
     if (list) session.browsers = list;
     return list;
   },
+  ...(typeof __DEV__ !== "undefined" && __DEV__ ? { "import.debugPending": () => activeImports.size } : {}),
   "import.adoptBrowsers": (json: string) => {
     session.browsers = JSON.parse(json) as BrowserSource[];
     return true;

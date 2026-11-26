@@ -144,9 +144,9 @@ import Testing
     let favorite = ImportTabRow(url: "https://favorite.test/", title: "Favorite", pinned: true, customTitle: nil)
     engine.reads["Default"] = .success(FakeImportEngine.read(credentials: [], bookmarks: FakeImportEngine.tree, favorites: [favorite], spaces: [Self.space(), Self.space("Second")]))
     engine.reads["Profile 1"] = .success(FakeImportEngine.read(credentials: [], bookmarks: FakeImportEngine.tree, spaces: [Self.space("Third")]))
-    let result = await runner.run(request(profiles: ["Profile 1", "Default"]))
+    let result = await runner.run(request(profiles: ["Profile 1", "Default"], kinds: [.bookmarks, .tabs, .favorites]))
     #expect(result.failures.isEmpty)
-    #expect(result.status == [.tabs: .done, .spaces: .done, .pinnedTabs: .done])
+    #expect(result.status == [.bookmarks: .done, .tabs: .done, .spaces: .done, .pinnedTabs: .done, .favorites: .done])
     #expect(engine.workspaces.map { $0.0 } == ["default", "new-Second", "default", "new-Third"])
     #expect(engine.created.map { $0.0 } == ["Second", "Third"])
     #expect(engine.createdOptions.map { $0.1 } == ["default", nil])
@@ -208,6 +208,21 @@ import Testing
     #expect(engine.faviconAdoptions.isEmpty)
     #expect(engine.faviconStores.isEmpty)
     #expect(engine.workspaces.isEmpty)
+  }
+
+  @Test func stoppedAdoptionPreventsEveryLaterDestinationInTheFullRun() async {
+    let (runs, engine, runner, _) = setup()
+    runs.browsers = [source()]
+    engine.reads["Default"] = .success(FakeImportEngine.read(credentials: [], spaces: [Self.space(), Self.space("Second")], favicons: FakeImportEngine.icons))
+    engine.onFaviconAdopt = { runs.current?.stop() }
+    let result = await runner.run(request())
+    #expect(result.counts.tabs == 0)
+    #expect(result.notes == [ImportRunner.stoppedNote])
+    #expect(engine.faviconAdoptions.count == 1)
+    #expect(engine.faviconStores.isEmpty)
+    #expect(engine.liveImports.isEmpty)
+    #expect(engine.workspaces.isEmpty)
+    #expect(engine.created.isEmpty)
   }
 
 }

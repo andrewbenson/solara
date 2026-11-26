@@ -98,9 +98,11 @@ sqlite3 CLI: it checkpoints the WAL the tests depend on.
 | Swift tests (`tests/`, against `fixtures/`) | `pnpm --filter @solara/import test` (`swift test`, scratch path in `$TMPDIR`) |
 | Rebuild fixtures | `pnpm --filter @solara/import fixtures` |
 | Typecheck the JS wrapper | `pnpm --filter @solara/import typecheck` |
-| End to end through the native Import window in a hidden instance (cookies, addresses, cards) | `node packages/settings/scripts/import-e2e.mjs <Solara.app> <scratch dir>` |
+| End to end through the native Import window in a hidden instance (cookies, addresses, cards) | `node packages/settings/scripts/import-e2e.mjs <Debug.app> <scratch dir>` |
 
-## Test hooks (`ios/ImportModule.swift`)
+## Test hooks (`ios/ImportEnvironment.swift`)
+
+These overrides are compiled only in Debug and require a nonempty isolated `SOLARA_DATA_DIR`. Release always uses ordinary discovery and the Safe Storage provider. Run import-e2e and sidebar-parity against a Debug app with its JavaScript supplied by the instance harness. Never point these drivers at real browser data.
 
 | Variable | Effect |
 |---|---|
@@ -108,6 +110,10 @@ sqlite3 CLI: it checkpoints the WAL the tests depend on.
 | `SOLARA_IMPORT_SAFARI_HOME` | Safari direct reads from this home. If it isn't set, the home is two levels above `SOLARA_IMPORT_SOURCE_DIR`, and only when that is set |
 | `SOLARA_IMPORT_TEST_SECRET` | `unlockBrowser` uses this as every browser's Safe Storage secret and never touches the Keychain |
 | `SOLARA_IMPORT_DIA_BUNDLE_ID` | The Dia tabs functions talk to this bundle ID instead of `company.thebrowser.dia` |
+
+The stored production escape hatch remains `defaults write network.benson.solara ImportRoute script`; removing that key restores Swift for Arc and Zen spaces/tabs. The parity driver sets this key only through an isolated instance's defaults, with `forceScript=false`.
+
+`node packages/settings/scripts/sidebar-parity.mjs <Debug.app> <fresh scratch>` drives both routes from synthetic source files, checks the frozen strict or route-specific manifest, drains writes and checks relaunch state. Its output retains each route's snapshot and a per-case diff. The Debug fixture override behavior and ignored Release overrides are checked without browser or keychain reads by `python3 packages/import/tests/environment-host/run.py --scratch <scratch>`.
 
 ## Adding a source or a kind
 

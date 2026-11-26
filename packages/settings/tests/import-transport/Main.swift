@@ -42,7 +42,7 @@ struct ImportTransportTests {
     precondition(workRead.spaces.first?.icon == "briefcase")
     precondition(workRead.spaces.first?.theme != nil)
     precondition(workRead.spaces.first?.colors?.count == 2)
-    let synthetic = try JSONDecoder().decode(SpaceSuggestion.self, from: Data(#"{"id":"s","name":"Space","profileId":"source","color":"#123456","colors":["#123456","#ABCDEF"],"emoji":"🌱","icon":"leaf","theme":"{}","pinned":[{"type":"folder","title":"Live","role":"liveGitHubPullRequests","children":[{"type":"url","title":"Alias","url":"https://pin.example/","pageTitle":"","dateAdded":123}]}],"tabs":[{"url":"https://open.example/","title":"Open","pinned":false,"customTitle":"Alias","windowIndex":0,"active":false}]}"#.utf8))
+    let synthetic = try JSONDecoder().decode(SpaceSuggestion.self, from: Data(##"{"id":"s","name":"Space","profileId":"source","color":"#123456","colors":["#123456","#ABCDEF"],"emoji":"🌱","icon":"leaf","theme":"{}","pinned":[{"type":"folder","title":"Live","role":"liveGitHubPullRequests","children":[{"type":"url","title":"Alias","url":"https://pin.example/","pageTitle":"","dateAdded":123}]}],"tabs":[{"url":"https://open.example/","title":"Open","pinned":false,"customTitle":"Alias","windowIndex":0,"active":false}]}"##.utf8))
     let mapped = ImportRunEngine.space(synthetic)
     precondition(mapped.emoji == "🌱" && mapped.icon == "leaf" && mapped.theme == "{}")
     precondition(mapped.color == "#123456" && mapped.colors == ["#123456", "#ABCDEF"])

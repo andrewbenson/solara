@@ -11,6 +11,16 @@ final class ZenTests: XCTestCase {
     nodes.map { $0.type == .url ? $0.title : "\($0.title)[\(titles($0.children ?? []).joined(separator: ", "))]" }
   }
 
+  func testModernPrivateFlagDoesNotExcludeTopLevelSpacesButLegacyWindowsAreExcluded() throws {
+    let modern: [String: Any] = ["isPrivate": true, "spaces": [["uuid": "modern", "name": "Modern"]], "tabs": [["entries": [["url": "https://modern.example/", "title": "Modern"]], "index": 1, "zenWorkspace": "modern"]]]
+    let modernData = try JSONSerialization.data(withJSONObject: modern)
+    let parsed = try ZenSidebar.parse(modernData, profileId: "fixture")
+    XCTAssertEqual(parsed.spaces.map(\.id), ["modern"])
+    XCTAssertEqual(parsed.spaces.first?.tabs.map(\.url), ["https://modern.example/"])
+    let legacy = try ZenSidebar.parse(JSONSerialization.data(withJSONObject: ["windows": [modern]]), profileId: "fixture")
+    XCTAssertTrue(legacy.spaces.isEmpty)
+  }
+
   func testDiscoveryListsZenWithItsSpaces() throws {
     let zen = try XCTUnwrap(Fixtures.discovery().list().first { $0.id == "zen" })
     XCTAssertEqual(zen.family, .firefox)

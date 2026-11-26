@@ -1,12 +1,4 @@
 #!/usr/bin/env node
-// End-to-end import into the native (SwiftUI) Import window of a hidden instance, from packages/import's fake Chrome
-// home (never a real profile). It drives the window's model through SolaraSettings.devImport (background instances
-// only) instead of clicks, and checks the imported cookies, addresses and cards.
-//
-//   node packages/settings/scripts/import-e2e.mjs <Solara.app> <scratch dir>
-//
-//   <Solara.app>     a Release build (JS bundled); it runs hidden with its own data dir under <scratch dir>/data
-//   <scratch dir>    data/ and home/ are wiped first; result.txt lists one line per check
 import { execFileSync } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
@@ -25,7 +17,6 @@ execFileSync("python3", [new URL("../../import/scripts/e2e_fixture.py", import.m
 
 const inst = await launch(app, {
   data: DATA,
-  js: "none",
   probe: true,
   onboarded: true,
   env: { SOLARA_IMPORT_SOURCE_DIR: `${HOME}/Library/Application Support`, SOLARA_IMPORT_TEST_SECRET: SECRET },
@@ -39,12 +30,16 @@ const ok = (cond, msg) => {
 };
 try {
   const drive = (action, arg = null) => run(`return globalThis.expo.modules.SolaraSettings.devImport(${JSON.stringify(action)}, ${JSON.stringify(arg)})`);
+  const initial = await drive("state");
+  if (typeof initial.pendingWrites !== "number") throw new Error("import-e2e requires Debug before discovery");
   await run(`ac.runCommand({ command: "importBrowserData", arg: null, windowId: null }); return true`);
   let state = {};
   for (const deadline = Date.now() + 30000; Date.now() < deadline; await sleep(300)) {
     state = await drive("state");
     if (state.step === "choose") break;
   }
+  ok(typeof state.pendingWrites === "number", "Debug import hooks are present");
+  if (typeof state.pendingWrites !== "number") throw new Error("import-e2e requires a Debug app");
   ok(state.step === "choose", `native import window opened on choose (${state.step ?? state.error})`);
   ok(state.browsers?.includes("chrome"), `Chrome fixture listed (${state.browsers})`);
   state = await drive("select", "chrome");

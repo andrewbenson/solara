@@ -407,12 +407,13 @@ struct ImportRunTests {
     #expect(engine.readCount == 1)
   }
 
-  @Test func sidebarPlacementRemainsOnScriptWithOriginalSelection() async {
+  @Test func storedScriptOverridePreservesOriginalSidebarSelection() async {
     for browser in [ImportFixtures.arc, ImportFixtures.zen] {
       let requests: [[ImportKind]] = [[.tabs], [.spaces], [.pinnedTabs], [.tabs, .favorites]]
       for kinds in requests {
         let (runs, engine, script, session) = setup([browser])
         runs.forceScript = false
+        runs.scriptRouteDefault = { "script" }
         let req = ImportRunRequest(runId: "r1", browserId: browser.id, profileIds: ["p"], spaceIds: ["s", "unknown"], kinds: kinds, target: "work", withoutKey: true)
         _ = await runs.run(req, session: session, engine: engine, script: script, scriptSession: 7)
         #expect(runs.route(of: "r1") == .js)
@@ -429,6 +430,29 @@ struct ImportRunTests {
     }
   }
 
+  @Test func sidebarDefaultStoredScriptAndRemovalUseActualRouteWithoutForceScript() async throws {
+    for browser in [ImportFixtures.arc, ImportFixtures.zen] {
+      let suite = "SidebarRoute-\(UUID().uuidString)"
+      let defaults = try #require(UserDefaults(suiteName: suite))
+      defer { defaults.removePersistentDomain(forName: suite) }
+      let (runs, engine, script, session) = setup([browser])
+      runs.forceScript = false
+      runs.scriptRouteDefault = { defaults.string(forKey: "ImportRoute") }
+      let source = try #require(browser.profiles.first)
+      engine.reads[source.id] = .success(FakeImportEngine.read(credentials: [], spaces: [ImportSidebarRunTests.space()]))
+      for (id, override, expected) in [("native", nil as String?, ImportRoute.swift), ("fallback", "script", .js), ("restored", nil, .swift)] {
+        if let override { defaults.set(override, forKey: "ImportRoute") } else { defaults.removeObject(forKey: "ImportRoute") }
+        let req = ImportRunRequest(runId: id, browserId: browser.id, profileIds: [source.id], spaceIds: ["First"], kinds: [.tabs, .spaces, .pinnedTabs], target: "default", withoutKey: false)
+        _ = await runs.run(req, session: session, engine: engine, script: script, scriptSession: 1)
+        #expect(runs.route(of: id) == expected)
+      }
+      #expect(engine.readCount == 2)
+      #expect(engine.workspaces.count == 2)
+      #expect(script.requests.count == 1)
+      #expect(!runs.forceScript)
+    }
+  }
+
   @Test func routeTakesChromiumFirefoxAndArcForEveryKindSwiftRuns() {
     #expect(ImportRoute.of(ImportFixtures.chrome, kinds: [.passwords, .cookies, .autofill]) == .swift)
     #expect(ImportRoute.of(Self.firefox, kinds: [.passwords]) == .swift)
@@ -439,11 +463,11 @@ struct ImportRunTests {
     #expect(ImportRoute.of(ImportFixtures.arc, kinds: [.bookmarks]) == .swift)
     #expect(ImportRoute.of(ImportFixtures.arc, kinds: [.bookmarks, .history, .passwords, .cookies, .autofill, .favorites]) == .swift)
     #expect(ImportRoute.of(ImportFixtures.zen, kinds: [.bookmarks, .history, .favorites, .passwords]) == .swift)
-    #expect(ImportRoute.of(ImportFixtures.zen, kinds: [.bookmarks, .tabs]) == .js)
-    #expect(ImportRoute.of(ImportFixtures.arc, kinds: [.tabs]) == .js)
-    #expect(ImportRoute.of(ImportFixtures.arc, kinds: [.bookmarks, .spaces]) == .js)
-    #expect(ImportRoute.of(ImportFixtures.zen, kinds: [.passwords, .spaces]) == .js)
-    #expect(ImportRoute.of(ImportFixtures.zen, kinds: [.pinnedTabs]) == .js)
+    #expect(ImportRoute.of(ImportFixtures.zen, kinds: [.bookmarks, .tabs]) == .swift)
+    #expect(ImportRoute.of(ImportFixtures.arc, kinds: [.tabs]) == .swift)
+    #expect(ImportRoute.of(ImportFixtures.arc, kinds: [.bookmarks, .spaces]) == .swift)
+    #expect(ImportRoute.of(ImportFixtures.zen, kinds: [.passwords, .spaces]) == .swift)
+    #expect(ImportRoute.of(ImportFixtures.zen, kinds: [.pinnedTabs]) == .swift)
     #expect(ImportRoute.of(ImportFixtures.safari, kinds: [.bookmarks]) == .js)
     #expect(ImportRoute.of(ImportBrowser(id: "diaTabs", name: "Dia", family: .automation, profiles: []), kinds: [.tabs]) == .js)
     #expect(ImportRoute.of(ImportFixtures.chrome, kinds: [.bookmarks, .spaces]) == .js)
@@ -536,9 +560,9 @@ struct ImportRunTests {
     let (runs, engine, script, session) = setup([ImportFixtures.chrome, Self.zen])
     _ = await runs.run(request([.pinnedTabs, .passwords]), session: session, engine: engine, script: script, scriptSession: 4)
     _ = await runs.run(request([.tabs, .passwords], browser: "zen", runId: "r2"), session: session, engine: engine, script: script, scriptSession: 4)
-    #expect(script.calls == ["run:r1:4", "run:r2:4"])
-    #expect(engine.calls.isEmpty)
-    #expect(engine.logs == ["[import] run r1 route=js family=chromium", "[import] run r2 route=js family=firefox"])
+    #expect(script.calls == ["run:r1:4"])
+    #expect(engine.calls.prefix(2) == ["unlock:zen", "read:Default"])
+    #expect(engine.logs == ["[import] run r1 route=js family=chromium", "[import] run r2 route=swift family=firefox"])
   }
 
   @Test func aFailedReadMarksThatProfileAndTheNextGetsTheTarget() async {

@@ -557,6 +557,18 @@ public class ShellModule: Module {
     AsyncFunction("replyToTerminate") { (ok: Bool) in WindowManager.shared.replyToTerminate(ok) }.runOnQueue(.main)
 
     AsyncFunction("confirm") { (options: [String: Any], promise: Promise) in
+      #if DEBUG
+      let importEnvironment = ProcessInfo.processInfo.environment
+      if !(importEnvironment["SOLARA_DATA_DIR"] ?? "").isEmpty, importEnvironment["SOLARA_IMPORT_TEST_ACK"] == "holdAdoption", options["title"] as? String == "Import as new profile?" {
+        MainActor.assumeIsolated {
+          ShellImportDebug.hold { promise.resolve(["confirmed": false, "suppressed": false]) }
+        }
+        return
+      }
+      if !(importEnvironment["SOLARA_DATA_DIR"] ?? "").isEmpty, importEnvironment["SOLARA_IMPORT_TEST_PROMPT"] == "abort", options["title"] as? String == "Import as new profile?" {
+        return promise.resolve(["confirmed": false, "suppressed": false])
+      }
+      #endif
       let alert = ShellModule.alert(options)
       alert.addButton(withTitle: options["confirmTitle"] as? String ?? "OK")
       alert.addButton(withTitle: options["cancelTitle"] as? String ?? "Cancel")
@@ -2518,3 +2530,19 @@ final class PopoverBubble: ExpoView {
 public enum ShellDragEscape {
   public static var swallows: ((NSEvent, () -> Void) -> Bool)?
 }
+
+#if DEBUG
+@MainActor
+public enum ShellImportDebug {
+  private static var reply: (@MainActor () -> Void)?
+  public static var held: Bool { reply != nil }
+
+  static func hold(_ callback: @escaping @MainActor () -> Void) { reply = callback }
+
+  public static func release() {
+    let callback = reply
+    reply = nil
+    callback?()
+  }
+}
+#endif

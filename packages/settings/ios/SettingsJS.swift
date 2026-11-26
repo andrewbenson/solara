@@ -14,6 +14,20 @@ public final class SettingsJS {
   private var connectListeners: [() -> Void] = []
   private var pending: [Int: CheckedContinuation<Any?, Error>] = [:]
   private var nextId = 0
+  #if DEBUG
+  private var importReplyNames: [Int: String] = [:]
+  private var heldImportReply: (Int, String?, String?)?
+  private var releasingImportReply = false
+  var devImportReplyHeld: Bool { heldImportReply != nil }
+
+  func devReleaseImportReply() {
+    guard let (id, result, error) = heldImportReply else { return }
+    heldImportReply = nil
+    releasingImportReply = true
+    reply(id, resultJSON: result, error: error)
+    releasingImportReply = false
+  }
+  #endif
   private var topics: [String: [UUID: (Any?) -> Void]] = [:]
   private(set) var latest: [String: Any] = [:]
 
@@ -46,11 +60,30 @@ public final class SettingsJS {
     defer { deadline?.cancel() }
     return try await withCheckedThrowingContinuation { continuation in
       pending[id] = continuation
+      #if DEBUG
+      if !(ProcessInfo.processInfo.environment["SOLARA_DATA_DIR"] ?? "").isEmpty { importReplyNames[id] = name }
+      #endif
       send(id, name, String(decoding: payload, as: UTF8.self))
     }
   }
 
   func reply(_ id: Int, resultJSON: String?, error: String?) {
+    #if DEBUG
+    let environment = ProcessInfo.processInfo.environment
+    if !releasingImportReply, !(environment["SOLARA_DATA_DIR"] ?? "").isEmpty {
+      let name = importReplyNames[id]
+      if environment["SOLARA_IMPORT_TEST_ACK"] == "holdAdoption", name == "import.adoptFavicons" {
+        heldImportReply = (id, resultJSON, error)
+        return
+      }
+      if environment["SOLARA_IMPORT_TEST_ACK"] == "rejectTheme", name == "import.adoptProfileTheme" {
+        importReplyNames[id] = nil
+        pending.removeValue(forKey: id)?.resume(returning: false)
+        return
+      }
+    }
+    importReplyNames[id] = nil
+    #endif
     guard let continuation = pending.removeValue(forKey: id) else { return }
     if let error { return continuation.resume(throwing: SettingsJSError(description: error)) }
     guard let resultJSON, let data = resultJSON.data(using: .utf8) else { return continuation.resume(returning: nil) }
@@ -61,6 +94,10 @@ public final class SettingsJS {
   func failAll(_ reason: String) {
     let waiting = pending
     pending = [:]
+    #if DEBUG
+    importReplyNames = [:]
+    heldImportReply = nil
+    #endif
     for continuation in waiting.values { continuation.resume(throwing: SettingsJSError(description: reason)) }
   }
 

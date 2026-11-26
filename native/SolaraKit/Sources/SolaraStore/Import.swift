@@ -1,3 +1,4 @@
+import Foundation
 import SolaraModel
 
 private struct ImportTab {
@@ -81,6 +82,10 @@ private func importMode(_ value: JSONValue?, fallback: String) throws -> String 
 
 extension Session {
   public func importWorkspace(_ payload: JSONValue) throws -> JSONValue {
+    #if DEBUG
+    let importEnvironment = ProcessInfo.processInfo.environment
+    if !(importEnvironment["SOLARA_DATA_DIR"] ?? "").isEmpty, importEnvironment["SOLARA_IMPORT_TEST_REFUSE_WORKSPACE"] == "1" { throw CommandError("Fixture workspace refusal") }
+    #endif
     guard !config.safeMode else {
       throw CommandError("Imported tabs, spaces and pinned tabs cannot be saved in safe mode. Open Solara normally to import them.")
     }

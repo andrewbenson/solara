@@ -10,7 +10,8 @@ let package = Package(
     .testTarget(
       name: "SolaraLegacyImportCoreTests",
       dependencies: ["SolaraLegacyImportCore"],
-      path: "tests"
+      path: "tests",
+      exclude: ["environment-host"]
     ),
   ]
 )

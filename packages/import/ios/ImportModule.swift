@@ -6,9 +6,7 @@ public final class ImportService: @unchecked Sendable {
   public static let shared = ImportService()
 
   static let importer: Importer = {
-    let env = ProcessInfo.processInfo.environment
-    let support = env["SOLARA_IMPORT_SOURCE_DIR"].map { URL(fileURLWithPath: $0, isDirectory: true) }
-      ?? FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
+    let support = ImportEnvironment.applicationSupport
     let icons = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask)[0]
       .appendingPathComponent("\(Bundle.main.bundleIdentifier ?? "Solara")/ImportIcons", isDirectory: true)
     return Importer(discovery: BrowserDiscovery(
@@ -25,22 +23,10 @@ public final class ImportService: @unchecked Sendable {
   var vault: ImportVault { session.vault }
   var epoch: ImportEpoch { session.epoch }
 
-  static let safariHome: URL = {
-    let env = ProcessInfo.processInfo.environment
-    if let home = env["SOLARA_IMPORT_SAFARI_HOME"] { return URL(fileURLWithPath: home, isDirectory: true) }
-    if let support = env["SOLARA_IMPORT_SOURCE_DIR"] {
-      return URL(fileURLWithPath: support, isDirectory: true).deletingLastPathComponent().deletingLastPathComponent()
-    }
-    return FileManager.default.homeDirectoryForCurrentUser
-  }()
+  static var safariHome: URL { ImportEnvironment.safariHome }
 
   static let secret: Importer.SecretProvider = {
-    let provider: Importer.SecretProvider
-    if let fixed = ProcessInfo.processInfo.environment["SOLARA_IMPORT_TEST_SECRET"] {
-      provider = { _, _ in Data(fixed.utf8) }
-    } else {
-      provider = SafeStorageKeychain.secret
-    }
+    let provider = ImportEnvironment.secret
     #if DEBUG
     return { service, account in
       secretRequestLog.record(["service": service, "account": account, "main": Thread.isMainThread ? "1" : "0"])
@@ -57,7 +43,7 @@ public final class ImportService: @unchecked Sendable {
   public static var secretRequests: [[String: String]] { secretRequestLog.entries }
   #endif
 
-  static let diaBundleId = ProcessInfo.processInfo.environment["SOLARA_IMPORT_DIA_BUNDLE_ID"] ?? DiaAutomation.bundleIdentifier
+  static var diaBundleId: String { ImportEnvironment.diaBundleId }
 
   static let work = DispatchQueue(label: "solara.import", qos: .userInitiated, attributes: .concurrent)
 
@@ -108,7 +94,7 @@ public final class ImportService: @unchecked Sendable {
   public func cancelRead(jobId: String) { session.jobs.cancel(jobId) }
 
   #if DEBUG
-  static var diaFixture: String? { ProcessInfo.processInfo.environment["SOLARA_IMPORT_DIA_FIXTURE"] }
+  static var diaFixture: String? { ImportEnvironment.diaFixture }
   #endif
 
   static var diaFixtureStatus: DiaAutomation.Status? {

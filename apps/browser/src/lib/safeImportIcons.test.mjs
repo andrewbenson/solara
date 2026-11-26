@@ -24,6 +24,7 @@ let pngFixture = Data("png fixture".utf8)
 let app = fixture.appendingPathComponent("Browser.app", isDirectory: true)
 
 enum SolaraCoreHost { static var safeMode = false }
+enum ImportEnvironment { static var applicationSupport: URL { FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0] } }
 final class FileManager {
   static let \`default\` = FileManager()
   private let manager = Foundation.FileManager.default

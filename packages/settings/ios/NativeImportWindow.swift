@@ -26,7 +26,7 @@ enum NativeImportWindow {
   static weak var current: ImportModel?
   static weak var hosting: ImportHostingController?
 
-  nonisolated static var drivable: Bool { ProcessInfo.processInfo.environment["SOLARA_BACKGROUND"] == "1" }
+  nonisolated static var drivable: Bool { ProcessInfo.processInfo.environment["SOLARA_BACKGROUND"] == "1" && !(ProcessInfo.processInfo.environment["SOLARA_DATA_DIR"] ?? "").isEmpty }
 
   static func drive(_ action: String, _ argument: String?) async -> [String: Any] {
     guard drivable, let model = current else { return withDevFields(["error": "no native import window"], nil) }
@@ -37,6 +37,23 @@ enum NativeImportWindow {
     case "next": await model.next()
     case "unlock": await model.unlock()
     #if DEBUG
+    case "storedRoute":
+      guard !(ProcessInfo.processInfo.environment["SOLARA_DATA_DIR"] ?? "").isEmpty else { return ["error": "isolated data required"] }
+      ImportRuns.shared.forceScript = false
+      if argument == "script" { UserDefaults.standard.set("script", forKey: "ImportRoute") }
+      else { UserDefaults.standard.removeObject(forKey: "ImportRoute") }
+      ImportRoutingDebug.outcome = nil
+      ImportRoutingDebug.route = nil
+    case "target":
+      model.target = argument ?? ""
+    case "cancelRun":
+      model.services.cancel()
+      _ = try? await SettingsJS.shared.invoke("import.dispose", [], timeout: 2)
+    case "ackRelease":
+      SettingsJS.shared.devReleaseImportReply()
+      ShellImportDebug.release()
+    case "themeDeadline":
+      if let milliseconds = argument.flatMap(Int.init) { ImportRuns.shared.themeAdoptionDeadline = .milliseconds(milliseconds) }
     case "kinds":
       model.kinds = Set((argument ?? "").split(separator: ",").compactMap { SolaraUI.ImportKind(rawValue: String($0)) })
     case "cancel":
@@ -74,13 +91,23 @@ enum NativeImportWindow {
       "notes": model.notes,
       "error": model.error as Any,
     ]
+    #if DEBUG
+    var debugState = state
+    debugState["pendingScript"] = (try? await SettingsJS.shared.invoke("import.debugPending", [], timeout: 2)) as? Int ?? -1
+    return withDevFields(debugState, model)
+    #else
     return withDevFields(state, model)
+    #endif
   }
 
   static func withDevFields(_ base: [String: Any], _ model: ImportModel?) -> [String: Any] {
     #if DEBUG
     var state = base
     state["vault"] = ImportAdapter.devVaultCount
+    state["route"] = ImportRoutingDebug.route as Any? ?? NSNull()
+    state["outcome"] = ImportRoutingDebug.snapshot
+    state["ackHeld"] = SettingsJS.shared.devImportReplyHeld || ShellImportDebug.held
+    state["forceScript"] = ImportRuns.shared.forceScript
     state["trace"] = ImportRuns.shared.devTrace
     state["pendingWrites"] = ImportRuns.shared.pendingWrites
     if let model {

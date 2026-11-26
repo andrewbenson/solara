@@ -232,6 +232,63 @@ test("a cancel during the new-profile prompt creates no profile", async () => {
   assert.deepEqual(fixture.created, [], "the cancelled import created a profile");
 });
 
+for (const action of ["import.cancel", "import.dispose"]) {
+  for (const confirmed of [false, true]) {
+    test(`${action} after Arc adoption stops at the held destination prompt with confirmed=${confirmed}`, { timeout: 5000 }, async () => {
+      const asked = deferred();
+      const answer = deferred();
+      const spaces = [
+        { id: "selected", name: "First", pinned: [{ type: "url", title: "Calendar", url: "https://calendar.example/" }], tabs: [{ title: "Today", url: "https://today.example/" }] },
+        { id: "clash", name: "Clash", pinned: [{ type: "url", title: "Later", url: "https://later.example/" }], tabs: [] },
+      ];
+      const arc = { id: "arc", name: "Arc", family: "arc", sidebar: "arc", profiles: [{ id: "p", name: "Default", spaces }] };
+      const favicons = ["https://calendar.example/", "https://today.example/", "https://later.example/"].map((page) => ({ page, icon: `${page}favicon.png`, png: "AAAA" }));
+      let signal;
+      let settled = false;
+      const fixture = bridge({
+        browsers: [arc],
+        profiles: [{ id: "existing", name: "Target" }, { id: "clash", name: "Clash" }],
+        importData: async (_, __, ___, options) => {
+          signal = options.signal;
+          return emptyResult({ spaces, favicons, vaultToken: "after-adoption" });
+        },
+        confirm: () => { asked.resolve(); return answer.promise; },
+      });
+      const session = fixture.handlers["import.open"]().session;
+      await fixture.handlers["import.listBrowsers"]();
+      const run = fixture.handlers["import.run"](runRequest({ browserId: "arc", profileIds: ["p"], spaceIds: ["selected", "clash"], kinds: ["tabs", "spaces", "pinnedTabs"] }), session);
+      void run.then(() => { settled = true; }, () => { settled = true; });
+      try {
+        await asked.promise;
+        await ticks();
+        assert.equal(settled, false);
+        assert.equal(signal.aborted, false);
+        assert.equal(fixture.nativeWrites.length, 1);
+        const firstWrite = JSON.stringify(fixture.nativeWrites[0]);
+        assert.ok(firstWrite.includes("https://calendar.example/"));
+        assert.ok(firstWrite.includes("https://today.example/"));
+        assert.ok(!firstWrite.includes("https://later.example/"));
+        assert.deepEqual(fixture.faviconWrites.map((write) => write[1]), ["https://calendar.example/", "https://today.example/"]);
+        await fixture.handlers[action]();
+        assert.equal(signal.aborted, true);
+        assert.equal(settled, false, "cancellation reaches the script before the prompt is released");
+        answer.resolve({ confirmed });
+        const result = await run;
+        await ticks();
+        assert.equal(result.cancelled, true);
+        assert.equal(fixture.nativeWrites.length, 1, "the saved first space remains the only workspace write");
+        assert.equal(JSON.stringify(fixture.nativeWrites[0]), firstWrite);
+        assert.deepEqual(fixture.faviconWrites.map((write) => write[1]), ["https://calendar.example/", "https://today.example/"]);
+        assert.deepEqual(fixture.created, []);
+        assert.deepEqual(fixture.discarded, ["after-adoption"]);
+      } finally {
+        answer.resolve({ confirmed });
+        await run;
+      }
+    });
+  }
+}
+
 for (const kind of ["safariDirect", "run"]) {
   test(`a ${kind} read that lands after the drain discards its vault entry`, async () => {
     const entered = deferred();

@@ -11,9 +11,9 @@ import SolaraUI
 final class ImportAdapter: ImportServices, ImportScriptPath {
   static let progressTopic = "import.progress"
   static let targetsTopic = "import.targets"
-  private var session = 0
-  private var swiftSession = 0
-  private let direct = SettingsDirectWrites.store != nil
+  var session = 0
+  var swiftSession = 0
+  let direct = SettingsDirectWrites.store != nil
   private var service: ImportService? { direct ? ImportService.shared : nil }
   private var diaRoute: ImportRoute = .js
   private var diaLaunched = Date.distantPast
@@ -83,24 +83,6 @@ final class ImportAdapter: ImportServices, ImportScriptPath {
   func unlockBrowser(_ browserId: String) async -> Bool {
     guard let service else { return await SettingsAdapters.js("import.unlock", browserId) as? Bool ?? false }
     return await service.unlock(browserId)
-  }
-
-  func run(_ request: ImportRunRequest) async -> ImportRunOutcome {
-    guard direct else { return await scriptRun(request, session: session) }
-    return await ImportRuns.shared.run(request, session: swiftSession, engine: ImportRunEngine.shared, script: self, scriptSession: session)
-  }
-
-  func scriptRun(_ request: ImportRunRequest, session: Int) async -> ImportRunOutcome {
-    let arg: [String: Any] = [
-      "runId": request.runId,
-      "browserId": request.browserId,
-      "profileIds": request.profileIds,
-      "spaceIds": request.spaceIds,
-      "kinds": request.kinds.map(\.rawValue),
-      "target": request.target,
-      "withoutKey": request.withoutKey,
-    ]
-    return Self.runOutcome(await SettingsAdapters.js("import.run", arg, session), kinds: request.kinds)
   }
 
   static func runOutcome(_ value: Any?, kinds: [SolaraUI.ImportKind]) -> ImportRunOutcome {
@@ -400,7 +382,7 @@ final class ImportRunEngine: ImportEngine {
   static func adoptTimeout(_ deadline: TimeInterval) -> TimeInterval {
     #if DEBUG
     let env = ProcessInfo.processInfo.environment
-    if env["SOLARA_DATA_DIR"] != nil, let ms = env["SOLARA_IMPORT_TEST_ADOPT_TIMEOUT_MS"].flatMap(Double.init) { return ms / 1000 }
+    if !(env["SOLARA_DATA_DIR"] ?? "").isEmpty, let ms = env["SOLARA_IMPORT_TEST_ADOPT_TIMEOUT_MS"].flatMap(Double.init) { return ms / 1000 }
     #endif
     return deadline
   }
@@ -510,6 +492,10 @@ final class ImportRunEngine: ImportEngine {
   func engineProfile(_ id: String) -> String { SettingsDirectWrites.store?.state.engineProfile(id) ?? id }
 
   func askImportAsNewProfile() async -> Bool? {
+    #if DEBUG
+    let environment = ProcessInfo.processInfo.environment
+    if !(environment["SOLARA_DATA_DIR"] ?? "").isEmpty, environment["SOLARA_IMPORT_TEST_PROMPT"] == "abort" { return nil }
+    #endif
     guard let window = Self.importWindow() else { return nil }
     let alert = NSAlert()
     alert.messageText = "Import as new profile?"

@@ -203,8 +203,9 @@ public enum ImportRoute: String, Sendable {
 
   public static func of(_ source: ImportBrowser?, kinds: [ImportKind]) -> ImportRoute {
     guard let source, [.chromium, .firefox, .arc].contains(source.family) else { return .js }
-    guard !kinds.isEmpty, kinds.allSatisfy(swiftKinds.contains) else { return .js }
-    if source.sidebar != nil, kinds.contains(.tabs) { return .js }
+    let sidebar = (source.family == .arc && source.sidebar == .arc) || (source.family == .firefox && source.sidebar == .zen)
+    let supported = sidebar ? swiftKinds.union([.spaces, .pinnedTabs]) : swiftKinds
+    guard !kinds.isEmpty, kinds.allSatisfy(supported.contains) else { return .js }
     return .swift
   }
 }
@@ -295,7 +296,7 @@ public final class ImportRuns {
   #if DEBUG
   public var forceScript = false
   public var devTrace: [String] = []
-  var themeAdoptionDeadline: Duration = .seconds(10)
+  public var themeAdoptionDeadline: Duration = .seconds(10)
   #endif
 
   func traceStep(_ step: String) {

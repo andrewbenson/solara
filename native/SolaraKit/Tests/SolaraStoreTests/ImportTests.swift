@@ -233,7 +233,7 @@ import Testing
     let links: [JSONValue] = (0..<5000).map { ["title": "Link", "url": .string("https://cap.example/\($0)")] }
     let repeated: [JSONValue] = Array(repeating: ["title": "Overflow", "url": "https://cap.example/overflow"], count: 3)
     let commit = try store.dispatch(command([["tabs": [], "drafts": [
-      ["title": "First", "children": .array(links + [["title": "Nested", "children": .array(repeated)]])],
+      ["title": "First", "children": .array(links + [["title": "Duplicate", "url": "https://cap.example/0"], ["title": "Invalid", "url": "javascript:invalid"], ["title": "Nested", "children": .array(repeated)]])],
       ["title": "Second", "children": [["title": "Fresh", "url": "https://second.example/"]]]
     ]]]))
     #expect(commit.result?["tabs"] == 5001)
@@ -254,6 +254,26 @@ import Testing
     #expect(store.state.profiles["default"]?.theme == file)
     #expect(store.state.profiles["default"]?.ownTheme == imported)
     #expect(store.state.profiles["default"]?.fileTheme?.name == "File")
+  }
+
+  @Test func sidebarRowsAndOpensRespectExistingHomeAndParkedPages() throws {
+    let seed = makeStore()
+    let window = try #require(try seed.dispatch(Command("createWindow", [["url": "https://away.example/"]])).result?.string)
+    let existing = try #require(seed.state.windows[window]?.tabIds.first)
+    try seed.dispatch(Command("pinTabs", [[.string(existing)], true]))
+    var state = seed.state
+    state.tabs[existing]!.pinnedUrl = "https://home.example/"
+    let snapshot = TabSnapshot(url: "https://parked.example/", title: "Parked", favicon: nil, pinned: true, muted: false, zoom: 1, customTitle: nil, customIcon: nil, profileId: "default", pinnedUrl: "https://parked.example/")
+    state.parkedPins["default"] = ParkedPins(tabs: [ParkedTab(snapshot: snapshot, id: "parked", groupId: nil, restoreFrom: nil)], groups: [], splits: nil)
+    let store = Store(state: state, checksInvariants: true)
+    let before = store.state
+    let commit = try store.dispatch(command([
+      ["tabs": [["url": "https://home.example/", "title": "Home", "pinned": true, "row": true], ["url": "https://parked.example/", "title": "Parked", "pinned": true, "row": true]]],
+      ["tabs": [["url": "https://away.example/", "title": "Away"], ["url": "https://parked.example/", "title": "Parked"]], "group": "Imported"]
+    ]))
+    #expect(commit.result?["tabs"] == 0)
+    #expect(store.state == before)
+    #expect(Invariants.violations(store.state).isEmpty)
   }
 
 }

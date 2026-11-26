@@ -165,7 +165,6 @@ try {
   const peekURL = `http://127.0.0.1:${server.address().port}/peek`;
   app = await launch(appPath, {
     data: join(output, "data"), fresh: true, onboarded: true, probe: true, keepData: true,
-    env: { SOLARA_NATIVE_WINDOW_LAYOUT: process.env.SOLARA_NATIVE_WINDOW_LAYOUT ?? "1" },
     session: session({
       profiles: ["Personal", "Work"],
       windows: [
@@ -240,21 +239,37 @@ try {
     await press("w1", "\u001b", 53, [], { focus: null, send: true });
     await until("search Escape", async () => !(await pickers()).search);
   }
+  const switcherActivations = (state) =>
+    state.windows.w1.tabIds.map((id) => [id, state.tabs[id].lastActiveAt]);
   for (const backward of [false, true]) {
-    await run(`ac.runCommand({command:"tabSwitcher",arg:${JSON.stringify(backward ? "backward" : "forward")},windowId:"w1"}); return true;`);
+    const step = (direction) => run(`ac.runCommand({command:"tabSwitcher",arg:${JSON.stringify(direction)},windowId:"w1"}); return true;`);
+    await step(backward ? "backward" : "forward");
     await until("switcher delay and native rows", async () => (await pickers()).switcher?.ids.length > 1);
     const before = (await pickers()).switcher;
-    await run('ac.runCommand({command:"tabSwitcher",arg:"forward",windowId:"w1"}); return true;');
-    const next = (await pickers()).switcher;
+    assert.equal(before.index, backward ? before.ids.length - 1 : 1);
+    await step("forward");
+    let next = (await pickers()).switcher;
     assert.equal(next.index, (before.index + 1) % before.ids.length);
+    if (backward) {
+      await step("backward");
+      assert.equal((await pickers()).switcher.index, before.index);
+      await step("backward");
+      next = (await pickers()).switcher;
+      assert.equal(next.index, before.index - 1);
+    }
     const target = next.ids[next.index];
+    const held = (await nativeState()).data;
+    assert.notEqual(active(held), target, "switcher hold has not activated its target");
     await release();
-    await until("switcher release", state => active(state) === target);
-    const settled = await nativeState();
+    const settled = await until("switcher release", async (state) => active(state) === target && !(await pickers()).switcher);
+    assert.ok(settled.tabs[target].lastActiveAt > held.tabs[target].lastActiveAt, "release records target activation");
     await release();
-    assert.equal((await nativeState()).rev, settled.rev, "release commits once");
+    const repeated = (await nativeState()).data;
+    assert.equal(active(repeated), target, "repeated release leaves the target selected");
+    assert.deepEqual(switcherActivations(repeated), switcherActivations(settled), "repeated release does not activate a tab");
     await capture("native switcher direction/release once", { backward, target, before, next });
   }
+  await setup('ac.store.getState().activate("c")');
   await run('return expo.modules.SolaraApp.devPostKey("w1", "`", 50, ["control"]);');
   await until("real switcher key hold", async () => (await pickers()).switcher?.ids.length > 1);
   const keyed = (await pickers()).switcher;

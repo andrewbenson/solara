@@ -25,6 +25,7 @@ public class SettingsModule: Module {
       DispatchQueue.main.async { MainActor.assumeIsolated {
         PairingAdapter.install()
         PictureInPictureAdapter.install()
+        NativeMediaPreferences.start()
         NativeSettingsWindow.install()
         NativeConfigNotifier.install()
         NativeTabPictures.install()

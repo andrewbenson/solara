@@ -845,3 +845,10 @@ elsewhere in the inventory has been removed.
 `apps/browser/src/components/SmallWindowCard.tsx`: 14 lines, d, 0.4.6 — Native small-window card container selector and state projection; legacy lane returns its original View.
 
 The 0.4.2 omnibox action owner is `OmniboxActionController` with `SolaraStore/OmniboxActions.swift`; both native field hosts decorate the same model events. Swift `SolaraOmnibox` already parses and ranks input. `NativeOmniboxActions` owns AppKit clipboard/context menus, address clicks, Developer Mode submission, file selection and opening Command Bar surfaces. Nonopening commands without native menu owners retain their explicit JS fallback. The disabled-JS acceptance driver is `apps/browser/scripts/native-omnibox-actions-test.mjs`; compilation and VM acceptance remain pending.
+
+### 0.4.9 row 3 source drafts
+
+Media preferences: `media/pip.ts` no longer reads the mirror to synchronize global
+auto-PiP/upscaling settings. NativeMediaPreferences owns this feed and the existing
+display-media picker enablement. The visible-page hook and remaining media stores
+are still JS. Row acceptance remains pending; historical totals above are unchanged.

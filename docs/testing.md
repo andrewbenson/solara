@@ -620,3 +620,17 @@ Before/after, both `SOLARA_NATIVE_WINDOW_LAYOUT=0` and `1`: native-tab-commands 
 Also run the focus/window/page-lifetime group: native-layout, native-layout-default, native-presentation, window-toolbar, windowing, url-focus, newtab, pane-overlays, pane-roots-placement, main-top, shell-modal-a11y, pool-e2e, little-solara and SolaraCore activation-acceptance. Keep the shortcut hold/claim/replay, supersession, timeout, cancellation/first-and-next-paste, Return/autofocus, key-up ordering and JS-busy legs unchanged. Use matching source/JS, fresh task-local output/data/TMPDIR and existing Metro; record actual layout and unchanged disabled-handler counters. Pending host gates: mount timeout, second shortcut, replacement/ownership loss, changed key window, private/Peek/small isolation and Release probe exclusion.
 
 Required omnibox legs, for each of panel Cmd-L, sidebar Cmd-L and New Tab Cmd-T panel: focus/URL selection or empty initial rows; history completion, free text, open-tab row, bookmark row, forced `?`, keyword scope/escape, calculator and `!g`; Down/Up/PageUp fill and restore; selected switch row without reload/creation; Enter disposition; Escape/outside blur discard and restore. Also retain catalog readiness, restored-84-point-sidebar Cmd-L and search click, page-focused panel/sidebar select-all, Cmd-F→Cmd-L→immediate typing, long→short URL clamping, and cold Cmd-L/Cmd-T six-letter hold/adopt/replay.
+
+## Media engine preferences source slice (0.4.9 row 3)
+
+`MediaPreferencesTests` tests defaults, independent setting changes, duplicate suppression
+and reattachment. `NativeMediaPreferences` follows native store ownership and subscribes
+once to the current store; initial and changed preferences call SolaraCore directly.
+The existing display-media picker is enabled on attachment. The JS visible-page PiP
+hook and other media services remain until their own lifecycle slices.
+
+Lead gates in both layouts (`SOLARA_NATIVE_WINDOW_LAYOUT` unset and `=1`):
+`video-upscaling-test.mjs <Debug app> setting-off on-480`,
+`pip-window-test.mjs <Debug app> <output>`, and `media-ui-test.mjs <Debug app> --prompts`,
+all under `apps/browser/scripts/`. Also check ownership loss/reacquisition and Settings
+changes with the JS settings subscription absent. No app build or driver run claimed.

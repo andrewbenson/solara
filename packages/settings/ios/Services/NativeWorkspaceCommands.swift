@@ -35,8 +35,14 @@ enum NativeWorkspaceCommands {
   private static var findFocus: [Int: FindFocus] = [:]
   private static var expiredFindRequests: [Int] = []
   private static var lastFindRequest = 0
+  private static var historyLifecycle: Int?
+  private static var historyListener: Int?
+  private static var historyStore: Store?
 
   static func install() {
+    if historyLifecycle == nil {
+      historyLifecycle = NativeStoreHandle.subscribeLifecycle { bindHistoryMenu() }
+    }
     NativePinnedPageCommands.start()
     NativeDownloadsPanel.start()
     ToolbarView.commandURLFocusAllowed = { NativeCommandBarFocus.developerAllowed($0, field: $1) }
@@ -48,12 +54,35 @@ enum NativeWorkspaceCommands {
     NativeMenuCommands.workspaceAvailability = { command, arg, windowId in
       if command == "findInPage", windowId == NativeSettingsWindow.windowId { return true }
       if command == "returnToPinnedUrl" { return NativePinnedPageCommands.available(windowId: windowId) }
-      guard NativeStoreHandle.ownsWorkspace, let state = NativeStoreHandle.store?.state,
-        WorkspaceMenuCommand.commands.contains(command) else { return nil }
+      guard WorkspaceMenuCommand.commands.contains(command) else { return nil }
+      guard NativeStoreHandle.ownsWorkspace, let state = NativeStoreHandle.store?.state else {
+        return command == "reopenClosedTab" || command == "reopenClosedWindow" ? false : nil
+      }
       if command == "closeTab", windowId == nil, WindowHost.hasClosableForeignKeyWindow { return true }
       return WorkspaceMenuCommand.available(command, arg: arg, windowId: windowId, state: state)
     }
     WindowHost.closeRequest = { id in perform("closeWindow", windowId: id) }
+  }
+
+  private static func bindHistoryMenu() {
+    let store = NativeStoreHandle.ownsWorkspace ? NativeStoreHandle.store : nil
+    guard store !== historyStore else { return }
+    if let historyListener { historyStore?.unsubscribe(historyListener) }
+    historyStore = store
+    historyListener = store?.subscribe { [weak store] commit in
+      guard !commit.changes.lists.isDisjoint(with: ["closedTabs", "closedWindows", "closedGroups"]) else { return }
+      Task { @MainActor in
+        guard let store, historyStore === store else { return }
+        refreshHistoryMenu()
+      }
+    }
+    refreshHistoryMenu()
+  }
+
+  private static func refreshHistoryMenu() {
+    let menu = historyStore.map { RecentlyClosedMenu(state: $0.state) }
+    ShellMenus.setRecentlyClosed(entries: menu?.entries.map { ($0.id, $0.title) } ?? [],
+                                 groups: menu?.groups.map { ($0.id, $0.title) } ?? [])
   }
 
   private static func performView(_ command: String, arg: String?, windowId: String?) -> Bool {

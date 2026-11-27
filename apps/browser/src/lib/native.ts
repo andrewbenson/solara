@@ -31,7 +31,7 @@ import { cancelBookmarkQuit, flushBookmarkJournal } from "@solara/settings";
 import { nativeOwnsWorkspace } from "../store/nativeStore";
 import { folderChildren, isBookmarked } from "../store/bookmarks";
 import { useBrowser, type BrowserState } from "../store/browser";
-import { activeTab, bookmarkProfileId, IDLE_LIVE, isPinnedRow, tabLabel, togglePinTitle, windowTitle } from "../store/model";
+import { activeTab, bookmarkProfileId, IDLE_LIVE, isPinnedRow, togglePinTitle, windowTitle } from "../store/model";
 import { multiSelection } from "../store/organize";
 import { canSwitchEngine, tabEngine } from "../store/engines";
 import { setLastTabKeepsWindow } from "../store/newTabBar";
@@ -245,8 +245,6 @@ export function menuState(s: BrowserState): MenuState {
     else if (tab) disabled.push(`moveTabToProfile:${tab.profileId}`);
     if (regularWindows.length < 2) disabled.push("mergeAllWindows");
   }
-  if (!s.closedTabs.length && !s.closedWindows.length && !s.closedGroups.length) disabled.push("reopenClosedTab");
-  if (!s.closedWindows.length) disabled.push("reopenClosedWindow");
 
   const checked = [`setAppearance:${s.settings.appearance}`, `setSidebarPosition:${sidebarPositionOf(w, s.settings)}`];
   if (s.settings.showFullUrl) checked.push("toggleFullUrl");
@@ -286,14 +284,6 @@ export function menuState(s: BrowserState): MenuState {
     titles.openFile = `Open in ${PRODUCT}`;
   }
 
-  const closed = [
-    ...s.closedTabs.filter((c) => !c.tab.profileId.startsWith("incognito:")).map((c) => ({ id: c.id, title: c.tab.title || tabLabel(c.tab), at: c.closedAt })),
-    ...s.closedWindows.map((c) => ({ id: c.id, title: c.tabs.length === 1 ? "Window (1 Tab)" : `Window (${c.tabs.length} Tabs)`, at: c.closedAt })),
-  ]
-    .sort((a, b) => b.at - a.at)
-    .slice(0, 10)
-    .map(({ id, title }) => ({ id, title }));
-
   return {
     checked,
     disabled,
@@ -301,8 +291,6 @@ export function menuState(s: BrowserState): MenuState {
     profiles: s.profileOrder.map((id) => ({ id, title: s.profiles[id]!.name, current: w?.profileId === id })),
     windows: w?.incognito ? [] : regularWindows.filter((id) => id !== windowId).map((id) => ({ id, title: windowTitle(s, id) })),
     ...bookmarkMenus(s.bookmarks, bookmarkProfile),
-    recentlyClosed: closed,
-    recentlyClosedGroups: sidebar.recentlyClosedGroups,
     warnBeforeQuitting: s.settings.warnBeforeQuitting,
     warnBeforeClosingWindow: s.settings.warnBeforeClosingWindow,
     undoReopensClosedTab: s.settings.undoReopensClosedTab,

@@ -273,18 +273,22 @@ public enum TabMenuPlan {
   }
 
   public static func tabLabel(_ tab: Tab) -> String {
-    if let custom = tab.customTitle, !custom.isEmpty { return custom }
-    if tab.url.isEmpty { return "New Tab" }
-    if let app = appUrlOrigin(tab.url) { return app }
-    guard let url = WhatwgURL(tab.url) else { return tab.title.isEmpty ? tab.url : tab.title }
+    tabLabel(url: tab.url, title: tab.title, customTitle: tab.customTitle)
+  }
+
+  static func tabLabel(url rawURL: String, title: String, customTitle: String?) -> String {
+    if let customTitle, !customTitle.isEmpty { return customTitle }
+    if rawURL.isEmpty { return "New Tab" }
+    if let app = appUrlOrigin(rawURL) { return app }
+    guard let url = WhatwgURL(rawURL) else { return title.isEmpty ? rawURL : title }
     if url.protocol == "file:" {
-      if !tab.title.isEmpty { return tab.title }
+      if !title.isEmpty { return title }
       let last = url.pathname.split(separator: "/", omittingEmptySubsequences: false).last.map(String.init) ?? ""
-      return last.removingPercentEncoding ?? tab.url
+      return last.removingPercentEncoding ?? rawURL
     }
     var host = displayHost(url.hostname)
     if host.hasPrefix("www.") { host.removeFirst(4) }
-    return !host.isEmpty ? host : tab.title.isEmpty ? tab.url : tab.title
+    return !host.isEmpty ? host : title.isEmpty ? rawURL : title
   }
 
   static func windowTitle(_ state: BrowserState, _ windowId: String) -> String {

@@ -34,8 +34,6 @@ struct MenuState {
   var bookmarksBar: [Bookmark] = []
   var otherBookmarks: [Bookmark] = []
   var bookmarksRevision: Int?
-  var recentlyClosed: [Entry] = []
-  var recentlyClosedGroups: [Entry] = []
   var warnBeforeQuitting = false
   var warnBeforeClosingWindow = false
   var undoReopensClosedTab = false
@@ -100,8 +98,6 @@ struct MenuState {
       bookmarksBar = Self.bookmarks(d["bookmarksBar"])
       otherBookmarks = Self.bookmarks(d["otherBookmarks"])
     }
-    recentlyClosed = entries("recentlyClosed")
-    recentlyClosedGroups = entries("recentlyClosedGroups")
     warnBeforeQuitting = d["warnBeforeQuitting"] as? Bool ?? false
     warnBeforeClosingWindow = d["warnBeforeClosingWindow"] as? Bool ?? false
     undoReopensClosedTab = d["undoReopensClosedTab"] as? Bool ?? false
@@ -840,8 +836,19 @@ enum MainMenu {
     return image
   }
 
-  private static var built: (profiles: [MenuState.Entry], windows: [MenuState.Entry], bookmarks: Int?,
-                             extensions: [String], history: [[MenuState.Entry]])?
+  private static var built: (profiles: [MenuState.Entry], windows: [MenuState.Entry], bookmarks: Int?, extensions: [String])?
+  private static var recentlyClosed: [MenuState.Entry] = []
+  private static var recentlyClosedGroups: [MenuState.Entry] = []
+
+  static func setRecentlyClosed(entries: [(id: String, title: String)], groups: [(id: String, title: String)]) {
+    let entries = entries.map { MenuState.Entry(id: $0.id, title: $0.title, current: false) }
+    let groups = groups.map { MenuState.Entry(id: $0.id, title: $0.title, current: false) }
+    guard entries != recentlyClosed || groups != recentlyClosedGroups else { return }
+    recentlyClosed = entries
+    recentlyClosedGroups = groups
+    buildHistory()
+    applyShortcuts(MenuState.current.shortcuts)
+  }
 
   static func refresh() {
     var state = MenuState.current
@@ -853,13 +860,12 @@ enum MainMenu {
     if let catalogRows { state.extensions = catalogRows }
     let last = built
     let extensionKeys = state.extensions.map { "\($0.id)|\($0.title)|\($0.icon ?? "")" }
-    let history = [state.recentlyClosed, state.recentlyClosedGroups]
-    built = (state.profiles, state.windows, state.bookmarksRevision, extensionKeys, history)
+    built = (state.profiles, state.windows, state.bookmarksRevision, extensionKeys)
     if last?.profiles != state.profiles { buildProfileMenus(state) }
     if last?.windows != state.windows { buildMoveToWindow(state) }
     if state.bookmarksRevision == nil || last?.bookmarks != state.bookmarksRevision { buildBookmarkMenus(state) }
     if last?.extensions != extensionKeys { buildExtensions(state) }
-    if last?.history != history { buildHistory(state) }
+    if last == nil { buildHistory() }
     if let undo, (undo.target != nil) != state.undoReopensClosedTab {
       undo.target = state.undoReopensClosedTab ? MenuTarget.shared : nil
       undo.title = undo.defaultTitle
@@ -945,7 +951,7 @@ enum MainMenu {
     extensions.addItem(CommandItem("Pin Extensions…", "pinExtensions"))
   }
 
-  private static func buildHistory(_ state: MenuState) {
+  private static func buildHistory() {
     history.removeAllItems()
     history.addItem(CommandItem("Show History…", "showHistory", key: "y"))
     history.addItem(CommandItem("Clear Browsing Data…", "clearBrowsingData", key: "\u{8}", [.command, .shift]))
@@ -953,14 +959,14 @@ enum MainMenu {
     let header = NSMenuItem(title: "Recently Closed", action: nil, keyEquivalent: "")
     header.isEnabled = false
     history.addItem(header)
-    for entry in state.recentlyClosed { history.addItem(CommandItem(entry.title, "restoreClosed", arg: entry.id)) }
-    if state.recentlyClosed.isEmpty { history.addItem(emptyItem()) }
-    if !state.recentlyClosedGroups.isEmpty {
+    for entry in recentlyClosed { history.addItem(CommandItem(entry.title, "restoreClosed", arg: entry.id)) }
+    if recentlyClosed.isEmpty { history.addItem(emptyItem()) }
+    if !recentlyClosedGroups.isEmpty {
       history.addItem(.separator())
       let groupsHeader = NSMenuItem(title: "Recently Closed Groups", action: nil, keyEquivalent: "")
       groupsHeader.isEnabled = false
       history.addItem(groupsHeader)
-      for entry in state.recentlyClosedGroups { history.addItem(CommandItem(entry.title, "restoreClosed", arg: entry.id)) }
+      for entry in recentlyClosedGroups { history.addItem(CommandItem(entry.title, "restoreClosed", arg: entry.id)) }
     }
   }
 

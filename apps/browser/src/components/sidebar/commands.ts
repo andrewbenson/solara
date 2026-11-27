@@ -1,4 +1,4 @@
-import type { BrowserCommand, MenuEntry } from "@solara/shell";
+import type { BrowserCommand } from "@solara/shell";
 import type { BrowserState } from "../../store/browser";
 import { activeTabId, pinSection, pinnedSectionTitle, plural } from "../../store/model";
 import { selectedTabIds } from "../../store/organize";
@@ -20,9 +20,5 @@ export function sidebarMenuState(s: BrowserState, windowId: string | undefined) 
     if (!selected.length) disabled.push("newGroupWithTabs");
     if (selected.length > 1) titles.newGroupWithTabs = `New Group with ${plural(selected.length, "Tab")}`;
   }
-  const recentlyClosedGroups: MenuEntry[] = [...s.closedGroups]
-    .reverse()
-    .slice(0, 10)
-    .map((c) => ({ id: c.id, title: `${c.group.name} (${plural(c.tabs.length, "Tab")})` }));
-  return { disabled, titles, recentlyClosedGroups };
+  return { disabled, titles };
 }

@@ -571,6 +571,14 @@ Cmd-T reopens it. The fixture windows use distinct positions and widths so the n
 one window to the other by frame. Hero focus deadlines retain the complete hero and native snapshot in
 `evidence.json`. The New Tab driver keeps main's unmodified input path and assertions.
 
+## Recently Closed menu
+
+Run `recently-closed-menu-test.mjs <Debug app> <fresh scratch directory>` in both window layouts.
+It reads the real History menu after hydration, restores an archived tab with JS command handlers disabled,
+then closes it again and checks that Swift updates the menu and retains the Show History shortcut. It also
+checks that an obsolete JS menu payload cannot replace the native archive rows. Use `--baseline` with API 107
+to skip the obsolete payload check. `RecentlyClosedMenuTests` covers titles, private tabs, ordering and caps.
+
 ## Native omnibox actions
 
 `node apps/browser/scripts/native-omnibox-actions-test.mjs <Debug app> <fresh scratch directory>` disables JavaScript omnibox actions and records received/executed fallback counters. It checks hero, panel, sidebar and toolbar fields, real Return, modified Return, verbatim search, tab switching, paste-and-go/search, Copy URL, Escape, Developer Mode URL editing and opening Command Bar commands. The driver records native ownership and app snapshots in `evidence.json`, owns one hidden instance and quits it with a bounded teardown. Use an existing engine and dependencies in the verification VM. Swift cases are `OmniboxActionTests` and `OmniboxActionControllerTests`; run the full SolaraKit suite with `-Xswiftc -DSOLARA_PROBES` after the focused cases. Native menus, file picker, extension action/options/side-panel fixtures, profile creation and the Clear Browsing Data dialog also need VM interaction checks.

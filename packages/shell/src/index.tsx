@@ -203,8 +203,6 @@ export type MenuState = {
   recentBookmarks: MenuBookmark[];
   bookmarksBar: MenuBookmark[];
   otherBookmarks: MenuBookmark[];
-  recentlyClosed: MenuEntry[];
-  recentlyClosedGroups?: MenuEntry[];
   warnBeforeQuitting: boolean;
   warnBeforeClosingWindow?: boolean;
   undoReopensClosedTab?: boolean;

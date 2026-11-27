@@ -927,6 +927,10 @@ public enum ShellMenus {
   public static var extensionCatalog: (() -> [[String: Any]])?
   public static func refreshExtensions() { MainMenu.refresh() }
 
+  @MainActor public static func setRecentlyClosed(entries: [(id: String, title: String)], groups: [(id: String, title: String)]) {
+    MainMenu.setRecentlyClosed(entries: entries, groups: groups)
+  }
+
   static var emit: ((String, [String: Any]) -> Void)?
 
   public static func choose(_ items: [[String: Any]], then chosen: @escaping @MainActor (String?) -> Void) {

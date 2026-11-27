@@ -84,7 +84,7 @@ const active = (s, id = "w1") => s.windows[id]?.activeTabIds[s.windows[id].profi
 try {
   app = await launch(appPath, {
     data: join(output, "data"), fresh: true, onboarded: true, probe: true, keepData: true,
-    env: { SOLARA_NATIVE_WINDOW_LAYOUT: "1" },
+    env: { SOLARA_NATIVE_WINDOW_LAYOUT: process.env.SOLARA_NATIVE_WINDOW_LAYOUT ?? "1" },
     session: session({
       windows: [{ id: "w1", frame: [80, 80, 1100, 800], activeTabIds: { default: "a" } }],
       tabs: [{ id: "a", url: "about:blank#a", title: "A" }, { id: "b", url: "about:blank#b", title: "B" }],

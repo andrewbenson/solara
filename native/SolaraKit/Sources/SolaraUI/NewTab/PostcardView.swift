@@ -1,8 +1,8 @@
 import AppKit
 import Foundation
 
-public struct PostcardNotes: Decodable, Equatable, Sendable {
-  public struct Item: Decodable, Equatable, Sendable {
+public struct PostcardNotes: Codable, Equatable, Sendable {
+  public struct Item: Codable, Equatable, Sendable {
     public let title: String
     public let body: String
   }

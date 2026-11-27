@@ -115,6 +115,14 @@ public class HostedModule: Module {
           return String(decoding: data, as: UTF8.self)
         }
       }.runOnQueue(.main)
+      AsyncFunction("devNewTabNotices") { (action: String, argument: String?) -> String in
+        FrameUpdates.readOnMain {
+          let environment = ProcessInfo.processInfo.environment
+          guard environment["SOLARA_BACKGROUND"] == "1",
+            environment["SOLARA_DATA_DIR"]?.isEmpty == false else { return "{}" }
+          return NativeNewTabNotices.shared.drive(action, argument).text()
+        }
+      }.runOnQueue(.main)
       AsyncFunction("devPostcard") { (windowId: String, kind: String, action: String, argument: String?) -> String in
         FrameUpdates.readOnMain {
           let value = HostedPostcard.drive(windowId, kind, action, argument)

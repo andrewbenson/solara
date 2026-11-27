@@ -292,8 +292,6 @@ type Saved = {
   source?: BrowserSourceId | null;
   preset?: Preset;
   picked?: Partial<Record<QuestionId, string[]>>;
-  defaultBrowserTrialStartedAt?: number;
-  defaultBrowserCheckInDoneAt?: number;
   introMusicMuted?: boolean;
 };
 
@@ -316,13 +314,6 @@ function save(patch: Partial<Saved>) {
 }
 
 const markCompleted = () => save({ completedAt: Date.now() });
-
-export const recordDefaultBrowserTrial = () => save({ defaultBrowserTrialStartedAt: Date.now() });
-
-export const defaultBrowserTrialStartedAt = () => readSaved()?.defaultBrowserTrialStartedAt ?? null;
-
-export const defaultBrowserCheckInDoneAt = () => readSaved()?.defaultBrowserCheckInDoneAt ?? null;
-export const recordDefaultBrowserCheckInDone = () => save({ defaultBrowserCheckInDoneAt: Date.now() });
 
 export const introMusicMuted = () => readSaved()?.introMusicMuted ?? false;
 export const saveIntroMusicMuted = (muted: boolean) => save({ introMusicMuted: muted });

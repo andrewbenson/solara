@@ -48,7 +48,6 @@ final class NativeAppStartup {
     let refused = options["persistenceRefused"] as? Bool ?? true
     let safeMode = options["safeMode"] as? Bool ?? true
     let version = AppModule.systemInfo["appVersion"] as? String ?? ""
-    let versions = Set(options["releaseNotesVersions"] as? [String] ?? [])
     let hasSession = !refused && !(DocumentStore.read("session.json") ?? "").isEmpty
     let hosted = options["hostedOnboarding"] as? Bool ?? false
     if result == nil, !refused, !safeMode, hosted { NativeOnboarding.resumeCommittedJoinAtLaunch() }
@@ -59,21 +58,18 @@ final class NativeAppStartup {
         saved: saved, hasSession: hasSession, refused: refused, safeMode: safeMode,
         hosted: hosted, development: development, force: Self.debugEnvironment("SOLARA_ONBOARDING"),
         committedJoinToken: OnboardingPairingServices.committedJoinToken?())
-      let pending = AppStartupPolicy.version(
-        current: version, saved: read("release-notes.json"), hasSession: hasSession, refused: refused,
-        safeMode: true, development: true, forcePostcard: false, now: Self.now, knownVersions: versions).pending
       return JSONValue.object([
-        "pendingJSON": !version.isEmpty && !refused ? .string(pending.text()) : .null,
         "onboarding": .string(decision == .resume ? "resume" : "none"),
         "savedJSON": saved.map { .string($0.text()) } ?? .null,
       ]).text()
     }
     let tracked = AppStartupPolicy.version(
-      current: version, saved: read("release-notes.json"), hasSession: hasSession, refused: refused,
+      current: version, saved: read(NativeNewTabNotices.releaseDocument), hasSession: hasSession, refused: refused,
       safeMode: safeMode, development: development, forcePostcard: Self.debugEnvironment("SOLARA_WHATS_NEW"),
-      now: Self.now, knownVersions: versions)
+      now: Self.now, knownVersions: NewTabNoticeCatalog.versions)
     updated = tracked.updated
-    if let document = tracked.document { save("release-notes.json", document) }
+    if let document = tracked.document { save(NativeNewTabNotices.releaseDocument, document) }
+    NativeNewTabNotices.shared.start(version: version, pending: tracked.pending, refused: refused)
     let saved = onboardingSaved()
     let onboarding = AppStartupPolicy.onboarding(
       saved: saved, hasSession: hasSession, refused: refused, safeMode: safeMode,
@@ -91,7 +87,6 @@ final class NativeAppStartup {
       save("onboarding.json", AppStartupPolicy.onboardingDocument(saved: saved, patch: ["completedAt": .number(Self.now)]))
     }
     let payload: JSONObject = [
-      "pendingJSON": !version.isEmpty && !refused ? .string(tracked.pending.text()) : .null,
       "onboarding": .string(action), "savedJSON": saved.map { .string($0.text()) } ?? .null,
     ]
     let result = JSONValue.object(payload).text()

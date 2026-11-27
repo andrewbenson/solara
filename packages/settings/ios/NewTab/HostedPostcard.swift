@@ -22,6 +22,9 @@ enum HostedPostcard {
     let focus = HostedFocusRestoration()
     let context: HostedNoticeContext
     var payload: JSONObject?
+    var listener: UUID?
+    private var displayedReceipt: UUID?
+    private var lastPageReceipt: UUID?
     var ended = false
 
     init(windowId: String, kind: String, view: PostcardView) {
@@ -33,11 +36,58 @@ enum HostedPostcard {
 
     func refresh() {
       guard !ended else { return }
-      let state = payload.flatMap { payload in
-        payload["presentationId"]?.string.flatMap { context.project(payload, receipt: $0, receiptKey: "presentationId", postcard: true) }
-      }.flatMap(PostcardState.decode)
+      let notices = NativeNewTabNotices.shared
+      let page = notices.page.flatMap { $0.windowId == windowId ? $0 : nil }
+      let pending = page == nil ? notices.pending : nil
+      let receipt = kind == pageKind ? page?.id : pending?.id
+      let version = kind == pageKind ? page?.version : pending?.version
+      let product = NativeNewTabNotices.productName
+      var state: PostcardState?
+      if var input = payload, let receipt, let version,
+        let notes = NewTabNoticeCatalog.notes(version: version, product: product),
+        let bytes = try? JSONEncoder().encode(notes),
+        let json = try? JSONValue.parse(String(decoding: bytes, as: UTF8.self)) {
+        input["notes"] = json
+        input["product"] = .string(product)
+        state = context.project(input, receipt: receipt, receiptKey: "presentationId", postcard: true).flatMap(PostcardState.decode)
+      }
+      displayedReceipt = state == nil ? nil : receipt
+      if kind == pageKind, let displayedReceipt { lastPageReceipt = displayedReceipt }
       focus.updateContext(state?.focusContext)
-      if view?.state != state { view?.update(state) }
+      if let view, view.state != state {
+        if state == nil, let window = view.window, let responder = window.firstResponder as? NSView,
+          responder === view || responder.isDescendant(of: view) {
+          window.makeFirstResponder(nil)
+        }
+        view.update(state)
+      }
+    }
+
+    func perform(_ action: String, state: PostcardState) {
+      guard !ended, view?.state == state, let receipt = displayedReceipt,
+        let current = context.current(state.presentationId) else { return }
+      let notices = NativeNewTabNotices.shared
+      let restore = {
+        self.focus.updateContext(current.focusContext)
+        if self.context.canRestoreFocus { self.focus.restore() }
+      }
+      switch (kind, action) {
+      case (postcardKind, "open"):
+        notices.open(state.notes.version, windowId: windowId, matching: receipt, beforeUpdate: restore)
+      case (postcardKind, "dismiss"):
+        notices.retire(receipt, beforeUpdate: restore)
+      case (pageKind, "close"):
+        notices.closePage(receipt, beforeUpdate: restore)
+      default: break
+      }
+    }
+
+    func end() {
+      ended = true
+      if let listener { NativeNewTabNotices.shared.unsubscribe(listener) }
+      context.stop()
+      focus.cancel()
+      if let lastPageReceipt { NativeNewTabNotices.shared.closePage(lastPageReceipt) }
     }
   }
 
@@ -48,6 +98,7 @@ enum HostedPostcard {
         let entry = Entry(windowId: windowId, kind: kind, view: view)
         entry.context.onChange = { [weak entry] in entry?.refresh() }
         entry.context.observe()
+        entry.listener = NativeNewTabNotices.shared.subscribe { [weak entry] in entry?.refresh() }
         #if canImport(SolaraShaders)
           view.makeBackdrop = { colors in EarlyBackdrop.make(["colors": colors, "vibrancy": false, "angle": 150, "grainOpacity": 0.1]) }
         #endif
@@ -55,18 +106,9 @@ enum HostedPostcard {
           let id = UUID()
           entries[id] = entry
         #endif
-        view.onAction = { [weak entry] name, state in
-          guard let entry, !entry.ended, entry.view?.state == state,
-            let receipt = entry.payload?["presentationId"]?.string,
-            let current = entry.context.current(state.presentationId) else { return }
-          entry.focus.updateContext(current.focusContext)
-          entry.focus.restore()
-          HostedViews.send(entry.kind, windowId: entry.windowId, name, ["version": state.notes.version, "presentationId": receipt])
-        }
+        view.onAction = { [weak entry] in entry?.perform($0, state: $1) }
         return HostedContent(view: view, onUnmount: {
-          entry.ended = true
-          entry.context.stop()
-          entry.focus.cancel()
+          entry.end()
           view.update(nil)
           view.onAction = { _, _ in }
           #if DEBUG

@@ -1,28 +1,19 @@
 import { StyleSheet, View } from "react-native";
-import { useWindowId } from "../../store/hooks";
 import { tourAnchorRef } from "../onboarding/tour/anchors";
 import { CheckInBanner } from "./CheckInBanner";
 import { PersonalizeButton } from "./Personalize";
-import { ReleaseNotesPage, ReleaseNotesPostcard } from "./Postcard";
-import { closeReleaseNotes, openReleaseNotes, retireReleaseNotes, usePendingReleaseNotes, useReleaseNotesPage } from "./releaseNotes";
+import { ReleaseNotesNotices } from "./Postcard";
 
 export type Frame = { x: number; y: number; width: number; height: number };
 
-export function NewTabExtras({ tabId, size, bar }: { tabId: string; size: { width: number; height: number }; bar: Frame }) {
-  const windowId = useWindowId();
-  const pending = usePendingReleaseNotes();
-  const page = useReleaseNotesPage(windowId);
-
+export function NewTabExtras({ windowId, tabId, bar, onboarding }: { windowId: string; tabId: string; bar: Frame; onboarding: boolean }) {
   return (
     <View style={StyleSheet.absoluteFill} pointerEvents="box-none">
       <View ref={tourAnchorRef(windowId, "page")} style={StyleSheet.absoluteFill} pointerEvents="none" />
       <View ref={tourAnchorRef(windowId, "commandBar")} style={{ position: "absolute", left: bar.x, top: bar.y, width: bar.width, height: bar.height }} pointerEvents="none" />
-      <CheckInBanner windowId={windowId} tabId={tabId} />
+      <CheckInBanner windowId={windowId} tabId={tabId} onboarding={onboarding} />
       <PersonalizeButton windowId={windowId} />
-      {pending && !page ? (
-        <ReleaseNotesPostcard tabId={tabId} notes={pending} size={size} onOpen={() => openReleaseNotes(windowId)} onDismiss={retireReleaseNotes} />
-      ) : null}
-      {page ? <ReleaseNotesPage tabId={tabId} notes={page} size={size} onClose={closeReleaseNotes} /> : null}
+      <ReleaseNotesNotices windowId={windowId} tabId={tabId} onboarding={onboarding} />
     </View>
   );
 }

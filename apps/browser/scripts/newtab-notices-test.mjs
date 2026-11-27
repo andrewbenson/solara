@@ -71,11 +71,23 @@ const prepareEditor = async (windowId = "w1", text = "notice selection fixture")
   await run(`return [["\\uf702",123,false],...Array.from({length:3},()=>["\\uf703",124,false]),...Array.from({length:6},()=>["\\uf703",124,true])].reduce((previous,[key,keyCode,shift])=>previous.then(()=>ac.shell.devKeyEquivalent(${JSON.stringify(windowId)},{key,keyCode,modifiers:shift?["shift","function"]:["function"],send:true,asKey:true,wait:1})).then(result=>{if(result.error||result.handledBy!=="sent")throw new Error(JSON.stringify(result));}),Promise.resolve()).then(()=>true);`);
   return until("hero edit selected", () => hero(windowId), value => value?.focused && value.fieldValue === text && value.fieldSelection?.start === 3 && value.fieldSelection?.end === 9);
 };
-const fixture = () => run('acCheckIn.store.setState({trialStartedAt:Date.now()-8*86400000,doneAt:null}); acReleaseNotes.store.setState({page:null}); acReleaseNotes.queue("1.0"); return true;');
-const noticeDiagnostics = async () => ({
-  native: await postcard(),
-  js: await run('const pending=acReleaseNotes.store.getState().pending;const fibers=acPerf.findFibers("NativeReleaseNotes",50).filter(noticeInWindow).map(fiber=>{const refs=[];let index=0;for(let hook=fiber.memoizedState;hook;hook=hook.next,index++){const current=hook.memoizedState?.current;if(current&&typeof current==="object"&&(current.id||current.pendingReceipt))refs.push({index,id:current.id,profileId:current.profileId,version:current.version,pendingReceipt:current.pendingReceipt,pendingIsCurrent:current.pendingReceipt===pending});}return {kind:fiber.memoizedProps?.kind,notesVersion:fiber.memoizedProps?.notes?.version,refs};});const hosts=acPerf.findFibers("SolaraHostedView",100).filter(noticeInWindow).filter(fiber=>fiber.memoizedProps?.kind==="releaseNotesPostcard").map(fiber=>({kind:fiber.memoizedProps.kind,windowId:fiber.memoizedProps.windowId,state:fiber.memoizedProps.state}));return {pending,page:acReleaseNotes.store.getState().page,window:ac.store.getState().windows.w1,focusedWindowId:ac.store.getState().ui?.focusedWindowId,fibers,hosts};'),
-});
+const nativeNotices = (action, argument = null) => run(`return globalThis.expo.modules.SolaraHosted.devNewTabNotices(${JSON.stringify(action)},${JSON.stringify(argument && JSON.stringify(argument))}).then(JSON.parse);`);
+const fixture = () => baseline
+  ? run('acCheckIn.store.setState({trialStartedAt:Date.now()-8*86400000,doneAt:null}); acReleaseNotes.store.setState({page:null}); acReleaseNotes.queue("1.0"); return true;')
+  : nativeNotices("fixture");
+const noticeState = () => baseline
+  ? run('return {...acReleaseNotes.store.getState(), doneAt: acCheckIn.store.getState().doneAt};')
+  : nativeNotices("state");
+const openNotes = (windowId) => baseline
+  ? run(`acReleaseNotes.open(${JSON.stringify(windowId)}, "1.0"); return true;`)
+  : nativeNotices("open", { windowId, version: "1.0" });
+const closeNotes = () => baseline
+  ? run('acReleaseNotes.store.setState({page:null}); return true;')
+  : nativeNotices("close");
+const queueNotes = () => baseline
+  ? run('acReleaseNotes.queue("1.0"); return true;')
+  : nativeNotices("queue", { version: "1.0" });
+const noticeDiagnostics = async () => ({ native: await postcard(), notices: await noticeState() });
 const hoverRN = async (name, on) => run(`const f=acPerf.findFibers(${JSON.stringify(name)},10).find(noticeInWindow); const visit=n=>{if(!n)return false;if(n.memoizedProps?.onMouseEnter){n.memoizedProps[${JSON.stringify(on ? "onMouseEnter" : "onMouseLeave")}]();return true;}return visit(n.child)||visit(n.sibling)}; return visit(f?.child);`);
 const capture = async name => {
   assert.equal(await run(`return ac.shell.devSnapshotWindow("w1",${JSON.stringify(join(captures, name + ".png"))});`), true);
@@ -98,7 +110,8 @@ try {
     settings: { appearance: "dark", newTabOpens: "page", addressBar: "toolbar", searchSuggestions: false, warnBeforeClosingWindow: false, warnBeforeClosingLastTab: false },
   }), env: { SOLARA_NATIVE_SHELL: "1", SOLARA_NATIVE_NEWTAB: "1" } });
   app = await launching;
-  await app.ready({ timeout: 25_000, test: "return !!globalThis.acCheckIn && !!globalThis.acReleaseNotes && !!ac.store.getState().windows.w2;" });
+  await app.ready({ timeout: 25_000, test: baseline ? "return !!globalThis.acCheckIn && !!globalThis.acReleaseNotes && !!ac.store.getState().windows.w2;"
+    : "return !!globalThis.expo.modules.SolaraHosted?.devNewTabNotices && !!ac.store.getState().windows.w2;" });
   await fixture();
   if (baseline) {
     await until("frozen pre-port RN Card and Artwork mounted", () => run('return ["Card","Artwork","ReleaseNotesPostcard"].map(name=>acPerf.findFibers(name,20).filter(noticeInWindow).length);'), value => value.every(Boolean));
@@ -117,9 +130,9 @@ try {
       else { await banner("hover", "true"); await postcard("releaseNotesPostcard", "hover", "true"); }
       await sleep(500);
       await capture(`${appearance}-hover`);
-      if (baseline) await run('acReleaseNotes.open("w1","1.0"); return true;');
+      if (baseline) await openNotes("w1");
       else assert.equal((await postcard("releaseNotesPostcard", "key", "What's new in Solara|Space")).accepted, true);
-      await until("notes page opened", () => run('return acReleaseNotes.store.getState();'), value => value.page?.windowId === "w1" && !value.pending);
+      await until("notes page opened", noticeState, value => value.page?.windowId === "w1" && !value.pending);
       if (baseline) {
         await until("RN page mounted", () => run('return acPerf.findFibers("ReleaseNotesPage",10).length;'), Boolean);
         await run('const f=acPerf.findFibers("ReleaseNotesPage",10).find(noticeInWindow);globalThis.acNoticePageMotion={started:Date.now(),values:[],subscriptions:[]};for(let hook=f?.memoizedState;hook;hook=hook.next){const value=hook.memoizedState?.current;if(value&&typeof value.addListener==="function"&&typeof value.__getValue==="function"){acNoticePageMotion.values.push([Date.now(),value.__getValue()]);const id=value.addListener(event=>acNoticePageMotion.values.push([Date.now(),event.value]));acNoticePageMotion.subscriptions.push([value,id,value._animation]);}}return true;');
@@ -130,10 +143,10 @@ try {
         const motion=await run('for(const [value,id] of acNoticePageMotion.subscriptions)value.removeListener(id);return {started:acNoticePageMotion.started,values:acNoticePageMotion.values,origins:acNoticePageMotion.subscriptions.map(([, ,animation])=>animation?{start:animation._startTime??animation._lastTime,delay:animation._delay??0,duration:animation._duration,from:animation._fromValue??animation._startPosition,to:animation._toValue}:null)};');
         writeFileSync(join(captures, `${appearance}-page-motion.json`), JSON.stringify(motion,null,2));
       }
-      if (baseline) await run('acReleaseNotes.store.setState({page:null}); return true;');
+      if (baseline) await closeNotes();
       else assert.equal((await postcard("releaseNotesPage", "press", "Close release notes")).accepted, true);
-      await until("page closed", () => run('return acReleaseNotes.store.getState().page;'), value => value === null);
-      await run('acReleaseNotes.queue("1.0"); return true;');
+      await until("page closed", () => noticeState().then(state => state.page), value => value === null);
+      await queueNotes();
       if (baseline) await hoverRN("Card", false);
       else await banner("hover", "false");
       await sleep(1000);
@@ -150,7 +163,7 @@ try {
       await until("notes page ready", () => postcard("releaseNotesPage"), value => value.active);
       assert.equal((await postcard("releaseNotesPage", "focus", "Close release notes")).accepted, true);
       await postcard("releaseNotesPage", "key", "Close release notes|Return");
-      await until("notes page closed", () => run('return acReleaseNotes.store.getState().page;'), value => value === null);
+      await until("notes page closed", () => noticeState().then(state => state.page), value => value === null);
       const restored = await until("hero focus restored after page", () => hero(), value => value?.focused);
       assert.equal(restored.fieldValue, before.fieldValue);
       assert.deepEqual(restored.fieldSelection, before.fieldSelection);
@@ -165,11 +178,11 @@ try {
         if (kind === "checkInBanner") {
           assert.equal((await banner("focus", "Dismiss")).accepted, true);
           assert.equal((await banner("key", "Dismiss|Return")).accepted, true);
-          await until("banner dismissed", () => run('return acCheckIn.store.getState().doneAt;'), value => typeof value === "number");
+          await until("banner dismissed", () => noticeState().then(state => state.doneAt), value => typeof value === "number");
         } else {
           await focusPostcardDismiss();
           assert.equal((await postcard(kind, "key", "Dismiss release notes|Space")).accepted, true);
-          await until("postcard dismissed", () => run('return acReleaseNotes.store.getState().pending;'), value => value === null);
+          await until("postcard dismissed", () => noticeState().then(state => state.pending), value => value === null);
         }
         const restored = await until("hero focus restored", () => hero(), value => value?.focused);
         assert.equal(restored.fieldValue, before.fieldValue);
@@ -185,15 +198,30 @@ try {
         await prepareEditor();
         if (kind === "checkInBanner") {
           assert.equal((await banner("focus", "Dismiss")).accepted, true);
-          await banner("key", "Dismiss|Return");
         } else {
           await focusPostcardDismiss();
-          await postcard(kind, "key", "Dismiss release notes|Space");
         }
+        const action = kind === "checkInBanner"
+          ? 'hosted.devCheckInBanner("w1", "key", "Dismiss|Return")'
+          : 'hosted.devPostcard("w1", "releaseNotesPostcard", "key", "Dismiss release notes|Space")';
+        assert.equal(await run(`
+          const hosted = globalThis.expo.modules.SolaraHosted;
+          const fiber = acPerf.findFibers("NativeNewTabHero", 50).find(f => f.memoizedProps?.windowId === "w2");
+          for (let hook = fiber?.memoizedState; hook; hook = hook.next) {
+            const field = hook.memoizedState?.current;
+            if (typeof field?.driverState !== "function") continue;
+            return ${action}.then(JSON.parse).then(result => {
+              if (!result.accepted) return false;
+              ac.store.getState().setFocusedWindow("w2");
+              return field.focus().then(() => true);
+            });
+          }
+          return false;
+        `), true);
         const other = await prepareEditor("w2", "other window selected");
         await sleep(500);
         const retained = await hero("w2");
-        assert.equal((await hero()).focused, false);
+        assert.equal((await hero()).focused, false, kind + " restored focus in the window that lost it");
         assert.equal(retained.focused, true);
         assert.equal(retained.fieldValue, other.fieldValue);
         assert.deepEqual(retained.fieldSelection, other.fieldSelection);
@@ -207,23 +235,23 @@ try {
       assert.equal((await banner("press", "Dismiss")).accepted, true);
       await run('ac.store.getState().switchProfile("w1","work"); return true;');
       await sleep(500);
-      assert.equal(await run('return acCheckIn.store.getState().doneAt;'), null);
+      assert.equal(await noticeState().then(state => state.doneAt), null);
       await until("work notices mounted", async () => [await banner(), await postcard()], value => value.every(item => item.active && item.profileId === "work"));
       await postcard("releaseNotesPostcard", "hover", "true");
       await postcardDismissReady();
       assert.equal((await postcard("releaseNotesPostcard", "press", "Dismiss release notes")).accepted, true);
       await run('ac.store.getState().switchProfile("w1","default"); return true;');
       await sleep(500);
-      assert.equal(await run('return acReleaseNotes.store.getState().pending?.version;'), "1.0");
+      assert.equal(await noticeState().then(state => state.pending?.version), "1.0");
       await until("default postcard mounted", () => postcard(), value => value.active && value.profileId === "default");
       assert.equal((await postcard("releaseNotesPostcard", "press", "What's new in Solara")).accepted, true);
       await until("first page mounted", () => postcard("releaseNotesPage"), value => value.active);
       assert.equal((await postcard("releaseNotesPage", "press", "Close release notes")).accepted, true);
-      await run('acReleaseNotes.open("w2","1.0"); return true;');
+      await openNotes("w2");
       await sleep(600);
-      assert.equal(await run('return acReleaseNotes.store.getState().page?.windowId;'), "w2");
+      assert.equal(await noticeState().then(state => state.page?.windowId), "w2");
       assert.equal((await postcard("releaseNotesPage", "press", "Close release notes", "w2")).accepted, true);
-      await until("replacement page closed", () => run('return acReleaseNotes.store.getState().page;'), value => value === null);
+      await until("replacement page closed", () => noticeState().then(state => state.page), value => value === null);
       await fixture();
       await until("fixture restored", () => postcard(), value => value.active);
       return true;
@@ -232,14 +260,14 @@ try {
       await postcard("releaseNotesPostcard", "hover", "true");
       await postcardDismissReady();
       assert.equal((await postcard("releaseNotesPostcard", "press", "Dismiss release notes")).accepted, true);
-      await until("postcard retired", () => run('return acReleaseNotes.store.getState().pending;'), value => value === null);
+      await until("postcard retired", () => noticeState().then(state => state.pending), value => value === null);
       await banner("hover", "true");
       assert.equal((await banner("key", "Dismiss|Return")).accepted, true);
-      await until("check-in done", () => run('return acCheckIn.store.getState().doneAt;'), value => typeof value === "number");
+      await until("check-in done", () => noticeState().then(state => state.doneAt), value => typeof value === "number");
       await until("banner removed", () => banner(), value => !value.active || value.visible === false);
       const other = await banner("state", null, "w2");
       assert.ok(!other.active || other.visible === false);
-      assert.equal(await run('return acReleaseNotes.store.getState().page;'), null);
+      assert.equal(await noticeState().then(state => state.page), null);
       return true;
     });
     await check("navigation removes hosts and remount respects dismissed state", async () => {
@@ -261,7 +289,7 @@ try {
       await sleep(500);
       const state = await postcard("releaseNotesPage");
       assert.ok(!state.active || state.profileId === "work");
-      await run('acReleaseNotes.store.setState({page:null}); return true;');
+      await closeNotes();
       return state;
     });
   }

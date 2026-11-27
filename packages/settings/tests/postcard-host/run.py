@@ -15,6 +15,6 @@ environment['CLANG_MODULE_CACHE_PATH'] = str(output / 'clang')
 environment['SOLARA_BACKGROUND'] = '1'
 build = Path(args.products).resolve()
 objects = [build / (name + '.o') for name in ['SolaraUI', 'SolaraModel', 'SolaraStore', 'SolaraOmnibox', 'SolaraEngine', 'SolaraLive', 'SolaraProbes']]
-files = [source / 'packages/settings/ios/Hosted/HostedViews.swift', source / 'packages/settings/ios/NewTab/HostedPostcard.swift', source / 'packages/settings/ios/NewTab/HostedNoticeContext.swift', here.parent / 'NoticeHostFixture.swift', here.parent / 'ControlInput.swift', here / 'Main.swift']
+files = [source / 'packages/settings/ios/Hosted/HostedViews.swift', source / 'packages/settings/ios/NewTab/HostedPostcard.swift', source / 'packages/settings/ios/NewTab/HostedNoticeContext.swift', here.parent / 'NoticeHostFixture.swift', here.parent / 'NoticeHostActions.swift', here.parent / 'ControlInput.swift', here / 'Main.swift']
 subprocess.run(['swiftc', '-D', 'DEBUG', '-swift-version', '6', '-parse-as-library', '-I', str(build), '-o', str(output / 'host-tests')] + [str(path) for path in files + objects], env=environment, check=True, timeout=120)
 subprocess.run([str(output / 'host-tests')], env=environment, check=True, timeout=20)

@@ -16,6 +16,7 @@ type NativeSettingsModule = {
   presentStoreUnavailable?(detail: string): boolean;
   startAppStartup(optionsJSON: string): Promise<string>;
   completeAppStartup(): Promise<void>;
+  closeNewTabReleaseNotes(): Promise<void>;
   cancelOnboardingReplay(requestId: string): Promise<void>;
   appIntegrationFirstWindow(onboardingActive: boolean): Promise<void>;
   appIntegrationNotification(action: string, tabId: string | null, windowId: string | null): Promise<void>;
@@ -119,8 +120,8 @@ export const nativeInstallCli = (reason: string) =>
 export type AppIntegrationCommand = "sendFeedback" | "reportBug" | "copyDiagnostics" | "recordPerformanceIssue" | "taskManager" | "showOnboarding" | "toolTour" | "videoTour" | "releaseNotes";
 
 export type AppIntegrationPresentation = { action: "showOnboarding" | "toolTour" | "openURL"; windowId?: string | null; url?: string; requestId?: string };
-export type AppStartupOptions = { development: boolean; persistenceRefused: boolean; safeMode: boolean; hostedOnboarding: boolean; releaseNotesVersions: string[] };
-export type AppStartupResult = { pendingJSON: string | null; onboarding: "none" | "start" | "resume"; savedJSON: string | null };
+export type AppStartupOptions = { development: boolean; persistenceRefused: boolean; safeMode: boolean; hostedOnboarding: boolean };
+export type AppStartupResult = { onboarding: "none" | "start" | "resume"; savedJSON: string | null };
 
 export const onAppIntegrationPresentation = (listener: (event: AppIntegrationPresentation) => void): EventSubscription | null =>
   native?.addListener("onAppIntegrationPresentation", listener) ?? null;
@@ -132,6 +133,9 @@ export async function startNativeAppStartup(options: AppStartupOptions): Promise
 
 export const completeNativeAppStartup = (): Promise<void> =>
   native?.completeAppStartup() ?? Promise.reject(new Error("native app startup unavailable"));
+
+export const closeNewTabReleaseNotes = (): Promise<void> =>
+  native?.closeNewTabReleaseNotes() ?? Promise.resolve();
 
 export const cancelNativeOnboardingReplay = (requestId: string): Promise<void> =>
   native?.cancelOnboardingReplay(requestId) ?? Promise.reject(new Error("native app startup unavailable"));

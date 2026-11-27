@@ -481,7 +481,7 @@ const TabPane = memo(function TabPane({
           <View pointerEvents={pooled ? "box-none" : "auto"} style={{ flex: 1 }}>
             {pooled && tabPool && <PooledPageProps pool={tabPool} tabId={tabId} />}
             {!pooled && (mounted || prewarmed) && <TabWebView tabId={tabId} visible={visible && !newTabShown && !isNewTab} warm={!!warm && !newTabShown && !isNewTab} />}
-            {visible && isNewTab && !small && !nativePane && (inSplit ? <SplitEmptyState tabId={tabId} focused={focused} /> : emptyCard ? <EmptyCard windowId={windowId} tabId={tabId} /> : <NewTabPage key={tabId} tabId={tabId} toolbar={toolbar} />)}
+            {visible && isNewTab && !small && !nativePane && (inSplit ? <SplitEmptyState tabId={tabId} focused={focused} /> : emptyCard ? <EmptyCard windowId={windowId} tabId={tabId} /> : <NewTabPage key={tabId} windowId={windowId} tabId={tabId} toolbar={toolbar} />)}
             {visible && <InternalPage tabId={tabId} />}
             {visible && overlays && (
               <PageOverlays

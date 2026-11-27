@@ -45,9 +45,6 @@ export function startDevHarness() {
     },
     openSettings,
     favicons,
-    get checkIn(): typeof import("./defaultBrowserCheckIn") {
-      return require("./defaultBrowserCheckIn");
-    },
     get media(): typeof import("../components/media/state").useMedia {
       return require("../components/media/state").useMedia;
     },

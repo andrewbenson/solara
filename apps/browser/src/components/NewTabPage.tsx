@@ -2,7 +2,6 @@ import { PowerUp } from "@solara/shaders";
 import { useState } from "react";
 import { Image, StyleSheet, View } from "react-native";
 import { layout, useTheme } from "../lib/theme";
-import { useWindowId } from "../store/hooks";
 import { NewTabExtras } from "./ntp";
 import { NativeNewTabHero, type HeroLayout } from "./ntp/NativeNewTabHero";
 import { DIA_OFFSET, newTabBarTop } from "./ntp/newTabLayout";
@@ -42,13 +41,12 @@ function marksFor(color: string) {
   return uris;
 }
 
-export function NewTabPage(props: { tabId: string; toolbar?: boolean }) {
+export function NewTabPage(props: { windowId: string; tabId: string; toolbar?: boolean }) {
   return <NativeNewTabPage {...props} />;
 }
 
-function NativeNewTabPage({ tabId, toolbar = true }: { tabId: string; toolbar?: boolean }) {
+function NativeNewTabPage({ windowId, tabId, toolbar = true }: { windowId: string; tabId: string; toolbar?: boolean }) {
   const theme = useTheme();
-  const windowId = useWindowId();
   const onboarding = useOnboarding((s) => s.windowId === windowId);
   const [size, setSize] = useState<Size | null>(null);
   const [hero, setHero] = useState<HeroLayout>({ height: BAR_HEIGHT, headingHeight: 0 });
@@ -80,7 +78,7 @@ function NativeNewTabPage({ tabId, toolbar = true }: { tabId: string; toolbar?: 
         marks={marksFor(theme.profileColor === "incognito" ? "neutral" : theme.profileColor)}
         onLayout={setHero}
       />
-      {size && bar && <NewTabExtras tabId={tabId} size={size} bar={bar} />}
+      {size && bar && <NewTabExtras windowId={windowId} tabId={tabId} bar={bar} onboarding={onboarding} />}
     </View>
   );
 }

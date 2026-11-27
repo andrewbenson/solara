@@ -4,7 +4,7 @@ import { after, test } from "node:test";
 
 const appURL = new URL("./appIntegration.ts", import.meta.url).href;
 const f = globalThis.appIntegrationTest = {
-  state: { live: {} }, subscriptions: [], loading: [], native: [], startup: [], help: [], notifications: [], offers: [], cancelled: [],
+  state: { live: {} }, subscriptions: [], loading: [], startup: [], help: [], notifications: [], offers: [], cancelled: [],
 };
 const fake = (source) => ({ url: `data:text/javascript,${encodeURIComponent(source)}`, shortCircuit: true });
 const sources = {
@@ -12,10 +12,6 @@ const sources = {
     const f = globalThis.appIntegrationTest;
     export const hostedKinds = () => f.hostOff ? [] : ["onboarding"];
     export const cancelNativeOnboardingReplay = async (id) => { f.cancelled.push(id); };
-    export const nativeAppIntegrationCommand = async (command, windowId) => {
-      f.native.push([command, windowId]);
-      await new Promise((resolve) => { f.resolveNative = resolve; });
-    };
     export const onAppIntegrationPresentation = (fn) => { f.presentation = fn; };
     export const startNativeAppStartup = async (options) => {
       f.options = options;
@@ -37,10 +33,6 @@ const sources = {
     export const useOnboarding = { getState: () => ({ windowId: f.active ? "w" : null }) };
   `,
   "../components/onboarding/tour/state": `export const startToolTour = async (id) => { globalThis.appIntegrationTest.help.push(["tool", id]); };`,
-  "../components/ntp/releaseNotes": `
-    export const releaseNotesVersions = () => ["1.0"];
-    export const applyPendingReleaseNotes = (pending) => { globalThis.appIntegrationTest.startup.push(["pending", pending]); };
-  `,
   "../store/browser": `export const useBrowser = { getState: () => globalThis.appIntegrationTest.state, subscribe: (fn) => { globalThis.appIntegrationTest.subscriptions.push(fn); } };`,
   "../store/model": `export const resolveWindowId = () => globalThis.appIntegrationTest.noWindow ? null : "w";`,
   "../store/nativeStore": `export const nativeSafeMode = () => true;`,
@@ -62,15 +54,15 @@ test("native launch guards and presentation finish before the first-window offer
   integration.startAppIntegrationPresentation();
   integration.startAppIntegrationPresentation();
   assert.equal("startAppIntegration" in integration, false);
-  assert.deepEqual(f.options, { development: true, persistenceRefused: false, safeMode: true, hostedOnboarding: true, releaseNotesVersions: ["1.0"] });
+  assert.deepEqual(f.options, { development: true, persistenceRefused: false, safeMode: true, hostedOnboarding: true });
   assert.deepEqual(f.loading, [[]]);
   assert.equal(f.subscriptions.length, 1);
   const offered = integration.offerNativeDefaultBrowserAfterFirstWindow();
   await Promise.resolve();
   assert.deepEqual(f.offers, []);
-  f.resolveStartup({ pendingJSON: '{"version":"1.0","since":1}', onboarding: "resume", savedJSON: '{"startedAt":1,"step":"tabs"}' });
+  f.resolveStartup({ onboarding: "resume", savedJSON: '{"startedAt":1,"step":"tabs"}' });
   await offered;
-  assert.deepEqual(f.startup, [["pending", { version: "1.0", since: 1 }], ["resume", { startedAt: 1, step: "tabs" }], "complete"]);
+  assert.deepEqual(f.startup, [["resume", { startedAt: 1, step: "tabs" }], "complete"]);
   assert.deepEqual(f.offers, [true]);
 });
 
@@ -109,16 +101,6 @@ test("loading coalesces for 100 ms, reads the latest live state, and deduplicate
   assert.deepEqual(f.loading, [[], ["a"], []]);
 });
 
-test("the feedback export awaits Swift for check-in callers", async () => {
-  let finished = false;
-  const pending = integration.sendFeedback("w").then(() => { finished = true; });
-  assert.deepEqual(f.native, [["sendFeedback", "w"]]);
-  await Promise.resolve();
-  assert.equal(finished, false);
-  f.resolveNative();
-  await pending;
-  assert.equal(finished, true);
-});
 
 for (const failure of ["hostOff", "noWindow", "startError"]) {
   test(`failed presentation clears its replay when ${failure}`, () => {

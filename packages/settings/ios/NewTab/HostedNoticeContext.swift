@@ -11,9 +11,10 @@ final class HostedNoticeContext {
   private var subscription: Int?
   private var lifecycle: Int?
   private var identity: NewTabIdentity?
-  private var sourceReceipt: String?
+  private var sourceReceipt: UUID?
   private var presentationId = UUID().uuidString
   private var tabId: String?
+  private var onboarding = false
   var onChange: () -> Void = {}
 
   init(windowId: String, explicitPage: Bool = false) {
@@ -46,9 +47,11 @@ final class HostedNoticeContext {
     onChange()
   }
 
-  func project(_ payload: JSONObject, receipt: String, receiptKey: String, postcard: Bool = false) -> String? {
+  func project(_ payload: JSONObject, receipt: UUID, receiptKey: String, postcard: Bool = false) -> String? {
     tabId = payload["tabId"]?.string
-    guard let store, store === workspace, let tabId else { identity = nil; return nil }
+    onboarding = payload["onboarding"]?.bool == true
+    guard let store, store === workspace, let tabId, !onboarding,
+      !NativeOnboarding.isActive(in: windowId) else { identity = nil; return nil }
     let state = store.state
     guard let context = NewTabNoticeContext.resolve(state, windowId: windowId, tabId: tabId,
       explicitPage: explicitPage, closing: store.memory.closingWindows) else { identity = nil; return nil }
@@ -68,8 +71,14 @@ final class HostedNoticeContext {
     return JSONValue.object(result).text()
   }
 
+  var canRestoreFocus: Bool {
+    guard let store, store === workspace else { return false }
+    return store.state.ui.focusedWindowId.map { $0 == windowId } ?? true
+  }
+
   func current(_ receipt: String) -> NewTabNoticeContext? {
-    guard let store, store === workspace, let tabId, receipt == presentationId,
+    guard let store, store === workspace, let tabId, receipt == presentationId, !onboarding,
+      !NativeOnboarding.isActive(in: windowId),
       let current = NewTabNoticeContext.resolve(store.state, windowId: windowId, tabId: tabId,
         explicitPage: explicitPage, closing: store.memory.closingWindows), current.identity == identity else { return nil }
     return current

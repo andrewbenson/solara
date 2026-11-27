@@ -145,6 +145,10 @@ public class SettingsModule: Module {
       MainActor.assumeIsolated { NativeAppStartup.shared.complete() }
     }.runOnQueue(.main)
 
+    AsyncFunction("closeNewTabReleaseNotes") {
+      MainActor.assumeIsolated { NativeNewTabNotices.shared.closePage() }
+    }.runOnQueue(.main)
+
     AsyncFunction("cancelOnboardingReplay") { (requestId: String) in
       MainActor.assumeIsolated { NativeAppStartup.shared.cancelOnboardingReplay(requestId) }
     }.runOnQueue(.main)

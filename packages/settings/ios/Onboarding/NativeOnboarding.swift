@@ -17,6 +17,10 @@ enum NativeOnboarding {
 
   private static var sessions: [OnboardingSession] = []
   static var isActive: Bool { sessions.contains { $0.model.isActive } }
+  static func isActive(in windowId: String) -> Bool {
+    sessions.contains { $0.model.isActive(in: windowId) }
+  }
+
   static func register() {
     guard enabled else { return }
     OnboardingProbe.enabled = ProcessInfo.processInfo.environment["SOLARA_BACKGROUND"] == "1"

@@ -2,7 +2,6 @@ import {
   cancelNativeOnboardingReplay,
   completeNativeAppStartup,
   hostedKinds,
-  nativeAppIntegrationCommand,
   nativeAppIntegrationFirstWindow,
   nativeAppIntegrationNotification,
   onAppIntegrationPresentation,
@@ -11,7 +10,6 @@ import {
 import { onNotificationResponse, setScriptLoading } from "@solara/shell";
 import { startOnboarding, resumeOnboarding, useOnboarding } from "../components/onboarding/state";
 import { startToolTour } from "../components/onboarding/tour/state";
-import { applyPendingReleaseNotes, releaseNotesVersions } from "../components/ntp/releaseNotes";
 import { useBrowser } from "../store/browser";
 import { nativeSafeMode } from "../store/nativeStore";
 import { resolveWindowId } from "../store/model";
@@ -59,9 +57,7 @@ export function startAppIntegrationPresentation() {
     persistenceRefused: persistenceRefused(),
     safeMode: nativeSafeMode(),
     hostedOnboarding: hostedKinds().includes("onboarding"),
-    releaseNotesVersions: releaseNotesVersions(),
-  }).then(async ({ pendingJSON, onboarding, savedJSON }) => {
-    if (pendingJSON !== null) applyPendingReleaseNotes(JSON.parse(pendingJSON));
+  }).then(async ({ onboarding, savedJSON }) => {
     if (onboarding !== "none" && !resolveWindowId(useBrowser.getState(), null)) {
       console.warn("[appIntegration] no window for automatic onboarding");
     } else {
@@ -76,10 +72,6 @@ export async function offerNativeDefaultBrowserAfterFirstWindow() {
   await startup;
   if (persistenceRefused()) return;
   await nativeAppIntegrationFirstWindow(useOnboarding.getState().windowId !== null);
-}
-
-export async function sendFeedback(windowId?: string | null) {
-  await nativeAppIntegrationCommand("sendFeedback", windowId);
 }
 
 export function startScriptLoading() {

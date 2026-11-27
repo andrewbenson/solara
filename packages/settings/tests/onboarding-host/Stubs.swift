@@ -20,6 +20,7 @@ extension Dictionary where Key == String, Value == Any {
 enum DocumentStore {
   static var documents: [String: String] = [:]
   static var staged: [String: String] = [:]
+  static var safeMode = false
   static var holdWrites = false
   static var writeError: Error?
   static var pending: [(name: String, text: String, done: ((Error?) -> Void)?)] = []
@@ -75,6 +76,7 @@ enum NativeStoreHandle {
   static var opened = false
   static var ownedWorkspaceAtLaunch = false
   static var ownsWorkspace = false
+  static var frozen = false
   static var store: Store?
 }
 
@@ -239,4 +241,10 @@ enum NativeBookmarkHolderRestoration {
   static func beginDrain() -> @MainActor () async -> Void {
     return { drains += 1 }
   }
+}
+
+@MainActor
+final class NativeAppIntegration {
+  static let shared = NativeAppIntegration()
+  func sendFeedback(_ windowId: String?) {}
 }

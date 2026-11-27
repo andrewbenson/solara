@@ -26,6 +26,7 @@ enum NoticeHostFixture {
           NativeStoreHandle.ownsWorkspace = true
           NativeStoreHandle.resolve = { store }
         }
+        NativeNewTabNotices.shared.present(kind, windowId: windowId, payload: payload)
         payload["tabId"] = .string(tabId)
         content.onState?(JSONValue.object(payload).text())
       })

@@ -17,6 +17,8 @@ enum HostedCheckInBanner {
     let focus = HostedFocusRestoration()
     let context: HostedNoticeContext
     var payload: JSONObject?
+    var listener: UUID?
+    private var receipt = UUID()
     var ended = false
     var iconURI: String?
     var imageTask: Task<Void, Never>?
@@ -25,11 +27,12 @@ enum HostedCheckInBanner {
       self.windowId = windowId
       context = HostedNoticeContext(windowId: windowId)
       view.onAction = { [weak self] action, profileId, token in
-        guard let self, !self.ended, let state = self.view.state, state.visible, state.profileId == profileId, state.token == token,
-          let receipt = self.payload?["token"]?.string, let current = self.context.current(token) else { return }
-        self.focus.updateContext(current.focusContext)
-        self.focus.restore()
-        HostedViews.send(kind, windowId: self.windowId, "action", ["action": action, "token": receipt])
+        guard let self, !self.ended, let state = self.view.state, state.visible, state.profileId == profileId,
+          state.token == token, let current = self.context.current(token) else { return }
+        NativeNewTabNotices.shared.finishCheckIn(self.receipt, action: action, windowId: self.windowId) {
+          self.focus.updateContext(current.focusContext)
+          if self.context.canRestoreFocus { self.focus.restore() }
+        }
       }
     }
 
@@ -41,12 +44,19 @@ enum HostedCheckInBanner {
 
     func refresh() {
       guard !ended else { return }
-      let state = payload.flatMap { payload in
-        payload["token"]?.string.flatMap { context.project(payload, receipt: $0, receiptKey: "token") }
-      }.flatMap(CheckInBannerState.decode)
+      let notices = NativeNewTabNotices.shared
+      let product = NativeNewTabNotices.productName
+      receipt = notices.checkInReceipt
+      let state = payload.flatMap { appearance -> CheckInBannerState? in
+        var input = appearance
+        input["visible"] = .bool(notices.checkInDue)
+        input["title"] = .string("How are you liking \(product)?")
+        input["action"] = .string("Leave us feedback")
+        return context.project(input, receipt: receipt, receiptKey: "token").flatMap(CheckInBannerState.decode)
+      }
       focus.updateContext(state?.focusContext)
-      if state?.visible != true { focus.restore() }
-      view.update(state)
+      if state?.visible != true, context.canRestoreFocus { focus.restore() }
+      if view.state != state { view.update(state) }
       guard iconURI != state?.icon else { return }
       imageTask?.cancel()
       imageTask = nil
@@ -65,6 +75,7 @@ enum HostedCheckInBanner {
 
     func end() {
       ended = true
+      if let listener { NativeNewTabNotices.shared.unsubscribe(listener) }
       context.stop()
       focus.cancel()
       imageTask?.cancel()
@@ -80,6 +91,7 @@ enum HostedCheckInBanner {
       let entry = Entry(windowId: windowId)
       entry.context.onChange = { [weak entry] in entry?.refresh() }
       entry.context.observe()
+      entry.listener = NativeNewTabNotices.shared.subscribe { [weak entry] in entry?.refresh() }
       #if DEBUG
         let id = UUID()
         entries[id] = entry

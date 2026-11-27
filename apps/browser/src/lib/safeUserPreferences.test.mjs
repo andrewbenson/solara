@@ -6,7 +6,6 @@ import { declaration, runNative, source } from "../test-native/safe-host/run.mjs
 
 const ts = createRequire(import.meta.url)("typescript");
 const onboarding = "apps/browser/src/components/onboarding/state.ts";
-const releases = "apps/browser/src/components/ntp/releaseNotes.ts";
 
 function compile(path, signatures, globals) {
   const text = signatures.map((name) => declaration(source(path), name).replace(/^export /, "")).join("\n");
@@ -44,23 +43,6 @@ test("automatic onboarding detection leaves documents unchanged in safe mode and
   }
 });
 
-test("automatic release version tracking displays pending notes without writing in safe mode", () => {
-  for (const safe of [true, false]) {
-    const fixture = documents(safe);
-    fixture.files.set("release-notes.json", JSON.stringify({ version: 1, lastVersion: "0.9", pending: null }));
-    let pending;
-    const context = compile(releases, ["function readSaved(", "function save(", "export function trackAppVersion("], {
-      ...fixture.globals, DOC: "release-notes.json", POSTCARD_SECONDS: 86_400,
-      systemInfo: () => ({ appVersion: "1.0" }), persistenceRefused: () => false,
-      notesFor: () => ({}), useReleaseNotes: { setState: (value) => { pending = value.pending; } },
-    });
-    assert.equal(context.trackAppVersion(), true);
-    assert.equal(pending.version, "1.0");
-    assert.deepEqual(fixture.writes, safe ? [] : ["release-notes.json"]);
-    assert.equal(JSON.parse(fixture.files.get("release-notes.json")).lastVersion, safe ? "0.9" : "1.0");
-  }
-});
-
 test("explicit onboarding progress persists into a normal read of the same documents", () => {
   const fixture = documents(true);
   const initial = JSON.stringify({ version: 1, completedAt: null, step: "source" });
@@ -71,36 +53,6 @@ test("explicit onboarding progress persists into a normal read of the same docum
   assert.equal(resumed.readSaved().step, "look");
   assert.equal(resumed.readSaved().introMusicMuted, true);
   assert.deepEqual(fixture.writes, ["onboarding.json"]);
-});
-
-test("release dismissal in safe mode saves the displayed version and stays dismissed on normal startup", () => {
-  for (const lastVersion of ["0.9", null]) {
-    const fixture = documents(true);
-    fixture.files.set("session.json", "{}");
-    if (lastVersion) fixture.files.set("release-notes.json", JSON.stringify({ version: 1, lastVersion, pending: null }));
-    let pending = null;
-    const globals = {
-      ...fixture.globals, DOC: "release-notes.json", POSTCARD_SECONDS: 86_400,
-      systemInfo: () => ({ appVersion: "1.0" }), persistenceRefused: () => false,
-      notesFor: () => ({}),
-      useReleaseNotes: { getState: () => ({ pending }), setState: (value) => { pending = value.pending; } },
-    };
-    const signatures = ["function readSaved(", "function save(", "export function trackAppVersion(", "export function retireReleaseNotes("];
-    const beforeStartup = new Map(fixture.files);
-    const safe = compile(releases, signatures, globals);
-    assert.equal(safe.trackAppVersion(), true);
-    assert.equal(pending.version, "1.0");
-    assert.deepEqual(fixture.writes, []);
-    assert.deepEqual(fixture.files, beforeStartup);
-    safe.retireReleaseNotes();
-    assert.equal(pending, null);
-    assert.equal(JSON.parse(fixture.files.get("release-notes.json")).lastVersion, "1.0");
-    assert.deepEqual(fixture.writes, ["release-notes.json"]);
-    const normal = compile(releases, signatures, { ...globals, nativeSafeMode: () => false });
-    assert.equal(normal.trackAppVersion(), false);
-    assert.equal(pending, null);
-    assert.equal(JSON.parse(fixture.files.get("release-notes.json")).pending, null);
-  }
 });
 
 test("native CLI installation keeps explicit effects and refuses both automatic upgrade entries", () => {

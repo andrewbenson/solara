@@ -156,6 +156,7 @@ final class OnboardingAdapter: OnboardingServices {
   func writeOnboardingDocument(_ json: String) {
     do {
       try DocumentStore.write(Self.document, json)
+      NativeNewTabNotices.shared.onboardingChanged(json)
     } catch {
       NSLog("[onboarding] couldn't save onboarding state: %@", String(describing: error))
     }

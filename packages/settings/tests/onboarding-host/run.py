@@ -31,7 +31,7 @@ objects = []
 for name in ['SolaraUI', 'SolaraModel', 'SolaraStore', 'SolaraOmnibox', 'SolaraEngine', 'SolaraLive', 'SolaraProbes']:
     objects.append(str(build / (name + '.o')))
 host = source / 'packages/settings/ios'
-files = [host / 'Onboarding/NativeOnboarding.swift', host / 'Onboarding/OnboardingAdapter.swift', host / 'Services/NativeAppStartup.swift', Path(__file__).with_name('Stubs.swift'), Path(__file__).with_name('Main.swift')]
+files = [host / 'Onboarding/NativeOnboarding.swift', host / 'Onboarding/OnboardingAdapter.swift', host / 'Services/NativeAppStartup.swift', host / 'NewTab/NativeNewTabNotices.swift', Path(__file__).with_name('Stubs.swift'), Path(__file__).with_name('Main.swift')]
 command = ['swiftc', '-swift-version', '6', '-parse-as-library', '-I', str(build), '-I', str(modules), '-o', str(output / 'host-tests')] + [str(p) for p in files] + objects
 subprocess.run(command, env=environment, check=True)
 failed = False

@@ -65,7 +65,7 @@ export const commandHandlers = {
 };
 
 export function runCommand({ command, arg, windowId: requested }: CommandEvent) {
-  if (command === "restoreArcFolders" || command === "openBookmark" || command === "jumpToSelection" || ["copyUrl", "copyUrlAsMarkdown", "copyQuoteLink", "share", "openFile", "autofill", "searchTabs", "tabSwitcher", "focusCommandBar", "cast", "reload", "forceReload", "returnToPinnedUrl", "togglePageEngine", "openExtension", "addExtension", "pinExtensions", "manageExtensions"].includes(command)) return void nativeWorkspaceCommand(command, arg, requested);
+  if (command === "restoreArcFolders" || command === "openBookmark" || command === "jumpToSelection" || ["copyUrl", "copyUrlAsMarkdown", "copyQuoteLink", "share", "openFile", "autofill", "searchTabs", "tabSwitcher", "focusCommandBar", "cast", "reload", "forceReload", "returnToPinnedUrl", "togglePageEngine", "openExtension", "addExtension", "pinExtensions", "manageExtensions", "showHistory", "manageBookmarks"].includes(command)) return void nativeWorkspaceCommand(command, arg, requested);
   if (nativeOwnsWorkspace() && nativeWorkspaceCommand(command, arg, requested)) return;
   if (__DEV__ && !commandHandlersEnabled) { commandHandlerBlocked++; return; }
   if (__DEV__) commandHandlerCalls++;
@@ -239,13 +239,9 @@ export function runCommand({ command, arg, windowId: requested }: CommandEvent) 
       return page ? toggleMute(page.id) : undefined;
     case "downloads":
       return s.setDownloadsOpen(windowId, !ui?.downloadsOpen);
-    case "showHistory":
-      return openInternalPage("history", windowId);
     case "clearBrowsingData":
       openInternalPage("history", windowId);
       return useClearDataRequest.getState().request(windowId);
-    case "manageBookmarks":
-      return openInternalPage("bookmarks", windowId);
     case "bookmarkAllTabs":
       return bookmarkAllTabs(windowId);
     case "mergeAllWindows":

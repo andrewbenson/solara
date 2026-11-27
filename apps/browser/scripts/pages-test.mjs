@@ -817,6 +817,37 @@ try {
     assert.equal(snapshot.haptics.performed, 0, "hidden bookmark drags perform no haptics");
     return snapshot.haptics;
   });
+  await rep.check("Library menu commands open and reuse tabs with JS command handlers disabled", async () => {
+    const result = await app.eval(`const store = expo.modules.SolaraStoreAdapter;
+      const snapshot = () => JSON.parse(store.snapshot()).data;
+      const windowId = Object.keys(snapshot().windows)[0];
+      const menu = (command) => expo.modules.SolaraApp.devWorkspaceMenuCommand(windowId, command, null);
+      const state = () => {
+        const s = snapshot();
+        const w = s.windows[windowId];
+        const active = w.activeTabIds[w.profileId];
+        const tabs = w.tabIds.map((id) => s.tabs[id]).map((t) => [t.id, t.navigation?.url ?? t.url]);
+        return { active, url: tabs.find(([id]) => id === active)?.[1], tabs };
+      };
+      const before = ac.commandHandlers.stats();
+      let history;
+      let bookmarks;
+      ac.commandHandlers.setEnabled(false);
+      return menu("showHistory").then(() => {
+        history = state();
+        return menu("manageBookmarks");
+      }).then(() => {
+        bookmarks = state();
+        return menu("showHistory");
+      }).then(() => ({ history, bookmarks, again: state(), before, after: ac.commandHandlers.stats() }))
+        .finally(() => ac.commandHandlers.setEnabled(before.enabled));`);
+    assert.equal(new URL(result.history.url).hostname, "history");
+    assert.equal(new URL(result.bookmarks.url).hostname, "bookmarks");
+    assert.equal(result.again.active, result.history.active);
+    assert.deepEqual(result.again.tabs, result.bookmarks.tabs);
+    assert.equal(result.after.calls, result.before.calls);
+    assert.equal(result.after.blocked, result.before.blocked);
+  });
 } finally {
   await app?.quit();
   if (!keep && !rep.failed.length) for (const dir of [data, files]) rmSync(dir, { recursive: true, force: true });

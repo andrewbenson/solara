@@ -502,7 +502,7 @@ own sign-ins instead.
 | Bookmark all tabs; add to folder; folder‑tree save dialog | ✓ | ✅ | |
 | Bookmarks bar (Always / New Tab only / Never, ⇧⌘B) | ✓ | ✅ | Native (AppKit): layout, menus, keyboard navigation, VoiceOver and drops; the React Native bar is gone |
 | Bookmark manager (⌥⌘B, `dia://bookmarks`) | ✓ | ✅ | `solara://bookmarks` (our page), over Chrome's own bookmarks, so extensions' `chrome.bookmarks` sees the same tree (Findings 10) The page is native (SwiftUI, `SolaraUI/Pages`). |
-| Bookmarks menu + Recent Bookmarks | ✓ | ✅ | |
+| Bookmarks menu + Recent Bookmarks | ✓ | ✅ | Manage Bookmarks opens and reuses its tab in Swift. |
 | ⌘/middle‑click bg, ⌥‑click split, open folder | ✓ | ✅ | |
 | Bookmarks in command bar | ✓ | ✅ | |
 | Bulk undo | ✓ | ✅ | undo toast in the manager |
@@ -512,7 +512,7 @@ own sign-ins instead.
 | Feature | Dia | Solara | Gap |
 |---|---|---|---|
 | History recorded | ✓ | ✅ | per profile, 5 000 pages, history.json; never for incognito |
-| History page (⌘Y, `dia://history`) | ✓ | ✅ | `solara://history` (our page, also when Chrome opens chrome://history): by day, search, bulk delete The page is native (SwiftUI, `SolaraUI/Pages`). |
+| History page (⌘Y, `dia://history`) | ✓ | ✅ | `solara://history` (our page, also when Chrome opens chrome://history): by day, search, bulk delete. The page is native (SwiftUI, `SolaraUI/Pages`). Show History opens and reuses its tab in Swift. |
 | History menu | ✓ | ✅ | Show History, Clear Browsing Data, Recently Closed, Recently Closed Groups |
 | Clear browsing data | ✓ | ✅ | our history by visit time and its favicons, plus Chrome's BrowsingDataRemover for the same range: Chrome's history database (what `chrome.history` shows), cookies and every kind of site storage, cached files, live. Form data and passwords stay, as in the dialog's two options The page is native (SwiftUI, `SolaraUI/Pages`). |
 | Synced devices' tabs | ✓ | ✅ | each device publishes its 30 most recent open tabs per profile (not pinned tabs, which sync as pinned tabs); the others list them in the overflow menu, and a device that stops syncing takes its record away (`docs/sync.md`). Verified with two and three hidden instances (2026-09-26) |

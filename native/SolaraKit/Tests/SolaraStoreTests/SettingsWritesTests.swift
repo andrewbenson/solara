@@ -474,6 +474,46 @@ import Testing
     #expect(blankCalls.items == ["setFocusedWindow", "focus:" + empty, "navigate"])
   }
 
+  @Test func internalPageWithExplicitPrivateWindowLeavesWindowFocusAlone() throws {
+    let s = store()
+    let regular = try s.dispatch(Command("createWindow", [["url": "https://regular.test/"]])).result!.string!
+    let secret = try s.dispatch(Command("createWindow", [["incognito": true]])).result!.string!
+    try s.dispatch(Command("setFocusedWindow", [.string(regular)]))
+    let blank = try #require(s.state.activeTabId(secret))
+    let calls = Box()
+
+    #expect(recording(s, calls).openInternalPage("history", windowId: secret, scheme: "solara", isAppScheme: { $0 == "solara" }))
+    #expect(calls.items == ["navigate"])
+    #expect(s.state.activeTabId(secret) == blank)
+    #expect(s.state.tabs[blank]?.navigation?.url == "solara://history")
+    #expect(s.state.tabs[blank]?.profileId == s.state.windows[secret]?.profileId)
+    #expect(s.state.ui.focusedWindowId == regular)
+  }
+
+  @Test func backgroundInternalPageReusesTheSameTabAndEncodesQuery() throws {
+    let s = store()
+    let window = try s.dispatch(Command("createWindow", [[:]])).result!.string!
+    let blank = try #require(s.state.activeTabId(window))
+    let calls = Box()
+    let library = recording(s, calls)
+    let isAppScheme: (String) -> Bool = { $0 == "solara" }
+
+    #expect(library.openInternalPage("downloads", background: true, scheme: "solara", isAppScheme: isAppScheme))
+    let downloads = try #require(s.state.viewTabIds(window).first { $0 != blank })
+    let count = s.state.viewTabIds(window).count
+    #expect(s.state.tabs[downloads]?.url == "solara://downloads")
+    #expect(library.openInternalPage("downloads", windowId: "closed", query: "a+b &é/#", background: true,
+      scheme: "solara", isAppScheme: isAppScheme))
+    #expect(s.state.tabs[downloads]?.navigation?.url == "solara://downloads?q=a%2Bb%20%26%C3%A9%2F%23")
+    #expect(s.state.viewTabIds(window).count == count)
+    #expect(s.state.activeTabId(window) == blank)
+    #expect(calls.items == ["newTab", "navigate"])
+
+    #expect(library.openInternalPage("downloads", windowId: "closed", scheme: "solara", isAppScheme: isAppScheme))
+    #expect(s.state.activeTabId(window) == downloads)
+    #expect(calls.items == ["newTab", "navigate", "setFocusedWindow", "focus:" + window, "activate"])
+  }
+
   @Test func openURLsPrefersFocusOrderAndSkipsSmallWindows() throws {
     let s = store()
     let first = try s.dispatch(Command("createWindow", [["url": "https://one.test/"]])).result!.string!

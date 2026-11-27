@@ -16,6 +16,7 @@ export async function handleBookmarksBarMenuChoice(windowId: string, profileId: 
   if (id && action === "openAllWindow") return openFolder(id, windowId, "window");
   if (id && action === "openAllIncognito") return openFolder(id, windowId, "incognito");
   if (id && action === "restoreArc") return restoreArcFolders(id, windowId);
+  if (action === "manage") return openInternalPage("bookmarks", windowId);
   const s = useBrowser.getState();
   const node = id ? s.bookmarks.nodes[id] : undefined;
   if (node?.kind === "url") {
@@ -29,7 +30,6 @@ export async function handleBookmarksBarMenuChoice(windowId: string, profileId: 
   if (action === "delete" && node) await bookmarkWriter.removeBookmark(profileId, node.id).catch(reportBookmarkFailure);
   if (action === "addPage") addPageFromBookmarksBar(windowId, profileId, node ?? null);
   if (action === "addFolder") await addFolderFromBookmarksBar(windowId, profileId, node ?? null);
-  if (action === "manage") openInternalPage("bookmarks", windowId);
   if (action === "bar" && (id === "always" || id === "newTab" || id === "never")) useBrowser.getState().updateSettings({ bookmarksBar: id });
   if (action === "hide") useBrowser.getState().updateSettings({ hideBookmarksBarImport: true });
 }

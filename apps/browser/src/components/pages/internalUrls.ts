@@ -1,4 +1,4 @@
-import { appScheme, isAppScheme } from "@solara/core";
+import { isAppScheme } from "@solara/core";
 
 export type InternalPageId = "history" | "bookmarks" | "downloads";
 
@@ -7,8 +7,6 @@ export const INTERNAL_PAGES: Record<InternalPageId, { title: string }> = {
   bookmarks: { title: "Bookmarks" },
   downloads: { title: "Downloads" },
 };
-
-export const internalUrl = (page: InternalPageId, query?: string) => `${appScheme()}://${page}${query ? `?q=${encodeURIComponent(query)}` : ""}`;
 
 export function internalPageOf(url: string | null | undefined): InternalPageId | null {
   const m = url ? /^([a-z][a-z0-9+.-]*):\/\/([^/?#]*)/i.exec(url) : null;

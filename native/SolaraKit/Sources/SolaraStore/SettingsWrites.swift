@@ -80,22 +80,29 @@ public struct SettingsOpening {
   }
 
   @discardableResult
-  public func openInternalPage(_ page: String, scheme: String, isAppScheme: (String) -> Bool) -> Bool {
+  public func openInternalPage(_ page: String, windowId: String? = nil, query: String? = nil,
+    background: Bool = false, focusTarget: Bool = false, scheme: String, isAppScheme: (String) -> Bool) -> Bool {
     let s = state()
-    guard let window = s.resolveWindowId(nil),
-          run(Command("setFocusedWindow", [.string(window)])) != nil else { return false }
-    focus(window)
-    let url = "\(scheme)://\(page)"
+    guard Self.internalPages.contains(page), let window = s.resolveWindowId(windowId) else { return false }
+    if !background, focusTarget || windowId != window {
+      guard run(Command("setFocusedWindow", [.string(window)])) != nil else { return false }
+      focus(window)
+    }
+    let encoded = query.flatMap { $0.isEmpty ? nil : $0.addingPercentEncoding(withAllowedCharacters: Self.queryCharacters) }
+    let url = "\(scheme)://\(page)" + (encoded.map { "?q=\($0)" } ?? "")
     if let existing = s.viewTabIds(window).first(where: { id in
       s.tabs[id].map { Self.internalPage(of: $0.navigation?.url ?? $0.url, isAppScheme: isAppScheme) == page } ?? false
     }) {
-      return run(Command("activate", [.string(existing)])) != nil
+      if encoded != nil, run(Command("navigate", [.string(existing), .string(url)])) == nil { return false }
+      return background || run(Command("activate", [.string(existing)])) != nil
     }
-    if let active = s.activeTabId(window), s.tabs[active]?.url.isEmpty == true {
+    if !background, let active = s.activeTabId(window), s.tabs[active]?.url.isEmpty == true {
       return run(Command("navigate", [.string(active), .string(url)])) != nil
     }
-    return newTab(in: window, url: url)
+    return run(Command("newTab", [.string(window), ["url": .string(url), "background": .bool(background)]]))?.result?.string?.isEmpty == false
   }
+
+  private static let queryCharacters = CharacterSet(charactersIn: "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_.!~*'()")
 
   private func newTab(in window: String, url: String) -> Bool {
     let tab = run(Command("newTab", [.string(window), ["url": .string(url)]]))?.result?.string

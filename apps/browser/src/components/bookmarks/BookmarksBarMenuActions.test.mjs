@@ -8,11 +8,12 @@ const { useBookmarkEditor } = await import('./edit.ts');
 
 const actionsURL = new URL("../../lib/actions.ts", import.meta.url).href;
 const bookmarkActionsURL = new URL("./actions.ts", import.meta.url).href;
+const pageURLs = new URL("../pages/urls.ts", import.meta.url).href;
 const browserURL = new URL("../../store/browser.ts", import.meta.url).href;
 const fake = (source) => ({ url: `data:text/javascript,${encodeURIComponent(source)}`, shortCircuit: true });
 const hooks = registerHooks({
   resolve(specifier, context, next) {
-    if (context.parentURL === bookmarkActionsURL && specifier === "@solara/settings") return fake(`export const nativeWorkspaceCommand = (...args) => globalThis.bookmarkMenuRequests.push(args);`);
+    if ((context.parentURL === bookmarkActionsURL || context.parentURL === pageURLs) && specifier === "@solara/settings") return fake(`export const nativeWorkspaceCommand = (...args) => globalThis.bookmarkMenuRequests.push(args);`);
     const resolved = next(specifier, context);
     if (resolved.url === actionsURL) return fake(`import { useBrowser } from ${JSON.stringify(browserURL)}; export const focus = (id) => useBrowser.getState().setFocusedWindow(id); export const openWindow = (options) => useBrowser.getState().createWindow(options);`);
     return resolved;
@@ -103,7 +104,7 @@ test("Add Group files the folder and Arc restoration delegates to the native own
 
 test("manage, bar modes, hidden import and Copy Link retain their actions", async () => {
   await choice("manage");
-  assert.ok(Object.values(S().tabs).some((tab) => tab.url === "solara://bookmarks"));
+  assert.deepEqual(requests.pop(), ["openLibraryPage", JSON.stringify({ page: "bookmarks" }), windowId]);
   for (const mode of ["always", "newTab", "never"]) {
     await choice("bar", mode);
     assert.equal(S().settings.bookmarksBar, mode);

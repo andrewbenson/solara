@@ -1,6 +1,7 @@
 import AppKit
 import SolaraCore
 import SolaraModel
+import SolaraOmnibox
 import SolaraShell
 import SolaraStore
 import SolaraUI
@@ -39,10 +40,10 @@ enum NativeWorkspaceCommands {
     NativePinnedPageCommands.start()
     ToolbarView.commandURLFocusAllowed = { NativeCommandBarFocus.developerAllowed($0, field: $1) }
     ToolbarView.commandURLDidFocus = { NativeCommandBarFocus.developerDidFocus($0, field: $1) }
-    for command in WorkspaceMenuCommand.commands.union(ViewMenuCommand.commands).union(PageMenuCommand.commands).union(FindMenuCommand.commands).union(BookmarkMenuCommand.commands).union(CopyLinkCommand.commands).union(BrowserServiceCommand.commands).union(TabFocusCommand.commands).union(["togglePageEngine"]).union(PinnedPageCommand.commands).union(["focusCommandBar", "cast", "restoreArcFolders"]) {
+    for command in WorkspaceMenuCommand.commands.union(ViewMenuCommand.commands).union(PageMenuCommand.commands).union(FindMenuCommand.commands).union(BookmarkMenuCommand.commands).union(CopyLinkCommand.commands).union(BrowserServiceCommand.commands).union(TabFocusCommand.commands).union(["togglePageEngine"]).union(PinnedPageCommand.commands).union(["focusCommandBar", "cast", "restoreArcFolders", "showHistory", "manageBookmarks"]) {
       NativeMenuCommands.argumentHandlers[command] = { arg, windowId in perform(command, arg: arg, windowId: windowId) }
     }
-    NativeMenuCommands.keepsMenuDispatch = ViewMenuCommand.commands.union(PageMenuCommand.commands).union(BookmarkMenuCommand.commands).union(CopyLinkCommand.commands).union(BrowserServiceCommand.commands).union(TabFocusCommand.commands)
+    NativeMenuCommands.keepsMenuDispatch = ViewMenuCommand.commands.union(PageMenuCommand.commands).union(BookmarkMenuCommand.commands).union(CopyLinkCommand.commands).union(BrowserServiceCommand.commands).union(TabFocusCommand.commands).union(["showHistory", "manageBookmarks"])
     NativeMenuCommands.workspaceAvailability = { command, arg, windowId in
       if command == "findInPage", windowId == NativeSettingsWindow.windowId { return true }
       if command == "returnToPinnedUrl" { return NativePinnedPageCommands.available(windowId: windowId) }
@@ -245,6 +246,24 @@ enum NativeWorkspaceCommands {
     let timing = NewTabMainThreadTiming.begin("command.\(command)", windowId: windowId)
     defer { NewTabMainThreadTiming.end(timing) }
     #endif
+    if command == "openLibraryPage" {
+      if let arg, let options = try? JSONValue.parse(arg), let page = options["page"]?.string {
+        SettingsDirectWrites.opening?.openInternalPage(page, windowId: windowId, query: options["query"]?.string,
+          background: options["background"]?.truthy == true, scheme: appScheme(), isAppScheme: isAppScheme)
+      }
+      return true
+    }
+    if command == "showHistory" || command == "manageBookmarks" {
+      if let store = SettingsDirectWrites.store {
+        let route = CommandRoute.resolve(command, windowId: windowId, state: store.state, closing: store.memory.closingWindows)
+        if let target = route.windowId {
+          let page = command == "showHistory" ? "history" : "bookmarks"
+          SettingsDirectWrites.opening?.openInternalPage(page, windowId: target, focusTarget: route.focusWindow == target,
+            scheme: appScheme(), isAppScheme: isAppScheme)
+        }
+      }
+      return true
+    }
     if command == "restoreArcFolders" {
       if let arg { Task { await NativeBookmarkHolderRestoration.restore(id: arg, windowId: windowId) } }
       return true

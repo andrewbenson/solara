@@ -21,13 +21,11 @@ test("service copy names the servers this build talks to", () => {
   assert.deepEqual(SERVICES, { updateHost: "github.com", switchFile: "stats.example.com/flags.json" });
 });
 
-test("a fork opens its own pages under its scheme and still knows solara:// ones", async () => {
+test("the product scheme recognizes its internal page URLs", async () => {
   const { APP_SCHEME } = await import("./productName.ts");
-  const { internalPageOf, internalUrl } = await import("../components/pages/internalUrls.ts");
+  const { internalPageOf } = await import("../components/pages/internalUrls.ts");
   const { urlForDisplay } = await import("@solara/core");
   assert.equal(APP_SCHEME, "solara");
-  assert.equal(internalUrl("history"), "solara://history");
-  assert.equal(internalUrl("history", "a b"), "solara://history?q=a%20b");
   assert.equal(internalPageOf("solara://history?q=x"), "history");
   assert.equal(internalPageOf("solara://bookmarks"), "bookmarks");
   assert.equal(internalPageOf("SOLARA://Downloads/"), "downloads");

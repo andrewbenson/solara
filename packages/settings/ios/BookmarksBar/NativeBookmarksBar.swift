@@ -68,9 +68,6 @@ enum NativeBookmarksBar {
     HostedViews.register(kind) { windowId, state in
       let host = BookmarksBarHost(windowId: windowId)
       host.apply(state)
-      let environment = ProcessInfo.processInfo.environment
-      if !LaunchSwitches.shared.distribution, environment["AC_BENCH_BOOKMARKS"] == "1",
-        environment["SOLARA_BACKGROUND"] == "1", environment["SOLARA_DATA_DIR"]?.isEmpty == false { scaleHosts[windowId] = BookmarkScaleHost(host) }
       #if DEBUG
       devHosts[windowId] = BookmarksBarDevHost(host)
       return HostedContent(view: host.view, onUnmount: { [weak host] in
@@ -105,6 +102,7 @@ final class BookmarksBarHost {
     bookmarkObserver = NotificationCenter.default.addObserver(forName: NativeBookmarkOwner.projectionChanged, object: nil, queue: .main) { [weak self] _ in
       MainActor.assumeIsolated { self?.refresh() }
     }
+    NativeBookmarksBar.registerScaleHost(self, windowId: windowId)
   }
 
   func updateNative(_ state: BrowserState, profileId: String, theme: SplitChromeTheme) {
@@ -207,6 +205,13 @@ private final class BookmarksBarDevHost {
 @MainActor
 extension NativeBookmarksBar {
   private static var scaleHosts: [String: BookmarkScaleHost] = [:]
+
+  fileprivate static func registerScaleHost(_ host: BookmarksBarHost, windowId: String) {
+    let environment = ProcessInfo.processInfo.environment
+    guard !LaunchSwitches.shared.distribution, environment["AC_BENCH_BOOKMARKS"] == "1",
+      environment["SOLARA_BACKGROUND"] == "1", environment["SOLARA_DATA_DIR"]?.isEmpty == false else { return }
+    scaleHosts[windowId] = BookmarkScaleHost(host)
+  }
 
   static func scaleJSON(windowId: String, operation: String, value: String?) -> String {
     guard let view = scaleHosts[windowId]?.value?.view, let window = view.window, !view.isHiddenOrHasHiddenAncestor else { return "null" }

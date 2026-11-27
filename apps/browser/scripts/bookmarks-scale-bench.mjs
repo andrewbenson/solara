@@ -24,6 +24,7 @@ if (args.includes("--self-test")) {
 }
 const appPath = resolve(option("--app", ""));
 const out = resolve(option("--out", ""));
+const dragObservationDeadline = args.includes("--debug") ? 60_000 : 20_000;
 assert.ok(option("--app") && option("--out"), "--app and --out are required");
 assert.ok(!appPath.startsWith("/Applications/"), "only an isolated build is allowed");
 mkdirSync(out, { recursive: true });
@@ -140,10 +141,34 @@ try {
   await measured("edit-move-5000", 'const started = performance.now(); return ac.bookmarks.moveBookmark("default",bookmarkScaleIds.added,bookmarkScaleIds.folder,0).then(() => until(() => Promise.all([bar(),page("state",bookmarkScaleIds.added)]), ([barState,pageState]) => barState?.firstId !== bookmarkScaleIds.added && pageState?.item?.parentId === bookmarkScaleIds.folder)).then(([barState,pageState]) => ({ms:performance.now()-started,bar:barState,page:pageState}));');
   await evaluate('return until(() => page(), (state) => state?.folder === bookmarkScaleIds.roots.bar && state.firstMaterialized && !state.visibleIds.includes(bookmarkScaleIds.added)).then(() => page("folder",bookmarkScaleIds.folder)).then(() => until(() => page(), (state) => { const expected = S().bookmarks.nodes[bookmarkScaleIds.folder].children.slice(0,3); const old = new Set(S().bookmarks.nodes[bookmarkScaleIds.roots.bar].children); return state?.folder === bookmarkScaleIds.folder && state.first === expected[0] && state.firstMaterialized && expected.every((id) => state.frames.some((row) => row.label === "bookmark:" + id)) && state.visibleIds.every((id) => !old.has(id)); }));');
   try {
-    await measured("page-drag-one", 'return page().then((state) => { const frames = state.frames.filter((row) => row.label.startsWith("bookmark:")).sort((a,b) => a.y-b.y); if(frames.length<3) throw new Error("drag needs three materialized rows"); const from=frames.find((row)=>row.label==="bookmark:"+state.first),to=frames.filter((row)=>row.label!=="bookmark:"+state.first)[1],first=state.first; if(!from||!to) throw new Error("drag needs the first row and two destination rows"); const started=performance.now(); return C.chromeWindows().then((windows) => C.devWindow(windows.find((window)=>window.hasRoot).window,"drag:"+(from.x+120)+","+(from.y+from.height/2)+";"+(to.x+120)+","+(to.y+to.height*0.8))).then(()=>until(()=>page(),(next)=>next?.first!==first)).then((next)=>({ms:performance.now()-started,page:next})); });');
+    await measured("page-drag-one", `
+      const folder = bookmarkScaleIds.folder;
+      const children = () => S().bookmarks.nodes[folder].children;
+      return page().then((state) => {
+        const [first, second, third] = children();
+        const frame = (id) => state.frames.find((row) => row.label === "bookmark:" + id);
+        const from = frame(first), to = frame(third);
+        if (state.first !== first || !from || !frame(second) || !to) throw new Error("drag needs the first three folder rows");
+        const expected = [second, third, first];
+        const started = performance.now();
+        return C.chromeWindows().then((windows) => C.devWindow(windows.find((window) => window.hasRoot).window,
+          "drag:" + (from.x + 120) + "," + (from.y + from.height / 2) + ";" + (to.x + 120) + "," + (to.y + to.height * 0.8)))
+          .then(() => until(() => page(), (next) => next?.folder === folder && next.first === second && expected.every((id, i) => children()[i] === id), ${dragObservationDeadline}))
+          .then((next) => ({ ms: performance.now() - started, page: next }));
+      });`);
   } catch (error) { console.error(error.message); process.exitCode = 1; }
-  await measured("page-select-all", 'const started=performance.now(); return page("selectAll").then(() => page()).then((state) => ({ms:performance.now()-started,page:state}));');
-  await measured("page-delete-many", 'const started=performance.now(); return page("delete").then(() => until(() => page(),(state)=>state?.count===0)).then((state)=>({ms:performance.now()-started,page:state}));');
+  await measured("page-select-all", `
+    const started = performance.now();
+    return page("selectAll").then(() => page()).then((state) => {
+      const count = S().bookmarks.nodes[bookmarkScaleIds.folder].children.length;
+      if (state?.count !== count || state.selected !== count) throw new Error("the entire folder was not selected");
+      return { ms: performance.now() - started, page: state };
+    });`);
+  await measured("page-delete-many", `
+    const folder = bookmarkScaleIds.folder;
+    const started = performance.now();
+    return page("delete").then(() => until(() => page(), (state) => state?.folder === folder && state.count === 0 && S().bookmarks.nodes[folder].children.length === 0))
+      .then((state) => ({ ms: performance.now() - started, page: state }));`);
   result.finalMemory = memory();
   result.loadEnd = loadavg();
   result.targetFailures = Object.entries(result.operations).flatMap(([name, row]) => [

@@ -107,6 +107,28 @@ struct BookmarkCoordinatorTests {
     }
   }
 
+  @Test(arguments: [false, true]) func expectBookmarkNodesChecksValuesRegardlessOfKeyOrder(stale: Bool) throws {
+    let owner = coordinator([page, "https://second.test/"])
+    let before = owner.desiredView(engine: "")
+    let node = try #require(before.document["nodes"]?["b0"]?.object)
+    var expected = JSONObject(Array(node.reversed()))
+    #expect(expected.keys != node.keys)
+    if stale { expected["title"] = "Old title" }
+    let mutations: [BookmarkMutation] = [
+      .init(method: "expectBookmarkNodes", args: [["b0": .object(expected)]]),
+      .init(method: "moveBookmark", args: ["b0", "bar@default", 1]),
+    ]
+    if stale {
+      #expect(throws: BookmarkCoordinatorError.conditionFailed("Bookmark folder changed")) {
+        try owner.submit(profile: "p", mutations: mutations)
+      }
+      #expect(owner.desiredView(engine: "") == before)
+    } else {
+      let receipt = try owner.submit(profile: "p", mutations: mutations)
+      #expect(receipt.view.document["nodes"]?["bar@default"]?["children"] == ["b1", "b0"])
+    }
+  }
+
   @Test func conditionFailedDescribesItselfAsTheJSWriterMatchesIt() {
     #expect(String(describing: BookmarkCoordinatorError.conditionFailed("bar@default")) == #"conditionFailed("bar@default")"#)
   }

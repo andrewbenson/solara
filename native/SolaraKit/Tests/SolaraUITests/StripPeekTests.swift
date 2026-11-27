@@ -104,7 +104,11 @@ import Testing
     let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 1200, height: 200), styleMask: [.borderless], backing: .buffered, defer: false)
     window.isReleasedWhenClosed = false
     window.alphaValue = 0
+    window.ignoresMouseEvents = true
+    let leftmostScreen = NSScreen.screens.map(\.frame.minX).min() ?? 0
+    window.setFrameOrigin(NSPoint(x: leftmostScreen - window.frame.width - 1, y: 0))
     let view = StripPeekView(frame: NSRect(x: 0, y: 0, width: 1200, height: 200))
+    NotificationCenter.default.removeObserver(view, name: DevPointer.changed, object: nil)
     view.bandLeft = 78
     window.contentView = view
     view.setEnabled(true)
@@ -112,33 +116,52 @@ import Testing
       view.stop()
       window.close()
     }
-    func post(_ point: CGPoint) throws {
-      let event = try #require(NSEvent.mouseEvent(
-        with: .mouseMoved, location: view.convert(point, to: nil), modifierFlags: [], timestamp: ProcessInfo.processInfo.systemUptime,
-        windowNumber: window.windowNumber, context: nil, eventNumber: 0, clickCount: 0, pressure: 0))
-      NSApp.postEvent(event, atStart: false)
-    }
-    func pump(_ seconds: TimeInterval, check: () -> Void = {}) async throws {
-      let end = Date(timeIntervalSinceNow: seconds)
-      while Date() < end {
-        try await Task.sleep(for: .milliseconds(10))
-        check()
+    try #require(NSScreen.screens.allSatisfy { !$0.frame.intersects(window.frame) })
+    var receivedLocation: NSPoint?
+    let eventReceipt = try #require(NSEvent.addLocalMonitorForEvents(matching: .mouseMoved) { event in
+      MainActor.assumeIsolated {
+        if event.window === window { receivedLocation = event.locationInWindow }
       }
+      return event
+    })
+    defer { NSEvent.removeMonitor(eventReceipt) }
+    var scheduledHide: DispatchWorkItem?
+    view.peek.schedule = { _, run in
+      let item = DispatchWorkItem { MainActor.assumeIsolated { run() } }
+      scheduledHide = item
+      return item
+    }
+    func post(_ point: CGPoint) async throws {
+      let location = view.convert(point, to: nil)
+      let event = try #require(NSEvent.mouseEvent(
+        with: .mouseMoved, location: location, modifierFlags: [], timestamp: ProcessInfo.processInfo.systemUptime,
+        windowNumber: window.windowNumber, context: nil, eventNumber: 0, clickCount: 0, pressure: 0))
+      receivedLocation = nil
+      NSApp.postEvent(event, atStart: false)
+      let deliveredBy = ContinuousClock.now + .seconds(60)
+      while receivedLocation != location && ContinuousClock.now < deliveredBy {
+        try await Task.sleep(for: .milliseconds(10))
+      }
+      try #require(receivedLocation == location)
     }
     #expect(view.watching)
-    try post(CGPoint(x: 300, y: 160))
-    try await pump(0.1)
+    try await post(CGPoint(x: 300, y: 160))
     #expect(!view.live)
-    try post(CGPoint(x: 300, y: 2))
-    try await pump(0.3)
+    try await post(CGPoint(x: 300, y: 2))
     try #require(view.live)
-    try post(CGPoint(x: 520, y: 30))
-    try await pump(0.6) { #expect(view.live) }
-    try post(CGPoint(x: 520, y: 160))
-    let dismissedBy = Date(timeIntervalSinceNow: 2)
-    while view.live && Date() < dismissedBy {
+    view.step(by: 0.2)
+    try await post(CGPoint(x: 520, y: 30))
+    let holdUntil = ContinuousClock.now + .milliseconds(600)
+    repeat {
+      #expect(view.live)
       try await Task.sleep(for: .milliseconds(10))
-    }
+    } while ContinuousClock.now < holdUntil
+    #expect(view.live)
+    #expect(scheduledHide == nil)
+    try await post(CGPoint(x: 520, y: 160))
+    let hide = try #require(scheduledHide)
+    hide.perform()
+    view.step(by: 0.2)
     #expect(!view.live)
     #expect(NSWorkspace.shared.frontmostApplication?.processIdentifier == frontmost)
   }

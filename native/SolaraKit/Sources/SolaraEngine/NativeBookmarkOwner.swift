@@ -140,12 +140,17 @@ public final class NativeBookmarkOwner: @unchecked Sendable {
   }
 
   public static func flushJournalForQuit() async throws {
+    try await flushJournalForQuit(onAdmissionClosed: {})
+  }
+
+  static func flushJournalForQuit(onAdmissionClosed: @Sendable () -> Void) async throws {
     let initial = slot.withLock { selection in
       if !selection.quitting { selection.quitGeneration &+= 1 }
       selection.quitting = true
       let coordinators = [selection.owner?.coordinator, selection.previousCoordinator].compactMap { $0 }
       return (selection.quitGeneration, beginQuitBarriers(coordinators), Set(coordinators.map(ObjectIdentifier.init)))
     }
+    onAdmissionClosed()
     for barrier in initial.1 { try await barrier.wait() }
     await Task.detached { settleInstallations() }.value
     let installed = slot.withLock { selection -> [BookmarkJournalBarrier] in

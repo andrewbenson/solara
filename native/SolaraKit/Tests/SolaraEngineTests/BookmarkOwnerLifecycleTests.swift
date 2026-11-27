@@ -59,7 +59,11 @@ import SolaraStore
     let watchdog = Mutex(false)
     var operations = BookmarkPendingFileOperations.live
     let sync = operations.syncFile
-    operations.syncFile = { url in entered.signal(); guard release.wait(timeout: .now() + 8) == .success else { throw BookmarkPendingStoreError.unavailable }; try sync(url) }
+    operations.syncFile = { url in
+      entered.signal()
+      guard release.wait(timeout: .now() + 30) == .success else { throw BookmarkPendingStoreError.unavailable }
+      try sync(url)
+    }
     let owner = NativeBookmarkOwner(store: BookmarkPendingStore(directory: directory, fileOperations: operations), profiles: ["default": ""], defaultProfile: "default", wake: { _ in })
     NativeBookmarkOwner.current = owner
     defer { NativeBookmarkOwner.cancelJournalQuit(); owner.stop(); NativeBookmarkOwner.current?.stop(); NativeBookmarkOwner.current = nil }
@@ -67,23 +71,29 @@ import SolaraStore
     let binding = try owner.binding(profile: "default")
     let replacement = await NativeBookmarkOwner.prepare(directory: directory, state: BrowserState())
     let writeDone = DispatchSemaphore(value: 0)
-    owner.coordinator.enqueueJournalWrite({ staged in try staged.submit(profile: "default", mutations: [], requestID: "before-replacement") }) { _ in writeDone.signal() }
-    #expect(blockingWait(entered, seconds: 5))
+    let writeResult = Mutex<Result<Void, Error>?>(nil)
+    owner.coordinator.enqueueJournalWrite({ staged in try staged.submit(profile: "default", mutations: [], requestID: "before-replacement") }) { result in
+      writeResult.withLock { $0 = result.map { _ in () } }
+      writeDone.signal()
+    }
+    defer { release.signal() }
+    try #require(blockingWait(entered, seconds: 5))
     let replacer = Thread { NativeBookmarkOwner.current = replacement; replacementDone.signal() }
     replacer.start()
     let deadline = ContinuousClock.now + .seconds(5)
     while (try? owner.snapshot(profile: "default").binding) == binding, ContinuousClock.now < deadline { try await Task.sleep(for: .milliseconds(1)) }
     #expect((try? owner.snapshot(profile: "default").binding) != binding)
-    let quitStarted = Mutex(false)
+    let quitAdmissionsClosed = Mutex(false)
     let quitFinished = Mutex(false)
     let quitTask = Task {
-      quitStarted.withLock { $0 = true }
-      try await NativeBookmarkOwner.flushJournalForQuit()
+      try await NativeBookmarkOwner.flushJournalForQuit {
+        quitAdmissionsClosed.withLock { $0 = true }
+      }
       quitFinished.withLock { $0 = true }
     }
     let quitDeadline = ContinuousClock.now + .seconds(5)
-    while !quitStarted.withLock({ $0 }), ContinuousClock.now < quitDeadline { await Task.yield() }
-    #expect(quitStarted.withLock { $0 })
+    while !quitAdmissionsClosed.withLock({ $0 }), ContinuousClock.now < quitDeadline { try await Task.sleep(for: .milliseconds(1)) }
+    #expect(quitAdmissionsClosed.withLock { $0 })
     #expect(!quitFinished.withLock { $0 })
     let worker = Thread {
       let returned = readSelection.wait(timeout: .now() + 5) == .success
@@ -102,6 +112,7 @@ import SolaraStore
     #expect(blockingWait(writeDone, seconds: 5))
     #expect(blockingWait(replacementDone, seconds: 5))
     try await quitTask.value
+    try #require(writeResult.withLock { $0 }).get()
     #expect(quitFinished.withLock { $0 })
     if cancelQuit && !cancelReplacement {
       #expect(NativeBookmarkOwner.writableCurrent === replacement)

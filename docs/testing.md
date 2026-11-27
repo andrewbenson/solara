@@ -397,12 +397,12 @@ React drag background. The ordinary toolbar clip stays inside its original host,
 shell's card frame, so earlier profile backgrounds paint below it and the later peek paints above it. Rail toolbars
 stay in the shell overlay. The paint regression includes an earlier background, a later cover and stale owner geometry.
 
-Before any pointer override, run the AppKit hover check by itself:
+To run the AppKit hover check by itself:
 `scripts/agent/swift-test-bounded --timeout 120 --package native/SolaraKit -- -Xswiftc -DSOLARA_PROBES --filter StripPeekTests.postedAppKitMouseMovesShowHoldAndDismissThePeekWithoutAPointerOverride`.
-It posts only real mouse-move events through the AppKit queue and requires peek entry, a continuous 600 ms hold
-and exit. Its isolated, nonactivating window avoids unrelated tracking-exit events at the unmoved physical cursor
-in the full app; it never sets the pointer or calls the peek's show method. Disabling the production local monitor
-makes entry fail.
+It posts mouse-move events through the AppKit queue and waits for delivery before checking peek entry, a continuous
+600 ms hold and exit. The nonactivating window sits outside all displays and ignores physical mouse input.
+The test runs the scheduled hide and steps the animation explicitly. Disabling the production local monitor makes
+entry fail.
 
 Keep both legs of `top-strip-test` strict through the peek URL drop. Its styling captures use the Debug test pointer
 and clear it afterward. Tooltip and accessibility reads post a mouse move to establish AppKit event context; their

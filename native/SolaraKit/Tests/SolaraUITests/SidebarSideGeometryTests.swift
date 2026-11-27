@@ -119,26 +119,45 @@ struct SidebarSideGeometryTests {
     #expect(DockMotion.sidebarLightsCenter(input)?.y == ShellMetrics.lightsCenter.y)
   }
 
-  @Test func rightFolderDragFeedbackSnapsToTheBarsRightInset() throws {
+  @Test(arguments: [SidebarSide.left, .right])
+  func folderDragUsesWindowCoordinatesAndSnapsToTheSidebar(side: SidebarSide) throws {
+    let bounds = CGRect(x: 0, y: 0, width: 1000, height: 700)
+    let window = NSWindow(contentRect: bounds, styleMask: [.borderless], backing: .buffered, defer: false)
     let shell = WindowShellView(windowId: "bookmark-feedback")
-    shell.frame = CGRect(x: 0, y: 0, width: 1000, height: 700)
-    shell.update { $0.sidebarSide = .right }
+    window.contentView = shell
+    defer { window.contentView = nil }
+    shell.frame = bounds
+    shell.update { $0.sidebarSide = side }
+    let coverage = try #require(shell.frames.sidebarCoverage(in: shell.bounds))
     let bar = BookmarksBarView(favicons: PageFavicons(load: { _, _, _, _ in nil }))
-    bar.frame = CGRect(x: 7, y: 100, width: 803, height: 30)
+    bar.frame = CGRect(x: side == .left ? 197 : 7, y: 100, width: 803, height: 30)
     shell.overlay.addSubview(bar)
+    var events: [(String, [String: Any])] = []
+    bar.onAction = { events.append(($0, $1)) }
     bar.update(BookmarksBarSnapshot(profileId: "default", items: [BookmarksBarItem(id: "f", kind: .folder, title: "Folder")], hasOther: false, hideBookmarksBarImport: false, theme: [:]))
     bar.layoutSubtreeIfNeeded()
     let button = try #require(bar.subviews.compactMap { $0 as? BookmarksBarButton }.first)
     let original = button.frame
-    let down = CGPoint(x: original.midX, y: original.midY)
-    let end = bar.convert(CGPoint(x: 900, y: 115), from: shell)
+    let down = bar.convert(CGPoint(x: original.midX, y: original.midY), to: nil)
+    let end = shell.convert(CGPoint(x: coverage.maxX - 2, y: coverage.midY), to: nil)
     button.beginPress(at: down, flags: [])
     button.dragPress(to: end)
     #expect(button.highlighted)
-    #expect(button.frame.maxX == bar.bounds.maxX - 8)
+    if side == .right {
+      #expect(button.frame.maxX == bar.bounds.maxX - 8)
+    } else {
+      #expect(button.frame.minX == bar.bounds.minX + 8)
+    }
     #expect(button.frame.width == original.width)
     bar.cancelOperation(nil)
     #expect(button.frame == original)
+    #expect(events.isEmpty)
+    button.beginPress(at: down, flags: [])
+    button.dragPress(to: end)
+    button.endPress(at: end, flags: [], inside: false)
+    #expect(events.count == 1)
+    #expect(events.first?.0 == "folderToSidebar")
+    #expect(events.first?.1["id"] as? String == "f")
   }
 
   @Test func legacyPageSlotKeepsItsNegativeTop() {

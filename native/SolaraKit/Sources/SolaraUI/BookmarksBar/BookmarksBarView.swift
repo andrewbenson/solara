@@ -375,7 +375,7 @@ public final class BookmarksBarView: NSView {
       drag.active = true
       if let window { dragWatch = BookmarksBarDragWatch(view: self, window: window) }
     }
-    let coverage = windowShell.flatMap { shell in shell.frames.sidebarCoverage(in: shell.bounds).map { convert($0, from: shell) } }
+    let coverage = windowShell.flatMap { shell in shell.frames.sidebarCoverage(in: shell.bounds).map { shell.convert($0, to: nil) } }
     drag.target = BookmarksBarDropTarget.resolve(id: drag.id, items: snapshot.items, visible: placements, deltaX: dx, pointerX: point.x, sidebarEdge: windowShell == nil ? snapshot.sidebarEdge : nil, sidebarCoverage: coverage, pointerY: point.y)
     let sidebarOffset = windowShell?.input.sidebarSide == .right ? bounds.maxX - 8 - drag.frame.maxX : 8 - drag.frame.minX
     drag.offsetX = drag.target == .sidebar ? sidebarOffset : dx

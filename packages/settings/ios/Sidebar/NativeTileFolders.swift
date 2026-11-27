@@ -7,7 +7,6 @@ import SolaraUI
 @MainActor
 enum NativeTileFolders {
   private static var panel = TileFolderPanelState()
-  private static var looks: [String: FolderPanelLook] = [:]
   private static var shown: (windowId: String, page: Weak<SidebarView>, request: FolderPanelRequest)?
   private static var lifecycle: Int?
   private static var owner: ObjectIdentifier?
@@ -57,13 +56,6 @@ enum NativeTileFolders {
     return close()
   }
 
-  static func setLook(windowId: String, look: FolderPanelLook) {
-    guard looks[windowId] != look else { return }
-    looks[windowId] = look
-    guard panel.folder(in: windowId) != nil, let store = WorkspaceActionRouter.ownedStore else { return }
-    show(store.state)
-  }
-
   static func render(windowId: String) {
     guard panel.folder(in: windowId) != nil, let store = WorkspaceActionRouter.ownedStore else { return }
     if panel.check(store.state) {
@@ -77,7 +69,6 @@ enum NativeTileFolders {
   static func hostStopped(_ windowId: String, page: SidebarView?) {
     if let page, shown?.page.value === page { shown = nil }
     let gone = WorkspaceActionRouter.ownedStore?.state.windows[windowId] == nil
-    if gone { looks[windowId] = nil }
     guard panel.folder(in: windowId) != nil, gone else { return }
     close()
   }
@@ -167,8 +158,9 @@ enum NativeTileFolders {
   }
 
   private static func show(_ state: BrowserState) {
-    guard let slot = panel.open, let page = page(slot.windowId) else { return }
-    let look = looks[slot.windowId] ?? FolderPanelLook(dark: true)
+    guard let slot = panel.open, let page = page(slot.windowId), let window = state.windows[slot.windowId] else { return }
+    let appearance = NativeLayoutAppearance(state: state, profileId: window.profileId, incognito: window.incognito)
+    let look = FolderPanelLook(dark: appearance.dark, theme: appearance.tokens)
     let request = TileFolderPanel.request(state, windowId: slot.windowId, folderId: slot.folderId, look: look)
     if let shown, shown.windowId == slot.windowId, shown.page.value === page, shown.request == request { return }
     if let old = shown?.page.value, old !== page { SidebarFolderPanelHost.hide(on: old) }

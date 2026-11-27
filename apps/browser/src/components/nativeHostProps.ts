@@ -22,30 +22,6 @@ export type StripHostProps = {
   iconRing?: boolean;
 };
 
-export type SidebarHostProps = {
-  profileId: string;
-  dark: boolean;
-  theme: Record<string, string>;
-  border: string[];
-  glow: Glow;
-  loading: string[];
-  playing: string[];
-  sleeping: string[];
-  closeHint: string | null;
-  backHint: string | null;
-  renaming: string | null;
-  addressBar: boolean;
-  tidy: boolean;
-  cleaned: number;
-  upsell: number | null;
-  product: string;
-  engines: Record<string, string>;
-  developer: string[];
-  newTabMark: string | null;
-  pages: unknown;
-  badge: string[];
-};
-
 const OWNED: LiveChromeLists = { loading: [], playing: [], sleeping: [] };
 
 type HostInput<Props> = Omit<Props, keyof LiveChromeLists> & { ownsLive: boolean; live: Pick<LiveChromeLists, Extract<keyof Props, keyof LiveChromeLists>> };
@@ -53,11 +29,6 @@ type HostInput<Props> = Omit<Props, keyof LiveChromeLists> & { ownsLive: boolean
 export function stripHostProps({ ownsLive, live, ...rest }: HostInput<StripHostProps>): StripHostProps {
   const lists = ownsLive ? OWNED : live;
   return { ...rest, playing: lists.playing, sleeping: lists.sleeping };
-}
-
-export function sidebarHostProps({ ownsLive, live, ...rest }: HostInput<SidebarHostProps>): SidebarHostProps {
-  const lists = ownsLive ? OWNED : live;
-  return { ...rest, loading: lists.loading, playing: lists.playing, sleeping: lists.sleeping };
 }
 
 type ChromeLiveState = {

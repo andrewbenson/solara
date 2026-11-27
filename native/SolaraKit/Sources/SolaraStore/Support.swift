@@ -232,6 +232,16 @@ extension Session {
 }
 
 public extension Store {
+  func pageEngineMark(_ tab: Tab, in state: BrowserState) -> String? {
+    let url = tab.url.isEmpty ? tab.navigation?.url ?? "" : tab.url
+    guard let scheme = url.split(separator: ":", maxSplits: 1, omittingEmptySubsequences: false).first?.lowercased(),
+      url.contains(":"), ["http", "https", "file"].contains(scheme) else { return nil }
+    let session = Session(state: state, memory: StoreMemory(), env: env, config: config, now: 0)
+    let engine = session.tabEngine(state, tab.id)
+    guard engine != session.defaultEngine(state) else { return nil }
+    return engine == "webkit" ? "safari" : "globe"
+  }
+
   func pageEngine(_ tabId: String, in s: BrowserState) -> String {
     Session(state: s, memory: StoreMemory(), env: env, config: config, now: 0).tabEngine(s, tabId)
   }

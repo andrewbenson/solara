@@ -12,7 +12,6 @@ import { usePagerPages } from "./layout/profilePager";
 import { PROFILE_DOTS_HEIGHT, ProfileDots, useProfileDotsShown } from "./profiles/ProfileDots";
 import { SidebarAddressRow, SidebarHeaderTools } from "./sidebar/AddressBar";
 import { SidebarDropArea } from "./sidebar/fileDrop";
-import { FolderPanel } from "./sidebar/FolderPanel";
 import { dismissHoverIn } from "./sidebar/hover";
 import { ResizeHandle } from "./sidebar/ResizeHandle";
 import { NativeSidebar, nativeSidebarShell, shellColumnFitsAddressBar } from "./sidebar/NativeSidebar";
@@ -25,31 +24,27 @@ const GLOW_ROOM = 24;
 export function Sidebar({ width }: { width: number }) {
   const windowId = useWindowId();
   const current = useWindowProfileId();
-  const { paging } = usePagerPages(windowId);
   const addressBar = useAddressBarInSidebar();
+  const [shellCapable] = useState(() => nativeSidebarShell(windowId));
+  const shellColumn = shellCapable && shellColumnFitsAddressBar(addressBar);
+  useLayoutEffect(() => dismissHoverIn(windowId), [windowId, current, shellColumn]);
+
+  if (shellColumn) {
+    return <NativeSidebar windowId={windowId} addressBar={addressBar} width={width} />;
+  }
+  return <SidebarFallback width={width} addressBar={addressBar} />;
+}
+
+function SidebarFallback({ width, addressBar }: { width: number; addressBar: boolean }) {
+  const windowId = useWindowId();
+  const { paging } = usePagerPages(windowId);
   const header = addressBar ? SIDEBAR_HEADER_WITH_FIELD : layout.sidebarHeader;
   const hasDownloads = useBrowser((s) => downloadsIn(s, windowId).length > 0);
   const dots = useProfileDotsShown();
-  const nativeProfileBar = useBrowser((s) => !s.windows[windowId]?.incognito && s.profileOrder.length > 0);
   const footerDownloads = addressBar && hasDownloads;
   const pending = usePendingUpdate();
   const footerRow = dots || footerDownloads ? PROFILE_DOTS_HEIGHT : 0;
   const footer = footerRow + (pending ? UPDATE_PILL_BAND : 0);
-  const [shellCapable] = useState(() => nativeSidebarShell(windowId));
-  const shellColumn = shellCapable && shellColumnFitsAddressBar(addressBar);
-  const nativeFooter = (nativeProfileBar || footerDownloads ? 40 : 0) + (pending ? UPDATE_PILL_BAND : 0);
-  const column = useMemo(() => ({ top: header - GLOW_ROOM, header, bottom: nativeFooter, clip: paging }), [header, nativeFooter, paging]);
-
-  useLayoutEffect(() => dismissHoverIn(windowId), [windowId, current, paging]);
-
-  if (shellColumn) {
-    return (
-      <>
-        <NativeSidebar windowId={windowId} profileId={current} addressBar={addressBar} column={column} width={width} />
-        <FolderPanel windowId={windowId} />
-      </>
-    );
-  }
 
   return (
     <SidebarDropArea style={{ width, height: "100%" }}>
@@ -63,7 +58,7 @@ export function Sidebar({ width }: { width: number }) {
           overflow: paging ? "hidden" : "visible",
         }}
       >
-        <NativeSidebar windowId={windowId} profileId={current} addressBar={addressBar} />
+        <NativeSidebar windowId={windowId} addressBar={addressBar} />
       </View>
 
       {pending ? <UpdatePill bottom={footerRow + UPDATE_PILL_BAND - UPDATE_PILL_HEIGHT} tooltip={updatePillTooltip(pending)} /> : null}
@@ -96,7 +91,6 @@ export function Sidebar({ width }: { width: number }) {
       </View>
 
       <ResizeHandle windowId={windowId} />
-      <FolderPanel windowId={windowId} />
       <WindowDropHighlight />
     </SidebarDropArea>
   );

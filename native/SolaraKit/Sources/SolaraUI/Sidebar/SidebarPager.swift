@@ -57,6 +57,11 @@ public final class SidebarPagerView: NSView {
 
   public var current: SidebarView? { host.flatMap { pages[$0.profileId] } }
 
+  public static func profileIDs(state: BrowserState, windowId: String) -> [String] {
+    guard let window = state.windows[windowId], !window.incognito else { return [] }
+    return state.profileOrder
+  }
+
   public var pageIds: [String] { order }
 
   public func describePages() -> [[String: Any]] {

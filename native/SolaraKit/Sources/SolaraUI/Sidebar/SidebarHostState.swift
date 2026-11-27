@@ -28,10 +28,19 @@ public struct SidebarPageLook: Decodable, Equatable, Sendable {
   }
 }
 
+public struct SidebarPresentationInput: Decodable, Sendable {
+  public let addressBar: Bool
+  public let renaming: String?
+
+  public static func decode(_ json: String) -> SidebarPresentationInput? {
+    try? JSONDecoder().decode(Self.self, from: Data(json.utf8))
+  }
+}
+
 public struct SidebarHostState: Decodable, Equatable, Sendable {
   private enum CodingKeys: String, CodingKey {
     case profileId, dark, theme, border, glow, loading, playing, sleeping, closeHint, backHint, renaming
-    case addressBar, tidy, cleaned, engines, newTabMark, developer, pages, player, stack, pip, capture, badge, upsell, product
+    case addressBar, tidy, cleaned, engines, developer, pages, player, stack, pip, capture, badge, upsell, product
   }
 
   public var profileId: String
@@ -54,7 +63,6 @@ public struct SidebarHostState: Decodable, Equatable, Sendable {
   public var incognito: Bool = false
   public var cleaned: Int
   public var engines: [String: String]
-  public var newTabMark: String?
   public var developer: [String]
   public var pages: [SidebarPageLook]?
   public var player: MediaPlayerState?
@@ -89,6 +97,10 @@ public struct SidebarHostState: Decodable, Equatable, Sendable {
     incognito = state.windows[windowId]?.incognito ?? false
   }
 
+  public static func badgeColors(dark: Bool) -> [String] {
+    dark ? ["rgba(255,255,255,0.9)", "#1B1618"] : ["rgba(0,0,0,0.75)", "#FFFFFF"]
+  }
+
   public func page(_ look: SidebarPageLook) -> SidebarHostState {
     var out = self
     out.profileId = look.profileId
@@ -97,6 +109,7 @@ public struct SidebarHostState: Decodable, Equatable, Sendable {
     out.border = look.border
     out.glow = look.glow
     out.tidy = look.tidy
+    out.badge = Self.badgeColors(dark: look.dark)
     out.incognito = look.incognito
     out.pages = nil
     if look.profileId != profileId {

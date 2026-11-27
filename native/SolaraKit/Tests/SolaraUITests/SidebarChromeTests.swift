@@ -1,4 +1,6 @@
 import AppKit
+import SolaraModel
+import SolaraStore
 import Testing
 @testable import SolaraUI
 
@@ -384,5 +386,15 @@ struct SidebarChromeTests {
     #expect(view.hitTest(NSPoint(x: 20, y: 300)) == nil)
     #expect(view.hitTest(NSPoint(x: 20, y: 590)) === view)
     #expect(view.hitTest(NSPoint(x: 218, y: 300)) === view.resize)
+  }
+}
+
+extension SidebarChromeTests {
+  @Test func sidebarChromeScopesDownloadsToItsProfileAndPrivateSession() throws {
+    let fixture = #"{"profiles":{"default":{"id":"default","name":"Personal"},"work":{"id":"work","name":"Work","directory":"Work"}},"windows":{"normal":{"id":"normal","profileId":"default"},"private":{"id":"private","profileId":"incognito:private@default","incognito":true},"work":{"id":"work","profileId":"incognito:work@work","incognito":true}},"downloads":[{"id":"private-download","offTheRecord":true,"profile":"","state":"complete"}]}"#
+    let state = try BrowserState(stateJSON: try #require(JSONValue.parse(fixture).object))
+    #expect(!state.hasSidebarDownloads("normal"))
+    #expect(state.hasSidebarDownloads("private"))
+    #expect(!state.hasSidebarDownloads("work"))
   }
 }

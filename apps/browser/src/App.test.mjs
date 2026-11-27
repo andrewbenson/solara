@@ -45,7 +45,7 @@ test("opening and closing a native modal updates shell ownership without redrawi
     ["./components/bookmarks/BookmarkDialog", ["BookmarkDialog"]], ["./components/bookmarks/EditBookmarkDialog", ["EditBookmarkDialog"]],
     ["./components/Downloads", ["DownloadMagnet", "DownloadsPopover"]], ["./components/onboarding", ["OnboardingOverlay"]],
     ["./components/profiles/CreateProfile", ["CreateProfileHost"]], ["./components/layout/WindowProfile", ["WindowProfile"]],
-    ["./components/sidebar/NativeSidebar", ["NativeSidebar"]], ["./components/sidebar/FolderPanel", ["FolderPanel"]],
+    ["./components/sidebar/NativeSidebar", ["NativeSidebar"]],
     ["./components/layout/ShellBackdrop", ["ShellBackdrop"]], ["./components/sidebar/Overlays", ["SidebarOverlays"]],
   ]) modules[module] = Object.fromEntries(names.map((name) => [name, () => { renders[name] = (renders[name] ?? 0) + 1; return null; }]));
   const { WindowRoot } = load("./App.tsx", modules);
@@ -78,7 +78,6 @@ test("opening and closing a native modal updates shell ownership without redrawi
       assert.deepEqual(errors, []);
       assert.equal(renders.ContentCard, 1);
       assert.equal(renders.NativeSidebar, 1);
-      assert.equal(renders.FolderPanel, 1);
     }
     assert.deepEqual(calls, [["w", "mainRoot", true], ["w", "mainRoot", false]]);
   } finally { renderer.unmountComponentAtNode(1); }

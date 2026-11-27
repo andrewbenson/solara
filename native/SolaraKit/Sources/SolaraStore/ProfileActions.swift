@@ -187,19 +187,6 @@ extension Session {
     set(next)
   }
 
-  func downloadSession(_ s: BrowserState, _ d: Download) -> String? {
-    if d.offTheRecord { return d.profile ?? "" }
-    guard let profile = d.profile, !profile.isEmpty, Ids.isIncognitoProfile(profile) else { return nil }
-    return s.privateSession(profile)
-  }
-
-  func downloadVisibleIn(_ s: BrowserState, _ d: Download, _ window: BrowserWindow?) -> Bool {
-    guard let window else { return false }
-    let session = downloadSession(s, d)
-    if window.incognito { return session != nil && session == s.privateSession(window.profileId) }
-    return session == nil && (d.profile ?? "") == s.engineProfile(window.profileId)
-  }
-
   func privateSessionOpen(_ s: BrowserState, _ session: String) -> Bool {
     s.windows.values.contains { $0.incognito && s.privateSession($0.profileId) == session }
   }
@@ -207,7 +194,7 @@ extension Session {
   public func upsertDownload(_ d: Download) {
     var next = state
     let exists = next.downloads.contains { $0.id == d.id }
-    let session = downloadSession(next, d)
+    let session = next.downloadSession(d)
     if !exists, let session, !privateSessionOpen(next, session) || memory.endedPrivateDownloads.contains(d.id) {
       memory.endedPrivateDownloads.insert(d.id)
       set(next)
@@ -218,7 +205,7 @@ extension Session {
     } else {
       next.downloads = [d] + next.downloads
       if !config.safeMode { next.downloads = Array(next.downloads.prefix(Download.maxKept)) }
-      if let focused = next.ui.focusedWindowId, downloadVisibleIn(next, d, next.windows[focused]) { next.openDownloads(focused) }
+      if let focused = next.ui.focusedWindowId, next.downloadVisible(d, in: next.windows[focused]) { next.openDownloads(focused) }
     }
     set(next)
   }
@@ -232,17 +219,37 @@ extension Session {
   public func clearDownloads(_ windowId: String?) {
     var next = state
     let s = next
-    next.downloads = s.downloads.filter { d in d.isDownloading || (windowId != nil && !downloadVisibleIn(s, d, s.windows[windowId!])) }
+    next.downloads = s.downloads.filter { d in d.isDownloading || (windowId != nil && !s.downloadVisible(d, in: s.windows[windowId!])) }
     set(next)
   }
 
   public func forgetDownloads(_ profile: String) {
     let s = state
     let session = s.privateSession(profile)
-    func gone(_ d: Download) -> Bool { session != nil ? downloadSession(s, d) == session : d.profile == profile }
+    func gone(_ d: Download) -> Bool { session != nil ? s.downloadSession(d) == session : d.profile == profile }
     if session != nil { for d in s.downloads where gone(d) { memory.endedPrivateDownloads.insert(d.id) } }
     var next = s
     if s.downloads.contains(where: gone) { next.downloads = s.downloads.filter { !gone($0) } }
     set(next)
+  }
+}
+
+public extension BrowserState {
+  func downloadSession(_ download: Download) -> String? {
+    if download.offTheRecord { return download.profile ?? "" }
+    guard let profile = download.profile, Ids.isIncognitoProfile(profile) else { return nil }
+    return privateSession(profile)
+  }
+
+  func downloadVisible(_ download: Download, in window: BrowserWindow?) -> Bool {
+    guard let window else { return false }
+    let session = downloadSession(download)
+    if window.incognito { return session != nil && session == privateSession(window.profileId) }
+    return session == nil && (download.profile ?? "") == engineProfile(window.profileId)
+  }
+
+  func hasSidebarDownloads(_ windowId: String) -> Bool {
+    let window = windows[windowId]
+    return downloads.contains { downloadVisible($0, in: window) }
   }
 }

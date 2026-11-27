@@ -7,6 +7,9 @@ struct Download {
 struct Window {}
 struct UI { var focusedWindowId: String? }
 struct State {
+  func downloadSession(_ download: Download) -> String? { nil }
+  func downloadVisible(_ download: Download, in window: Window?) -> Bool { false }
+
   var downloads: [Download]
   var windows: [String: Window] = [:]
   var ui = UI()
@@ -23,9 +26,7 @@ final class Session {
     config = Config(safeMode: safe)
     state = State(downloads: (0..<100).map { Download(id: "saved-\($0)") })
   }
-  func downloadSession(_ state: State, _ download: Download) -> String? { nil }
   func privateSessionOpen(_ state: State, _ session: String) -> Bool { false }
-  func downloadVisibleIn(_ state: State, _ download: Download, _ window: Window?) -> Bool { false }
   func emit(_ effect: Effect) {}
   func set(_ next: State) { state = next }
 

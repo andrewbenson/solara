@@ -1,4 +1,5 @@
 import AppKit
+import SolaraModel
 import Testing
 @testable import SolaraUI
 
@@ -99,5 +100,16 @@ struct SidebarRailChromeTests {
     #expect(view.updatePill.frame == NSRect(x: 8, y: 622, width: 224, height: 30))
     #expect(view.updatePill.toolTip == "Install update")
     #expect(view.updatePill.subviews.compactMap { $0 as? NSTextField }.allSatisfy { !$0.isHidden })
+  }
+}
+
+extension SidebarRailChromeTests {
+  @Test func savedWidthAndRailResolvePerWindow() throws {
+    let fixture = #"{"windows":{"one":{"id":"one","sidebarWidth":238,"sidebarIconsOnly":true},"two":{"id":"two","sidebarWidth":202,"sidebarIconsOnly":false}},"settings":{"sidebarWidth":300,"sidebarIconsOnly":true}}"#
+    let state = try BrowserState(stateJSON: try #require(JSONValue.parse(fixture).object))
+    #expect(SidebarChromeGeometry(state: state, windowId: "one")?.savedWidth == 238)
+    #expect(SidebarChromeGeometry(state: state, windowId: "one")?.iconsOnly == true)
+    #expect(SidebarChromeGeometry(state: state, windowId: "two")?.savedWidth == 202)
+    #expect(SidebarChromeGeometry(state: state, windowId: "two")?.iconsOnly == false)
   }
 }

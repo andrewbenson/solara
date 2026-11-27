@@ -6,6 +6,7 @@ internal import SolaraOmnibox
 public import SolaraPersistence
 internal import SolaraStore
 internal import SolaraUI
+import Synchronization
 
 public final class NativeStore: Sendable {
   nonisolated(unsafe) public private(set) static var ownsWorkspace = false
@@ -188,11 +189,29 @@ public final class NativeStore: Sendable {
         _ = NativeStoreHandle.subscribeLifecycle { [weak issuer] in
           if NativeStoreHandle.frozen || !NativeStore.ownsWorkspace { issuer?.endMedia() }
         }
+        let previousTabs = Mutex(store.state.tabs)
         _ = store.subscribe { [weak issuer] commit in
           guard !commit.changes.tabs.isEmpty || !commit.changes.windows.isEmpty else { return }
+          let changedMutes = previousTabs.withLock { previous in
+            defer { previous = commit.state.tabs }
+            return commit.changes.tabs.upserted.filter { id in
+              guard let before = previous[id], let after = commit.state.tabs[id] else { return false }
+              return before.muted != after.muted
+            }
+          }
           Task { @MainActor in
-            guard let issuer, NativeStore.ownsWorkspace, PageIssuer.shared === issuer else { return }
+            guard let issuer, NativeStore.ownsWorkspace, !NativeStoreHandle.frozen, PageIssuer.shared === issuer else { return }
             issuer.pruneMedia()
+            guard !changedMutes.isEmpty else { return }
+            issuer.store.sequence {
+              let state = issuer.store.state
+              for id in changedMutes {
+                guard let tab = state.tabs[id], let binding = issuer.binding(tabId: id), issuer.isCurrent(binding) else { continue }
+                issuer.issueInScope(tabId: id, identity: binding.identity, command: .setMuted(tab.muted)) { result in
+                  if case .failure(let error) = result { NSLog("[tabs] mute on %@ failed: %@", id, String(describing: error)) }
+                }
+              }
+            }
           }
         }
       }

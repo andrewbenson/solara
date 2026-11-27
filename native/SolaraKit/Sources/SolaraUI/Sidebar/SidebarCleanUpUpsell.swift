@@ -1,4 +1,23 @@
 import AppKit
+import SolaraModel
+import SolaraStore
+
+public enum SidebarCleanupPresentation {
+  public static func candidateCount(state: BrowserState, windowId: String, now: Double) -> Int {
+    WorkspaceCleanup.candidateCount(state: state, windowId: windowId, now: now)
+  }
+
+  public static func admitted(state: BrowserState, dismissed: Bool) -> Bool {
+    !dismissed && state.settings["suggestTabCleanUp"]?.bool != false
+      && state.settings.number("cleanUpInactiveTabsAfterHours") == nil
+  }
+
+  public static func suggestion(state: BrowserState, windowId: String, now: Double, dismissed: Bool) -> Int? {
+    guard admitted(state: state, dismissed: dismissed), let window = state.windows[windowId], window.tabIds.count >= 10 else { return nil }
+    let count = candidateCount(state: state, windowId: windowId, now: now)
+    return count >= 10 ? count : nil
+  }
+}
 
 public enum SidebarCleanUpChoice: String, Sendable {
   case once

@@ -259,7 +259,11 @@ export function showUndoToast(cleared: ClearedTabs, title: string, icon: string)
 
 export function closeAllTabs(windowId: string) {
   const cleared = store().clearUnpinnedTabs(windowId);
-  if (cleared?.entries.length) showUndoToast(cleared, `Cleared ${plural(cleared.entries.length, "Tab")}`, "arrow.down");
+  if (cleared) showClearedToast(cleared);
+}
+
+export function showClearedToast(cleared: ClearedTabs) {
+  if (cleared.entries.length) showUndoToast(cleared, `Cleared ${plural(cleared.entries.length, "Tab")}`, "arrow.down");
 }
 
 export function middleClickTab(tabId: string) {

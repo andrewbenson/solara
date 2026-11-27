@@ -14,7 +14,6 @@ import { useAddressBarInSidebar, useTabLayout } from "./components/layout/window
 import { WindowProfile } from "./components/layout/WindowProfile";
 import { NativeTopStripFeed } from "./components/layout/NativeTopStrip";
 import { NativeSidebar } from "./components/sidebar/NativeSidebar";
-import { FolderPanel } from "./components/sidebar/FolderPanel";
 import { useShellModal } from "./components/layout/shellModal";
 import { ShellBackdrop } from "./components/layout/ShellBackdrop";
 import { LittleSolaraWindow } from "./components/littleSolara/LittleSolaraWindow";
@@ -80,8 +79,7 @@ function NativeLayoutGuests({ topTabs }: { topTabs: boolean }) {
     <>
       <NativeShellModal windowId={windowId} />
       <ContentCard />
-      {topTabs ? <NativeTopStripFeed windowId={windowId} profileId={profileId} /> : <NativeSidebar windowId={windowId} profileId={profileId} addressBar={addressBar} headless />}
-      {!topTabs && <FolderPanel windowId={windowId} />}
+      {topTabs ? <NativeTopStripFeed windowId={windowId} profileId={profileId} /> : <NativeSidebar windowId={windowId} addressBar={addressBar} headless />}
     </>
   );
 }

@@ -8,6 +8,13 @@ import Testing
 @MainActor
 @Suite(.serialized)
 struct SidebarRowReuseTests {
+  @Test func pagePaletteRefreshesBadgeColorsForTheReusedRows() {
+    var host = SidebarHostState(profileId: "first")
+    host.badge = SidebarHostState.badgeColors(dark: true)
+    let page = SidebarPageLook(profileId: "second", dark: false, theme: [:], border: [], glow: host.glow, tidy: false, incognito: false)
+    #expect(host.page(page).badge == SidebarHostState.badgeColors(dark: false))
+  }
+
   @Test func recycledRowsCannotCarryHoverPressedOpacityOrTransformsIntoANewIdentity() throws {
     let sidebar = try SidebarViewportTests.sidebar(2000)
     let first = try #require(sidebar.views["t:t0"] as? SidebarRowView)

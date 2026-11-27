@@ -140,6 +140,7 @@ final class NativeLiveEngine: @unchecked Sendable {
     Task {
       await engine.setPersistedTextSink { box.setPersistedText($0) }
       for await snapshot in await engine.changes() {
+        await NativeSidebarLive.receive(snapshot.live, revision: snapshot.revision)
         if let replica = try? await engine.currentReplica(), replica.revision == snapshot.revision { box.publish(replica) }
       }
     }

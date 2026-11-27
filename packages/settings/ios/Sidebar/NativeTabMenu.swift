@@ -80,8 +80,7 @@ enum NativeTabMenu {
     default:
       return false
     }
-    guard dispatch(store, command) != nil else { return true }
-    if action == "toggleMute" { mutePage(tabId, muted: !tab.muted) }
+    _ = dispatch(store, command)
     return true
   }
 
@@ -92,9 +91,7 @@ enum NativeTabMenu {
     guard let command = TabMenuPlan.command(choice, windowId: windowId, tabId: tabId, state: store.state) else {
       return js(tabId, choice, nil)
     }
-    let muted = store.state.tabs[tabId].map { !$0.muted }
     guard let result = dispatch(store, command) else { return }
-    if choice == "mute", let muted { mutePage(tabId, muted: muted) }
     finish(choice, result: result, windowId: windowId, store: store)
   }
 
@@ -136,16 +133,6 @@ enum NativeTabMenu {
     }
     if !item.children.isEmpty { row["children"] = item.children.map { dictionary($0, hints: hints) } }
     return row
-  }
-
-  private static func mutePage(_ tabId: String, muted: Bool) {
-    guard let issuer = PageIssuer.shared else { return }
-    issuer.store.sequence {
-      guard let binding = issuer.binding(tabId: tabId), issuer.isCurrent(binding) else { return }
-      issuer.issueInScope(tabId: tabId, identity: binding.identity, command: .setMuted(muted)) { result in
-        if case .failure(let error) = result { NSLog("[tabs] mute on %@ failed: %@", tabId, String(describing: error)) }
-      }
-    }
   }
 
   private static func dispatch(_ store: Store, _ command: Command) -> JSONValue? {

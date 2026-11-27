@@ -9,7 +9,6 @@ import Testing
     let feed = ##"{"profileId":"p","dark":true,"theme":{},"border":[],"glow":{"color":"#fff","opacity":1,"radius":15},"loading":[],"playing":[],"sleeping":[],"addressBar":true,"tidy":false,"cleaned":0,"engines":{},"developer":[],"newTabMark":"mark"}"##
     let host = try #require(SidebarHostState.decode(feed))
     #expect(host.addressBar)
-    #expect(host.newTabMark == "mark")
   }
 
   @Test func eachRefreshUsesTheCurrentWindowSelectionAndPreferences() throws {

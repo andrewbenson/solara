@@ -34,6 +34,17 @@ struct LiveChromeFactsTests {
     return host
   }
 
+  @Test func minimalSidebarFeedStillReadsLiveFactsFromTheWorkspace() throws {
+    let input = try #require(SidebarPresentationInput.decode(#"{"addressBar":true,"renaming":null}"#))
+    var host = SidebarHostState(profileId: "default")
+    host.addressBar = input.addressBar
+    var state = state()
+    state.live["native"] = PageLiveFacts(playingAudio: true, discarded: true)
+    let context = SidebarContext(state: state, host: host, windowId: "window", favicons: SidebarFavicons(), ownsWorkspace: true)
+    #expect(context.flags.playing == ["native"])
+    #expect(context.flags.sleeping == ["native"])
+  }
+
   @Test func nativeSidebarFactsOverrideStaleJSFeeds() {
     let flags = SidebarFlags(host(), live: ["native": PageLiveFacts(isLoading: true, playingAudio: true, discarded: true)])
     #expect(flags.loading == ["native"])

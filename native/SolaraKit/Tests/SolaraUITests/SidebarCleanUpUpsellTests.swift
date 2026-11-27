@@ -124,3 +124,26 @@ import Testing
     #expect(host.page(other).upsell == nil)
   }
 }
+
+extension SidebarCleanUpUpsellTests {
+  @Test func suggestionsFollowWorkspaceSettingsAndSessionDismissal() throws {
+    var state = try state()
+    let now = 50_000_000.0
+    #expect(SidebarCleanupPresentation.suggestion(state: state, windowId: "w", now: now, dismissed: false) == 11)
+    #expect(SidebarCleanupPresentation.suggestion(state: state, windowId: "w", now: now, dismissed: true) == nil)
+    state.settings["suggestTabCleanUp"] = .bool(false)
+    #expect(!SidebarCleanupPresentation.admitted(state: state, dismissed: false))
+    state.settings["suggestTabCleanUp"] = .bool(true)
+    state.settings["cleanUpInactiveTabsAfterHours"] = JSONValue(24)
+    #expect(!SidebarCleanupPresentation.admitted(state: state, dismissed: false))
+  }
+
+  @Test func countUsesCleanupExpiryAndProtectsPinnedGroupMembers() throws {
+    let now = 50_000_000.0
+    let state = try BrowserState(stateJSON: try #require(JSONValue.parse(
+      #"{"windows":{"w":{"id":"w","profileId":"p","tabIds":["a","b","c"],"activeTabIds":{"p":"a"}}},"tabs":{"a":{"id":"a","windowId":"w","profileId":"p","url":"https://a.test","lastActiveAt":0},"b":{"id":"b","windowId":"w","profileId":"p","url":"https://b.test","lastActiveAt":0},"c":{"id":"c","windowId":"w","profileId":"p","url":"https://c.test","lastActiveAt":0}},"groups":{"g":{"id":"g","windowId":"w","profileId":"p","pinned":true,"tabIds":["c"]}}}"#
+    ).object))
+    #expect(SidebarCleanupPresentation.candidateCount(state: state, windowId: "w", now: now) == 1)
+    #expect(SidebarCleanupPresentation.candidateCount(state: state, windowId: "w", now: 43_199_999) == 0)
+  }
+}

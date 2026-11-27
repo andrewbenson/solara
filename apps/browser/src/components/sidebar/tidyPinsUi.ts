@@ -15,7 +15,10 @@ export function tidyPins(windowId: string, profileId?: string) {
       return next;
     });
   const done = tidied as TidiedPins | null;
-  if (!done) return;
+  if (done) showTidiedPinsToast(windowId, done);
+}
+
+export function showTidiedPinsToast(windowId: string, done: TidiedPins) {
   const duplicates = done.duplicates ? `Closed ${plural(done.duplicates, done.pins ? "duplicate" : "Duplicate Pin")}` : "";
   const title = done.pins ? `Tidied ${plural(done.pins, "Pin")} into ${plural(done.folders, "Folder")}` : duplicates;
   showToast(windowId, title, done.pins && duplicates ? duplicates : undefined, {

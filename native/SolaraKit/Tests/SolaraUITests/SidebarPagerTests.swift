@@ -50,6 +50,13 @@ private func shown(_ pager: SidebarPagerView) -> [String] {
     ["x", "y", "width", "height"].compactMap { pager.playerDescription[$0] as? CGFloat }
   }
 
+  @Test func footerProfilesFollowWorkspaceOrderAndHideInPrivateWindows() throws {
+    var state = try pagedState()
+    #expect(SidebarPagerView.profileIDs(state: state, windowId: "w1") == ["p", "q", "r"])
+    state.windows["w1"]?.incognito = true
+    #expect(SidebarPagerView.profileIDs(state: state, windowId: "w1").isEmpty)
+  }
+
   @Test func theMiniPlayerStaysPutWhileProfilePagesSlide() throws {
     let pager = SidebarPagerView(windowId: "w1")
     pager.frame = NSRect(x: 0, y: 0, width: 200, height: 400)

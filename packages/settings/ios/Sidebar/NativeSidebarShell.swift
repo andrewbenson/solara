@@ -51,11 +51,9 @@ enum NativeSidebarShell {
     for (windowId, column) in columns where windows[windowId] == nil { remove(windowId, column) }
     for (windowId, given) in windows {
       guard let given = given as? [String: Any], let state = given["state"] as? String, let column = columns[windowId] ?? make(windowId) else { continue }
-      let number = { (key: String) in CGFloat((given[key] as? NSNumber)?.doubleValue ?? 0) }
       column.apply(
         state: state,
-        layout: SidebarShellColumn.Layout(top: number("top"), header: number("header"), bottom: number("bottom"), clip: (given["clip"] as? Bool) ?? false),
-        chrome: (given["chrome"] as? String).flatMap(SidebarChromeState.decode))
+        dropOver: given["dropOver"] as? Bool ?? false)
       NativeWindowShell.host(windowId)?.scheduleLayoutProjection()
     }
   }
@@ -65,6 +63,7 @@ enum NativeSidebarShell {
     let host = SidebarHost(windowId: windowId, virtualizesRows: true)
     NativeSidebar.hosts[windowId] = host
     let column = SidebarShellColumn(windowId: windowId, host: host)
+    host.onPresentation = { [weak column] state, host in column?.applyLegacyChrome(state: state, host: host) }
     columns[windowId] = column
     shell.mount(.sidebar, column)
     return column
@@ -206,24 +205,21 @@ final class SidebarShellColumn: NSView, DevDropDestination, NSSpringLoadingDesti
     host.stop()
   }
 
-  func apply(state: String, layout: Layout, chrome look: SidebarChromeState?) {
+  func apply(state: String, dropOver: Bool) {
     guard !stopped else { return }
-    let previousFooter = footerInset
-    let previousTop = topInset
-    let previousLift = listLift
-    chrome.isHidden = look == nil
-    if var look {
-      look.iconsOnly = effectiveRail(width: bounds.width)
-      jsDropOver = look.dropOver
-      look.dropOver = NativeSidebarShell.dropGlow(windowId, js: jsDropOver)
-      chrome.update(look)
-    }
-    syncAddress(chrome.state?.addressBar == true && chrome.state?.rail != true)
-    if layout != given || previousFooter != footerInset || previousTop != topInset || previousLift != listLift {
-      given = layout
-      placeList()
-    }
+    jsDropOver = dropOver
     host.apply(state)
+  }
+
+  func applyLegacyChrome(state: BrowserState, host: SidebarHostState) {
+    guard let look = NativeLayoutAppearance.chrome(state: state, windowId: windowId, addressBar: host.addressBar,
+      dropOver: jsDropOver, windowFullscreen: shellView?.input.windowFullscreen == true) else { return }
+    apply(state: state, host: host, layout: layout(for: look, clip: SidebarPagerView.profileIDs(state: state, windowId: windowId).contains(host.profileId)), chrome: look, renderHost: false)
+  }
+
+  func layout(for chrome: SidebarChromeState, clip: Bool) -> Layout {
+    let header = SidebarChromeMetrics.headerHeight(addressBar: chrome.addressBar)
+    return Layout(top: max(0, header - SidebarMetrics.glowRoom), header: header, bottom: SidebarChromeMetrics.footerHeight(chrome), clip: clip)
   }
 
   func apply(state: BrowserState, host look: SidebarHostState, layout: Layout, chrome: SidebarChromeState, renderHost: Bool = true) {
@@ -360,7 +356,10 @@ final class SidebarShellColumn: NSView, DevDropDestination, NSSpringLoadingDesti
     switch action {
     case .profileMenu: NativeSidebarShell.send(windowId, "profileMenu")
     case .manageProfiles: NativeSidebarShell.send(windowId, "manageProfiles")
-    case .toggleDownloads: NativeSidebarShell.send(windowId, "toggleDownloads")
+    case .toggleDownloads:
+      if let store = WorkspaceWrites.store {
+        writeSidebar("setDownloadsOpen", [.string(windowId), .bool(store.state.windowUi[windowId]?.downloadsOpen != true)])
+      }
     case .switchProfile(let id):
       _ = try? NativeStoreHandle.store?.dispatch(Command("switchProfile", [.string(windowId), .string(id)]), origin: .native)
       FrameUpdates.flush()
@@ -372,15 +371,29 @@ final class SidebarShellColumn: NSView, DevDropDestination, NSSpringLoadingDesti
       shell?.widthDragActive = width != nil
       if let width { shell?.update { $0.sidebarWidth = CGFloat(width) } }
       NativeSidebarShell.send(windowId, "liveWidth", ["width": width ?? NSNull()])
-    case .commitWidth(let width): NativeSidebarShell.send(windowId, "commitWidth", ["width": width])
+    case .commitWidth(let width): writeSidebarWidth(width)
     case .resetWidth:
       shell?.update { $0.sidebarWidth = CGFloat(SidebarChromeMetrics.defaultWidth) }
-      NativeSidebarShell.send(windowId, "commitWidth", ["width": SidebarChromeMetrics.defaultWidth])
+      writeSidebarWidth(SidebarChromeMetrics.defaultWidth)
     case .installUpdate: AppUpdater.shared.installPendingUpdate(nil)
     case .iconsOnly(let on):
       let full = SidebarResizeMath.clamp(chrome.state?.savedWidth ?? SidebarChromeMetrics.defaultWidth)
       shell?.update { $0.sidebarWidth = CGFloat(on ? SidebarRail.width : full) }
-      NativeSidebarShell.send(windowId, "iconsOnly", ["on": on])
+      writeSidebar("setWindowSidebar", [.string(windowId), ["sidebarIconsOnly": .bool(on)]])
+    }
+  }
+
+  private func writeSidebarWidth(_ width: Double) {
+    writeSidebar("setWindowSidebar", [.string(windowId), ["sidebarWidth": JSONValue(width), "sidebarIconsOnly": .bool(false)]])
+  }
+
+  private func writeSidebar(_ name: String, _ args: [JSONValue]) {
+    guard let store = WorkspaceWrites.store else { return }
+    do {
+      _ = try store.dispatch(Command(name, args), origin: .native)
+      FrameUpdates.flush()
+    } catch {
+      NSLog("[sidebar] %@ refused: %@", name, String(describing: error))
     }
   }
 
@@ -536,9 +549,9 @@ final class NativeLayoutChrome {
   private var feedRevision: UInt64 = 0
   private var state: BrowserState?
   private var revision = -1
-  private var sidebarFeed: SidebarHostState?
+  private var sidebarFeed: SidebarPresentationInput?
   private var stripFeed: StripHostState?
-  private var featureChrome: SidebarChromeState?
+  private var sidebarDropOver = false
   private var held = false
   private let revealHolds = RevealHolds()
   #if DEBUG
@@ -738,51 +751,11 @@ final class NativeLayoutChrome {
       let input = nativeInput else { return }
     let effectiveOpen = window.sidebarOpen
     let look = NativeLayoutAppearance(state: state, profileId: window.profileId, incognito: window.incognito)
-    var sidebar = SidebarHostState(profileId: window.profileId, dark: look.dark)
-    sidebar.theme = look.tokens
-    sidebar.border = look.border
-    sidebar.glow = look.glow
-    sidebar.addressBar = input.layout.addressBarInSidebar
-    sidebar.applyRowPreferences(state: state, windowId: shell.windowId)
-    sidebar.pages = window.incognito ? nil : state.profileOrder.map { id in
-      let page = NativeLayoutAppearance(state: state, profileId: id, incognito: false)
-      return SidebarPageLook(profileId: id, dark: page.dark, theme: page.tokens, border: page.border, glow: page.glow, tidy: false, incognito: false)
-    }
-    sidebar.tidy = CommandContext(state: state, windowId: shell.windowId).canTidyPins
-    sidebar.cleaned = state.cleanedTabs.filter { $0.windowId == shell.windowId }.count
-    sidebar.pip = window.tabIds.filter { NowPlayingStore.shared.pictureInPicture[$0] != nil }
-    sidebar.capture = NowPlayingStore.shared.capture
-    if let feed = sidebarFeed {
-      sidebar.badge = feed.badge
-      sidebar.upsell = feed.profileId == window.profileId ? feed.upsell : nil
-      sidebar.product = feed.product
-      sidebar.renaming = feed.renaming
-      sidebar.engines = feed.engines
-      sidebar.developer = feed.developer
-      sidebar.newTabMark = feed.newTabMark
-      sidebar.closeHint = feed.closeHint
-      sidebar.backHint = feed.backHint
-    }
-    let stacked = NativeMediaStack.players(state: state, windowId: shell.windowId, look: look)
-    sidebar.player = stacked.first
-    sidebar.stack = stacked
-    if let renaming = NativeWorkspaceRename.override(shell.windowId) { sidebar.renaming = renaming }
-    let dots = window.incognito ? [] : state.profileOrder.enumerated().compactMap { index, id -> SidebarChromeDot? in
-      guard let profile = state.profiles[id] else { return nil }
-      return SidebarChromeDot(id: id, name: profile.name, slot: Double(index), icon: profile.icon,
-        shortcut: CommandShortcutSnapshot().hint("switchProfile:\(id)", state: state),
-        color: NativeLayoutAppearance(state: state, profileId: id, incognito: false).tokens["accent"])
-    }
-    let downloadsTooltip = featureChrome?.controls.downloadsTooltip
-      ?? CommandShortcutSnapshot().hint("downloads", state: state).map { "Downloads (\($0))" } ?? "Downloads"
-    let controls = StripControlsState(title: input.profileTitle, incognito: window.incognito, profiles: input.profileCount,
-      nameColor: look.nameColor, downloadsOpen: state.windowUi[shell.windowId]?.downloadsOpen ?? false,
-      downloadsTooltip: downloadsTooltip)
-    let chrome = SidebarChromeState(controls: controls, downloads: hasDownloads(state, window), addressBar: sidebar.addressBar,
-      dark: look.dark, theme: look.tokens, dots: dots, savedWidth: window.effectiveSidebarWidth(state.settings),
-      iconsOnly: window.effectiveSidebarIconsOnly(state.settings), dropOver: featureChrome?.dropOver ?? false,
-      update: featureChrome?.update, currentProfileId: window.profileId, sidebarPosition: input.layout.sidebarSide.rawValue,
-      windowFullscreen: input.windowFullscreen)
+    let sidebar = column.host.presentation(state: state, window: window, look: look, addressBar: input.layout.addressBarInSidebar,
+      renaming: sidebarFeed?.renaming)
+    guard let chrome = NativeLayoutAppearance.chrome(state: state, windowId: shell.windowId, addressBar: sidebar.addressBar,
+      dropOver: sidebarDropOver, windowFullscreen: input.windowFullscreen, appearance: look) else { return }
+    let controls = chrome.controls
     shell.update {
       $0.topTabs = input.layout.topTabs
       $0.addressBarInSidebar = input.layout.addressBarInSidebar
@@ -791,9 +764,8 @@ final class NativeLayoutChrome {
       $0.windowFullscreen = input.windowFullscreen
       if !shell.widthDragActive { $0.sidebarWidth = input.layout.sidebarWidth }
     }
-    let top = SidebarChromeMetrics.headerHeight(addressBar: sidebar.addressBar)
-    let bottom = SidebarChromeMetrics.footerHeight(chrome)
-    column.apply(state: state, host: sidebar, layout: .init(top: max(0, top - SidebarMetrics.glowRoom), header: top, bottom: bottom, clip: state.profileOrder.count > 1), chrome: chrome, renderHost: !input.layout.topTabs)
+    column.apply(state: state, host: sidebar, layout: column.layout(for: chrome, clip: SidebarPagerView.profileIDs(state: state, windowId: shell.windowId).count > 1),
+      chrome: chrome, renderHost: !input.layout.topTabs)
     setHold("downloads", controls.downloadsOpen)
     setHold("feature", held)
     dock.apply(SidebarDockState(open: effectiveOpen, arc: sidebar.addressBar, fullscreen: input.layout.fullscreen,
@@ -814,7 +786,7 @@ final class NativeLayoutChrome {
     strip.capture = stripFeed?.capture ?? sidebar.capture ?? [:]
     strip.bands = stripFeed?.bands ?? [:]
     strip.closeHint = stripFeed?.closeHint ?? sidebar.closeHint
-    strip.newTabMark = stripFeed?.newTabMark ?? sidebar.newTabMark
+    strip.newTabMark = stripFeed?.newTabMark
     self.strip.renderingEnabled = input.layout.topTabs
     if self.strip.renderingEnabled { self.strip.apply(state: state, host: strip) }
     var stripControls = controls
@@ -928,11 +900,10 @@ final class NativeLayoutChrome {
     return WindowLayoutInput(state: state, windowId: shell.windowId, bounds: shell.bounds, presentation: shell.input)
   }
 
-  private func hasDownloads(_ state: BrowserState, _ window: BrowserWindow) -> Bool {
-    state.downloads.contains { download in
-      let session = download.offTheRecord ? download.profile ?? "" : download.profile.flatMap { Ids.isIncognitoProfile($0) ? state.privateSession($0) : nil }
-      return window.incognito ? session != nil && session == state.privateSession(window.profileId)
-        : session == nil && (download.profile ?? "") == state.engineProfile(window.profileId)
+  static func presentationChanged() {
+    for owner in owners.values {
+      owner.feedRevision += 1
+      owner.refresh()
     }
   }
 
@@ -949,8 +920,8 @@ final class NativeLayoutChrome {
       guard let owner = owners[id], !owner.stopped, let feed = value as? [String: Any],
         (feed["generation"] as? NSNumber)?.uint64Value == owner.generation else { continue }
       if topic == "sidebar.nativeFeed" {
-        owner.sidebarFeed = (feed["state"] as? String).flatMap(SidebarHostState.decode)
-        owner.featureChrome = (feed["chrome"] as? String).flatMap(SidebarChromeState.decode)
+        owner.sidebarFeed = (feed["state"] as? String).flatMap(SidebarPresentationInput.decode)
+        owner.sidebarDropOver = feed["dropOver"] as? Bool ?? false
         owner.held = feed["held"] as? Bool ?? false
       } else if topic == "topStrip.nativeFeed", let json = feed["state"] as? String {
         owner.stripFeed = StripHostState.decode(json)
@@ -1172,12 +1143,43 @@ struct NativeLayoutAppearance {
   let nameColor: String
   let panel: StripPeekLook
 
+  static func chrome(state: BrowserState, windowId: String, addressBar: Bool, dropOver: Bool, windowFullscreen: Bool,
+    appearance: NativeLayoutAppearance? = nil) -> SidebarChromeState?
+  {
+    guard let window = state.windows[windowId], let geometry = SidebarChromeGeometry(state: state, windowId: windowId) else { return nil }
+    let look = appearance ?? NativeLayoutAppearance(state: state, profileId: window.profileId, incognito: window.incognito)
+    let shortcuts = CommandShortcutSnapshot().hints(state: state)
+    let dots = SidebarPagerView.profileIDs(state: state, windowId: windowId).enumerated().compactMap { index, id -> SidebarChromeDot? in
+      guard let profile = state.profiles[id] else { return nil }
+      return SidebarChromeDot(id: id, name: profile.name, slot: Double(index), icon: profile.icon,
+        shortcut: shortcuts[JSKey("switchProfile:\(id)")], color: customTheme(profile).map(ThemeMath.accent) ?? swatches[profile.color] ?? swatches["plum"])
+    }
+    let downloadsTooltip = shortcuts[JSKey("downloads")].map { "Downloads (\($0))" } ?? "Downloads"
+    let controls = StripControlsState(title: window.incognito ? "Incognito" : state.profiles[window.profileId]?.name ?? BrowserState.defaultProfile.name,
+      incognito: window.incognito, profiles: state.profileOrder.count, nameColor: look.nameColor,
+      downloadsOpen: state.windowUi[windowId]?.downloadsOpen ?? false, downloadsTooltip: downloadsTooltip)
+    let product = Bundle.main.productName
+    let update = AppUpdater.shared.pendingUpdate.map {
+      SidebarUpdatePillState(text: "New \(product) Version Available",
+        tooltip: "Restart to update \(product) to \($0.version). Your windows and tabs reopen as they are.")
+    }
+    return SidebarChromeState(controls: controls, downloads: state.hasSidebarDownloads(windowId), addressBar: addressBar,
+      dark: look.dark, theme: look.tokens, dots: dots, savedWidth: geometry.savedWidth, iconsOnly: geometry.iconsOnly,
+      dropOver: dropOver, update: update, currentProfileId: window.profileId, sidebarPosition: window.effectiveSidebarPosition(state.settings),
+      windowFullscreen: windowFullscreen)
+  }
+
+  private static let swatches = ["plum": "#C07A98", "blue": "#4691C3", "purple": "#7873AF", "pink": "#D37B8B", "red": "#C1575C", "orange": "#D87249", "yellow": "#E3AC38", "green": "#3EB489", "neutral": "#8E8E93"]
+
+  private static func customTheme(_ profile: Profile?) -> ProfileThemeValue? {
+    profile?.theme.flatMap { try? JSONDecoder().decode(ProfileThemeValue.self, from: Data($0.text().utf8)) }
+  }
+
   init(state: BrowserState, profileId: String, incognito: Bool, strip: Bool = false) {
     let profile = state.profiles[profileId]
-    let swatches = ["plum": "#C07A98", "blue": "#4691C3", "purple": "#7873AF", "pink": "#D37B8B", "red": "#C1575C", "orange": "#D87249", "yellow": "#E3AC38", "green": "#3EB489", "neutral": "#8E8E93"]
     let color = profile?.color ?? "plum"
-    let swatch = swatches[color] ?? swatches["plum"]!
-    let custom = profile?.theme.flatMap { try? JSONDecoder().decode(ProfileThemeValue.self, from: Data($0.text().utf8)) }
+    let swatch = Self.swatches[color] ?? Self.swatches["plum"]!
+    let custom = Self.customTheme(profile)
     let shown = custom.map { ThemeMath.shown($0, appDark: state.ui.appDark, source: state.settings.bool("spacesFollowAppearance") ? .app : .own) }
     dark = incognito || (shown?.dark ?? state.ui.appDark)
     let accent = shown.map { ThemeMath.accent($0.look) } ?? (color == "plum" ? "#DD899B" : swatch)

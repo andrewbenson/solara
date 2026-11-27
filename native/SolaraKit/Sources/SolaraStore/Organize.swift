@@ -734,3 +734,16 @@ extension Session {
     return next
   }
 }
+
+public enum WorkspaceCleanup {
+  public static func candidateCount(state: BrowserState, windowId: String, now: Double) -> Int {
+    Session(state: state, memory: StoreMemory(), env: PlainWebAddressing(), config: StoreConfig(), now: now)
+      .cleanUpCandidates(state, windowId, cleanUpAfterMs).count
+  }
+
+  public static func cleanedCount(state: BrowserState, windowId: String, now: Double) -> Int {
+    guard let window = state.windows[windowId] else { return 0 }
+    let entries = window.incognito ? state.privateCleanedTabs[windowId] ?? [] : state.cleanedTabs
+    return keptAWeek(entries, now, \.closedAt).count
+  }
+}

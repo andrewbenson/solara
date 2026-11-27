@@ -834,3 +834,11 @@ Peek promotion, tab and window close, profile replacement, private site rules an
 ## Lifecycles slice 13, engine offers and site controls
 
 `EngineOfferLifetimeTests`, `SiteActionLifetimeTests` and `WebKitVisitRecorderTests` cover page replacement, site rules, throttling and history settlement. Run webkit-pill, pane-prompts (pooled, inline and Safe Mode), selection-popover, native-page-commands, pool-e2e, little-solara, media-ui and pane-roots-placement in both layouts. Pane-prompts sends a DRM event through the native page issuer and checks that a replacement document has a fresh receipt. Pane-roots-placement reads the native site cards while the dock opens.
+
+## Sidebar row data and chrome
+
+With native API 102, run sidebar-chrome, sidebar-rail, window-toolbar, windowing,
+sidebar-click, sidebar-scroll, sidebar-bulk, sidebar-reuse, downloads-popover,
+folder-panel and settings-live (folders) in window layouts 0 and 1. The Swift
+suites cover private download visibility, per-window rail settings, cleanup
+admission, pinned-group protection, profile order, page palettes and live facts.

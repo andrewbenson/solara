@@ -1,4 +1,16 @@
 import AppKit
+import SolaraModel
+
+public struct SidebarChromeGeometry: Sendable {
+  public let savedWidth: Double
+  public let iconsOnly: Bool
+
+  public init?(state: BrowserState, windowId: String) {
+    guard let window = state.windows[windowId] else { return nil }
+    savedWidth = window.effectiveSidebarWidth(state.settings)
+    iconsOnly = window.effectiveSidebarIconsOnly(state.settings)
+  }
+}
 
 public struct SidebarChromeDot: Decodable, Equatable, Sendable {
   public var id: String

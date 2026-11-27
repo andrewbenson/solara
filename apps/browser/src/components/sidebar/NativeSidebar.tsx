@@ -1,36 +1,18 @@
 import { hostedSidebarShell, nativeOmniboxAvailable, publishSettingsTopic, sidebarAddressBarAvailable, SolaraHostedView } from "@solara/settings";
 import { memo, useEffect, useMemo, useState } from "react";
-import { Image, StyleSheet } from "react-native";
-import { useShallow } from "zustand/react/shallow";
-import { shortcutHint } from "../../lib/commandShortcuts";
-import { PRODUCT } from "../../lib/productName";
-import { nativeOwnsWorkspace } from "../../store/nativeStore";
-import { chromeLiveIds, chromeSleeping, sidebarHostProps } from "../nativeHostProps";
-import { useLifecycle } from "../../lib/tabLifecycle";
-import { hex, inkedTokens, inkIsLight, profileAccent, profileNameColor, profileTheme, selectedTabGlow, spaceLookSource, useAdjustedInk, useSelectedTabGlow, useTheme, type Theme } from "../../lib/theme";
+import { StyleSheet } from "react-native";
 import { useBrowser } from "../../store/browser";
-import { commitSidebarWidth, setSidebarIconsOnly, sidebarWidthOf, sidebarUsesIconRail } from "../../store/sidebarRail";
-import { engineMark, ENGINE_SYMBOLS } from "../../store/engines";
-import { isIncognitoProfile } from "../../store/model";
-import { cleanedTabsFor } from "../../store/organize";
-import { canTidyPins } from "../../store/tidyPins";
-import { cleanUpUpsellChoice, useCleanUpUpsellCount } from "./cleanUpUpsell";
-import { usePagerPages } from "../layout/profilePager";
+import { sidebarWidthOf } from "../../store/sidebarRail";
 import { openNewTabInSplit } from "../layout/splitActions";
-import { isDeveloperMode } from "../../lib/developerMode";
-import { developerModeFor } from "../site/developerMode";
 import { toggleNewTabBar } from "../omnibox/newTabBar";
 import { addNativeSettingsHandlers } from "../settings/nativeSettings";
 import { openSettings } from "../settings/windows";
 import { dismissHover, nativeRowHover } from "./hover";
-import { closeAllTabs, openOverflowMenu, openSidebarMenu, openTabMenu, runGroupMenuChoice, runTabMenuChoice, runTabMenuSelectionChoice, showUndoToast } from "./menus";
+import { openOverflowMenu, openSidebarMenu, openTabMenu, runGroupMenuChoice, runTabMenuChoice, runTabMenuSelectionChoice, showClearedToast, showUndoToast } from "./menus";
 import { applyNativeRenameState, resetNativeRenames } from "./renameMirror";
 import { setSidebarUi, sidebarUi, useSidebarUi } from "./state";
-import { useSidebarTokens } from "./tokens";
 import { publishNativeLive, runNativeLive } from "./nativeLive";
-import { tidyPins } from "./tidyPinsUi";
-import { downloadsIn } from "../../store/ui";
-import { useShortcutHint, withShortcut } from "../../lib/commandShortcuts";
+import { showTidiedPinsToast } from "./tidyPinsUi";
 import { openProfileMenu } from "../ProfileIndicator";
 import { registerDownloadsAnchor } from "../Downloads";
 import { useTabDrag } from "../layout/tabDrag";
@@ -38,12 +20,10 @@ import { followPeekHold } from "../layout/peekHold";
 import { nativeLayoutFeed, useNativeLayoutFeed } from "../layout/nativeLayoutFeed";
 import { SidebarAddressBarState } from "./AddressBar";
 import { installNativeDragProbe } from "./nativeDrag";
-import { nativeSidebarShell } from "./sidebarShell";
-import { UPDATE_PILL_TEXT, updatePillTooltip, usePendingUpdate } from "../../lib/pendingUpdate";
 
 const SHELL_TOPIC = "sidebar.shell";
 const shellColumns: Record<string, object> = {};
-const nativeFeed = nativeLayoutFeed<{ state: string; chrome: string; held: boolean }>("sidebar.nativeFeed");
+const nativeFeed = nativeLayoutFeed<{ state: string; dropOver: boolean; held: boolean }>("sidebar.nativeFeed");
 
 export { nativeSidebarShell } from "./sidebarShell";
 
@@ -58,98 +38,24 @@ function publishShellColumn(windowId: string, column: object | null) {
   publishSettingsTopic(SHELL_TOPIC, { windows: shellColumns });
 }
 
-type ShellEvent = { width?: number | null; on?: boolean };
+type ShellEvent = { width?: number | null };
 
 addNativeSettingsHandlers({
   [SHELL_TOPIC]: (windowId: string, event: string, extra: ShellEvent) => {
-    const s = useBrowser.getState();
     switch (event) {
       case "profileMenu":
         return void openProfileMenu(windowId);
       case "manageProfiles":
         return void openSettings("profiles");
-      case "toggleDownloads":
-        return s.setDownloadsOpen(windowId, !s.windowUi[windowId]?.downloadsOpen);
       case "liveWidth": {
         const { [windowId]: _, ...rest } = sidebarUi().dragWidth;
         return setSidebarUi({ dragWidth: typeof extra.width === "number" ? { ...rest, [windowId]: extra.width } : rest });
       }
-      case "commitWidth":
-        return typeof extra.width === "number" ? commitSidebarWidth(windowId, extra.width) : undefined;
-      case "iconsOnly":
-        return typeof extra.on === "boolean" ? setSidebarIconsOnly(windowId, extra.on) : undefined;
     }
   },
 });
 
-export type ShellColumn = { top: number; header: number; bottom: number; clip: boolean };
-
-function useShellChrome(windowId: string, addressBar: boolean, theme: Theme): string {
-  const incognito = useBrowser((s) => !!s.windows[windowId]?.incognito);
-  const profile = useBrowser((s) => s.profiles[s.windows[windowId]?.profileId ?? ""]);
-  const profiles = useBrowser((s) => s.profileOrder.length);
-  const downloads = useBrowser((s) => downloadsIn(s, windowId).length > 0);
-  const downloadsOpen = useBrowser((s) => !!s.windowUi[windowId]?.downloadsOpen);
-  const hint = useShortcutHint("downloads");
-  const savedWidth = useBrowser((s) => sidebarWidthOf(s.windows[windowId], s.settings, false));
-  const iconsOnly = useBrowser((s) => sidebarUsesIconRail(s.windows[windowId], s.settings, nativeSidebarShell(windowId)));
-  const dotsShown = !incognito;
-  const order = useBrowser(useShallow((s) => s.profileOrder));
-  const names = useBrowser(useShallow((s) => order.map((id) => s.profiles[id]?.name ?? "")));
-  const icons = useBrowser(useShallow((s) => order.map((id) => s.profiles[id]?.icon ?? null)));
-  const colors = useBrowser(useShallow((s) => order.map((id) => profileAccent(s.profiles[id]))));
-  const shortcuts = useBrowser(useShallow((s) => order.map((id) => shortcutHint(`switchProfile:${id}`, s) ?? null)));
-  const { pages } = usePagerPages(windowId);
-  const dropOver = useTabDrag((d) => d.overWindow === windowId);
-  const pending = usePendingUpdate();
-  const adjustInk = useAdjustedInk();
-  return useMemo(
-    () =>
-      JSON.stringify({
-        controls: {
-          title: incognito ? "Incognito" : (profile?.name ?? ""),
-          incognito,
-          profiles,
-          nameColor: incognito || !profile ? inkedTokens({ textPrimary: theme.textPrimary }, theme.sidebarInk, adjustInk).textPrimary! : profileNameColor(profile, inkIsLight(theme, theme.sidebarInk, adjustInk)),
-          downloadsOpen,
-          downloadsTooltip: withShortcut("Downloads", hint),
-        },
-        downloads,
-        addressBar,
-        dark: theme.dark,
-        theme: { ...themeTokens(theme, adjustInk), panel: theme.panel, panelBorder: theme.panelBorder },
-        dots: dotsShown ? order.map((id, i) => ({ id, name: names[i] ?? "", icon: icons[i] ?? null, color: colors[i] ?? null, shortcut: shortcuts[i] ?? null, slot: pages.find((p) => p.id === id)?.slot ?? null })) : [],
-        savedWidth,
-        currentProfileId: profile?.id ?? null,
-        iconsOnly,
-        dropOver,
-        update: pending ? { text: UPDATE_PILL_TEXT, tooltip: updatePillTooltip(pending) } : null,
-      }),
-    [incognito, profile, profiles, theme, downloadsOpen, hint, downloads, addressBar, dotsShown, order, names, icons, colors, shortcuts, pages, savedWidth, iconsOnly, dropOver, pending, adjustInk],
-  );
-}
-
-function ShellColumnState({ windowId, state, chrome, addressWidth, top, header, bottom, clip }: ShellColumn & { windowId: string; state: string; chrome: string; addressWidth: number | null }) {
-  useEffect(() => publishShellColumn(windowId, { state, chrome, top, header, bottom, clip }), [windowId, state, chrome, top, header, bottom, clip]);
-  useEffect(() => () => publishShellColumn(windowId, null), [windowId]);
-  useEffect(
-    () =>
-      registerDownloadsAnchor(windowId, async () => {
-        const rect = (JSON.parse(await hostedSidebarShell(windowId)) as { downloads?: number[] } | null)?.downloads;
-        return rect ? { x: rect[0]!, y: rect[1]!, width: rect[2]!, height: rect[3]! } : null;
-      }),
-    [windowId],
-  );
-  return addressWidth === null ? null : <SidebarAddressBarState width={addressWidth} />;
-}
-
-function NativeSidebarFeed({ windowId, state, chrome, addressBar }: { windowId: string; state: string; chrome: string; addressBar: boolean }) {
-  const floating = useBrowser((s) => s.windows[windowId]?.sidebarOpen === false);
-  const width = useBrowser((s) => sidebarWidthOf(s.windows[windowId], s.settings, true));
-  const [held, setHeld] = useState(false);
-  useEffect(() => followPeekHold(windowId, floating, setHeld, true), [windowId, floating]);
-  const value = useMemo(() => ({ state, chrome, held }), [state, chrome, held]);
-  useNativeLayoutFeed(nativeFeed, windowId, value);
+function useNativeDownloadsAnchor(windowId: string) {
   useEffect(
     () => registerDownloadsAnchor(windowId, async () => {
       const rect = (JSON.parse(await hostedSidebarShell(windowId)) as { downloads?: number[] } | null)?.downloads;
@@ -157,34 +63,25 @@ function NativeSidebarFeed({ windowId, state, chrome, addressBar }: { windowId: 
     }),
     [windowId],
   );
-  return addressBar ? <SidebarAddressBarState width={width} /> : null;
 }
 
-const NEW_TAB_MARK: number = require("../../../assets/solara/new-tab-mark.png");
-const THEME_KEYS = [
-  "textTab",
-  "tabSelectedText",
-  "tabHover",
-  "tabPressed",
-  "tabSelected",
-  "rowHover",
-  "divider",
-  "textPrimary",
-  "textSecondary",
-  "textTertiary",
-  "icon",
-  "pinnedResting",
-  "pinnedRestingStroke",
-  "pinnedSelectedFill",
-  "pinnedSelectedRim",
-  "pinnedSelectedOutline",
-  "accent",
-  "toolbarHover",
-  "toolbarPressed",
-] as const;
-const NONE: string[] = [];
+function ShellColumnState({ windowId, state, dropOver, addressWidth }: { windowId: string; state: string; dropOver: boolean; addressWidth: number | null }) {
+  useEffect(() => publishShellColumn(windowId, { state, dropOver }), [windowId, state, dropOver]);
+  useEffect(() => () => publishShellColumn(windowId, null), [windowId]);
+  useNativeDownloadsAnchor(windowId);
+  return addressWidth === null ? null : <SidebarAddressBarState width={addressWidth} />;
+}
 
-type Mods = { meta?: boolean; shift?: boolean; alt?: boolean };
+function NativeSidebarFeed({ windowId, state, dropOver, addressBar }: { windowId: string; state: string; dropOver: boolean; addressBar: boolean }) {
+  const floating = useBrowser((s) => s.windows[windowId]?.sidebarOpen === false);
+  const width = useBrowser((s) => sidebarWidthOf(s.windows[windowId], s.settings, true));
+  const [held, setHeld] = useState(false);
+  useEffect(() => followPeekHold(windowId, floating, setHeld, true), [windowId, floating]);
+  const value = useMemo(() => ({ state, dropOver, held }), [state, dropOver, held]);
+  useNativeLayoutFeed(nativeFeed, windowId, value);
+  useNativeDownloadsAnchor(windowId);
+  return addressBar ? <SidebarAddressBarState width={width} /> : null;
+}
 
 
 addNativeSettingsHandlers({
@@ -192,7 +89,7 @@ addNativeSettingsHandlers({
     windowId: string,
     name: string,
     id: string,
-    extra: Mods & { kind?: "tab" | "group" | "folder" | "live"; split?: boolean; text?: string | null; action?: string; item?: string | null; cleared?: string; seq?: number; windows?: Record<string, number>; ids?: string[]; choice?: string },
+    extra: { meta?: boolean; kind?: "tab" | "group" | "folder" | "live"; split?: boolean; action?: string; item?: string | null; cleared?: string; result?: string; seq?: number; windows?: Record<string, number>; ids?: string[]; choice?: string },
   ) => {
     const s = useBrowser.getState();
     if (name === "hover") return nativeRowHover(windowId, extra.kind && id ? { kind: extra.kind, id } : null);
@@ -225,118 +122,23 @@ addNativeSettingsHandlers({
       case "newTab":
         if (extra.split) return openNewTabInSplit(windowId);
         return void (toggleNewTabBar(windowId) || s.newTab(windowId, { newTabCommand: true }));
-      case "tidy":
-        return tidyPins(windowId, id || undefined);
-      case "clear":
-        return closeAllTabs(windowId);
-      case "cleanUp":
-        return cleanUpUpsellChoice(windowId, id);
+      case "tidied":
+        return extra.result ? showTidiedPinsToast(windowId, JSON.parse(extra.result)) : undefined;
+      case "cleared":
+        return extra.cleared ? showClearedToast(JSON.parse(extra.cleared)) : undefined;
       case "live":
         return runNativeLive(windowId, id, extra.action ?? "", extra.item ?? null, !!extra.meta);
     }
   },
 });
 
-const split = (ids: string) => (ids ? ids.split(",") : NONE);
-
-function themeTokens(theme: Theme, adjustInk: boolean): Record<string, string> {
-  const tokens: Record<string, string> = {};
-  for (const key of THEME_KEYS) tokens[key] = theme[key];
-  tokens.backdropTint = theme.backdrop.tintColor;
-  tokens.windowTint = theme.windowTint[1];
-  return inkedTokens(tokens, theme.sidebarInk, adjustInk);
-}
-
-function usePageLooks(windowId: string) {
-  const { pages, paging } = usePagerPages(windowId);
-  const ids = paging ? pages.map((p) => p.id) : NONE;
-  const profiles = useBrowser((s) => s.profiles);
-  const appDark = useBrowser((s) => s.ui.appDark);
-  const source = useBrowser((s) => spaceLookSource(s.settings));
-  const tidy = useBrowser((s) => ids.filter((id) => canTidyPins(s, windowId, id)).join(","));
-  const adjustInk = useAdjustedInk();
-  const key = ids.join(",");
-  return useMemo(() => {
-    if (!key) return null;
-    const tidyIds = new Set(split(tidy));
-    return key.split(",").map((profileId) => {
-      const theme = profileTheme(profiles[profileId], appDark, source);
-      const glow = selectedTabGlow(theme);
-      return {
-        profileId,
-        dark: theme.dark,
-        theme: themeTokens(theme, adjustInk),
-        border: theme.tabSelectedBorder.map(hex),
-        glow: { color: glow.shadowColor, opacity: glow.shadowOpacity, radius: glow.shadowRadius },
-        tidy: tidyIds.has(profileId),
-        incognito: isIncognitoProfile(profileId),
-      };
-    });
-  }, [key, profiles, appDark, source, tidy, adjustInk]);
-}
-
-export const NativeSidebar = memo(function NativeSidebar({ windowId, profileId, addressBar, column, width, headless = false }: { windowId: string; profileId: string; addressBar: boolean; column?: ShellColumn; width?: number; headless?: boolean }) {
+export const NativeSidebar = memo(function NativeSidebar({ windowId, addressBar, width, headless = false }: { windowId: string; addressBar: boolean; width?: number; headless?: boolean }) {
   useEffect(publishNativeLive, []);
   useEffect(() => installNativeDragProbe(windowId), [windowId]);
-  const theme = useTheme();
-  const glow = useSelectedTabGlow();
-  const loading = useBrowser((s) => chromeLiveIds(s, windowId, "isLoading", nativeOwnsWorkspace()));
-  const playing = useBrowser((s) => chromeLiveIds(s, windowId, "playingAudio", nativeOwnsWorkspace()));
-  const sleeping = useLifecycle(useShallow((l) => chromeSleeping(l.discarded, nativeOwnsWorkspace())));
+  const dropOver = useTabDrag((d) => d.overWindow === windowId);
   const renaming = useSidebarUi((u) => (u.renaming?.windowId === windowId && (u.renaming.kind === "tab" || u.renaming.kind === "group") ? `${u.renaming.kind}:${u.renaming.id}` : null));
-  const tidy = useBrowser((s) => canTidyPins(s, windowId, profileId));
-  const adjustInk = useAdjustedInk();
-  const cleaned = useBrowser((s) => cleanedTabsFor(s, windowId).length);
-  const upsell = useCleanUpUpsellCount(windowId, true);
-  const closeHint = useBrowser((s) => shortcutHint("closeTab", s) ?? null);
-  const developer = useBrowser((s) => {
-    let out = "";
-    for (const id of s.windows[windowId]?.tabIds ?? NONE) {
-      const tab = s.tabs[id];
-      if (tab && isDeveloperMode(tab.url, developerModeFor(s.settings, tab.profileId))) out += (out ? "," : "") + id;
-    }
-    return out;
-  });
-  const engines = useBrowser(
-    useShallow((s) => {
-      const out: Record<string, string> = {};
-      for (const id of s.windows[windowId]?.tabIds ?? NONE) {
-        const mark = engineMark(s, id);
-        if (mark) out[id] = ENGINE_SYMBOLS[mark];
-      }
-      return out;
-    }),
-  );
-
-  const pages = usePageLooks(windowId);
-  const tokens = useSidebarTokens();
-  const state = useMemo(() => {
-    return JSON.stringify(sidebarHostProps({
-      profileId,
-      dark: theme.dark,
-      theme: themeTokens(theme, adjustInk),
-      border: theme.tabSelectedBorder.map(hex),
-      glow: { color: glow.shadowColor, opacity: glow.shadowOpacity, radius: glow.shadowRadius },
-      ownsLive: nativeOwnsWorkspace(),
-      live: { loading: split(loading), playing: split(playing), sleeping },
-      closeHint,
-      backHint: null,
-      renaming,
-      addressBar,
-      tidy,
-      cleaned,
-      upsell: upsell || null,
-      product: PRODUCT,
-      engines,
-      developer: split(developer),
-      newTabMark: Image.resolveAssetSource(NEW_TAB_MARK)?.uri ?? null,
-      pages,
-      badge: [tokens.badge, tokens.badgeGlyph],
-    }));
-  }, [tokens.badge, tokens.badgeGlyph, pages, theme, glow.shadowColor, glow.shadowOpacity, glow.shadowRadius, profileId, loading, playing, sleeping, closeHint, renaming, addressBar, tidy, cleaned, upsell, engines, developer, adjustInk]);
-
-  const chrome = useShellChrome(windowId, addressBar, theme);
-  if (headless) return <NativeSidebarFeed windowId={windowId} state={state} chrome={chrome} addressBar={addressBar} />;
-  if (column) return <ShellColumnState windowId={windowId} state={state} chrome={chrome} addressWidth={addressBar && width ? width : null} {...column} />;
+  const state = useMemo(() => JSON.stringify({ addressBar, renaming }), [addressBar, renaming]);
+  if (headless) return <NativeSidebarFeed windowId={windowId} state={state} dropOver={dropOver} addressBar={addressBar} />;
+  if (width !== undefined) return <ShellColumnState windowId={windowId} state={state} dropOver={dropOver} addressWidth={addressBar && width ? width : null} />;
   return <SolaraHostedView kind="sidebar" windowId={windowId} state={state} style={StyleSheet.absoluteFill} />;
 });

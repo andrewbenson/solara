@@ -1,7 +1,9 @@
 import AppKit
 import Foundation
+import SolaraLive
 import SolaraModel
 import SolaraStore
+import SolaraShell
 import SolaraUI
 
 @MainActor
@@ -14,6 +16,7 @@ enum NativeSidebar {
     NativeTileFolders.start()
     NativeNumberedTabs.register()
     NativeSidebarLive.start()
+    NativeSidebarMaintenance.start()
     NativeSidebarHoverCard.start()
     NativeSidebarShell.register()
     NativeSidebarDock.register()
@@ -119,11 +122,41 @@ final class SidebarHost {
   let view: SidebarPagerView
   private var stopped = false
   private var hostState: SidebarHostState?
+  private var rowProjection: RowProjection?
+
+  private struct RowProjection {
+    var state: BrowserState
+    var window: BrowserWindow
+    var host: SidebarHostState
+    var facts: [String: RowFacts]
+    var storeId: ObjectIdentifier?
+
+    func matches(_ next: BrowserState, window current: BrowserWindow, storeId currentStoreId: ObjectIdentifier?) -> Bool {
+      storeId == currentStoreId && state.settings == next.settings
+        && state.ui.appDark == next.ui.appDark && state.profileOrder == next.profileOrder && !next.profiles.changed(from: state.profiles)
+        && !next.tabs.changed(from: state.tabs) && !next.groups.changed(from: state.groups) && !next.splits.changed(from: state.splits)
+        && window.profileId == current.profileId && window.incognito == current.incognito && window.kind == current.kind
+        && window.tabIds == current.tabIds
+    }
+  }
+
+  private struct RowFacts {
+    let tab: Tab
+    let developer: Bool
+    let engine: String?
+
+    func matches(_ next: Tab) -> Bool {
+      tab.openerId == nil && next.openerId == nil && next.adoptId?.hasPrefix("clone:") != true
+        && tab.profileId == next.profileId && tab.url == next.url && tab.navigation?.url == next.navigation?.url
+        && tab.engine == next.engine && tab.adoptId == next.adoptId
+    }
+  }
   private var state: BrowserState?
   private var listener: Int?
   var storeSubscriptions: Int { listener == nil ? 0 : 1 }
   private let commits = SidebarCommits()
-  private var markUri: String?
+  private var input: SidebarPresentationInput?
+  var onPresentation: ((BrowserState, SidebarHostState) -> Void)?
   private var pagerObserver: NSObjectProtocol?
   private var fedByShell = false
   private var mediaListener: UUID?
@@ -165,6 +198,8 @@ final class SidebarHost {
     NativeTileFolders.hostStopped(windowId, page: view.current)
     commits.host = nil
     view.onAction = { _ in }
+    onPresentation = nil
+    rowProjection = nil
     view.stop()
     #if SOLARA_PROBES
     probeStopped = true
@@ -178,10 +213,8 @@ final class SidebarHost {
   }
 
   func apply(_ json: String) {
-    guard !stopped, let next = SidebarHostState.decode(json) else { return }
-    if next == hostState { return }
-    hostState = next
-    loadMark(next.newTabMark)
+    guard !stopped, let next = SidebarPresentationInput.decode(json) else { return }
+    input = next
     setNeedsRender()
   }
 
@@ -196,7 +229,6 @@ final class SidebarHost {
     fedByShell = true
     self.state = state
     hostState = host
-    loadMark(host.newTabMark)
     render()
   }
 
@@ -206,39 +238,84 @@ final class SidebarHost {
 
   func renameChanged() { setNeedsRender() }
 
+  func presentationChanged() { if !fedByShell { setNeedsRender() } }
+
   private func render() {
-    guard !stopped, var host = hostState, let state = state ?? NativeStoreHandle.store?.state else { return }
+    guard !stopped, let state = state ?? NativeStoreHandle.store?.state,
+      let window = state.windows[windowId] else { return }
     self.state = state
-    if let renaming = NativeWorkspaceRename.override(windowId) { host.renaming = renaming }
-    if !fedByShell, let window = state.windows[windowId] {
-      host.applyRowPreferences(state: state, windowId: windowId)
-      let stacked = NativeMediaStack.players(state: state, windowId: windowId,
-        look: NativeLayoutAppearance(state: state, profileId: window.profileId, incognito: window.incognito))
-      host.player = stacked.first
-      host.stack = stacked
+    if !fedByShell, let input {
+      let look = NativeLayoutAppearance(state: state, profileId: window.profileId, incognito: window.incognito)
+      hostState = presentation(state: state, window: window, look: look, addressBar: input.addressBar, renaming: input.renaming)
     }
-    host.pip = state.windows[windowId]?.tabIds.filter { NowPlayingStore.shared.pictureInPicture[$0] != nil }
-    host.capture = NowPlayingStore.shared.capture
+    guard var host = hostState else { return }
+    if let renaming = NativeWorkspaceRename.override(windowId) { host.renaming = renaming }
+    onPresentation?(state, host)
     view.update(state: state, host: host)
     NativeTileFolders.render(windowId: windowId)
   }
 
-  private func loadMark(_ uri: String?) {
-    guard let uri, uri != markUri else { return }
-    markUri = uri
-    if let image = SettingsAdapters.image(uri) {
-      image.isTemplate = true
-      view.favicons.newTabMark = image
-      return
+  func presentation(state: BrowserState, window: BrowserWindow, look: NativeLayoutAppearance, addressBar: Bool, renaming: String?) -> SidebarHostState {
+    let store = NativeStoreHandle.store
+    var host: SidebarHostState
+    if let rowProjection, rowProjection.matches(state, window: window, storeId: store.map(ObjectIdentifier.init)) {
+      host = rowProjection.host
+    } else {
+      let projection = projectRows(state: state, window: window, look: look, store: store)
+      host = projection.host
+      rowProjection = projection
     }
-    guard let url = URL(string: uri) else { return }
-    Task { @MainActor [weak self] in
-      let image = await Task.detached { (try? Data(contentsOf: url)).flatMap(NSImage.init(data:)) }.value
-      guard let self, !self.stopped, self.markUri == uri, let image else { return }
-      image.isTemplate = true
-      self.view.favicons.newTabMark = image
-      self.setNeedsRender()
+    host.cleaned = WorkspaceCleanup.cleanedCount(state: state, windowId: windowId, now: Date().timeIntervalSince1970 * 1000)
+    host.upsell = NativeSidebarMaintenance.suggestion(windowId: windowId, state: state)
+    host.addressBar = addressBar
+    host.renaming = renaming
+    host.applyRowPreferences(state: state, windowId: windowId)
+    host.pip = window.tabIds.filter { NowPlayingStore.shared.pictureInPicture[$0] != nil }
+    host.capture = NowPlayingStore.shared.capture
+    let stacked = NativeMediaStack.players(state: state, windowId: windowId, look: look)
+    host.player = stacked.first
+    host.stack = stacked
+    return host
+  }
+
+  private func projectRows(state: BrowserState, window: BrowserWindow, look: NativeLayoutAppearance, store: Store?) -> RowProjection {
+    var host = SidebarHostState(profileId: window.profileId, dark: look.dark)
+    host.theme = look.tokens
+    host.border = look.border
+    host.glow = look.glow
+    host.badge = SidebarHostState.badgeColors(dark: look.dark)
+    host.product = Bundle.main.productName
+    host.closeHint = CommandShortcutSnapshot().hint("closeTab", state: state)
+    let storeId = store.map(ObjectIdentifier.init)
+    let previousFacts = rowProjection.flatMap { $0.storeId == storeId && $0.state.settings == state.settings ? $0.facts : nil } ?? [:]
+    var facts = Dictionary<String, RowFacts>(minimumCapacity: window.tabIds.count)
+    var pinnedRowProfiles = Set<String>()
+    for tabId in window.tabIds {
+      guard let tab = state.tabs[tabId] else { continue }
+      if tab.isPinnedRow { pinnedRowProfiles.insert(tab.profileId) }
+      let row: RowFacts
+      if let previous = previousFacts[tabId], previous.matches(tab) {
+        row = previous
+      } else {
+        row = RowFacts(tab: tab, developer: OmniboxCommandSources.isDeveloperURL(tab.url, settings: state.settings, profileId: tab.profileId),
+          engine: store?.pageEngineMark(tab, in: state))
+      }
+      facts[tabId] = row
+      if row.developer { host.developer.append(tabId) }
+      host.engines[tabId] = row.engine
     }
+    func canTidy(_ profileId: String) -> Bool {
+      pinnedRowProfiles.contains(profileId) && CommandContext.canTidyPins(state: state, windowId: windowId, profileId: profileId)
+    }
+    host.tidy = canTidy(window.profileId)
+    let currentTidy = host.tidy
+    host.pages = SidebarPagerView.profileIDs(state: state, windowId: windowId).map { profileId in
+      let page = profileId == window.profileId ? look : NativeLayoutAppearance(state: state, profileId: profileId, incognito: false)
+      let tidy = profileId == window.profileId ? currentTidy : canTidy(profileId)
+      return SidebarPageLook(profileId: profileId, dark: page.dark, theme: page.tokens, border: page.border, glow: page.glow,
+        tidy: tidy, incognito: false)
+    }
+    return RowProjection(state: state, window: window, host: host, facts: facts, storeId: storeId)
   }
 
   private func handle(_ action: SidebarAction) {
@@ -308,9 +385,16 @@ final class SidebarHost {
       if NativeTileFolders.toggle(windowId: windowId, folderId: folderId) { call("handled", folderId) } else { NSLog("[sidebar] folder refused: native store unavailable, dispatch failed or target stale") }
     case .folderMenu(let folderId):
       if !NativeTileFolders.folderMenu(windowId: windowId, folderId: folderId) { NSLog("[sidebar] folderMenu refused: native store unavailable, dispatch failed or target stale") }
-    case .tidy: call("tidy", hostState?.profileId ?? "")
-    case .clear: call("clear", "")
-    case .cleanUp(let choice): call("cleanUp", choice.rawValue)
+    case .tidy:
+      if let result = run("tidyPins", [.string(windowId), JSONValue(hostState?.profileId)]) {
+        call("tidied", "", ["result": result.text()])
+      }
+    case .clear:
+      if let result = run("clearUnpinnedTabs", [.string(windowId)]) {
+        call("cleared", "", ["cleared": result.text()])
+      }
+    case .cleanUp(let choice):
+      NativeSidebarMaintenance.choose(choice, windowId: windowId)
     case .hover(let kind, let id): call("hover", id ?? "", ["kind": kind ?? NSNull()])
     case .scrolled:
       if NativeTileFolders.owned {
@@ -330,6 +414,18 @@ final class SidebarHost {
       }
     case .live(let action, let folderId, let id, let meta): call("live", folderId, ["action": action, "item": id ?? NSNull(), "meta": meta])
     case .media(let tabId, let action): NativeMediaStack.perform(windowId: windowId, tabId: tabId, action: action)
+    }
+  }
+
+  private func run(_ name: String, _ args: [JSONValue]) -> JSONValue? {
+    guard let store = WorkspaceWrites.store, store.state.windows[windowId] != nil else { return nil }
+    do {
+      let result = try store.dispatch(Command(name, args), origin: .native).result
+      FrameUpdates.flush()
+      return result == .null ? nil : result
+    } catch {
+      NSLog("[sidebar] %@ refused: %@", name, String(describing: error))
+      return nil
     }
   }
 
@@ -358,26 +454,232 @@ final class SidebarHost {
 
 @MainActor
 enum NativeSidebarLive {
-  static let topic = "sidebar.live"
+  static let topic = "sidebar.liveShowAll"
   private static var observer: UUID?
-  private static var generation = 0
+  private static var revision: UInt64?
+  private static var state: LiveState?
+  private static var showAll: [String: Bool] = [:]
 
   static func start() {
     guard observer == nil else { return }
-    observer = SettingsJS.shared.observe(topic) { value in receive(value) }
-    receive(SettingsJS.shared.latestValue(topic))
+    observer = SettingsJS.shared.observe(topic) { value in applyShowAll(value) }
+    applyShowAll(SettingsJS.shared.latestValue(topic))
+    _ = NativeLiveEngine.shared
   }
 
-  private static func receive(_ value: Any?) {
-    guard let text = value as? String else { return }
+  static func receive(_ state: LiveState, revision: UInt64) {
+    guard self.revision.map({ revision > $0 }) ?? true else { return }
+    self.revision = revision
+    self.state = state
+    publish()
+  }
+
+  private static func applyShowAll(_ value: Any?) {
+    let next = value as? [String: Bool] ?? [:]
+    guard showAll != next else { return }
+    showAll = next
+    publish()
+  }
+
+  private static func publish() {
+    guard var state else { return }
+    state.showAll.merge(showAll) { _, local in local }
+    SidebarLiveFeed.shared.apply(state)
+  }
+}
+
+@MainActor
+enum NativeSidebarMaintenance {
+  private static var lifecycle: Int?
+  private static weak var store: Store?
+  private static var subscription: Int?
+  private static var cleanupTimer: Timer?
+  private static var presentationTimer: Timer?
+  private static var observers: [NSObjectProtocol] = []
+  private static var dismissed = false
+  private static var cleaned: [String: Int] = [:]
+  private static var suggestions: [String: Int] = [:]
+  private static var suggestionWindows: [String: SuggestionWindow] = [:]
+  private static var pendingSuggestions: BrowserState?
+  private static var suggestionTask: Task<Void, Never>?
+  private static var generation: UInt64 = 0
+
+  private struct SuggestionWindow: Equatable {
+    let profileId: String
+    let tabIds: [String]
+    let activeId: String?
+  }
+
+  static func start() {
+    guard lifecycle == nil else { return }
+    lifecycle = NativeStoreHandle.subscribeLifecycle { ownershipChanged() }
+    let local = NotificationCenter.default
+    observers.append(local.addObserver(forName: AppUpdater.pendingUpdateChanged, object: nil, queue: .main) { _ in
+      MainActor.assumeIsolated { presentationChanged() }
+    })
+    observers.append(local.addObserver(forName: NSApplication.didResignActiveNotification, object: nil, queue: .main) { _ in
+      MainActor.assumeIsolated { closeAbandoned() }
+    })
+    observers.append(DistributedNotificationCenter.default().addObserver(forName: .init("com.apple.screenIsLocked"), object: nil, queue: .main) { _ in
+      MainActor.assumeIsolated { closeAbandoned() }
+    })
+  }
+
+  private static func ownershipChanged() {
+    let next = WorkspaceWrites.store
+    guard next !== store else { return }
+    if let subscription { store?.unsubscribe(subscription) }
+    subscription = nil
+    cleanupTimer?.invalidate()
+    cleanupTimer = nil
+    presentationTimer?.invalidate()
+    presentationTimer = nil
     generation += 1
-    let ticket = generation
-    Task.detached(priority: .userInitiated) {
-      guard let state = SidebarLive.decode(text) else { return }
-      await MainActor.run {
-        guard ticket == generation else { return }
-        SidebarLiveFeed.shared.apply(state)
+    suggestionTask?.cancel()
+    suggestionTask = nil
+    pendingSuggestions = nil
+    suggestionWindows = [:]
+    suggestions = [:]
+    cleaned = [:]
+    store = next
+    guard let next else { return }
+    cleanupTimer = schedule(every: 30 * 60, run: cleanInactiveTabs)
+    subscription = next.subscribe { [weak next] commit in
+      let changes = commit.changes
+      guard changes.settings || !changes.windows.isEmpty || changes.lists.contains("cleanedTabs")
+        || changes.lists.contains("privateCleanedTabs") else { return }
+      Task { @MainActor in
+        guard let next, WorkspaceWrites.store === next else { return }
+        updateCleanup(next.state)
       }
+    }
+    updateCleanup(next.state)
+  }
+
+  static func suggestion(windowId: String, state: BrowserState) -> Int? {
+    SidebarCleanupPresentation.admitted(state: state, dismissed: dismissed) ? suggestions[windowId] : nil
+  }
+
+  private static func updateCleanup(_ state: BrowserState, tick: Bool = false) {
+    let now = Date().timeIntervalSince1970 * 1000
+    let nextCleaned = Dictionary(uniqueKeysWithValues: state.windows.keys.compactMap { id -> (String, Int)? in
+      let count = WorkspaceCleanup.cleanedCount(state: state, windowId: id, now: now)
+      return count > 0 ? (id, count) : nil
+    })
+    let cleanedChanged = nextCleaned != cleaned
+    cleaned = nextCleaned
+    var windows: [String: SuggestionWindow] = [:]
+    if SidebarCleanupPresentation.admitted(state: state, dismissed: dismissed) {
+      for window in state.windows.values where window.tabIds.count >= 10 {
+        windows[window.id] = SuggestionWindow(profileId: window.profileId, tabIds: window.tabIds, activeId: window.activeTabIds[window.profileId])
+      }
+    }
+    let retained = suggestions.filter { id, _ in windows[id] != nil && windows[id] == suggestionWindows[id] }
+    let suggestionsChanged = retained != suggestions
+    suggestions = retained
+    if windows != suggestionWindows || tick {
+      suggestionWindows = windows
+      pendingSuggestions = windows.isEmpty ? nil : state
+      calculateSuggestions()
+    }
+    if (!windows.isEmpty || !cleaned.isEmpty), presentationTimer == nil {
+      presentationTimer = schedule(every: 60, run: refreshCleanup)
+    } else if windows.isEmpty && cleaned.isEmpty {
+      presentationTimer?.invalidate()
+      presentationTimer = nil
+    }
+    if suggestionsChanged || (tick && cleanedChanged) { presentationChanged() }
+  }
+
+  private static func calculateSuggestions() {
+    guard suggestionTask == nil, let state = pendingSuggestions else { return }
+    pendingSuggestions = nil
+    let ids = Array(suggestionWindows.keys)
+    let ticket = generation
+    suggestionTask = Task.detached(priority: .utility) {
+      let now = Date().timeIntervalSince1970 * 1000
+      var counts: [String: Int] = [:]
+      for id in ids {
+        guard !Task.isCancelled else { return }
+        counts[id] = SidebarCleanupPresentation.suggestion(state: state, windowId: id, now: now, dismissed: false)
+      }
+      await acceptSuggestions(counts, generation: ticket)
+    }
+  }
+
+  private static func acceptSuggestions(_ counts: [String: Int], generation ticket: UInt64) {
+    guard generation == ticket, WorkspaceWrites.store === store else { return }
+    suggestionTask = nil
+    if pendingSuggestions == nil, !suggestionWindows.isEmpty, counts != suggestions {
+      suggestions = counts
+      presentationChanged()
+    }
+    calculateSuggestions()
+  }
+
+  private static func refreshCleanup() {
+    guard let store = WorkspaceWrites.store else { return }
+    updateCleanup(store.state, tick: true)
+  }
+
+  static func choose(_ choice: SidebarCleanUpChoice, windowId: String) {
+    guard let store = WorkspaceWrites.store, store.state.windows[windowId] != nil else { return }
+    let clean = Command("cleanUpTabs", [.string(windowId)])
+    switch choice {
+    case .once:
+      if dispatch([clean], store: store) { dismissed = true }
+    case .daily:
+      _ = dispatch([Command("updateSettings", [["cleanUpInactiveTabsAfterHours": JSONValue(24)]]), clean], store: store)
+    case .dismiss:
+      dismissed = true
+    case .dontAskAgain:
+      _ = dispatch([Command("updateSettings", [["suggestTabCleanUp": .bool(false)]])], store: store)
+    }
+    updateCleanup(store.state)
+    presentationChanged()
+    FrameUpdates.flush()
+  }
+
+  private static func schedule(every: TimeInterval, run: @escaping @MainActor @Sendable () -> Void) -> Timer {
+    let now = Date().timeIntervalSince1970
+    let separate = ProcessInfo.processInfo.environment["SOLARA_SLOW_TIMERS"] == "separate"
+    let next = separate ? now + every : (floor(now / every) + 1) * every
+    let timer = Timer(fire: Date(timeIntervalSince1970: next), interval: every, repeats: true) { _ in
+      MainActor.assumeIsolated { run() }
+    }
+    timer.tolerance = separate ? 0 : 0.05
+    RunLoop.main.add(timer, forMode: .common)
+    return timer
+  }
+
+  private static func presentationChanged() {
+    for host in NativeSidebar.hosts.values { host.presentationChanged() }
+    NativeLayoutChrome.presentationChanged()
+  }
+
+  private static func cleanInactiveTabs() {
+    guard let store = WorkspaceWrites.store else { return }
+    let state = store.state
+    guard let hours = state.settings.number("cleanUpInactiveTabsAfterHours") else { return }
+    for id in state.windowOrder {
+      _ = dispatch([Command("cleanUpTabs", [.string(id), ["inactiveForMs": JSONValue(hours * 3_600_000)]])], store: store)
+    }
+  }
+
+  private static func closeAbandoned() {
+    guard let store = WorkspaceWrites.store, NSApp.modalWindow == nil,
+      !NSApp.windows.contains(where: { $0.attachedSheet != nil || $0.isSheet && $0.isVisible }) else { return }
+    _ = dispatch([Command("closeAbandonedNewTabs", [])], store: store)
+  }
+
+  @discardableResult
+  private static func dispatch(_ commands: [Command], store: Store) -> Bool {
+    do {
+      _ = try store.dispatch(commands, origin: .native)
+      return true
+    } catch {
+      NSLog("[sidebar] maintenance refused: %@", String(describing: error))
+      return false
     }
   }
 }

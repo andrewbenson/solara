@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { test } from "node:test";
-const { sidebarHostProps, stripHostProps } = await import("./nativeHostProps.ts");
+const { stripHostProps } = await import("./nativeHostProps.ts");
 
 const swift = (path) => readFileSync(new URL(`../../../../native/SolaraKit/Sources/SolaraUI/${path}`, import.meta.url), "utf8");
 
@@ -25,16 +25,8 @@ const strip = (ownsLive) =>
     closeHint: null, newTabMark: null, pages: [], selection: [], ownsLive, live: { playing: live.playing, sleeping: live.sleeping },
   });
 
-const sidebar = (ownsLive) =>
-  sidebarHostProps({
-    profileId: "default", dark: true, theme: {}, border: [], glow, closeHint: null, backHint: null, renaming: null,
-    addressBar: false, tidy: false, cleaned: 0, upsell: null,
-    product: "Solara", engines: {}, developer: [], newTabMark: null, pages: [], pip: [], capture: {}, badge: [], ownsLive, live,
-  });
-
 for (const [name, struct, path, build] of [
   ["strip", "StripHostState", "TopStrip/StripHostState.swift", strip],
-  ["sidebar", "SidebarHostState", "Sidebar/SidebarHostState.swift", sidebar],
 ]) {
   const keys = requiredKeys(swift(path), struct);
   for (const ownsLive of [false, true]) {
@@ -48,6 +40,4 @@ for (const [name, struct, path, build] of [
 
 test("native-owned live sends empty lists, not JS's stale ones", () => {
   assert.deepEqual([strip(true).playing, strip(true).sleeping], [[], []]);
-  assert.deepEqual([sidebar(true).loading, sidebar(true).playing, sidebar(true).sleeping], [[], [], []]);
-  assert.deepEqual([sidebar(false).loading, sidebar(false).playing, sidebar(false).sleeping], [["a"], ["b"], ["c"]]);
 });

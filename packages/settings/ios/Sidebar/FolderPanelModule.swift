@@ -7,13 +7,6 @@ public class FolderPanelModule: Module {
   public func definition() -> ModuleDefinition {
     Name("SolaraFolderPanel")
 
-    AsyncFunction("look") { (windowId: String, json: String) in
-      FrameUpdates.readOnMain {
-        guard let look = FolderPanelLook.decode(json) else { return }
-        NativeTileFolders.setLook(windowId: windowId, look: look)
-      }
-    }.runOnQueue(.main)
-
     AsyncFunction("toggle") { (windowId: String, folderId: String) -> Bool in
       FrameUpdates.readOnMain { NativeTileFolders.toggle(windowId: windowId, folderId: folderId) }
     }.runOnQueue(.main)

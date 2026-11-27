@@ -7,58 +7,15 @@ import { viewTabIds } from "../../store/model";
 import { openSettings } from "../settings/windows";
 import { openLiveFolderMenu, openLiveItemMenu, openLiveStackMenu } from "./liveMenus";
 
-type LiveState = ReturnType<typeof useLive.getState>;
-
-function replica(s: LiveState): string {
-  return JSON.stringify({
-    folders: s.folders,
-    folderOrder: s.folderOrder,
-    items: s.items,
-    unread: s.unread,
-    hidden: s.hidden,
-    completed: s.completed,
-    completing: s.completing,
-    status: s.status,
-    expandedStacks: s.expandedStacks,
-    showAll: s.showAll,
-    meetingGroups: s.meetingGroups,
-  });
-}
-
 let published = false;
 
 export function publishNativeLive(): void {
   if (published) return;
   published = true;
-  let last = "";
-  let queued = false;
-  const publish = () => {
-    queued = false;
-    const json = replica(useLive.getState());
-    if (json === last) return;
-    last = json;
-    publishSettingsTopic("sidebar.live", json);
-  };
-  publish();
+  const publish = (showAll: Record<string, boolean>) => publishSettingsTopic("sidebar.liveShowAll", showAll);
+  publish(useLive.getState().showAll);
   useLive.subscribe((s, prev) => {
-    if (queued) return;
-    if (
-      s.folders === prev.folders &&
-      s.folderOrder === prev.folderOrder &&
-      s.items === prev.items &&
-      s.unread === prev.unread &&
-      s.hidden === prev.hidden &&
-      s.completed === prev.completed &&
-      s.completing === prev.completing &&
-      s.status === prev.status &&
-      s.expandedStacks === prev.expandedStacks &&
-      s.showAll === prev.showAll &&
-      s.meetingGroups === prev.meetingGroups
-    ) {
-      return;
-    }
-    queued = true;
-    queueMicrotask(publish);
+    if (s.showAll !== prev.showAll) publish(s.showAll);
   });
 }
 

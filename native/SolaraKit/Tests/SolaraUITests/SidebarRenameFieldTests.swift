@@ -1,4 +1,5 @@
 import AppKit
+import SolaraModel
 import Testing
 @testable import SolaraUI
 
@@ -42,5 +43,15 @@ import Testing
     other.isReleasedWhenClosed = false
     field.clickedAway(press(other, at: NSPoint(x: 20, y: 20)))
     #expect(done().isEmpty)
+  }
+  @Test func aRenameCannotUseATabInAnotherWindow() throws {
+    let state = try BrowserState(stateJSON: JSONValue.parse(#"""
+      {"windows":{"a":{"id":"a","profileId":"default"},"b":{"id":"b","profileId":"default"}},
+       "tabs":{"tab":{"id":"tab","windowId":"a","profileId":"default","title":"Tab"}}}
+      """#).object ?? [:])
+    #expect(WorkspaceActionRouter.renameRoute(state, windowId: "b", kind: .tab, id: "tab") == nil)
+    var registry = WorkspaceRenameRegistry()
+    _ = registry.set("b", "tab:tab")
+    #expect(!registry.live("b", state: state))
   }
 }

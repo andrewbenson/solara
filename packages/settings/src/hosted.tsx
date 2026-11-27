@@ -15,6 +15,7 @@ type HostedModule = {
   devHost(kind: string, windowId: string, on: boolean): Promise<Record<string, string>>;
   sidebarRowFrame(windowId: string, key: string): Promise<{ x: number; y: number; width: number; height: number } | null>;
   sidebarShell?(windowId: string): Promise<string>;
+  dismissSidebarHover?(windowId: string | null): Promise<void>;
   beginRename?(windowId: string, kind: "tab" | "group", id: string): Promise<boolean>;
 };
 
@@ -41,6 +42,10 @@ export function takeSwitcherPress(windowId: string): number | null {
 
 export function beginNativeRename(windowId: string, kind: "tab" | "group", id: string): Promise<boolean> {
   return native?.beginRename?.(windowId, kind, id).catch(() => false) ?? Promise.resolve(false);
+}
+
+export function dismissNativeSidebarHover(windowId: string | null) {
+  void native?.dismissSidebarHover?.(windowId).catch(() => {});
 }
 
 export function sidebarRowFrame(windowId: string, key: string) {

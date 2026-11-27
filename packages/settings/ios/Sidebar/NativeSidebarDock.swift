@@ -77,13 +77,20 @@ enum NativeSidebarDock {
     guard let shell = NativeWindowShell.host(windowId)?.shell else { return }
     let dock = SidebarDock(shell: shell, state: state)
     dock.column = { NativeSidebarShell.column(windowId) }
+    dock.revealHeld = {
+      NativeSidebarHoverCard.hasPointer(windowId) || NativeSidebarIconPicker.isOpen(windowId)
+        || NativeWorkspaceRename.override(windowId).flatMap { $0 } != nil
+    }
     dock.onWatch = { [weak dock] hold in
       ShellWindowEdge.watch(windowId, hold: hold) { over in dock?.edge(over: over) }
     }
     dock.onLights = { center in ShellWindowEdge.setLightsCenter(windowId, center) }
     dock.onDock = { value, moving in send(windowId, "dock", ["value": value, "moving": moving]) }
     dock.onPeek = { live, right in send(windowId, "peek", ["live": live, "right": right]) }
-    dock.onSlideOut = { send(windowId, "slideOut") }
+    dock.onSlideOut = {
+      NativeSidebarHoverCard.dismiss(windowId)
+      send(windowId, "slideOut")
+    }
     docks[windowId] = dock
     dock.start()
   }

@@ -354,8 +354,8 @@ final class SidebarShellColumn: NSView, DevDropDestination, NSSpringLoadingDesti
   private func chromeAction(_ action: SidebarChromeAction) {
     let shell = NativeWindowShell.host(windowId)?.shell
     switch action {
-    case .profileMenu: NativeSidebarShell.send(windowId, "profileMenu")
-    case .manageProfiles: NativeSidebarShell.send(windowId, "manageProfiles")
+    case .profileMenu: NativeSidebarMenus.profiles(windowId: windowId)
+    case .manageProfiles: NativeSidebarMenus.editProfiles(windowId: windowId)
     case .toggleDownloads:
       if let store = WorkspaceWrites.store {
         writeSidebar("setDownloadsOpen", [.string(windowId), .bool(store.state.windowUi[windowId]?.downloadsOpen != true)])
@@ -508,6 +508,11 @@ public enum SidebarShellRead {
 final class NativeLayoutChrome {
   private static var owners: [String: NativeLayoutChrome] = [:]
   private static var feeds: [UUID] = []
+
+  static func transientHold(_ windowId: String, reason: String, held: Bool) {
+    if let owner = owners[windowId] { owner.setHold(reason, held) }
+    else if !held { NativeSidebarDock.dock(windowId)?.peek.recheck() }
+  }
 
   static func renameChanged(_ windowId: String) {
     guard let owner = owners[windowId], !owner.stopped else { return }
@@ -752,8 +757,7 @@ final class NativeLayoutChrome {
       let input = nativeInput else { return }
     let effectiveOpen = window.sidebarOpen
     let look = NativeLayoutAppearance(state: state, profileId: window.profileId, incognito: window.incognito)
-    let sidebar = column.host.presentation(state: state, window: window, look: look, addressBar: input.layout.addressBarInSidebar,
-      renaming: sidebarFeed?.renaming)
+    let sidebar = column.host.presentation(state: state, window: window, look: look, addressBar: input.layout.addressBarInSidebar)
     guard let chrome = NativeLayoutAppearance.chrome(state: state, windowId: shell.windowId, addressBar: sidebar.addressBar,
       dropOver: sidebarDropOver, windowFullscreen: input.windowFullscreen, appearance: look) else { return }
     let controls = chrome.controls
@@ -1514,8 +1518,8 @@ enum NativeGroupMenu {
   private(set) static var handled = 0
   #endif
 
-  static func open(_ groupId: String, windowId: String, js: @escaping @MainActor (_ groupId: String, _ choice: String) -> Void) -> Bool {
-    guard let store = WorkspaceWrites.store else { return false }
+  static func open(_ groupId: String, windowId: String) -> Bool {
+    guard let store = WorkspaceWrites.store, store.state.groups[groupId]?.windowId == windowId else { return false }
     let shortcut = CommandShortcutSnapshot().hint("newTabInGroup", state: store.state)
     let items = GroupMenu.items(store.state, groupId: groupId, newTabShortcut: shortcut)
     guard !items.isEmpty else { return true }
@@ -1524,32 +1528,31 @@ enum NativeGroupMenu {
     #endif
     ShellMenus.choose(items.map(\.dictionary)) { [weak owner = store] picked in
       guard let picked, let choice = GroupMenuChoice(picked) else { return }
-      guard let store = WorkspaceWrites.store, store === owner, store.state.groups[groupId] != nil else {
+      guard let store = WorkspaceWrites.store, store === owner, store.state.groups[groupId]?.windowId == windowId, !store.memory.closingWindows.contains(windowId) else {
         return NSLog("[groups] %@: gone or stood down while its menu was open", groupId)
       }
-      run(choice, raw: picked, groupId: groupId, windowId: windowId, store: store, js: js)
+      run(choice, groupId: groupId, windowId: windowId, store: store)
     }
     return true
   }
 
   private static func run(
-    _ choice: GroupMenuChoice, raw: String, groupId: String, windowId: String, store: Store,
-    js: @escaping @MainActor (String, String) -> Void
+    _ choice: GroupMenuChoice, groupId: String, windowId: String, store: Store
   ) {
     switch choice {
     case .rename:
       if !rename(groupId, windowId: windowId) { NSLog("[sidebar] rename refused: native store unavailable or target stale") }
-    case .icon, .bookmarkBar:
-      js(groupId, raw)
+    case .icon:
+      NativeSidebarIconPicker.open(windowId: windowId, kind: "group", id: groupId)
+    case .bookmarkBar:
+      NativeBookmarkCommands.fileGroup(groupId, windowId: windowId, store: store)
     case .close:
       _ = NativeGroupActions.close(groupId)
     case .copy(let markdown):
       let data = try? JSONSerialization.data(withJSONObject: ["groupId": groupId])
       _ = NativeLinkCommands.perform(markdown ? "copyUrlAsMarkdown" : "copyUrl", arg: data.flatMap { String(data: $0, encoding: .utf8) }, windowId: windowId)
     case .newTab:
-      if GroupMenu.newTabOpensBar(store.state, windowId: windowId) { return js(groupId, raw) }
-      let tab = dispatch(store, Command("newTabInGroup", [.string(groupId)]))
-      if let tab, !tab.isEmpty { _ = dispatch(store, Command("activate", [.string(tab)])) }
+      NativeWorkspaceCommands.newTabInGroup(groupId, windowId: windowId, store: store)
     case .nest:
       let child = dispatch(store, Command("newNestedGroup", [.string(groupId)])) ?? ""
       if let tab = store.state.groups[child]?.tabIds.first { _ = dispatch(store, Command("activate", [.string(tab)])) }

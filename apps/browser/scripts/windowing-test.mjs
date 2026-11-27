@@ -229,6 +229,14 @@ try {
   else if (!(probe = await record(0.5, async () => {}))) noScreen = "needs a recordable screen: the recorder got no frames (display asleep?)";
   const H = probe ? probe[0].h * 8 : 0;
   if (noScreen) rep.log(`(frames can't be recorded: ${noScreen})`);
+  const saveInProcess = async (name, windowId) => {
+    if (!noScreen) return;
+    const path = join(scratch, `${name}.png`);
+    const saved = await app.eval(`return ac.shell.devSnapshotWindow(${JSON.stringify(windowId)}, ${JSON.stringify(path)});`, { timeout: 19000 }).catch(() => false);
+    rep.log(saved ? `in-process snapshot: ${path}` : `in-process snapshot unavailable: ${name}`);
+  };
+  await saveInProcess("initial-w1", "w1");
+  await saveInProcess("initial-w2", "w2");
 
   await check("tab switches show the old page or the new one, never a blank or half-drawn page", async () => {
     if (noScreen) return noScreen;
@@ -331,6 +339,7 @@ try {
     assert.equal(native.windows.find((w) => w.id === "w1")?.tabIds.includes("m1"), true, "native w1 owns m1");
     await sleep(800);
     assert.deepEqual(await strips(), [browser], "the same live tab, not a new one");
+    await saveInProcess("after-drop-w1", "w1");
   });
 
   await check("a window's last tab dropped onto another window: the emptied window goes at once, the page shows at once", async () => {

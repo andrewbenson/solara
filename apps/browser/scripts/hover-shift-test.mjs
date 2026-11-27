@@ -171,6 +171,6 @@ try {
   rep.record("setup", { error });
 } finally {
   await app?.quit();
-  rmSync(data, { recursive: true, force: true });
+  if (process.env.AC_KEEP_DATA !== "1") rmSync(data, { recursive: true, force: true });
 }
 process.exit(rep.summary() ? 0 : 1);

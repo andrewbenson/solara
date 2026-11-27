@@ -2,24 +2,35 @@ import { hostedSidebarShell, nativeOmniboxAvailable, publishSettingsTopic, sideb
 import { memo, useEffect, useMemo, useState } from "react";
 import { StyleSheet } from "react-native";
 import { useBrowser } from "../../store/browser";
+import { useSync } from "../../sync/engine";
 import { sidebarWidthOf } from "../../store/sidebarRail";
 import { openNewTabInSplit } from "../layout/splitActions";
-import { toggleNewTabBar } from "../omnibox/newTabBar";
 import { addNativeSettingsHandlers } from "../settings/nativeSettings";
-import { openSettings } from "../settings/windows";
-import { dismissHover, nativeRowHover } from "./hover";
-import { openOverflowMenu, openSidebarMenu, openTabMenu, runGroupMenuChoice, runTabMenuChoice, runTabMenuSelectionChoice, showClearedToast, showUndoToast } from "./menus";
+import { applyHoverProbe } from "./hover";
 import { applyNativeRenameState, resetNativeRenames } from "./renameMirror";
-import { setSidebarUi, sidebarUi, useSidebarUi } from "./state";
-import { publishNativeLive, runNativeLive } from "./nativeLive";
+import { setSidebarUi, sidebarUi } from "./state";
 import { showTidiedPinsToast } from "./tidyPinsUi";
-import { openProfileMenu } from "../ProfileIndicator";
+import { requestCreateProfile } from "../profiles/CreateProfile";
 import { registerDownloadsAnchor } from "../Downloads";
 import { useTabDrag } from "../layout/tabDrag";
 import { followPeekHold } from "../layout/peekHold";
 import { nativeLayoutFeed, useNativeLayoutFeed } from "../layout/nativeLayoutFeed";
 import { SidebarAddressBarState } from "./AddressBar";
 import { installNativeDragProbe } from "./nativeDrag";
+
+if (__DEV__) addNativeSettingsHandlers({ "sidebar.hoverProbe": applyHoverProbe });
+
+let publishedDevices = false;
+
+function publishSyncedDevices() {
+  if (publishedDevices) return;
+  publishedDevices = true;
+  const publish = (devices: ReturnType<typeof useSync.getState>["remoteTabs"]) => publishSettingsTopic("sidebar.syncedDevices", devices);
+  publish(useSync.getState().remoteTabs);
+  useSync.subscribe((next, previous) => {
+    if (next.remoteTabs !== previous.remoteTabs) publish(next.remoteTabs);
+  });
+}
 
 const SHELL_TOPIC = "sidebar.shell";
 const shellColumns: Record<string, object> = {};
@@ -41,12 +52,9 @@ function publishShellColumn(windowId: string, column: object | null) {
 type ShellEvent = { width?: number | null };
 
 addNativeSettingsHandlers({
+  "sidebar.profileForm": (windowId: string) => requestCreateProfile(windowId),
   [SHELL_TOPIC]: (windowId: string, event: string, extra: ShellEvent) => {
     switch (event) {
-      case "profileMenu":
-        return void openProfileMenu(windowId);
-      case "manageProfiles":
-        return void openSettings("profiles");
       case "liveWidth": {
         const { [windowId]: _, ...rest } = sidebarUi().dragWidth;
         return setSidebarUi({ dragWidth: typeof extra.width === "number" ? { ...rest, [windowId]: extra.width } : rest });
@@ -89,55 +97,27 @@ addNativeSettingsHandlers({
     windowId: string,
     name: string,
     id: string,
-    extra: { meta?: boolean; kind?: "tab" | "group" | "folder" | "live"; split?: boolean; action?: string; item?: string | null; cleared?: string; result?: string; seq?: number; windows?: Record<string, number>; ids?: string[]; choice?: string },
+    extra: { kind?: "tab" | "group"; split?: boolean; result?: string; seq?: number; windows?: Record<string, number> },
   ) => {
-    const s = useBrowser.getState();
-    if (name === "hover") return nativeRowHover(windowId, extra.kind && id ? { kind: extra.kind, id } : null);
-    if (name === "renameState") return void applyNativeRenameState(windowId, extra.kind ?? null, id, Number(extra.seq ?? 0));
-    if (name === "renameReset") return resetNativeRenames(extra.windows ?? {});
-    dismissHover();
+    if (__DEV__ && name === "renameState") return void applyNativeRenameState(windowId, extra.kind ?? null, id, Number(extra.seq ?? 0));
+    if (__DEV__ && name === "renameReset") return resetNativeRenames(extra.windows ?? {});
     switch (name) {
       case "handled":
         return;
-      case "clicked":
-        if (s.selectionAnchors[windowId] !== id) s.setSelectionAnchor(windowId, id);
-        if (s.selection[windowId]?.length) s.setSelection(windowId, []);
-        return;
-      case "removedPin":
-        return extra.cleared ? showUndoToast(JSON.parse(extra.cleared), "Removed Pinned Tab", "pin.slash") : undefined;
-      case "tabMenuSelectionChoice":
-        return runTabMenuSelectionChoice(windowId, extra.ids ?? [], extra.choice ?? "");
-      case "tabMenu": {
-        const tab = s.tabs[id];
-        return tab ? void openTabMenu(windowId, tab) : undefined;
-      }
-      case "tabMenuChoice":
-        return runTabMenuChoice(windowId, id, extra.choice ?? "");
-      case "groupMenuChoice":
-        return runGroupMenuChoice(windowId, id, extra.choice ?? "");
-      case "sidebarMenu":
-        return void openSidebarMenu(windowId);
-      case "overflowMenu":
-        return void openOverflowMenu(windowId);
       case "newTab":
         if (extra.split) return openNewTabInSplit(windowId);
-        return void (toggleNewTabBar(windowId) || s.newTab(windowId, { newTabCommand: true }));
+        return;
       case "tidied":
         return extra.result ? showTidiedPinsToast(windowId, JSON.parse(extra.result)) : undefined;
-      case "cleared":
-        return extra.cleared ? showClearedToast(JSON.parse(extra.cleared)) : undefined;
-      case "live":
-        return runNativeLive(windowId, id, extra.action ?? "", extra.item ?? null, !!extra.meta);
     }
   },
 });
 
 export const NativeSidebar = memo(function NativeSidebar({ windowId, addressBar, width, headless = false }: { windowId: string; addressBar: boolean; width?: number; headless?: boolean }) {
-  useEffect(publishNativeLive, []);
+  useEffect(publishSyncedDevices, []);
   useEffect(() => installNativeDragProbe(windowId), [windowId]);
   const dropOver = useTabDrag((d) => d.overWindow === windowId);
-  const renaming = useSidebarUi((u) => (u.renaming?.windowId === windowId && (u.renaming.kind === "tab" || u.renaming.kind === "group") ? `${u.renaming.kind}:${u.renaming.id}` : null));
-  const state = useMemo(() => JSON.stringify({ addressBar, renaming }), [addressBar, renaming]);
+  const state = useMemo(() => JSON.stringify({ addressBar }), [addressBar]);
   if (headless) return <NativeSidebarFeed windowId={windowId} state={state} dropOver={dropOver} addressBar={addressBar} />;
   if (width !== undefined) return <ShellColumnState windowId={windowId} state={state} dropOver={dropOver} addressWidth={addressBar && width ? width : null} />;
   return <SolaraHostedView kind="sidebar" windowId={windowId} state={state} style={StyleSheet.absoluteFill} />;

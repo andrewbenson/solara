@@ -67,8 +67,11 @@ export function startDevHarness() {
     get sidebarRows(): typeof import("../components/sidebar/state") {
       return require("../components/sidebar/state");
     },
-    get sidebarHover(): typeof import("../components/sidebar/hover") & typeof import("../components/sidebar/hoverMotion") {
-      return { ...require("../components/sidebar/hover"), ...require("../components/sidebar/hoverMotion") };
+    get sidebarHover() {
+      const hover = require("../components/sidebar/hover") as typeof import("../components/sidebar/hover");
+      const motion = require("../components/sidebar/hoverMotion") as typeof import("../components/sidebar/hoverMotion");
+      const hosted = (globalThis as typeof globalThis & { expo?: { modules?: { SolaraHosted?: { holdSidebarHover(windowId: string, held: boolean): Promise<void> } } } }).expo?.modules?.SolaraHosted;
+      return { ...hover, ...motion, holdHover: (held: boolean) => hosted?.holdSidebarHover(useSidebarUi.getState().hover?.windowId ?? "w1", held) };
     },
 
     get hoverShift(): typeof import("./hoverShift") {

@@ -365,7 +365,7 @@
         "bar": null,
         "folder:f2": null,
         "folder:new": null,
-        "close": null,
+        "close": {"name": "tabMenuSelection", "args": ["w1", ["a", "b", "c"], "close"]},
         "unknown": null
       }
     },
@@ -726,7 +726,7 @@
         "bar": null,
         "folder:f2": null,
         "folder:new": null,
-        "close": null,
+        "close": {"name": "tabMenuSelection", "args": ["w1", ["a", "b", "c"], "close"]},
         "unknown": null
       }
     },
@@ -1095,7 +1095,7 @@
         "bar": null,
         "folder:f2": null,
         "folder:new": null,
-        "close": null,
+        "close": {"name": "tabMenuSelection", "args": ["w1", ["a", "b", "c"], "close"]},
         "unknown": null
       }
     },
@@ -1460,7 +1460,7 @@
         "bar": null,
         "folder:f2": null,
         "folder:new": null,
-        "close": null,
+        "close": {"name": "tabMenuSelection", "args": ["w1", ["a", "b", "c"], "close"]},
         "unknown": null
       }
     },
@@ -1877,7 +1877,7 @@
         "bar": null,
         "folder:f2": null,
         "folder:new": null,
-        "close": null,
+        "close": {"name": "tabMenuSelection", "args": ["w1", ["a", "b", "c"], "close"]},
         "unknown": null
       }
     },
@@ -2312,7 +2312,7 @@
         "bar": null,
         "folder:f2": null,
         "folder:new": null,
-        "close": null,
+        "close": {"name": "tabMenuSelection", "args": ["w1", ["a", "b", "c"], "close"]},
         "unknown": null
       }
     },
@@ -2670,7 +2670,7 @@
         "bar": null,
         "folder:f2": null,
         "folder:new": null,
-        "close": null,
+        "close": {"name": "tabMenuSelection", "args": ["w1", ["a", "b", "c"], "close"]},
         "unknown": null
       }
     },
@@ -3039,7 +3039,7 @@
         "bar": null,
         "folder:f2": null,
         "folder:new": null,
-        "close": null,
+        "close": {"name": "tabMenuSelection", "args": ["w1", ["a", "b", "c"], "close"]},
         "unknown": null
       }
     },
@@ -3409,7 +3409,7 @@
         "bar": null,
         "folder:f2": null,
         "folder:new": null,
-        "close": null,
+        "close": {"name": "tabMenuSelection", "args": ["w1", ["a", "b", "c"], "close"]},
         "unknown": null
       }
     },
@@ -3778,7 +3778,7 @@
         "bar": null,
         "folder:f2": null,
         "folder:new": null,
-        "close": null,
+        "close": {"name": "tabMenuSelection", "args": ["w1", ["a", "b", "c"], "close"]},
         "unknown": null
       }
     },
@@ -4111,7 +4111,7 @@
         "bar": null,
         "folder:f2": null,
         "folder:new": null,
-        "close": null,
+        "close": {"name": "tabMenuSelection", "args": ["w1", ["a", "b", "c"], "close"]},
         "unknown": null
       }
     },
@@ -4587,7 +4587,7 @@
         "bar": null,
         "folder:f2": null,
         "folder:new": null,
-        "close": null,
+        "close": {"name": "tabMenuSelection", "args": ["w1", ["a", "b", "c"], "close"]},
         "unknown": null
       }
     }

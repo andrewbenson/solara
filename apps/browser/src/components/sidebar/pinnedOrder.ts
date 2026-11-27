@@ -98,5 +98,3 @@ export function keepLiveAnchors(s: BrowserState, prev: BrowserState) {
     arrangeIfChanged(liveAnchors(shown, (e) => e));
   }
 }
-
-useBrowser.subscribe(keepLiveAnchors);

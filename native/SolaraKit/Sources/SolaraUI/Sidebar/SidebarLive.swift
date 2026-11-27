@@ -38,9 +38,11 @@ public struct SidebarLive: Sendable, Equatable {
 
   public func sequence(_ pinned: [String], state browser: BrowserState, windowId: String, profileId: String) -> [String] {
     if browser.windows[windowId]?.incognito == true { return pinned }
-    let mine = folders(profileId: profileId)
+    return Self.interleave(pinned, keys: pinned.map { Self.anchorKey(browser, $0) }, folders: folders(profileId: profileId))
+  }
+
+  static func interleave(_ pinned: [String], keys: [String], folders mine: [LiveFolder]) -> [String] {
     if mine.isEmpty { return pinned }
-    let keys = pinned.map { Self.anchorKey(browser, $0) }
     let known = Set(keys)
     func at(_ after: String?) -> [String] {
       mine.filter { if case .some(let a) = $0.after { a == after } else { false } }.map { Self.prefix + $0.id }
@@ -58,6 +60,41 @@ public struct SidebarLive: Sendable, Equatable {
       }
     }
     return out
+  }
+
+  public func placements(_ sequence: [String], browser: BrowserState, windowId: String) -> [FolderPlacement] {
+    guard let window = browser.windows[windowId], !window.incognito else { return [] }
+    let pinned = Set(SidebarQuery(browser).entries(windowId: windowId, profileId: window.profileId).pinned)
+    let mine = Set(folders(profileId: window.profileId).map(\.id))
+    return Self.placements(sequence.filter { entry in
+      entry.hasPrefix(Self.prefix) ? mine.contains(String(entry.dropFirst(Self.prefix.count))) : pinned.contains(entry)
+    }) { Self.anchorKey(browser, $0) }
+  }
+
+  public func removedAnchorPlacements(before: BrowserState, after: BrowserState) -> [FolderPlacement] {
+    Set(state.folders.values.map(\.profileId)).sorted().flatMap { profileId -> [FolderPlacement] in
+      guard let change = SidebarPinnedOrder.anchorChanges(before: before, after: after, profileId: profileId) else { return [] }
+      let mine = folders(profileId: profileId)
+      guard mine.contains(where: { folder in
+        guard case .some(.some(let key)) = folder.after else { return false }
+        return change.ordered.contains(key) && !change.remaining.contains(key)
+      }) else { return [] }
+      let sequence = Self.interleave(change.ordered, keys: change.ordered, folders: mine)
+      return Self.placements(sequence.filter { $0.hasPrefix(Self.prefix) || change.remaining.contains($0) }) { $0 }
+    }
+  }
+
+  static func placements(_ sequence: [String], key: (String) -> String) -> [FolderPlacement] {
+    var anchor: String?
+    var placed: [FolderPlacement] = []
+    for entry in sequence {
+      if entry.hasPrefix(prefix) {
+        placed.append(FolderPlacement(id: String(entry.dropFirst(prefix.count)), after: anchor))
+      } else {
+        anchor = key(entry)
+      }
+    }
+    return placed
   }
 
   static func anchorKey(_ s: BrowserState, _ entry: String) -> String {

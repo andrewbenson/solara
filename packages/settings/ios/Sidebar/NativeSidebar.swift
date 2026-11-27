@@ -197,6 +197,8 @@ final class SidebarHost {
     guard !stopped else { return }
     stopped = true
     NativeWorkspaceRename.windowGone(windowId)
+    NativeSidebarHoverCard.dismiss(windowId)
+    NativeSidebarIconPicker.close(windowId)
     NativeTileFolders.hostStopped(windowId, page: view.current)
     commits.host = nil
     view.onAction = { _ in }
@@ -249,7 +251,7 @@ final class SidebarHost {
     self.state = state
     if !fedByShell, let input {
       let look = NativeLayoutAppearance(state: state, profileId: window.profileId, incognito: window.incognito)
-      hostState = presentation(state: state, window: window, look: look, addressBar: input.addressBar, renaming: input.renaming)
+      hostState = presentation(state: state, window: window, look: look, addressBar: input.addressBar)
     }
     guard var host = hostState else { return }
     if let renaming = NativeWorkspaceRename.override(windowId) { host.renaming = renaming }
@@ -261,9 +263,10 @@ final class SidebarHost {
       if let position = ACPager.snapshot(windowId)?["position"] as? Double { view.setPagerPosition(position) }
     }
     NativeTileFolders.render(windowId: windowId)
+    NativeSidebarHoverCard.refresh(windowId)
   }
 
-  func presentation(state: BrowserState, window: BrowserWindow, look: NativeLayoutAppearance, addressBar: Bool, renaming: String?) -> SidebarHostState {
+  func presentation(state: BrowserState, window: BrowserWindow, look: NativeLayoutAppearance, addressBar: Bool) -> SidebarHostState {
     let store = NativeStoreHandle.store
     var host: SidebarHostState
     if let rowProjection, rowProjection.matches(state, window: window, storeId: store.map(ObjectIdentifier.init)) {
@@ -276,7 +279,6 @@ final class SidebarHost {
     host.cleaned = WorkspaceCleanup.cleanedCount(state: state, windowId: windowId, now: Date().timeIntervalSince1970 * 1000)
     host.upsell = NativeSidebarMaintenance.suggestion(windowId: windowId, state: state)
     host.addressBar = addressBar
-    host.renaming = renaming
     host.applyRowPreferences(state: state, windowId: windowId)
     host.pip = window.tabIds.filter { NowPlayingStore.shared.pictureInPicture[$0] != nil }
     host.capture = NowPlayingStore.shared.capture
@@ -328,31 +330,32 @@ final class SidebarHost {
 
   private func handle(_ action: SidebarAction) {
     guard !stopped else { return }
+    if case .hover(let kind, let id) = action {
+      NativeSidebarHoverCard.row(windowId: windowId, kind: kind, id: id)
+      return
+    }
+    NativeSidebarHoverCard.dismiss(windowId)
     switch action {
     case .click(let tabId, let mods):
       if WorkspaceActionRouter.ownedClick(windowId: windowId, tabId: tabId, mods: mods) {
         FrameUpdates.flush()
         call("handled", tabId)
       } else if mods.none, activateWithoutSelection(tabId) {
-        call("clicked", tabId)
+        call("handled", tabId)
       } else {
         NSLog("[sidebar] click refused: native store unavailable, dispatch failed or target stale")
       }
     case .close(let tabId):
       if let owned = WorkspaceActionRouter.ownedClose(tabId: tabId, middle: false) {
         call("handled", tabId)
-        NativeWorkspaceCommands.runCloseRoute(owned.route, tabId: tabId, store: owned.store) { [weak self] cleared in
-          self?.call("removedPin", tabId, ["cleared": cleared])
-        }
+        NativeWorkspaceCommands.runCloseRoute(owned.route, tabId: tabId, store: owned.store)
       } else {
         NSLog("[sidebar] close refused: native store unavailable, dispatch failed or target stale")
       }
     case .middleClick(let tabId):
       if let owned = WorkspaceActionRouter.ownedClose(tabId: tabId, middle: true) {
         call("handled", tabId)
-        NativeWorkspaceCommands.runCloseRoute(owned.route, tabId: tabId, store: owned.store) { [weak self] cleared in
-          self?.call("removedPin", tabId, ["cleared": cleared])
-        }
+        NativeWorkspaceCommands.runCloseRoute(owned.route, tabId: tabId, store: owned.store)
       } else {
         NSLog("[sidebar] middleClick refused: native store unavailable, dispatch failed or target stale")
       }
@@ -366,29 +369,24 @@ final class SidebarHost {
       if NativeTabMenu.sidebarAction("toggleMute", tabId: tabId, windowId: windowId) { call("handled", tabId) } else { NSLog("[sidebar] toggleMute refused: native store unavailable, dispatch failed or target stale") }
     case .tabMenu(let tabId):
       if WorkspaceWrites.store != nil { call("handled", tabId) }
-      let opened = NativeTabMenu.open(tabId, windowId: windowId) { [weak self] id, choice, ids in
-        guard let self, !self.stopped else { return NSLog("[tabs] %@: its menu's %@ arrived after the host closed", id, choice) }
-        self.call(ids == nil ? "tabMenuChoice" : "tabMenuSelectionChoice", id, ["choice": choice, "ids": ids ?? []])
-      }
-      if !opened, NativeTabMenu.calendarMenuInJS(tabId, windowId: windowId) {
-        call("tabMenu", tabId)
-      } else if !opened {
+      let opened = NativeTabMenu.open(tabId, windowId: windowId)
+      if !opened {
         NSLog("[sidebar] tabMenu refused: native store unavailable, dispatch failed or target stale")
       }
     case .groupMenu(let groupId):
-      let opened = NativeGroupMenu.open(groupId, windowId: windowId) { [weak self] id, choice in
-        guard let self, !self.stopped else { return NSLog("[groups] %@: the %@ closed before its menu's %@ reached JS", id, "sidebar", choice) }
-        self.call("groupMenuChoice", id, ["choice": choice])
-      }
+      let opened = NativeGroupMenu.open(groupId, windowId: windowId)
       if !opened { NSLog("[sidebar] groupMenu refused: native store unavailable, dispatch failed or target stale") }
     case .toggleGroup(let groupId):
       if !NativeGroupActions.toggle(groupId, collapsed: { !$0.collapsed }) { NSLog("[sidebar] toggleGroup refused: native store unavailable, dispatch failed or target stale") }
     case .closeGroup(let groupId):
       if !NativeGroupActions.close(groupId) { NSLog("[sidebar] closeGroup refused: native store unavailable, dispatch failed or target stale") }
-    case .sidebarMenu: call("sidebarMenu", "")
-    case .overflowMenu: call("overflowMenu", "")
-    case .newTab(let split): call("newTab", "", ["split": split])
-    case .newTabDoubleClick: call("newTab", "", ["split": false])
+    case .sidebarMenu: NativeSidebarMenus.open(windowId: windowId, overflow: false)
+    case .overflowMenu: NativeSidebarMenus.open(windowId: windowId, overflow: true)
+    case .newTab(let split):
+      if split { call("newTab", "", ["split": true]) }
+      else { _ = NativeWorkspaceCommands.perform("newTab", windowId: windowId) }
+    case .newTabDoubleClick:
+      _ = NativeWorkspaceCommands.perform("newTab", windowId: windowId)
     case .folder(let folderId):
       if NativeTileFolders.toggle(windowId: windowId, folderId: folderId) { call("handled", folderId) } else { NSLog("[sidebar] folder refused: native store unavailable, dispatch failed or target stale") }
     case .folderMenu(let folderId):
@@ -398,12 +396,10 @@ final class SidebarHost {
         call("tidied", "", ["result": result.text()])
       }
     case .clear:
-      if let result = run("clearUnpinnedTabs", [.string(windowId)]) {
-        call("cleared", "", ["cleared": result.text()])
-      }
+      if let store = WorkspaceWrites.store { NativeSidebarUndo.clear(windowId: windowId, store: store) }
     case .cleanUp(let choice):
       NativeSidebarMaintenance.choose(choice, windowId: windowId)
-    case .hover(let kind, let id): call("hover", id ?? "", ["kind": kind ?? NSNull()])
+    case .hover: break
     case .scrolled:
       if NativeTileFolders.owned {
         NativeTileFolders.close(in: windowId)
@@ -420,7 +416,7 @@ final class SidebarHost {
       } else {
         NativeWorkspaceRename.end(windowId: windowId, id: id)
       }
-    case .live(let action, let folderId, let id, let meta): call("live", folderId, ["action": action, "item": id ?? NSNull(), "meta": meta])
+    case .live(let action, let folderId, let id, let meta): NativeSidebarLive.action(action, windowId: windowId, folderId: folderId, id: id, background: meta)
     case .media(let tabId, let action): NativeMediaStack.perform(windowId: windowId, tabId: tabId, action: action)
     }
   }
@@ -438,10 +434,13 @@ final class SidebarHost {
   }
 
   private func activateWithoutSelection(_ tabId: String) -> Bool {
-    guard let store = WorkspaceWrites.store,
+    guard let store = WorkspaceWrites.store, store.state.tabs[tabId]?.windowId == windowId,
       store.state.selection[windowId]?.ids.isEmpty != false else { return false }
     do {
-      _ = try store.dispatch(Command("activate", [.string(tabId)]), origin: .native)
+      try store.dispatch([
+        Command("activate", [.string(tabId)]),
+        Command("setSelectionAnchor", [.string(windowId), .string(tabId)]),
+      ], origin: .native)
       FrameUpdates.flush()
       return true
     } catch {
@@ -462,31 +461,179 @@ final class SidebarHost {
 
 @MainActor
 enum NativeSidebarLive {
-  static let topic = "sidebar.liveShowAll"
-  private static var observer: UUID?
   private static var revision: UInt64?
   private static var state: LiveState?
+  private static var calendar = CalendarData()
   private static var showAll: [String: Bool] = [:]
 
+  private static var ownershipListener: Int?
+  private static var storeListener: Int?
+  private static weak var orderStore: Store?
+  private static var orderState: BrowserState?
+
   static func start() {
-    guard observer == nil else { return }
-    observer = SettingsJS.shared.observe(topic) { value in applyShowAll(value) }
-    applyShowAll(SettingsJS.shared.latestValue(topic))
+    guard ownershipListener == nil else { return }
     _ = NativeLiveEngine.shared
+    ownershipListener = NativeStoreHandle.subscribeLifecycle { observeOrder() }
+    observeOrder()
   }
 
-  static func receive(_ state: LiveState, revision: UInt64) {
+  private static func observeOrder() {
+    let current = WorkspaceWrites.store
+    guard current !== orderStore else { return }
+    if let storeListener { orderStore?.unsubscribe(storeListener) }
+    orderStore = current
+    orderState = current?.state
+    storeListener = current?.subscribe { [weak current] commit in
+      let changes = commit.changes
+      guard !changes.windows.isEmpty || !changes.tabs.isEmpty || !changes.groups.isEmpty else { return }
+      Task { @MainActor in
+        guard let current, current === orderStore else { return }
+        let before = orderState
+        orderState = commit.state
+        if let before, let live = SidebarLiveFeed.shared.live {
+          arrange(live.removedAnchorPlacements(before: before, after: commit.state))
+        }
+      }
+    }
+  }
+
+  static func arrange(_ placed: [FolderPlacement]) {
+    guard !placed.isEmpty else { return }
+    perform(.arrangeFolders(.object(["placed": .array(placed.map {
+      .object(["id": .string($0.id), "after": $0.after.map(LiveAnyJSON.string) ?? .null])
+    })])))
+  }
+
+  static func receive(_ state: LiveState, calendar: CalendarData, revision: UInt64) {
     guard self.revision.map({ revision > $0 }) ?? true else { return }
     self.revision = revision
     self.state = state
+    self.calendar = calendar
     publish()
   }
 
-  private static func applyShowAll(_ value: Any?) {
-    let next = value as? [String: Bool] ?? [:]
-    guard showAll != next else { return }
-    showAll = next
+  static func calendarPreview(tabId: String, dark: Bool) -> String? {
+    guard state?.calendar.showPreview != false else { return nil }
+    let now = Date()
+    let time = now.timeIntervalSince1970 * 1000
+    let day = Foundation.Calendar.current.dateInterval(of: .day, for: now)
+    let start = (day?.start ?? now).timeIntervalSince1970 * 1000
+    let end = (day?.end ?? now).timeIntervalSince1970 * 1000
+    let today = calendar.events.filter { !$0.cancelled && !$0.declined && $0.start < end && $0.end > start }
+    let upcoming = today.filter { $0.end > time }
+    let formatter = DateFormatter()
+    formatter.setLocalizedDateFormatFromTemplate("EEE MMM d")
+    let body: String
+    if !calendar.connected { body = calendar.access == .denied || calendar.access == .restricted ? "denied" : "signIn" }
+    else if calendar.lastFetch == nil && calendar.loading { body = "loading" }
+    else if calendar.lastFetch == nil && calendar.error != nil { body = "error" }
+    else if today.isEmpty { body = "none" }
+    else { body = upcoming.isEmpty ? "noMore" : "events" }
+    func row(_ event: CalendarEvent) -> [String: Any] {
+      ["id": event.occurrence, "title": event.title.isEmpty ? "Untitled event" : event.title, "color": event.color]
+    }
+    let timed = upcoming.filter { !$0.allDay }.map { event -> [String: Any] in
+      var entry = row(event)
+      let running = event.start <= time
+      entry["time"] = Meetings.timeRange(start: event.start, end: event.end)
+      entry["running"] = running
+      entry["when"] = running ? "Now" : Meetings.relativeTime(event.start, now: time)
+      entry["past"] = false
+      entry["people"] = event.attendees.filter { !$0.me }.map { $0.name.isEmpty ? $0.email : $0.name }
+      if time >= event.start - 600_000, Meetings.isMeeting(event), let link = Meetings.joinLink(event) {
+        entry["joinTitle"] = Meetings.joinTitle(link.provider)
+      }
+      return entry
+    }
+    let content: [String: Any] = [
+      "card": "calendarPreview", "dark": dark, "nowColor": dark ? "#E5534B" : "#D1242F",
+      "product": Bundle.main.productName, "date": formatter.string(from: now), "tabId": tabId,
+      "connected": calendar.connected, "loading": calendar.loading, "body": body,
+      "allDay": upcoming.filter(\.allDay).map(row), "events": timed,
+    ]
+    return (try? JSONSerialization.data(withJSONObject: content)).map { String(decoding: $0, as: UTF8.self) }
+  }
+
+  static func joinCalendarEvent(_ id: String, windowId: String) {
+    guard let event = calendar.events.first(where: { $0.occurrence == id }), let link = Meetings.joinLink(event),
+      let store = WorkspaceWrites.store, store.state.windows[windowId]?.incognito == false else { return }
+    _ = try? store.dispatch(Command("newTab", [.string(windowId), ["url": .string(link.url)]]), origin: .native)
+    perform(.dismissAlert(.object(["occurrence": .string(id)])))
+    FrameUpdates.flush()
+  }
+
+  static func showMore(folderId: String, itemId: String) {
+    showAll["\(folderId):\(itemId)"] = true
     publish()
+  }
+
+  static func calendarMenu() -> TabMenuItem {
+    let settings = state?.calendar ?? .defaults
+    func calendars(_ owned: Bool) -> [TabMenuItem] {
+      let items = calendar.calendars.filter { $0.owned == owned }.map { item in
+        TabMenuItem(id: "cal:toggle:\(item.id)", title: item.title, checked: !settings.hiddenCalendarIds.contains(item.id), swatch: item.color)
+      }
+      guard !items.isEmpty else { return [] }
+      let title = TabMenuItem(title: owned ? "My Calendars" : "Other Calendars", enabled: false)
+      return (owned ? [] : [TabMenuItem(separator: true)]) + [title] + items
+    }
+    var items: [TabMenuItem] = calendar.connected ? [] : [
+      .init(id: "cal:connect", title: "Connect Calendar…", symbol: "calendar.badge.plus"), .init(separator: true),
+    ]
+    items += [
+      .init(id: "cal:alerts", title: "Show Next Meeting Alert", children: CalendarAlertLeads.options.map {
+        .init(id: "cal:lead:\($0.value)", title: $0.title, checked: settings.alertLead == $0.value)
+      }),
+      .init(id: "cal:preview", title: "Show Calendar Preview", checked: settings.showPreview),
+      .init(id: "cal:badge", title: "Show Time to Next Meeting", checked: settings.showTimeToNext),
+      .init(id: "cal:active", title: "Active Calendars", enabled: !calendar.calendars.isEmpty, children: calendars(true) + calendars(false)),
+      .init(separator: true),
+      .init(id: "cal:settings", title: "Calendar Settings…", symbol: "gearshape"),
+    ]
+    return .init(id: "cal", title: "Calendar", symbol: "calendar", children: items)
+  }
+
+  static func runCalendarChoice(_ choice: String, windowId: String) -> Bool {
+    guard choice.hasPrefix("cal:") else { return false }
+    let settings = state?.calendar ?? .defaults
+    switch choice {
+    case "cal:connect": perform(.connectCalendar(.object([:])))
+    case "cal:preview": calendarPatch(["showPreview": .bool(!settings.showPreview)])
+    case "cal:badge": calendarPatch(["showTimeToNext": .bool(!settings.showTimeToNext)])
+    case "cal:settings": openSettings("calendar")
+    default:
+      if choice.hasPrefix("cal:lead:") {
+        let value = String(choice.dropFirst(9))
+        if CalendarAlertLeads.options.contains(where: { $0.value == value }) { calendarPatch(["alertLead": .string(value)]) }
+      } else if choice.hasPrefix("cal:toggle:") {
+        let id = String(choice.dropFirst(11))
+        if calendar.calendars.contains(where: { $0.id == id }) {
+          perform(.setCalendarHidden(.object(["id": .string(id), "hidden": .bool(!settings.hiddenCalendarIds.contains(id))])))
+        }
+      }
+    }
+    return true
+  }
+
+  static func openSettings(_ pane: String) {
+    NativeSettingsWindow.navigate(pane: pane, profileId: nil, detail: nil)
+    WindowHost.openAuxiliary(id: NativeSettingsWindow.windowId, kind: "settings", title: "Settings")
+  }
+
+  private static func calendarPatch(_ patch: [String: LiveAnyJSON]) {
+    perform(.updateCalendarSettings(.object(["patch": .object(patch)])))
+  }
+
+  static func perform(_ command: LiveCommand, then followup: LiveCommand? = nil) {
+    Task { @MainActor in
+      do {
+        _ = try await NativeLiveEngine.shared.perform(command)
+        if let followup { _ = try await NativeLiveEngine.shared.perform(followup) }
+      } catch {
+        NSLog("[sidebar] Live action refused: %@", String(describing: error))
+      }
+    }
   }
 
   private static func publish() {

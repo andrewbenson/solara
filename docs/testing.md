@@ -850,3 +850,12 @@ with `SOLARA_NATIVE_WINDOW_LAYOUT=0` and `1`. For top-strip, use `--only=native`
 against API 103 and later. The Swift cases cover profile order and privacy, strip
 controls and live facts, in-flight paging, reorder cancellation and page identity
 through layout and fullscreen changes.
+
+
+## Sidebar menus and transient UI
+
+With native API 107, run sidebar-rename, hover-card, hover-shift, folder-panel,
+close-selection and close-recent in both window layouts, alongside sidebar-chrome,
+sidebar-rail, window-toolbar and windowing. Swift coverage checks window-scoped
+rename and folder dismissal, hover card actions and group membership, compound
+close and reopen, and Live folder placement when a pinned anchor leaves.

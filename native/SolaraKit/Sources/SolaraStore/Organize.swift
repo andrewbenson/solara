@@ -741,9 +741,17 @@ public enum WorkspaceCleanup {
       .cleanUpCandidates(state, windowId, cleanUpAfterMs).count
   }
 
-  public static func cleanedCount(state: BrowserState, windowId: String, now: Double) -> Int {
-    guard let window = state.windows[windowId] else { return 0 }
+  public static func cleanedEntries(state: BrowserState, windowId: String, now: Double) -> [ClosedTab] {
+    guard let window = state.windows[windowId] else { return [] }
     let entries = window.incognito ? state.privateCleanedTabs[windowId] ?? [] : state.cleanedTabs
-    return keptAWeek(entries, now, \.closedAt).count
+    return keptAWeek(entries, now, \.closedAt)
+  }
+
+  public static func deletedEntries(state: BrowserState, now: Double) -> [ClosedGroup] {
+    keptAWeek(state.deletedGroups, now, \.closedAt)
+  }
+
+  public static func cleanedCount(state: BrowserState, windowId: String, now: Double) -> Int {
+    cleanedEntries(state: state, windowId: windowId, now: now).count
   }
 }

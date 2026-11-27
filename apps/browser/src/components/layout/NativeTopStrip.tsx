@@ -1,10 +1,7 @@
 import { endTopStripIncoming, topStripIncoming, topStripPeek, topStripDownloadsAnchor } from "@solara/settings";
 import { useEffect, useRef } from "react";
 import { registerDownloadsAnchor } from "../Downloads";
-import { useBrowser } from "../../store/browser";
 import { addNativeSettingsHandlers } from "../settings/nativeSettings";
-import { openTabMenu, runGroupMenuChoice, runTabMenuChoice, runTabMenuSelectionChoice, showUndoToast } from "../sidebar/menus";
-import { toggleNewTabBar } from "../omnibox/newTabBar";
 import { openNewTabInSplit } from "./splitActions";
 import { EXTERNAL_DRAG, setInsert, setInsertResolver, useTabDrag } from "./tabDrag";
 import "./nativeTabDrag";
@@ -23,24 +20,11 @@ addNativeSettingsHandlers({
 });
 
 addNativeSettingsHandlers({
-  "topStrip.action": (windowId: string, name: string, id: string, extra: { meta?: boolean; shift?: boolean; alt?: boolean; collapse?: boolean; split?: boolean; cleared?: string; ids?: string[]; choice?: string }) => {
-    const s = useBrowser.getState();
+  "topStrip.action": (windowId: string, name: string, _id: string, extra: { split?: boolean }) => {
     switch (name) {
-      case "removedPin":
-        return extra.cleared ? showUndoToast(JSON.parse(extra.cleared), "Removed Pinned Tab", "pin.slash") : undefined;
-      case "tabMenu": {
-        const tab = s.tabs[id];
-        return tab ? void openTabMenu(windowId, tab) : undefined;
-      }
-      case "tabMenuSelectionChoice":
-        return runTabMenuSelectionChoice(windowId, extra.ids ?? [], extra.choice ?? "");
-      case "tabMenuChoice":
-        return runTabMenuChoice(windowId, id, extra.choice ?? "");
-      case "groupMenuChoice":
-        return runGroupMenuChoice(windowId, id, extra.choice ?? "");
       case "newTab":
         if (extra.split) return openNewTabInSplit(windowId);
-        return void (toggleNewTabBar(windowId) || s.newTab(windowId, { newTabCommand: true }));
+        return;
     }
   },
 });

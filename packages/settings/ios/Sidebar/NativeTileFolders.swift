@@ -10,8 +10,8 @@ enum NativeTileFolders {
   private static var shown: (windowId: String, page: Weak<SidebarView>, request: FolderPanelRequest)?
   private static var lifecycle: Int?
   private static var owner: ObjectIdentifier?
-  private static var sequence = 0
   #if DEBUG
+  private static var sequence = 0
   private(set) static var handled = 0
   #endif
 
@@ -22,6 +22,8 @@ enum NativeTileFolders {
   }
 
   static var owned: Bool { WorkspaceActionRouter.ownedStore != nil }
+
+  static func openFolder(_ windowId: String) -> String? { panel.folder(in: windowId) }
 
   @discardableResult
   static func toggle(windowId: String, folderId: String) -> Bool {
@@ -195,14 +197,8 @@ enum NativeTileFolders {
     case .tabMenu(let tabId):
       guard WorkspaceActionRouter.ownedStore?.state.tabs[tabId] != nil else { return }
       dismissHover(windowId)
-      let opened = NativeTabMenu.open(tabId, windowId: windowId) { id, choice, ids in
-        Task { @MainActor in _ = await SettingsAdapters.js("sidebar.action", windowId, ids == nil ? "tabMenuChoice" : "tabMenuSelectionChoice", id, ["choice": choice, "ids": ids ?? []]) }
-      }
-      if !opened, NativeTabMenu.calendarMenuInJS(tabId, windowId: windowId) {
-        Task { @MainActor in _ = await SettingsAdapters.js("sidebar.action", windowId, "tabMenu", tabId, [String: Any]()) }
-      } else if !opened {
-        NSLog("[sidebar] tabMenu refused: native store unavailable, dispatch failed or target stale")
-      }
+      let opened = NativeTabMenu.open(tabId, windowId: windowId)
+      if !opened { NSLog("[sidebar] folder tab menu refused") }
     case .folderMenu:
       folderMenu(windowId: windowId, folderId: folderId)
     case .outsidePress, .drag:
@@ -213,14 +209,16 @@ enum NativeTileFolders {
   private static func page(_ windowId: String) -> SidebarView? { NativeSidebar.hosts[windowId]?.view.current }
 
   private static func dismissHover(_ windowId: String) {
-    Task { @MainActor in _ = await SettingsAdapters.js("sidebar.action", windowId, "handled", "", [String: Any]()) }
+    NativeSidebarHoverCard.dismiss(windowId)
   }
 
   private static func mirror() {
+    #if DEBUG
     sequence += 1
     let seq = sequence
     let slot = panel.open
     Task { @MainActor in _ = await SettingsAdapters.js("folderPanel.state", slot?.windowId ?? "", slot?.folderId ?? "", seq) }
+    #endif
   }
 
   private static func ownershipChanged() {

@@ -59,7 +59,6 @@ public class HostedModule: Module {
           HostedViews.emit = { body in sink.module?.sendEvent("onHostedEvent", body) }
           NativeBookmarksBar.registerMenuSource()
           NativeStatusBubble.register(); NativeSidebar.register(); NativeDownloadMagnet.register(); NativeTabPickers.register()
-          NativeSidebarIconPicker.register()
           NativeToolTour.register()
           HostedPersonalize.register()
           HostedCheckInBanner.register()
@@ -189,6 +188,16 @@ public class HostedModule: Module {
     AsyncFunction("sidebarHoverCard") { (windowId: String) -> String in
       FrameUpdates.readOnMain { NativeSidebarHoverCard.describe(windowId) }
     }.runOnQueue(.main)
+
+    AsyncFunction("dismissSidebarHover") { (windowId: String?) in
+      FrameUpdates.readOnMain { NativeSidebarHoverCard.dismiss(windowId) }
+    }.runOnQueue(.main)
+
+    #if DEBUG
+    AsyncFunction("holdSidebarHover") { (windowId: String, held: Bool) in
+      FrameUpdates.readOnMain { NativeSidebarHoverCard.hold(windowId, held) }
+    }.runOnQueue(.main)
+    #endif
 
     AsyncFunction("sidebarIconPicker") { (windowId: String) -> String in
       FrameUpdates.readOnMain { NativeSidebarIconPicker.describe(windowId) }

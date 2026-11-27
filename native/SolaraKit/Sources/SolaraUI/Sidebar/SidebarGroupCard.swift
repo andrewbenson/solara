@@ -1,5 +1,6 @@
 import AppKit
 import QuartzCore
+import SolaraModel
 import SolaraOmnibox
 
 public struct SidebarGroupCardState: Decodable, Equatable, Sendable {
@@ -13,6 +14,31 @@ public struct SidebarGroupCardState: Decodable, Equatable, Sendable {
     public var profileId: String
     public var dimmed: Bool?
     public var engineSymbol: String?
+  }
+
+  public static func members(_ state: BrowserState, groupId: String, windowId: String) -> [Tab] {
+    guard let window = state.windows[windowId] else { return [] }
+    let children = Dictionary(grouping: state.groups.values.compactMap { group -> TabGroup? in
+      group.windowId == windowId && group.profileId == window.profileId && group.parentId != nil ? group : nil
+    }, by: { $0.parentId! })
+    var seenGroups: Set<String> = []
+    var seenTabs: Set<String> = []
+    var rows: [Tab] = []
+    func add(_ id: String) {
+      guard let group = state.groups[id], group.windowId == windowId, group.profileId == window.profileId,
+        seenGroups.insert(id).inserted else { return }
+      for tabId in group.tabIds {
+        if let tab = state.tabs[tabId], tab.windowId == windowId, tab.profileId == window.profileId,
+          seenTabs.insert(tabId).inserted { rows.append(tab) }
+      }
+      for child in children[id] ?? [] { add(child.id) }
+    }
+    add(groupId)
+    return rows.enumerated().sorted {
+      let first = $0.element.lastActiveAt
+      let second = $1.element.lastActiveAt
+      return first == second ? $0.offset < $1.offset : first > second
+    }.map(\.element)
   }
 
   public var groupId: String

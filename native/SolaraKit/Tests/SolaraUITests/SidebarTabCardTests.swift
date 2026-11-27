@@ -1,4 +1,5 @@
 import AppKit
+import SolaraModel
 import Testing
 
 @testable import SolaraUI
@@ -14,6 +15,15 @@ import Testing
                "tertiary": "#FFFFFF59", "hover": "rgba(255,255,255,0.1)", "pressed": "rgba(255,255,255,0.18)", "shadowOpacity": 0.5],
     ]
     return try #require(SidebarTabCardState.decode(value))
+  }
+
+  @Test func theNativeActionsFollowSelectionAndThePinnedPage() throws {
+    var tab = try Tab(value: ["id": "a", "windowId": "w", "url": "https://example.com/"])
+    #expect(SidebarTabCardState.actions(for: tab, active: false, bookmarked: false).map(\.action) == ["pin", "bookmark", "split"])
+    #expect(SidebarTabCardState.actions(for: tab, active: true, bookmarked: true).map(\.icon) == ["pin", "bookmark.fill"])
+    tab.pinned = true
+    tab.pinnedUrl = "https://example.com/home"
+    #expect(SidebarTabCardState.actions(for: tab, active: false, bookmarked: true).map(\.action) == ["pin", "bookmark", "back"])
   }
 
   private func glassViews(_ view: NSView) -> [NSGlassEffectView] {

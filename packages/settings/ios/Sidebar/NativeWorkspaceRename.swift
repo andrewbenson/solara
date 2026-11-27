@@ -26,11 +26,12 @@ enum NativeWorkspaceRename {
     guard let store = WorkspaceActionRouter.ownedStore,
       let route = WorkspaceActionRouter.renameRoute(store.state, windowId: windowId, kind: kind, id: id) else { return false }
     pruneStale()
+    NativeSidebarHoverCard.dismiss(windowId)
     switch route {
     case .tileSheet:
       guard let tab = store.state.tabs[id] else { return false }
       prompt("Rename Tab", value: tab.customTitle ?? tab.title, placeholder: tab.title.isEmpty ? "Tab name" : tab.title, windowId: windowId, store: store) { name in
-        guard WorkspaceActionRouter.ownedStore === store, store.state.tabs[id] != nil else { return }
+        guard WorkspaceActionRouter.ownedStore === store, store.state.tabs[id]?.windowId == windowId else { return }
         _ = try? store.dispatch(Command("updateTab", [.string(id), ["customTitle": .string(name)]]), origin: .native)
         FrameUpdates.flush()
       }
@@ -38,21 +39,26 @@ enum NativeWorkspaceRename {
     case .groupSheet:
       guard let group = store.state.groups[id] else { return false }
       prompt("Rename Group", value: group.name, placeholder: SidebarQuery(store.state).groupLabel(id), windowId: windowId, store: store) { name in
-        guard WorkspaceActionRouter.ownedStore === store, store.state.groups[id] != nil else { return }
+        guard WorkspaceActionRouter.ownedStore === store, store.state.groups[id]?.windowId == windowId else { return }
         _ = try? store.dispatch(Command("updateGroup", [.string(id), ["name": .string(name)]]), origin: .native)
         FrameUpdates.flush()
       }
       return true
     case .inline(let expand):
-      for groupId in expand { _ = try? store.dispatch(Command("updateGroup", [.string(groupId), ["collapsed": false]]), origin: .native) }
-      if !expand.isEmpty { FrameUpdates.flush() }
+      if !expand.isEmpty {
+        let commands = expand.map { Command("updateGroup", [.string($0), ["collapsed": false]]) }
+        guard (try? store.dispatch(commands, origin: .native)) != nil else { return false }
+        FrameUpdates.flush()
+      }
       publish(windowId, WorkspaceActionRouter.renameKey(kind, id))
       return true
     }
   }
 
   static func commit(windowId: String, kind: WorkspaceRenameKind, id: String, text: String) {
-    if let store = WorkspaceActionRouter.ownedStore, let command = WorkspaceActionRouter.renameCommand(store.state, kind: kind, id: id, text: text) {
+    if let store = WorkspaceActionRouter.ownedStore,
+      registry.key(windowId) == WorkspaceActionRouter.renameKey(kind, id), registry.live(windowId, state: store.state),
+      let command = WorkspaceActionRouter.renameCommand(store.state, kind: kind, id: id, text: text) {
       _ = try? store.dispatch(command, origin: .native)
       FrameUpdates.flush()
     }
@@ -80,12 +86,15 @@ enum NativeWorkspaceRename {
     var sequences: [String: Any] = [:]
     for windowId in registry.windowIds {
       sequences[windowId] = registry.set(windowId, nil)
+      NativeLayoutChrome.transientHold(windowId, reason: "sidebarRename", held: false)
       NativeSidebar.renameChanged(windowId)
       NativeLayoutChrome.renameChanged(windowId)
     }
+    #if DEBUG
     Task { @MainActor in
       _ = await SettingsAdapters.js("sidebar.action", "", "renameReset", "", ["windows": sequences])
     }
+    #endif
   }
 
   private static func pruneStale() {
@@ -98,21 +107,24 @@ enum NativeWorkspaceRename {
   }
 
   private static func notify(_ windowId: String, _ key: String?, _ sequence: Int) {
+    NativeLayoutChrome.transientHold(windowId, reason: "sidebarRename", held: key != nil)
     NativeSidebar.renameChanged(windowId)
     NativeLayoutChrome.renameChanged(windowId)
+    #if DEBUG
     let kind = key.flatMap(WorkspaceActionRouter.renameKind)
     let id = key.map(WorkspaceActionRouter.renameId) ?? ""
     Task { @MainActor in
       _ = await SettingsAdapters.js("sidebar.action", windowId, "renameState", id, ["kind": kind.map { $0.rawValue as Any } ?? NSNull(), "seq": sequence])
     }
+    #endif
   }
 
   static func prompt(
-    _ title: String, value: String, placeholder: String, windowId: String, store: Store, apply: @escaping @MainActor (String) -> Void
+    _ title: String, value: String, placeholder: String, windowId: String, store: Store, confirmTitle: String = "Update", apply: @escaping @MainActor (String) -> Void
   ) {
     let alert = NSAlert()
     alert.messageText = title
-    alert.addButton(withTitle: "Update")
+    alert.addButton(withTitle: confirmTitle)
     alert.addButton(withTitle: "Cancel")
     let field = NSTextField.solaraPromptField(value: value, placeholder: placeholder)
     alert.accessoryView = field

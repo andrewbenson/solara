@@ -34,7 +34,7 @@ public struct Command: Sendable, Equatable {
     "pageReport", "registerKeepAliveRuntime", "importWorkspace", "setWindowLayout", "setSidebarPosition",
     "setWindowSidebar", "newTab", "settleNewTab", "closeTab", "closeTabs", "activate", "activateNumberedTab",
     "switchPageEngine", "handOffPin", "activateIndex", "cycle", "navigate", "updateTab", "navigated", "faviconChanged",
-    "closeCommandTabs", "reopenCommandClosed", "restoreCommandWindow", "duplicateTab", "togglePin", "moveTab",
+    "closeCommandTabs", "openSidebarLiveItem", "reopenCommandClosed", "restoreCommandWindow", "duplicateTab", "togglePin", "moveTab",
     "moveTabBy", "createWindow", "closeWindow", "setChromeWindowClosePending", "commitChromeWindowClose", "restoreClosingWindow", "forgetClosedWindow", "setWindowKeptOnClose",
     "setWindowFrame", "setWindowFullScreen", "toggleSidebar",
     "switchProfile", "tabMenuSelection", "tabMenuMoveToWindow", "moveTabsToWindow", "moveTabToProfile", "mergeAllWindows", "reopenClosed", "reopenClosedTab", "reopenClosedWindow",
@@ -178,6 +178,17 @@ extension Session {
     case "settleNewTab": settleNewTab(try a.requireString(0))
     case "closeTab": closeTab(try a.requireString(0), successor: a.string(1).flatMap { $0.isEmpty ? nil : $0 })
     case "closeCommandTabs": closeCommandTabs(a.strings(0))
+    case "openSidebarLiveItem":
+      let windowId = try a.requireString(0)
+      guard state.windows[windowId]?.incognito == false else { break }
+      let folderId = try a.requireString(1)
+      let itemId = try a.requireString(2)
+      var options = NewTabOptions()
+      options.url = try a.requireString(3)
+      options.background = a.bool(4)
+      let id = newTab(windowId, options)
+      updateTab(id, TabUpdate(set: ["liveItem": ["folderId": .string(folderId), "itemId": .string(itemId)]]))
+      result = .string(id)
     case "reopenCommandClosed": reopenCommandClosed(a.string(0))
     case "restoreCommandWindow": result = JSONValue(restoreCommandWindow(try a.requireString(0), chromeWindow: try a.requireString(1), live: a[2]?.array ?? []))
     case "closeTabs":

@@ -444,29 +444,19 @@ final class TopStripHost {
       _ = dispatch("activate", tabId)
     case .close(let tabId):
       if let owned = WorkspaceActionRouter.ownedClose(tabId: tabId, middle: false) {
-        NativeWorkspaceCommands.runCloseRoute(owned.route, tabId: tabId, store: owned.store) { [weak self] cleared in
-          self?.call("removedPin", tabId, ["cleared": cleared])
-        }
+        NativeWorkspaceCommands.runCloseRoute(owned.route, tabId: tabId, store: owned.store)
       } else {
         NSLog("[strip] close refused: native store unavailable, dispatch failed or target stale")
       }
     case .toggleMute(let tabId):
       if !NativeTabMenu.sidebarAction("toggleMute", tabId: tabId, windowId: windowId) { NSLog("[strip] toggleMute refused: native store unavailable, dispatch failed or target stale") }
     case .tabMenu(let tabId):
-      let opened = NativeTabMenu.open(tabId, windowId: windowId) { [weak self] id, choice, ids in
-        guard let self, !self.stopped else { return NSLog("[tabs] %@: its menu's %@ arrived after the host closed", id, choice) }
-        self.call(ids == nil ? "tabMenuChoice" : "tabMenuSelectionChoice", id, ["choice": choice, "ids": ids ?? []])
-      }
-      if !opened, NativeTabMenu.calendarMenuInJS(tabId, windowId: windowId) {
-        call("tabMenu", tabId)
-      } else if !opened {
+      let opened = NativeTabMenu.open(tabId, windowId: windowId)
+      if !opened {
         NSLog("[strip] tabMenu refused: native store unavailable, dispatch failed or target stale")
       }
     case .groupMenu(let groupId):
-      let opened = NativeGroupMenu.open(groupId, windowId: windowId) { [weak self] id, choice in
-        guard let self, !self.stopped else { return NSLog("[groups] %@: the %@ closed before its menu's %@ reached JS", id, "strip", choice) }
-        self.call("groupMenuChoice", id, ["choice": choice])
-      }
+      let opened = NativeGroupMenu.open(groupId, windowId: windowId)
       if !opened { NSLog("[strip] groupMenu refused: native store unavailable, dispatch failed or target stale") }
     case .toggleGroup(let groupId, let collapse):
       if !NativeGroupActions.toggle(groupId, collapsed: { _ in collapse }) { NSLog("[strip] toggleGroup refused: native store unavailable, dispatch failed or target stale") }
@@ -480,7 +470,9 @@ final class TopStripHost {
       if !NativeTileFolders.stripTileMenu(windowId: windowId, folderId: folderId) { NSLog("[strip] tileFolder refused: native store unavailable, dispatch failed or target stale") }
     case .tileFolderMenu(let folderId):
       if !NativeTileFolders.folderMenu(windowId: windowId, folderId: folderId) { NSLog("[strip] tileFolderMenu refused: native store unavailable, dispatch failed or target stale") }
-    case .newTab(let split): call("newTab", "", ["split": split])
+    case .newTab(let split):
+      if split { call("newTab", "", ["split": true]) }
+      else { _ = NativeWorkspaceCommands.perform("newTab", windowId: windowId) }
     }
   }
 

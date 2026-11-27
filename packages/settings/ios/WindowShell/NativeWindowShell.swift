@@ -343,6 +343,7 @@ final class ShellHost {
     layoutStopped = true
     NativeTabPickers.windowEnded(shell.windowId, in: shell.overlay)
     NativeSidebarHoverCard.windowEnded(shell.windowId)
+    NativeSidebarIconPicker.close(shell.windowId)
     SidebarAddressBars.shared.removeNavigationView(shell.windowId)
     AutoHideHost.windowEnded(shell.windowId)
     for observer in fullscreenObservers { NotificationCenter.default.removeObserver(observer) }

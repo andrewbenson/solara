@@ -82,6 +82,16 @@ func pinnedAreaKeys(_ s: BrowserState, _ w: BrowserWindow, _ profileId: String) 
   pinnedBlocks(s, w, profileId).map(\.key)
 }
 
+public enum SidebarPinnedOrder {
+  public static func anchorChanges(before: BrowserState, after: BrowserState, profileId: String) -> (ordered: [String], remaining: Set<String>)? {
+    let session = Session(state: after, memory: StoreMemory(), env: PlainWebAddressing(), config: StoreConfig(), now: 0)
+    guard let windowId = session.mainWindowFor(after, profileId), let old = before.windows[windowId], let new = after.windows[windowId] else { return nil }
+    let ordered = pinnedAreaKeys(before, old, profileId)
+    let remaining = Set(pinnedAreaKeys(after, new, profileId))
+    return ordered.allSatisfy(remaining.contains) ? nil : (ordered, remaining)
+  }
+}
+
 func parkedAreaKeys(_ s: BrowserState, _ profileId: String) -> [String] {
   s.parkedPins[profileId].map { parkedBlocks($0).map(\.key) } ?? []
 }

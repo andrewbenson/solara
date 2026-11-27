@@ -17,7 +17,7 @@ import Testing
     return value
   }
 
-  @Test func sharedCasesMatchTheJavaScriptPlanner() throws {
+  @Test func tabMenusMatchTheSavedFixtures() throws {
     let cases = try Self.cases()
     #expect(cases.count >= 12)
     for fixture in cases {
@@ -30,7 +30,7 @@ import Testing
     }
   }
 
-  @Test func sharedMultiCasesMatchTheJavaScriptPlanner() throws {
+  @Test func selectionMenusAndCommandsMatchTheSavedFixtures() throws {
     let path = URL(fileURLWithPath: #filePath).deletingLastPathComponent().appendingPathComponent("Cases/multi-tab-menu.json")
     let cases = try #require(try JSONValue.parse(Data(contentsOf: path))["cases"]?.array)
     #expect(cases.count >= 12)
@@ -122,6 +122,35 @@ import Testing
       return snapshot
     }
     #expect(normalized(f.store.state) == normalized(expected.state))
+  }
+
+  @Test func selectedTabsCloseTogetherAndReopenInOneCommand() throws {
+    let f = try Self.fixture()
+    let survivor = try #require(try f.store.dispatch(Command("newTab", [.string(f.window), ["url": "https://survivor.example/"]])).result?.string)
+    let ids = JSONValue.array(f.ids.map(JSONValue.string))
+    try f.store.dispatch(Command("setSelection", [.string(f.window), ids]))
+    let before = f.store.state.viewTabIds(f.window).compactMap { f.store.state.tabs[$0]?.url }
+    let rev = f.store.deliveryCursor().committed
+    let command = try #require(TabMenuPlan.multiCommand("close", windowId: f.window, ids: f.ids, state: f.store.state))
+    try f.store.dispatch(command, origin: .native)
+    #expect(f.store.deliveryCursor().committed == rev + 1)
+    #expect(f.store.state.viewTabIds(f.window) == [survivor])
+    #expect(f.store.state.selection[f.window]?.ids.isEmpty != false)
+    #expect(f.store.state.closedTabs.count == f.ids.count)
+    try f.store.dispatch(Command("reopenCommandClosed", [.string(f.window)]), origin: .native)
+    let restored = f.store.state.viewTabIds(f.window)
+    #expect(restored.compactMap { f.store.state.tabs[$0]?.url } == before)
+    #expect(restored.last == survivor)
+    #expect(f.store.state.closedTabs.isEmpty)
+    #expect(f.store.deliveryCursor().committed == rev + 2)
+  }
+
+  @Test func aMenuCannotMoveTabsIntoAWindowThatBecamePrivate() throws {
+    let f = try Self.fixture()
+    let privateWindow = try #require(try f.store.dispatch(Command("createWindow", [["incognito": true]])).result?.string)
+    let choice = "window:\(privateWindow)"
+    #expect(TabMenuPlan.command(choice, windowId: f.window, tabId: f.ids[0], state: f.store.state) == nil)
+    #expect(TabMenuPlan.multiCommand(choice, windowId: f.window, ids: f.ids, state: f.store.state) == nil)
   }
 
   struct Fixture {
@@ -303,7 +332,7 @@ import Testing
     #expect(Self.snapshot(store.state) == saved)
   }
 
-  @Test func choicesNeedingJavaScriptUiKeepTheirFallback() throws {
+  @Test func choicesThatNeedHostActionsAreNotDirectStoreCommands() throws {
     let f = try Self.fixture()
     try f.store.dispatch(Command("updateSettings", [["warnBeforeMovingTabsToProfile": true]]))
     for choice in ["copy", "share:via:service", "rename", "icon", "editPin", "bookmark", "engine", "cal:settings", "newFolder", "leaveFolder", "profile:new", "profile:\(f.profile)", "close"] {

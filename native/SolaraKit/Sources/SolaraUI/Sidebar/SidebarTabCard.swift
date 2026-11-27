@@ -1,5 +1,7 @@
 import AppKit
 import QuartzCore
+import SolaraModel
+import SolaraStore
 
 public struct SidebarTabCardState: Decodable, Equatable, Sendable {
   public struct Button: Decodable, Equatable, Sendable {
@@ -14,6 +16,20 @@ public struct SidebarTabCardState: Decodable, Equatable, Sendable {
     }
 
     public static let sleepHeavy = Button(action: "sleepHeavy", icon: "moon.zzz", label: "Put to Sleep")
+  }
+
+  public static func actions(for tab: Tab, active: Bool, bookmarked: Bool) -> [Button] {
+    var actions = [Button(action: "pin", icon: tab.pinned ? "pin.slash" : "pin", label: tab.pinned ? "Unpin" : "Pin")]
+    if !tab.url.isEmpty {
+      actions.append(.init(action: "bookmark", icon: bookmarked ? "bookmark.fill" : "bookmark", label: bookmarked ? "Remove Bookmark" : "Bookmark"))
+    }
+    if !active && !tab.pinned {
+      actions.append(.init(action: "split", icon: "rectangle.split.2x1", label: "Open in Split View"))
+    }
+    if awayFromPin(tab) {
+      actions.append(.init(action: "back", icon: "arrow.uturn.backward", label: "Back to Pinned URL"))
+    }
+    return actions
   }
 
   @MainActor

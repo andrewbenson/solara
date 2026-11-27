@@ -94,9 +94,7 @@ public class SidebarDragModule: Module {
         if WorkspaceWrites.store != nil {
           Task { @MainActor in _ = await SettingsAdapters.js("sidebar.action", windowId, "handled", tabId, [String: Any]()) }
         }
-        return NativeTabMenu.open(tabId, windowId: windowId) { id, choice, ids in
-          Task { @MainActor in _ = await SettingsAdapters.js("sidebar.action", windowId, ids == nil ? "tabMenuChoice" : "tabMenuSelectionChoice", id, ["choice": choice, "ids": ids ?? []]) }
-        }
+        return NativeTabMenu.open(tabId, windowId: windowId)
       }
     }.runOnQueue(.main)
 
@@ -156,12 +154,11 @@ final class NativeSidebarDrag: SidebarDragBridge {
   }
 
   func drop(windowId: String, ids: [String], drop: JSONValue, sequence: [String]?) {
-    if let store = WorkspaceWrites.store {
-      _ = try? store.dispatch(Command("dropTabs", [JSONValue(ids), drop]), origin: .native)
-      FrameUpdates.flush()
-    }
-    if let sequence, sequence.contains(where: { $0.hasPrefix(SidebarLive.prefix) }) {
-      send("sidebar.drag.live", [sequence])
+    guard let store = WorkspaceWrites.store else { return }
+    guard (try? store.dispatch(Command("dropTabs", [JSONValue(ids), drop]), origin: .native)) != nil else { return }
+    FrameUpdates.flush()
+    if let sequence, sequence.contains(where: { $0.hasPrefix(SidebarLive.prefix) }), let live = SidebarLiveFeed.shared.live {
+      NativeSidebarLive.arrange(live.placements(sequence, browser: store.state, windowId: windowId))
     }
   }
 

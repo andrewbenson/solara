@@ -124,6 +124,27 @@ private func layout(_ state: BrowserState, _ liveState: LiveState) -> SidebarPag
     #expect(specs.map(\.tabId) == [nil])
   }
 
+  @Test func anUnpinnedAnchorMovesItsFolderToThePreviousPinnedRow() throws {
+    let pinned = #", "pinned": true, "pinnedAsRow": true"#
+    let before = try browser([tab("a", pinned), tab("b", pinned)].joined(separator: ","), ids: ["a", "b"], active: "a")
+    let after = try browser([tab("a", pinned), tab("b")].joined(separator: ","), ids: ["a", "b"], active: "a")
+    let sidebar = SidebarLive(state: live(items: [], after: #", "after": "t:b""#))
+    let expected = [FolderPlacement(id: "f1", after: "t:a")]
+    #expect(sidebar.removedAnchorPlacements(before: before, after: after) == expected)
+    #expect(sidebar.placements(["t:a", "t:b", "lf:f1"], browser: after, windowId: "w1") == expected)
+  }
+
+  @Test func livePinOrderRefusesPrivateAndForeignFolders() throws {
+    let pinned = #", "pinned": true, "pinnedAsRow": true"#
+    var state = try browser(tab("a", pinned), ids: ["a"], active: "a")
+    let sidebar = SidebarLive(state: live(items: []))
+    #expect(sidebar.placements(["lf:foreign", "lf:f1", "t:a"], browser: state, windowId: "w1") == [
+      FolderPlacement(id: "f1", after: nil),
+    ])
+    state.windows["w1"]?.incognito = true
+    #expect(sidebar.placements(["lf:f1", "t:a"], browser: state, windowId: "w1").isEmpty)
+  }
+
   @Test func foldersFollowTheirAnchor() throws {
     let state = try browser(
       [tab("p1", #", "pinned": true, "pinnedAsRow": true"#), tab("p2", #", "pinned": true, "pinnedAsRow": true"#)].joined(separator: ","),

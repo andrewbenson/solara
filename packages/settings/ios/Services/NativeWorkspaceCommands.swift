@@ -40,7 +40,7 @@ enum NativeWorkspaceCommands {
     NativePinnedPageCommands.start()
     ToolbarView.commandURLFocusAllowed = { NativeCommandBarFocus.developerAllowed($0, field: $1) }
     ToolbarView.commandURLDidFocus = { NativeCommandBarFocus.developerDidFocus($0, field: $1) }
-    for command in WorkspaceMenuCommand.commands.union(ViewMenuCommand.commands).union(PageMenuCommand.commands).union(FindMenuCommand.commands).union(BookmarkMenuCommand.commands).union(NativeBookmarkCommands.formCommands).union(CopyLinkCommand.commands).union(BrowserServiceCommand.commands).union(TabFocusCommand.commands).union(["togglePageEngine"]).union(PinnedPageCommand.commands).union(["focusCommandBar", "cast", "restoreArcFolders", "showHistory", "manageBookmarks"]) {
+    for command in WorkspaceMenuCommand.commands.union(ViewMenuCommand.commands).union(PageMenuCommand.commands).union(FindMenuCommand.commands).union(BookmarkMenuCommand.commands).union(NativeBookmarkCommands.formCommands).union(CopyLinkCommand.commands).union(BrowserServiceCommand.commands).union(TabFocusCommand.commands).union(["togglePageEngine"]).union(PinnedPageCommand.commands).union(NativeSidebarMenus.commands).union(["focusCommandBar", "cast", "restoreArcFolders", "showHistory", "manageBookmarks"]) {
       NativeMenuCommands.argumentHandlers[command] = { arg, windowId in perform(command, arg: arg, windowId: windowId) }
     }
     NativeMenuCommands.keepsMenuDispatch = ViewMenuCommand.commands.union(PageMenuCommand.commands).union(BookmarkMenuCommand.commands).union(NativeBookmarkCommands.formCommands).union(CopyLinkCommand.commands).union(BrowserServiceCommand.commands).union(TabFocusCommand.commands).union(["showHistory", "manageBookmarks"])
@@ -278,6 +278,7 @@ enum NativeWorkspaceCommands {
     if NativeBookmarkCommands.formCommands.contains(command) { return NativeBookmarkCommands.showForm(command, arg: arg, windowId: windowId) }
     if BookmarkMenuCommand.commands.contains(command) { return NativeBookmarkCommands.perform(command, arg: arg, windowId: windowId) }
     if CopyLinkCommand.commands.contains(command) { return NativeLinkCommands.perform(command, arg: arg, windowId: windowId) }
+    if NativeSidebarMenus.commands.contains(command) { return NativeSidebarMenus.perform(command, windowId: windowId) }
     if command == "focusCommandBar" { return NativeCommandBarFocus.perform(windowId: windowId) }
     if ["newTab", "findInPage", "closeTab", "closeWindow"].contains(command) { NativeCommandBarFocus.cancel(windowId: windowId) }
     if ViewMenuCommand.commands.contains(command) { return performView(command, arg: arg, windowId: windowId) }
@@ -455,7 +456,7 @@ enum NativeWorkspaceCommands {
     }
   }
 
-  private static func restoreContentFocus(windowId: String, store: Store, tabId: String? = nil, stopFinding: Bool = false) {
+  static func restoreContentFocus(windowId: String, store: Store, tabId: String? = nil, stopFinding: Bool = false) {
     #if SOLARA_PROBES
     let timing = NewTabMainThreadTiming.begin("focus.restore", windowId: windowId, tabId: tabId)
     defer { NewTabMainThreadTiming.end(timing) }
@@ -515,7 +516,7 @@ enum NativeWorkspaceCommands {
     return (try? store.dispatch(Command("createProfile", [["name": .string(field.stringValue.jsTrim())]]), origin: .native))?.result?.string
   }
 
-  private static func closeTabs(_ ids: [String], windowId: String, store: Store) {
+  static func closeTabs(_ ids: [String], windowId: String, store: Store) {
     guard !store.memory.closingWindows.contains(windowId), !pending.contains(windowId) else { return }
     let before = store.state
     guard before.windows[windowId] != nil else { return }
@@ -534,9 +535,11 @@ enum NativeWorkspaceCommands {
     let remaining = open.filter { current.tabs[$0]?.windowId == windowId }
     guard !remaining.isEmpty else { return }
     let stillCloses = WorkspaceClosePolicy.tabs(remaining, windowId: windowId, state: current, lastTabKeepsWindow: store.memory.lastTabKeepsWindow).closesWindow
-    _ = try? store.dispatch(Command("setSelection", [.string(windowId), []]), origin: .native)
     if closes && stillCloses { return animateClose(windowId, store: store) }
-    _ = try? store.dispatch(Command("closeCommandTabs", [.array(remaining.map(JSONValue.string))]), origin: .native)
+    _ = try? store.dispatch([
+      Command("setSelection", [.string(windowId), []]),
+      Command("closeCommandTabs", [JSONValue(remaining)]),
+    ], origin: .native)
     let closedPlaceholder = WorkspaceClosePolicy.removedPlaceholder(remaining, before: current, after: store.state)
     if closedPlaceholder {
       newTabFocus[windowId] = nil
@@ -557,7 +560,7 @@ enum NativeWorkspaceCommands {
     }
   }
 
-  static func runCloseRoute(_ route: WorkspaceCloseRoute, tabId: String, store: Store, removedPin: (String) -> Void) {
+  static func runCloseRoute(_ route: WorkspaceCloseRoute, tabId: String, store: Store) {
     switch route {
     case .unload(let ids):
       _ = try? store.dispatch(Command("closeTabs", [.array(ids.map(JSONValue.string))]), origin: .native)
@@ -568,7 +571,7 @@ enum NativeWorkspaceCommands {
       let removed = (try? store.dispatch(Command("removeClosedPin", [.string(tabId)]), origin: .native))?.result ?? .null
       if removed.isNull { return closeFromControl(tabId, store: store) }
       FrameUpdates.flush()
-      if removed["entries"]?.array?.isEmpty == false { removedPin(removed.text()) }
+      NativeSidebarUndo.show(removed, title: "Removed Pinned Tab", icon: "pin.slash", store: store)
     }
   }
 
@@ -674,6 +677,50 @@ enum NativeWorkspaceCommands {
   private static func settleSheet(_ windowId: String) {
     pending.remove(windowId)
     if let observer = sheetWindowObservers.removeValue(forKey: windowId) { NotificationCenter.default.removeObserver(observer) }
+  }
+
+  static func moveFromSidebar(_ tabId: String, windowId: String, target: String, store: Store) {
+    guard let tab = store.state.tabs[tabId], tab.windowId == windowId, !Ids.isIncognitoProfile(tab.profileId) else { return }
+    if target == "new" {
+      Task { @MainActor [weak store] in
+        guard let store, let profile = await SettingsAdapters.js("sidebar.profileForm", windowId) as? String,
+          WorkspaceWrites.store === store else { return }
+        moveFromSidebar(tabId, windowId: windowId, target: profile, store: store)
+      }
+      return
+    }
+    let profile = target
+    guard store.state.profiles[profile] != nil else { return }
+    let finish: @MainActor @Sendable () -> Void = {
+      guard store.state.tabs[tabId]?.windowId == windowId else { return }
+      finishMovingToProfile(tabId, target: profile, store: store)
+    }
+    if store.state.settings.bool("warnBeforeMovingTabsToProfile"), store.state.engineProfile(tab.profileId) != store.state.engineProfile(profile) {
+      let alert = confirmAlert("Move Tab to Profile?", message: "Moving tabs between profiles could result in some data being lost.", button: "Move Tab", suppression: "Don't warn me again")
+      askGuarded(alert, windowId: windowId, setting: "warnBeforeMovingTabsToProfile", store: store, then: finish)
+    } else { finish() }
+  }
+
+  static func newTabInGroup(_ groupId: String, windowId: String, store: Store) {
+    guard store.state.groups[groupId]?.windowId == windowId else { return }
+    let command: Command
+    if GroupMenu.newTabOpensBar(store.state, windowId: windowId) {
+      if store.state.windowUi[windowId]?.json["panel"]?["newTab"]?.truthy == true {
+        _ = try? store.dispatch(Command("closePanel", [.string(windowId)]), origin: .native)
+        FrameUpdates.flush()
+        restoreContentFocus(windowId: windowId, store: store)
+        return
+      }
+      let generation = WindowHost.beginCommandFocus("newTab", windowId: windowId)
+      if let generation { requestPanelFocus(windowId: windowId, tabId: store.state.activeTabId(windowId), generation: generation) }
+      command = Command("openPanel", [.string(windowId), "", ["kind": "group", "groupId": .string(groupId)]])
+    } else {
+      command = Command("newTabInGroup", [.string(groupId)])
+    }
+    if let id = (try? store.dispatch(command, origin: .native))?.result?.string, !id.isEmpty {
+      _ = try? store.dispatch(Command("activate", [.string(id)]), origin: .native)
+    }
+    FrameUpdates.flush()
   }
 
   private static func finishMovingToProfile(_ tabId: String, target: String, store: Store) {

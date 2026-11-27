@@ -58,6 +58,17 @@ import Testing
     (view as? T).map { [$0] } ?? view.subviews.flatMap { all(type, in: $0) }
   }
 
+  @Test func dismissingAWindowFolderPanelLeavesTheOtherWindowAlone() throws {
+    var panel = TileFolderPanelState()
+    panel.opened(windowId: "w", folderId: "pinned", state: try state())
+    let closedOther = panel.close(in: "other")
+    #expect(!closedOther)
+    #expect(panel.folder(in: "w") == "pinned")
+    let closedOwner = panel.close(in: "w")
+    #expect(closedOwner)
+    #expect(panel.folder(in: "w") == nil)
+  }
+
   @Test func railTabRenameUsesTheInlineRenameCallback() throws {
     let (window, sidebar) = try mounted(renaming: "tab:t1")
     defer { close(window, sidebar: sidebar) }

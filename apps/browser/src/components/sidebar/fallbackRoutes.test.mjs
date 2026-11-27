@@ -4,9 +4,9 @@ import { test } from "node:test";
 import ts from "typescript";
 
 const routes = [
-  ["./NativeSidebar.tsx", "sidebar.action", ["click", "close", "middleClick", "rename", "backToPinned", "tileDoubleClick", "toggleMute", "groupMenu", "toggleGroup", "closeGroup", "folder", "folderMenu", "scrolled", "renamed", "tidy", "clear", "cleanUp"], ["handled", "clicked", "removedPin", "tabMenu", "tabMenuChoice", "tabMenuSelectionChoice", "groupMenuChoice", "sidebarMenu", "overflowMenu", "newTab", "tidied", "cleared", "live"]],
-  ["../layout/NativeTopStrip.tsx", "topStrip.action", ["click", "activate", "close", "toggleMute", "groupMenu", "toggleGroup", "closeGroup", "tuck", "folderMenu", "tileFolder", "tileFolderMenu"], ["removedPin", "tabMenu", "tabMenuChoice", "tabMenuSelectionChoice", "groupMenuChoice", "newTab"]],
-  ["./NativeSidebar.tsx", "SHELL_TOPIC", ["drop", "toggleDownloads", "commitWidth", "iconsOnly"], ["profileMenu", "manageProfiles", "liveWidth"]],
+  ["./NativeSidebar.tsx", "sidebar.action", ["click", "close", "middleClick", "rename", "backToPinned", "tileDoubleClick", "toggleMute", "groupMenu", "toggleGroup", "closeGroup", "folder", "folderMenu", "scrolled", "renamed", "tidy", "clear", "cleanUp", "tabMenu", "tabMenuChoice", "tabMenuSelectionChoice", "groupMenuChoice", "sidebarMenu", "overflowMenu", "live", "removedPin", "cleared", "clicked"], ["handled", "newTab", "tidied"]],
+  ["../layout/NativeTopStrip.tsx", "topStrip.action", ["click", "activate", "close", "toggleMute", "groupMenu", "toggleGroup", "closeGroup", "tuck", "folderMenu", "tileFolder", "tileFolderMenu", "tabMenu", "tabMenuChoice", "tabMenuSelectionChoice", "groupMenuChoice", "removedPin"], ["newTab"]],
+  ["./NativeSidebar.tsx", "SHELL_TOPIC", ["drop", "toggleDownloads", "commitWidth", "iconsOnly", "profileMenu", "manageProfiles"], ["liveWidth"]],
   ["../layout/NativeTopStrip.tsx", "topStrip.peek.action", ["drop", "profileMenu", "toggleDownloads"], ["live"]],
 ];
 

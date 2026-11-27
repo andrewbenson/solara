@@ -149,3 +149,118 @@ enum NativeBookmarkCommands {
     return true
   }
 }
+
+extension NativeBookmarkCommands {
+  private static var filingGroups: Set<String> = []
+
+  static func fileTabs(_ ids: [String], folder: String, windowId: String, store: Store) {
+    guard let window = store.state.windows[windowId] else { return }
+    let profile = store.state.bookmarkProfileId(window)
+    func file(_ name: String?) {
+      guard WorkspaceWrites.store === store, store.state.windows[windowId]?.profileId == window.profileId,
+        ids.allSatisfy({ store.state.tabs[$0]?.windowId == windowId }) else { return }
+      let pages = ids.compactMap { store.state.tabs[$0] }.filter { !$0.url.isEmpty }
+      let mutations: [BookmarkMutation]
+      if let name {
+        let children: [JSONValue] = pages.map { ["title": .string(title($0)), "url": .string($0.url)] }
+        mutations = [BookmarkMutation(method: "addBookmarkTree", args: [.string(profile), [["title": .string(name), "children": .array(children)]]])]
+      } else {
+        mutations = pages.map {
+          BookmarkMutation(method: "addBookmark", args: [[
+            "profileId": .string(profile), "title": .string(title($0)), "url": .string($0.url),
+            "favicon": $0.favicon.map(JSONValue.string) ?? .null, "parentId": folder == "bar" ? .null : .string(folder),
+          ]])
+        }
+      }
+      guard !mutations.isEmpty else { return }
+      Task { @MainActor in
+        do {
+          guard WorkspaceWrites.store === store, let owner = NativeBookmarkOwner.writableCurrent else { return }
+          let binding = try owner.binding(profile: profile)
+          if name == nil, folder != "bar" {
+            let snapshot = try owner.snapshot(profile: profile)
+            guard snapshot.document["nodes"]?[folder]?["kind"]?.string == "folder" else { return }
+          }
+          let receipt = try await owner.submitAsync(profile: profile, mutations: mutations, binding: binding)
+          if name != nil { try await restoreIcons(pages.map(\.favicon), receipt: receipt, owner: owner, profile: profile, binding: binding) }
+        } catch { failed(error, windowId: windowId) }
+      }
+    }
+    if folder == "new" {
+      NativeWorkspaceRename.prompt("New Folder", value: "", placeholder: "Folder name", windowId: windowId, store: store, confirmTitle: "Create") { file($0) }
+    } else { file(nil) }
+  }
+
+  static func fileGroup(_ id: String, windowId: String, store: Store) {
+    let state = store.state
+    guard let window = state.windows[windowId], let group = state.groups[id], group.windowId == windowId,
+      let owner = NativeBookmarkOwner.writableCurrent, filingGroups.insert(id).inserted else { return }
+    let profile = state.bookmarkProfileId(window)
+    let original = groupTree(group, state: state)
+    Task { @MainActor in
+      defer { filingGroups.remove(id) }
+      do {
+        guard WorkspaceWrites.store === store, NativeBookmarkOwner.writableCurrent === owner else { return }
+        let binding = try owner.binding(profile: profile)
+        let mutation = BookmarkMutation(method: "addBookmarkTree", args: [.string(profile), [original.draft]])
+        let receipt = try await owner.submitAsync(profile: profile, mutations: [mutation], binding: binding)
+        if WorkspaceWrites.store === store, let current = store.state.groups[id], current.windowId == windowId,
+          groupTree(current, state: store.state).members == original.members {
+          _ = try? store.dispatch(Command("closeGroup", [.string(id)]), origin: .native)
+          FrameUpdates.flush()
+        }
+        try await restoreIcons(original.icons, receipt: receipt, owner: owner, profile: profile, binding: binding)
+      } catch { failed(error, windowId: windowId) }
+    }
+  }
+
+  private static func title(_ tab: Tab) -> String {
+    if let custom = tab.customTitle, !custom.isEmpty { return custom }
+    return tab.title.isEmpty ? TabMenuPlan.tabLabel(tab) : tab.title
+  }
+
+  private static func groupTree(_ group: TabGroup, state: BrowserState) -> (draft: JSONValue, members: [String], icons: [String?]) {
+    let nested = state.groups.values.filter { $0.parentId == group.id }
+    var seen: Set<String> = []
+    var members = [group.id]
+    var children: [JSONValue] = []
+    var icons: [String?] = []
+    for id in group.tabIds {
+      if let child = nested.first(where: { $0.tabIds.contains(id) }) {
+        if seen.insert(child.id).inserted {
+          let branch = groupTree(child, state: state)
+          children.append(branch.draft)
+          members += branch.members
+          icons += branch.icons
+        }
+      } else if let tab = state.tabs[id] {
+        members += [tab.id, tab.url]
+        if !tab.url.isEmpty {
+          children.append(["title": .string(title(tab)), "url": .string(tab.url)])
+          icons.append(tab.favicon)
+        }
+      }
+    }
+    return (["title": .string(SidebarQuery(state).groupLabel(group.id)), "children": .array(children)], members, icons)
+  }
+
+  private static func restoreIcons(_ icons: [String?], receipt: BookmarkReceipt, owner: NativeBookmarkOwner,
+    profile: String, binding: BookmarkWriterBinding) async throws
+  {
+    let nodes = receipt.view.document["nodes"]
+    func links(_ id: String) -> [String] {
+      guard let node = nodes?[id] else { return [] }
+      return node["kind"]?.string == "url" ? [id] : (node["children"]?.array ?? []).compactMap(\.string).flatMap(links)
+    }
+    let ids = (receipt.results.first?.array ?? []).compactMap(\.string).flatMap(links)
+    let updates = zip(ids, icons).compactMap { id, icon in
+      icon.map { BookmarkMutation(method: "updateBookmark", args: [.string(id), ["favicon": .string($0)]]) }
+    }
+    if !updates.isEmpty { _ = try await owner.submitAsync(profile: profile, mutations: updates, binding: binding) }
+  }
+
+  private static func failed(_ error: Error, windowId: String) {
+    NSLog("[sidebar] Bookmark save failed: %@", String(describing: error))
+    if let host = WindowHost.contentView(windowId) { LinkToast.show(in: host, title: "Bookmark not saved") }
+  }
+}

@@ -5,6 +5,7 @@ const { live, createFolder, removeFolder, updateFolder } = await import("../live
 const order = await import("../components/sidebar/pinnedOrder.ts");
 
 const S = () => useBrowser.getState();
+useBrowser.subscribe(order.keepLiveAnchors);
 const host = (id) => new URL(S().tabs[id].url).hostname.replace(".example", "");
 
 function start(...names) {

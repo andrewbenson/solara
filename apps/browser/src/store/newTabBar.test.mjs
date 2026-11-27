@@ -3,17 +3,14 @@ import { test } from "node:test";
 const { useBrowser } = await import("./browser.ts");
 const model = await import("./model.ts");
 const { closeNewTabBar, openFromNewTabBar, toggleNewTabBar } = await import("../components/omnibox/newTabBar.ts");
-const { togglePinnedRows, forgetListSpots } = await import("../components/sidebar/movePinned.ts");
 
 const S = () => useBrowser.getState();
 const reset = (newTabOpens = "page") => {
   S().hydrate({});
   S().updateSettings({ newTabOpens, newTabPosition: "bottom", cmdClickCreatesTabGroup: false });
-  forgetListSpots();
 };
 const urlOf = (id) => S().tabs[id]?.url;
 const list = (w) => S().windows[w].tabIds.filter((id) => !S().tabs[id].pinned).map(urlOf);
-const rows = (w) => S().windows[w].tabIds.filter((id) => model.isPinnedRow(S().tabs[id])).map(urlOf);
 const panel = (w) => S().windowUi[w]?.panel ?? { open: false };
 
 function windowWith(...hosts) {
@@ -108,87 +105,6 @@ test("closing the last tab leaves an empty window whose pick fills it; ⌘W ther
   assert.equal(S().windows[w], undefined);
 });
 
-test("Move to Pinned: a tab goes to the pinned rows and back to where it was, in its group", () => {
-  reset();
-  const { w, ids: [a, b, c, d] } = windowWith("a", "b", "c", "d");
-  const group = S().groupTabs([b, c], { pinned: false });
-  S().activate(c);
-  togglePinnedRows(w);
-  assert.deepEqual(rows(w), ["https://c.com/"]);
-  assert.deepEqual(list(w), ["https://a.com/", "https://b.com/", "https://d.com/"]);
-  togglePinnedRows(w);
-  assert.deepEqual(rows(w), []);
-  assert.deepEqual(list(w), ["https://a.com/", "https://b.com/", "https://c.com/", "https://d.com/"]);
-  assert.deepEqual(S().groups[group].tabIds, [b, c]);
-
-  S().activate(d);
-  togglePinnedRows(w);
-  togglePinnedRows(w);
-  assert.deepEqual(list(w), ["https://a.com/", "https://b.com/", "https://c.com/", "https://d.com/"], "the last tab goes back last");
-});
-
-test("Move to Pinned on a selection, and on a tile", () => {
-  reset();
-  const { w, ids: [a, b, c] } = windowWith("a", "b", "c");
-  S().activate(a);
-  S().setSelection(w, [a, c]);
-  togglePinnedRows(w);
-  assert.deepEqual(rows(w), ["https://a.com/", "https://c.com/"]);
-  S().activate(a);
-  S().setSelection(w, [a, c]);
-  togglePinnedRows(w);
-  assert.deepEqual(rows(w), []);
-  assert.deepEqual(list(w), ["https://a.com/", "https://b.com/", "https://c.com/"]);
-
-  S().pinTabs([b], true);
-  S().activate(b);
-  S().setSelection(w, []);
-  togglePinnedRows(w);
-  assert.equal(S().tabs[b].pinned, false, "a tile is unpinned, not made a row");
-  assert.deepEqual(rows(w), []);
-});
-
-test("Move to Pinned: neighbours pinned together come back in their order", () => {
-  reset();
-  const { w, ids: [a, b, c, d] } = windowWith("a", "b", "c", "d");
-  S().activate(b);
-  S().setSelection(w, [b, c]);
-  togglePinnedRows(w);
-  assert.deepEqual(rows(w), ["https://b.com/", "https://c.com/"]);
-  S().activate(b);
-  S().setSelection(w, [b, c]);
-  togglePinnedRows(w);
-  assert.deepEqual(list(w), ["https://a.com/", "https://b.com/", "https://c.com/", "https://d.com/"]);
-  S().activate(c);
-  S().setSelection(w, [c]);
-  togglePinnedRows(w);
-  S().activate(b);
-  S().setSelection(w, [b]);
-  togglePinnedRows(w);
-  S().activate(c);
-  S().setSelection(w, [c]);
-  togglePinnedRows(w);
-  S().activate(b);
-  S().setSelection(w, [b]);
-  togglePinnedRows(w);
-  assert.deepEqual(list(w), ["https://a.com/", "https://b.com/", "https://c.com/", "https://d.com/"], "one at a time, either order");
-});
-
-test("Move out of Pinned from another window puts the first window's tab back where it was", () => {
-  reset();
-  const { w, ids: [a, b, c] } = windowWith("a", "b", "c");
-  S().activate(b);
-  togglePinnedRows(w);
-  const w2 = S().createWindow({ url: "https://other.com/" });
-  const copy = S().windows[w2].tabIds.find((id) => S().tabs[id].pinnedAsRow);
-  assert.ok(copy, "the row is mirrored into the second window");
-  S().activate(copy);
-  togglePinnedRows(w2);
-  assert.equal(S().tabs[b].pinned, false);
-  assert.deepEqual(list(w), ["https://a.com/", "https://b.com/", "https://c.com/"]);
-  assert.deepEqual(rows(w2), []);
-});
-
 test("a blank pinned tab is never the empty card a pick fills", () => {
   reset("commandBar");
   const { w, ids: [a] } = windowWith("a");
@@ -200,29 +116,4 @@ test("a blank pinned tab is never the empty card a pick fills", () => {
   openFromNewTabBar(w, panel(w).newTab, "https://new.com/");
   assert.equal(S().tabs[blank].url, "");
   assert.equal(S().tabs[blank].pinned, true);
-});
-
-test("Move out of Pinned: two tabs pinned one after the other, unpinned together, keep their order", () => {
-  reset();
-  const { w, ids: [a, b, c, d] } = windowWith("a", "b", "c", "d");
-  for (const id of [b, c]) {
-    S().activate(id);
-    S().setSelection(w, [id]);
-    togglePinnedRows(w);
-  }
-  assert.deepEqual(rows(w), ["https://b.com/", "https://c.com/"]);
-  S().activate(b);
-  S().setSelection(w, [b, c]);
-  togglePinnedRows(w);
-  assert.deepEqual(list(w), ["https://a.com/", "https://b.com/", "https://c.com/", "https://d.com/"]);
-
-  for (const id of [c, b]) {
-    S().activate(id);
-    S().setSelection(w, [id]);
-    togglePinnedRows(w);
-  }
-  S().activate(c);
-  S().setSelection(w, [b, c]);
-  togglePinnedRows(w);
-  assert.deepEqual(list(w), ["https://a.com/", "https://b.com/", "https://c.com/", "https://d.com/"], "pinned in the other order");
 });

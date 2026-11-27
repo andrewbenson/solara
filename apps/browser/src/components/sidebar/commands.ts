@@ -1,47 +1,13 @@
 import type { BrowserCommand, MenuEntry } from "@solara/shell";
-import { useBrowser, type BrowserState } from "../../store/browser";
-import { activeTabId, pinSection, plural } from "../../store/model";
-import { groupOf, selectedTabIds } from "../../store/organize";
-import { newGroupWithSelection, openIconPicker, startRename } from "./actions";
-import { closeAllTabs } from "./menus";
-import { toggleNewTabBar } from "../omnibox/newTabBar";
-import { movePinnedTitle, togglePinnedRows } from "./movePinned";
+import type { BrowserState } from "../../store/browser";
+import { activeTabId, pinSection, pinnedSectionTitle, plural } from "../../store/model";
+import { selectedTabIds } from "../../store/organize";
 import { tidyPins } from "./tidyPinsUi";
 
-export function runSidebarCommand(command: BrowserCommand, arg: string | null, windowId: string): boolean {
-  const s = useBrowser.getState();
-  const tabId = activeTabId(s, windowId);
-  switch (command) {
-    case "newTabInGroup": {
-      const group = groupOf(s, tabId);
-      if (toggleNewTabBar(windowId, group ? { kind: "group", groupId: group.id } : undefined)) return true;
-      const id = group ? s.newTabInGroup(group.id) : s.newTab(windowId, { newTabCommand: true });
-      if (id) useBrowser.getState().activate(id);
-      return true;
-    }
-    case "newGroupWithTabs":
-      newGroupWithSelection(windowId);
-      return true;
-    case "cleanUpTabs":
-      s.cleanUpTabs(windowId);
-      return true;
-    case "closeAllTabs":
-      closeAllTabs(windowId);
-      return true;
-    case "tidyPins":
-      tidyPins(windowId);
-      return true;
-    case "renameTab":
-      if (tabId) void startRename(windowId, { kind: "tab", id: tabId });
-      return true;
-    case "changeTabIcon":
-      if (tabId) void openIconPicker(windowId, { kind: "tab", id: tabId });
-      return true;
-    case "togglePinnedRow":
-      togglePinnedRows(windowId);
-      return true;
-  }
-  return false;
+export function runSidebarCommand(command: BrowserCommand, _arg: string | null, windowId: string): boolean {
+  if (command !== "tidyPins") return false;
+  tidyPins(windowId);
+  return true;
 }
 
 export function sidebarMenuState(s: BrowserState, windowId: string | undefined) {
@@ -49,7 +15,7 @@ export function sidebarMenuState(s: BrowserState, windowId: string | undefined) 
   const titles: Record<string, string> = {};
   const tab = windowId ? s.tabs[activeTabId(s, windowId) ?? ""] : undefined;
   if (windowId) {
-    titles.togglePinnedRow = movePinnedTitle(s, tab);
+    titles.togglePinnedRow = tab?.pinned ? "Move out of Pinned" : `Move to ${pinnedSectionTitle(s, tab)}`;
     const selected = selectedTabIds(s, windowId).filter((id) => pinSection(s.tabs[id]) !== "tile");
     if (!selected.length) disabled.push("newGroupWithTabs");
     if (selected.length > 1) titles.newGroupWithTabs = `New Group with ${plural(selected.length, "Tab")}`;

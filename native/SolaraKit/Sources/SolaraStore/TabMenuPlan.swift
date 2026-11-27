@@ -62,7 +62,7 @@ public enum TabMenuPlan {
     guard let tab = state.tabs[tabId], let window = state.windows[windowId], tab.windowId == windowId else { return nil }
     let selected = state.viewTabIds(windowId).filter { state.selection[windowId]?.ids.contains($0) == true }
     if selected.count > 1, selected.contains(tabId) { return nil }
-    let calendar = tab.pinned && isCalendarUrl(tab.pinnedUrl ?? tab.url)
+    let calendar = !window.incognito && tab.pinned && isCalendarUrl(tab.pinnedUrl ?? tab.url)
     if calendar, calendarItem == nil { return nil }
     let session = Session(state: state, memory: StoreMemory(), env: PlainWebAddressing(), config: StoreConfig(), now: 0)
     let list = state.viewTabIds(windowId).filter { !state.inPinnedContainer($0) }
@@ -75,7 +75,7 @@ public enum TabMenuPlan {
     let group = Groups.innermostGroupOf(state.groups, tabId)
     let split = Splits.splitOf(state, tabId)
     let splitRow = Splits.splitRowPanes(state, split).contains(tabId)
-    let incognito = Ids.isIncognitoProfile(tab.profileId)
+    let incognito = window.incognito || Ids.isIncognitoProfile(tab.profileId)
     let across = (window.tabLayout ?? state.settings.string("tabLayout")) == "top"
     let away = !(tab.pinnedUrl ?? "").isEmpty && !tab.url.isEmpty && !samePage(tab.url, tab.pinnedUrl ?? "")
     let groups = state.groups.values.filter { $0.windowId == windowId && $0.profileId == window.profileId && $0.id != group?.id }.map { g in
@@ -156,7 +156,7 @@ public enum TabMenuPlan {
     let n = ids.count
     let allPinned = tabs.allSatisfy(\.pinned)
     let allTiles = tabs.allSatisfy { $0.pinSection == .tile }
-    let incognito = tabs.contains { Ids.isIncognitoProfile($0.profileId) }
+    let incognito = window.incognito || tabs.contains { Ids.isIncognitoProfile($0.profileId) }
     let session = Session(state: state, memory: StoreMemory(), env: PlainWebAddressing(), config: StoreConfig(), now: 0)
     let groups = state.groups.values.filter { $0.windowId == windowId && $0.profileId == window.profileId }.map { group in
       TabMenuItem(id: "group:\(group.id)", title: Groups.groupPath(state.groups, group.id).compactMap { state.groups[$0] }.map { session.groupLabel(state, $0) }.joined(separator: " › "), symbol: group.pinned ? "pin" : "square.on.square")
@@ -194,7 +194,7 @@ public enum TabMenuPlan {
   public static func multiCommand(_ choice: String, windowId: String, ids: [String], state: BrowserState) -> Command? {
     let tabs = ids.compactMap { state.tabs[$0] }
     guard !tabs.isEmpty, tabs.count == ids.count, tabs.allSatisfy({ $0.windowId == windowId }), let window = state.windows[windowId] else { return nil }
-    var handled = ["pin", "pinRows", "duplicate", "ungroup"].contains(choice)
+    var handled = ["pin", "pinRows", "duplicate", "ungroup", "close"].contains(choice)
     if choice == "newGroup" { handled = tabs.contains { $0.pinSection != .tile } }
     if choice.hasPrefix("group:") {
       let group = state.groups[String(choice.dropFirst(6))]
@@ -202,13 +202,13 @@ public enum TabMenuPlan {
     }
     if choice.hasPrefix("window:") {
       let target = String(choice.dropFirst(7))
-      handled = !tabs.contains { Ids.isIncognitoProfile($0.profileId) } && (target == "new" || state.windows[target] != nil)
+      handled = !window.incognito && !tabs.contains { Ids.isIncognitoProfile($0.profileId) } && canMoveToWindow(target, from: windowId, state: state)
     }
     return handled ? Command("tabMenuSelection", [.string(windowId), .array(ids.map(JSONValue.string)), .string(choice)]) : nil
   }
 
   public static func command(_ choice: String, windowId: String, tabId: String, state: BrowserState) -> Command? {
-    guard let tab = state.tabs[tabId], tab.windowId == windowId else { return nil }
+    guard let tab = state.tabs[tabId], tab.windowId == windowId, let window = state.windows[windowId] else { return nil }
     let id = JSONValue.string(tabId)
     let ids: JSONValue = [id]
     switch choice {
@@ -230,24 +230,30 @@ public enum TabMenuPlan {
       let index = list.firstIndex(of: tabId) ?? -1
       let picked = choice == "closeOthers" ? list.filter { $0 != tabId } : state.inPinnedContainer(tabId) ? []
         : Array(choice == "closeAbove" ? Session.jsSlice(list, 0, index) : Session.jsSlice(list, index + 1))
-      return Command("closeTabs", [.array(picked.map(JSONValue.string))])
+      return Command("closeCommandTabs", [.array(picked.map(JSONValue.string))])
     default:
       if choice.hasPrefix("group:") {
         return Command("placeTabs", [ids, ["pinned": false, "groupId": .string(String(choice.dropFirst(6)))]])
       }
       if choice.hasPrefix("profile:") {
         let target = String(choice.dropFirst(8))
-        guard target != "new", state.profiles[target] != nil, !Ids.isIncognitoProfile(tab.profileId),
+        guard target != "new", state.profiles[target] != nil, !window.incognito, !Ids.isIncognitoProfile(tab.profileId),
           !state.settings.bool("warnBeforeMovingTabsToProfile") || state.engineProfile(tab.profileId) == state.engineProfile(target) else { return nil }
         return Command("moveTabToProfile", [id, .string(target)])
       }
       if choice.hasPrefix("window:") {
         let target = String(choice.dropFirst(7))
-        guard !Ids.isIncognitoProfile(tab.profileId), target == "new" || state.windows[target] != nil else { return nil }
+        guard !window.incognito, !Ids.isIncognitoProfile(tab.profileId), canMoveToWindow(target, from: windowId, state: state) else { return nil }
         return Command("tabMenuMoveToWindow", [id, target == "new" ? .null : .string(target)])
       }
       return nil
     }
+  }
+
+  private static func canMoveToWindow(_ target: String, from source: String, state: BrowserState) -> Bool {
+    if target == "new" { return true }
+    guard target != source, let window = state.windows[target] else { return false }
+    return !window.incognito && !window.isSmall
   }
 
   static func matches(_ text: String, _ expression: String) -> Bool {
@@ -266,7 +272,7 @@ public enum TabMenuPlan {
     return ["www.icloud.com", "icloud.com"].contains(host) && path.hasPrefix("/calendar")
   }
 
-  static func tabLabel(_ tab: Tab) -> String {
+  public static func tabLabel(_ tab: Tab) -> String {
     if let custom = tab.customTitle, !custom.isEmpty { return custom }
     if tab.url.isEmpty { return "New Tab" }
     if let app = appUrlOrigin(tab.url) { return app }
@@ -301,6 +307,7 @@ extension Session {
       case "duplicate": for id in ids { _ = duplicateTab(id) }
       case "newGroup": result = groupTabs(ids.filter { state.tabs[$0]?.pinSection != .tile }, pinned: true, name: nil)
       case "ungroup": removeTabsFromGroup(ids)
+      case "close": closeCommandTabs(ids)
       default:
         if choice.hasPrefix("group:") {
           placeTabs(ids, TabPlacement(json: ["pinned": false, "groupId": .string(String(choice.dropFirst(6)))]))

@@ -53,12 +53,12 @@ extension WorkspaceActionRouter {
   public static func renameRoute(_ state: BrowserState, windowId: String, kind: WorkspaceRenameKind, id: String) -> WorkspaceRenameRoute? {
     switch kind {
     case .tab:
-      guard let tab = state.tabs[id] else { return nil }
+      guard let tab = state.tabs[id], tab.windowId == windowId else { return nil }
       if tab.pinned && tab.pinnedAsRow != true { return .tileSheet }
       guard let group = Groups.innermostGroupOf(state.groups, id), state.activeTabId(windowId) != id else { return .inline(expand: []) }
       return .inline(expand: ([group.id] + Groups.ancestorIds(state.groups, group.id)).filter { state.groups[$0]?.collapsed == true })
     case .group:
-      guard state.groups[id] != nil else { return nil }
+      guard state.groups[id]?.windowId == windowId else { return nil }
       return sidebarShows(state, windowId: windowId) ? .inline(expand: []) : .groupSheet
     }
   }
@@ -117,7 +117,7 @@ public struct WorkspaceRenameRegistry: Equatable, Sendable {
   public func live(_ windowId: String, state: BrowserState) -> Bool {
     guard state.windows[windowId] != nil, let key = keys[windowId], let kind = WorkspaceActionRouter.renameKind(key) else { return false }
     let id = WorkspaceActionRouter.renameId(key)
-    return kind == .tab ? state.tabs[id] != nil : state.groups[id] != nil
+    return kind == .tab ? state.tabs[id]?.windowId == windowId : state.groups[id]?.windowId == windowId
   }
 
   public func stale(_ state: BrowserState) -> [String] { windowIds.filter { !live($0, state: state) } }

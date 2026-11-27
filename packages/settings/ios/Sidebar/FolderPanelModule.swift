@@ -19,6 +19,11 @@ public class FolderPanelModule: Module {
       }
     }.runOnQueue(.main)
 
+    Function("closeInWindow") { (windowId: String) -> Bool in
+      if Thread.isMainThread { return FrameUpdates.readOnMain { NativeTileFolders.close(in: windowId) } }
+      return DispatchQueue.main.sync { FrameUpdates.readOnMain { NativeTileFolders.close(in: windowId) } }
+    }
+
     AsyncFunction("folderMenu") { (windowId: String, folderId: String) -> Bool in
       FrameUpdates.readOnMain { NativeTileFolders.folderMenu(windowId: windowId, folderId: folderId) }
     }.runOnQueue(.main)

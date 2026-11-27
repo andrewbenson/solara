@@ -74,8 +74,8 @@ public protocol CalendarServices: AnyObject {
   func openCalendarPrivacySettings()
 }
 
-enum CalendarAlertLeads {
-  static let options: [SettingOption] = [
+public enum CalendarAlertLeads {
+  public static let options: [SettingOption] = [
     SettingOption("never", "Never"),
     SettingOption("start", "At Meeting Start", separatorBefore: true),
     SettingOption("1", "One Minute Before"),

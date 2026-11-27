@@ -41,16 +41,9 @@ async function fixture(kind) {
     "./layout/windowLayout": { useTabLayout: () => "sidebar", useAddressBarInSidebar: () => false, SIDEBAR_FOOTER_DOWNLOADS: { bottom: 6, size: 34 } },
     "./profiles/ProfileDots": { useProfileDotsShown: () => false, PROFILE_DOTS_HEIGHT: 20 },
     "./layout/controls": { PANEL: { inset: 8, separatorGap: 4, rowHeight: 24 } },
-    "./effects": { startSidebarEffects() {} },
+    "../../live": { startLive() {} },
   };
-  for (const [path, name] of [
-    ["./HoverCard", "HoverCard"], ["../live/MeetingAlert", "MeetingAlert"],
-  ]) modules[path] = { [name]: leaf(name) };
-  const NativeIconPicker = leaf("NativeIconPicker");
-  modules["./IconPicker"] = { IconPicker: (value) => {
-    leaf("IconPicker")(value);
-    return react.createElement(NativeIconPicker, value);
-  } };
+  modules["../live/MeetingAlert"] = { MeetingAlert: leaf("MeetingAlert") };
   const exports = {};
   const source = readFileSync(new URL(kind === "sidebar" ? "./sidebar/Overlays.tsx" : "./Downloads.tsx", import.meta.url), "utf8");
   const code = ts.transpileModule(source, { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022, jsx: ts.JsxEmit.ReactJSX } }).outputText;
@@ -93,6 +86,7 @@ async function fixture(kind) {
   assert.deepEqual(errors, []);
   return {
     renders, props,
+    hasLayout: () => !!onLayout,
     async layout(width, height, x = 0, y = 0) {
       onLayout({ nativeEvent: { layout: { width, height, x, y } } });
       await settle();
@@ -105,21 +99,23 @@ async function fixture(kind) {
   };
 }
 
-for (const kind of ["sidebar", "download"]) {
-  test(`${kind} overlay ignores repeated bounds and origin-only layouts`, async () => {
-    const f = await fixture(kind);
-    try {
-      await f.layout(1000, 700);
-      const before = { ...f.renders };
-      for (const name of kind === "sidebar" ? ["SidebarOverlays", "HoverCard", "MeetingAlert", "IconPicker", "NativeIconPicker"] : ["DownloadMagnet"]) assert.equal(before[name], 2);
-      for (const [x, y] of [[0, 0], [12, 8], [0, 0]]) await f.layout(1000, 700, x, y);
-      assert.deepEqual(f.renders, before);
-      await f.layout(1024, 720);
-      for (const [name, count] of Object.entries(before)) assert.equal(f.renders[name], count + 1);
-      if (kind === "sidebar") {
-        assert.equal(f.props.HoverCard.width, 1024);
-        assert.equal(f.props.HoverCard.height, 720);
-      }
-    } finally { f.stop(); }
-  });
-}
+test("sidebar overlay leaves layout to its native presenters", async () => {
+  const f = await fixture("sidebar");
+  try {
+    assert.equal(f.hasLayout(), false);
+    assert.equal(f.renders.MeetingAlert, 1);
+  } finally { f.stop(); }
+});
+
+test("download overlay ignores repeated bounds and origin-only layouts", async () => {
+  const f = await fixture("download");
+  try {
+    await f.layout(1000, 700);
+    const before = { ...f.renders };
+    assert.equal(before.DownloadMagnet, 2);
+    for (const [x, y] of [[0, 0], [12, 8], [0, 0]]) await f.layout(1000, 700, x, y);
+    assert.deepEqual(f.renders, before);
+    await f.layout(1024, 720);
+    for (const [name, count] of Object.entries(before)) assert.equal(f.renders[name], count + 1);
+  } finally { f.stop(); }
+});

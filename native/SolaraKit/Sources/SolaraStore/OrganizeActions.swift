@@ -1,5 +1,15 @@
 import SolaraModel
 
+extension Store {
+  public func canUndoSidebarClear(_ cleared: JSONValue) -> Bool {
+    sequence {
+      let current = state
+      let session = Session(state: current, memory: memory, env: PlainWebAddressing(), config: StoreConfig(), now: 0)
+      return session.canUndoClear(current, cleared)
+    }
+  }
+}
+
 extension Session {
   public func createGroup(_ tabIds: [String], name: String?, icon: String??, color: String??) -> String {
     let s = state

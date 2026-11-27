@@ -1,4 +1,5 @@
 import AppKit
+import SolaraModel
 import Testing
 
 @testable import SolaraUI
@@ -11,6 +12,18 @@ import Testing
       SidebarGroupCardState.Row(id: "t\(i)", title: title, url: "https://\(title.lowercased()).example/", usedAt: now - Double(i) * 120_000, favicon: nil, icon: nil, profileId: "p")
     }
     return SidebarGroupCardState(groupId: "g", rows: rows, anchor: [8, 100, 184, 34], windowHeight: 800, dark: true, theme: [:])
+  }
+
+  @Test func nativeMembersIncludeNestedTabsOnceAndOnlyFromTheCurrentWindow() throws {
+    let state = try BrowserState(stateJSON: JSONValue.parse(#"""
+      {"windows":{"w":{"id":"w","profileId":"p"}},
+       "groups":{"g":{"id":"g","windowId":"w","profileId":"p","tabIds":["a","foreign"]},
+                 "child":{"id":"child","parentId":"g","windowId":"w","profileId":"p","tabIds":["a","b"]}},
+       "tabs":{"a":{"id":"a","windowId":"w","profileId":"p","lastActiveAt":1},
+               "b":{"id":"b","windowId":"w","profileId":"p","lastActiveAt":2},
+               "foreign":{"id":"foreign","windowId":"other","profileId":"p","lastActiveAt":3}}}
+      """#).object ?? [:])
+    #expect(SidebarGroupCardState.members(state, groupId: "g", windowId: "w").map(\.id) == ["b", "a"])
   }
 
   @Test func theHeightCountsUpToSevenRows() {

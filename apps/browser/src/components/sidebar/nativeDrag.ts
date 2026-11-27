@@ -3,7 +3,6 @@ import { requireOptionalNativeModule } from "expo-modules-core";
 import type { TabPlacement } from "../../store/organize";
 import { addNativeSettingsHandlers } from "../settings/nativeSettings";
 import "../layout/nativeTabDrag";
-import { arrangeLive } from "./pinnedOrder";
 import { mirrorFolderPanel } from "./tileFolderUi";
 
 type Frame = { x: number; y: number; w: number; h: number };
@@ -49,7 +48,6 @@ type DragModule = {
 const native = requireOptionalNativeModule<DragModule>("SolaraSidebarDrag");
 
 addNativeSettingsHandlers({
-  "sidebar.drag.live": (sequence: string[]) => arrangeLive(sequence),
   "sidebar.drag.escape": (on: boolean) => setDragEscapeCapture(on),
   "sidebar.drag.haptic": () => hapticTick(),
   "folderPanel.state": (windowId: string, folderId: string, seq: number) => mirrorFolderPanel(windowId, folderId, seq),

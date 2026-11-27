@@ -30,7 +30,6 @@ public struct SidebarPageLook: Decodable, Equatable, Sendable {
 
 public struct SidebarPresentationInput: Decodable, Sendable {
   public let addressBar: Bool
-  public let renaming: String?
 
   public static func decode(_ json: String) -> SidebarPresentationInput? {
     try? JSONDecoder().decode(Self.self, from: Data(json.utf8))

@@ -2452,9 +2452,6 @@ export function startSync(host?: PairingNative) {
       doc: () => doc,
       native: SyncNative,
       sealing: sealingPasswords,
-      get menu(): typeof import("./menu") {
-        return require("./menu");
-      },
     };
   }
 }

@@ -1,3 +1,4 @@
+import assert from "node:assert/strict";
 import { mkdtempSync, rmSync } from "node:fs";
 import { createServer } from "node:http";
 import { tmpdir } from "node:os";
@@ -12,9 +13,7 @@ if (!appArg) {
 
 The back button's history popover on a tab that went ONE, TWO, THREE on local pages, under RN's shell (RN hosting
 the native panel) and then the native one (SOLARA_NATIVE_SHELL=1: HistoryPanelView's PopoverView in the pane overlay
-container on top of the shell's card, framed to the page area RN measures). The native card sits where the hosted
-one is told to (300 wide, 8 from the page's top, the left RN works out from the back button's anchor), lists TWO and
-ONE and fades in; a click on ONE through the window goes back two entries and closes it; reopened, a click on the
+container on top of the shell's card, framed to the page area RN measures). Each native card is 300 wide, is anchored to the back button in its pane, and lists TWO and ONE in order. The fallback layout uses the hosted placement. The native layout opens the card with a right-click on its real Back button; a click on ONE through the window goes back two entries and closes it; reopened, a click on the
 page outside the card closes it without navigating.`);
   process.exit(2);
 }
@@ -47,6 +46,7 @@ const measure = (fiber) => new Promise((r) => { const n = hostOf(fiber); return 
 const act = (n, a) => C.devWindow(n, a);
 const click = (n, p) => act(n, "mouse:moved:" + p[0] + "," + p[1]).then(() => settle(60))
   .then(() => act(n, "mouse:down:" + p[0] + "," + p[1])).then(() => settle(60)).then(() => act(n, "mouse:up:" + p[0] + "," + p[1]));
+const anchors = () => globalThis.expo.modules.SolaraWindowShell.layoutAnchors("w1").then(JSON.parse).then((batch) => batch?.anchors);
 const native = () => M && M.describePaneOverlays ? M.describePaneOverlays("w1").then(JSON.parse) : Promise.resolve(null);
 `;
 let app = null;
@@ -74,6 +74,9 @@ const untilSnapshot = async (what, accept, ms = 5000) => {
 };
 const near = (a, b) => a && b && a.length === b.length && a.every((v, i) => Math.abs(v - b[i]) <= 0.5);
 const centre = (f) => [Math.round(f[0] + f[2] / 2), Math.round(f[1] + f[3] / 2)];
+const historyOverlay = (state) => state.windows.find((w) => w.id === "w1")?.overlays?.find((o) => o.kind === "history" && o.tabId === "a");
+const historyShown = `return native().then((d) => !d?.tabs?.a?.history?.hidden && d?.tabs?.a?.history?.opacity === 1 ? d : null);`;
+const historyGone = `return native().then((d) => !d?.tabs?.a?.history || null);`;
 const seen = {};
 
 try {
@@ -91,26 +94,43 @@ try {
       await until(`page ${page}`, `return title() === ${JSON.stringify(page.toUpperCase())} || null;`, 15000);
     }
     await sleep(500);
-    const openMenu = () => run(`return globalThis.acSwipe.history.open("a", -1).then(() => !!menu());`);
+    const nativeLayout = await run(`return globalThis.expo.modules.SolaraWindowShell.nativeLayout("w1");`);
+    if (!nativeShell || process.env.SOLARA_NATIVE_WINDOW_LAYOUT === "0") assert.equal(nativeLayout, false);
+    else if (process.env.SOLARA_NATIVE_WINDOW_LAYOUT === "1") assert.equal(nativeLayout, true);
+    const navigationAnchors = () => until("Back and page anchors", `return anchors().then((a) => a?.["button:back"] && a["page:a"] ? a : null);`);
+    const openMenu = async () => {
+      if (nativeLayout) {
+        const anchor = (await navigationAnchors())["button:back"];
+        await run(`return act(${number}, "click:${centre(anchor).join(",")},right");`);
+      } else if (!(await run(`return globalThis.acSwipe.history.open("a", -1).then(() => !!menu());`))) {
+        throw new Error("no back history");
+      }
+    };
 
     await rep.check(`${tag}-opens`, async () => {
-      if (!(await openMenu())) throw new Error("no back history");
-      const area = await until("the popover's area", `const [f] = fibers("HistoryPopover"); return f ? measure(f) : null;`);
+      await openMenu();
+      const area = nativeLayout ? (await navigationAnchors())["page:a"]
+        : await until("the popover's area", `const [f] = fibers("HistoryPopover"); return f ? measure(f) : null;`);
       if (!nativeShell) {
         const hosted = await until("the hosted panel", `const f = acPerf.findFibers("NativePanelView", 50).find((p) => p.memoizedProps.kind === "history"); return f ? JSON.parse(f.memoizedProps.state) : null;`);
+        assert.deepEqual(hosted.items.map((i) => i.title), ["TWO", "ONE"]);
         seen.rn = { area, popover: hosted.popover, titles: hosted.items.map((i) => i.title) };
         return seen.rn;
       }
-      const d = await until("the native history popover", `return native().then((d) => d && d.tabs.a && d.tabs.a.history && d.tabs.a.history.opacity === 1 ? d : null);`, 3000);
-      if (!d.top || !d.inCard) throw new Error(`the overlay container is not the card's top child: ${JSON.stringify(d)}`);
+      const d = await until("the native history popover", historyShown, 3000);
+      if (!nativeLayout && (!d.top || !d.inCard)) throw new Error(`the overlay container is not the card's top child: ${JSON.stringify(d)}`);
       const h = d.tabs.a.history;
       const rn = seen.rn;
-      if (!near(area, rn.area) || !near(h.frame, rn.area)) throw new Error(`page area ${h.frame} (RN measures ${area}), RN's shell ${rn.area}`);
-      const want = [rn.area[0] + rn.popover.left, rn.area[1] + rn.popover.top, rn.popover.width];
-      if (!near(h.card.slice(0, 3), want) || !(h.card[3] > 0)) throw new Error(`card ${h.card}, the hosted panel is placed at ${want}`);
-      for (const t of rn.titles) if (!h.controls[t]) throw new Error(`no row ${t} in ${Object.keys(h.controls)}`);
-      const snapshot = await untilSnapshot("the native history", (state) => state.windows.some((w) => w.id === "w1" && w.overlays.some((o) => o.kind === "history" && o.tabId === "a" && o.opacity === 1)));
-      const overlay = snapshot.windows.find((w) => w.id === "w1")?.overlays.find((o) => o.kind === "history" && o.tabId === "a");
+      assert.ok(near(h.frame, area), `history area ${h.frame} vs page ${area}`);
+      if (!nativeLayout) assert.ok(near(area, rn.area), `page area ${area} vs RN's ${rn.area}`);
+      const back = nativeLayout ? (await navigationAnchors())["button:back"] : null;
+      const want = nativeLayout ? [Math.max(area[0] + 12, back[0] - 18), area[1] + 12, 300]
+        : [rn.area[0] + rn.popover.left, rn.area[1] + rn.popover.top, rn.popover.width];
+      if (!near(h.card.slice(0, 3), want) || !(h.card[3] > 0)) throw new Error(`card ${h.card} vs expected position ${want}`);
+      const rows = Object.entries(h.controls).filter(([title]) => title !== "Show Full History").sort((a, b) => a[1][1] - b[1][1]).map(([title]) => title);
+      assert.deepEqual(rows, rn.titles);
+      const snapshot = await untilSnapshot("the native history", (state) => historyOverlay(state)?.opacity === 1);
+      const overlay = historyOverlay(snapshot);
       if (!overlay.visible || !near(nativeFrame(overlay.frame), h.card) || !near(nativeFrame(overlay.area), h.frame) ||
         rn.titles.some((title) => !overlay.controls.some((c) => c.id === title && near(nativeFrame(c.frame), h.controls[title]))))
         throw new Error(`native history ${JSON.stringify(overlay)} vs ${JSON.stringify(h)}`);
@@ -122,12 +142,13 @@ try {
 
     if (nativeShell) {
       await rep.check("native-row-click-navigates", async () => {
+        assert.ok(seen.native?.controls.ONE, "the history card has a ONE row");
         await run(`return click(${number}, ${JSON.stringify(centre(seen.native.controls.ONE))}).then(() => true);`);
         await until("back to ONE", `return title() === "ONE" || null;`, 5000);
-        await until("the popover closes", `return !menu() || null;`, 2000);
-        await until("the native popover goes", `return native().then((d) => !d || !d.inCard || null);`, 2000);
+        if (!nativeLayout) await until("the popover closes", `return !menu() || null;`, 2000);
+        await until("the native popover goes", historyGone, 2000);
         const snapshot = await untilSnapshot("native history landing", (state) => state.tabs.some((t) => t.id === "a" && t.title === "ONE" && t.url === url("one")) &&
-          !state.windows.some((w) => w.overlays.some((o) => o.kind === "history" && o.tabId === "a" && o.visible)));
+          !historyOverlay(state)?.visible);
         if (snapshot.windows.find((w) => w.id === "w1")?.selectedTabId !== "a") throw new Error(`native active tab ${JSON.stringify(snapshot.windows)}`);
         return true;
       });
@@ -135,17 +156,18 @@ try {
         await run(`ac.store.getState().navigate("a", ${JSON.stringify(url("four"))}, { userInitiated: true }); return true;`);
         await until("page FOUR", `return title() === "FOUR" || null;`, 15000);
         await sleep(300);
-        if (!(await openMenu())) throw new Error("no back history");
-        const d = await until("the native popover again", `return native().then((d) => d && d.tabs.a && d.tabs.a.history && d.tabs.a.history.opacity === 1 ? d : null);`, 3000);
-        const reopened = await untilSnapshot("native history reopened", (state) => state.windows.some((w) => w.overlays.some((o) => o.kind === "history" && o.tabId === "a" && o.opacity === 1)));
+        await openMenu();
+        const d = await until("the native popover again", historyShown, 3000);
+        const reopened = await untilSnapshot("native history reopened", (state) => historyOverlay(state)?.opacity === 1);
         if (reopened.tabs.find((t) => t.id === "a")?.title !== "FOUR") throw new Error(`native tab ${JSON.stringify(reopened.tabs)}`);
         const [x, y, w, h] = d.tabs.a.history.frame;
         await run(`return click(${number}, [${Math.round(x + w * 0.75)}, ${Math.round(y + h * 0.75)}]).then(() => true);`);
-        await until("the popover dismisses", `return !menu() || null;`, 3000);
+        if (!nativeLayout) await until("the popover dismisses", `return !menu() || null;`, 3000);
+        await until("the native popover dismisses", historyGone, 3000);
         await sleep(400);
         if ((await run(`return title();`)) !== "FOUR") throw new Error("click-away navigated");
         await untilSnapshot("native history dismissed", (state) => state.tabs.some((t) => t.id === "a" && t.title === "FOUR" && t.url === url("four")) &&
-          !state.windows.some((w) => w.overlays.some((o) => o.kind === "history" && o.tabId === "a" && o.visible)));
+          !historyOverlay(state)?.visible);
         return true;
       });
     }

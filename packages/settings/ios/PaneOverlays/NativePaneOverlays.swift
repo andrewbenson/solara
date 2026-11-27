@@ -812,6 +812,7 @@ final class PaneOverlayHost {
           "frame": inWindow(c, s.frame), "area": inWindow(entry.wrap, entry.wrap.bounds), "radius": s.radius, "opacity": s.opacity, "scale": s.scale, "iconScale": s.iconScale, "list": s.list, "pill": s.pill]
       }
       for (tabId, entry) in navigationSwipes {
+        if let history = entry.describeMenu(inWindow) { tabs[tabId, default: [:]]["history"] = history }
         let c = entry.capsule
         let s = c.sample()
         tabs[tabId, default: [:]]["swipe"] = ["shown": c.shown, "active": c.active, "direction": c.direction.rawValue, "confirmed": c.confirmed,
@@ -1008,7 +1009,7 @@ private final class NativeNavigationSwipe {
       }
       menu.place(in: self.controller.capsule.superview)
       var left = 12.0
-      if let host = NativeWindowShell.host(self.windowId), let anchors = host.anchorPayload()?["anchors"] as? [String: [Double]],
+      if let host = NativeWindowShell.host(self.windowId), let anchors = host.anchorPayload()?["anchors"] as? [String: [CGFloat]],
         let rect = anchors[direction == .back ? "button:back" : "button:forward"], rect.count == 4 {
         let point = self.target.convert(NSPoint(x: rect[0], y: rect[1]), from: host.shell)
         left = max(12, point.x - 18)
@@ -1025,6 +1026,12 @@ private final class NativeNavigationSwipe {
     menu.wrap.removeFromSuperview()
     AutoHideHost.holdsChanged(windowId)
   }
+
+  #if DEBUG
+    func describeMenu(_ inWindow: (NSView, CGRect) -> [Double]) -> [String: Any]? {
+      menu?.describe(inWindow)
+    }
+  #endif
 
   private func navigate(_ action: NavigationSwipeAction) {
     guard current, let registry = PageIssuer.shared?.registry else { return }

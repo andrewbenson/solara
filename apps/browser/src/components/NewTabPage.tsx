@@ -1,9 +1,8 @@
 import { PowerUp } from "@solara/shaders";
-import { useEffect, useState } from "react";
-import { AccessibilityInfo, Image, StyleSheet, View } from "react-native";
+import { useState } from "react";
+import { Image, StyleSheet, View } from "react-native";
 import { layout, useTheme } from "../lib/theme";
-import { useBrowser } from "../store/browser";
-import { useWindowId, useWindowProfileId } from "../store/hooks";
+import { useWindowId } from "../store/hooks";
 import { NewTabExtras } from "./ntp";
 import { NativeNewTabHero, type HeroLayout } from "./ntp/NativeNewTabHero";
 import { DIA_OFFSET, newTabBarTop } from "./ntp/newTabLayout";
@@ -22,12 +21,6 @@ const MARKS = {
   neutral: { back: require("../../assets/solara/ntp-mark-neutral-back.png"), front: require("../../assets/solara/ntp-mark-neutral-front.png"), sun: require("../../assets/solara/ntp-mark-neutral-sun.png") },
 };
 type Size = { width: number; height: number };
-const introPlayed = new Set<string>();
-
-let reduceMotion = false;
-AccessibilityInfo.isReduceMotionEnabled().then((on) => (reduceMotion = on), () => {});
-AccessibilityInfo.addEventListener("reduceMotionChanged", (on) => (reduceMotion = on));
-
 function sameSize(a: Size, b: Size) {
   return a.width === b.width && a.height === b.height;
 }
@@ -56,22 +49,16 @@ export function NewTabPage(props: { tabId: string; toolbar?: boolean }) {
 function NativeNewTabPage({ tabId, toolbar = true }: { tabId: string; toolbar?: boolean }) {
   const theme = useTheme();
   const windowId = useWindowId();
-  const profileId = useWindowProfileId();
-  const incognito = useBrowser((s) => !!s.windows[windowId]?.incognito);
   const onboarding = useOnboarding((s) => s.windowId === windowId);
   const [size, setSize] = useState<Size | null>(null);
   const [hero, setHero] = useState<HeroLayout>({ height: BAR_HEIGHT, headingHeight: 0 });
-  const [playIntro] = useState(() => !introPlayed.has(tabId));
-  useEffect(() => {
-    introPlayed.add(tabId);
-  }, [tabId]);
+  const [playIntro, setPlayIntro] = useState(false);
   const under = toolbar ? 0 : layout.toolbarHeight;
-  const heading = !onboarding && incognito;
   const bar = size
     ? (() => {
         const width = barWidth(size.width);
         const x = Math.max(size.width / 2 - width / 2, 14) + DIA_OFFSET;
-        const top = newTabBarTop(size.height, under, heading ? hero.headingHeight : 0);
+        const top = newTabBarTop(size.height, under, hero.headingHeight);
         return { x, y: top, width, height: hero.height };
       })()
     : null;
@@ -86,10 +73,8 @@ function NativeNewTabPage({ tabId, toolbar = true }: { tabId: string; toolbar?: 
       <NativeNewTabHero
         windowId={windowId}
         tabId={tabId}
-        profileId={profileId}
-        incognito={incognito}
         onboarding={onboarding}
-        playIntro={playIntro && !reduceMotion}
+        onIntro={() => setPlayIntro(true)}
         under={under}
         theme={theme}
         marks={marksFor(theme.profileColor === "incognito" ? "neutral" : theme.profileColor)}

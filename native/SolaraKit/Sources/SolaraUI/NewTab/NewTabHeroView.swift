@@ -40,6 +40,7 @@ public final class NewTabHeroView: NSView {
   public var under: CGFloat = 0 { didSet { if under != oldValue { needsLayout = true } } }
   public var focusAllowed: () -> Bool = { true }
   public var panelOpen = false { didSet { model?.panelOpened(panelOpen) } }
+  public var requestIntro: (() -> Bool?)?
   public var playIntro = false {
     didSet {
       guard playIntro != oldValue, intro == nil, !introDecided else { return }
@@ -98,7 +99,7 @@ public final class NewTabHeroView: NSView {
     model = made
     rebuildContent()
     watchSources()
-    focusWhenAttached()
+    presentWhenAttached()
   }
 
   public var barFrame: CGRect { surface.glass.frame }
@@ -134,12 +135,17 @@ public final class NewTabHeroView: NSView {
       return
     }
     mark.setImages(markImages)
-    if !mountedOnce {
-      mountedOnce = true
-      model?.mounted()
-    }
-    decideIntro()
     needsLayout = true
+    presentWhenAttached()
+  }
+
+  private func presentWhenAttached() {
+    guard window != nil else { return }
+    if !mountedOnce, let model {
+      mountedOnce = true
+      model.mounted()
+    }
+    if requestIntro == nil || model != nil { decideIntro() }
     focusWhenAttached()
   }
 
@@ -168,7 +174,7 @@ public final class NewTabHeroView: NSView {
     #endif
     super.layout()
     let scale = window?.backingScaleFactor ?? 2
-    let showsHeading = incognito && !onboarding
+    let showsHeading = NewTabContext.showsHeading(incognito: incognito, onboarding: onboarding)
     let frames = NewTabLayout.frames(size: bounds.size, under: under, headingHeight: showsHeading ? headingHeight : 0, barHeight: barHeight, scale: scale)
     CATransaction.begin()
     CATransaction.setDisableActions(true)
@@ -190,7 +196,7 @@ public final class NewTabHeroView: NSView {
   }
 
   private func report() {
-    let now = (barHeight, incognito && !onboarding ? headingHeight : 0)
+    let now = (barHeight, NewTabContext.showsHeading(incognito: incognito, onboarding: onboarding) ? headingHeight : 0)
     if reported.map({ $0 != now }) ?? true {
       reported = now
       onBarLayout(now.0, now.1)
@@ -292,8 +298,15 @@ public final class NewTabHeroView: NSView {
 
   private func decideIntro() {
     guard !introDecided else { return }
+    let requested: Bool
+    if let requestIntro {
+      guard let claim = requestIntro() else { return }
+      requested = claim
+    } else {
+      requested = playIntro
+    }
     introDecided = true
-    guard playIntro, !NewTabHeroView.reduceMotion else {
+    guard requested, !NewTabHeroView.reduceMotion else {
       mark.apply(.rest)
       return
     }

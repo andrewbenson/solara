@@ -401,6 +401,7 @@ enum NativeWorkspaceCommands {
       if let generation = wanted.generation { WindowHost.cancelCommandFocus(generation, restoring: false) }
       return
     }
+    guard view.canFocusHero else { return }
     let responder = window.firstResponder
     let unchanged = responder == nil || (responder.map(ObjectIdentifier.init) == wanted.responder
       && (responder as? NSTextView)?.delegate.map { ObjectIdentifier($0) } == wanted.editorDelegate)
@@ -409,7 +410,7 @@ enum NativeWorkspaceCommands {
       if let generation = wanted.generation { WindowHost.cancelCommandFocus(generation, restoring: false) }
       return
     }
-    view.hero.focusBar()
+    view.focusHero()
     if let generation = wanted.generation { FocusMoves.claim(generation, destination: view.hero) }
   }
 

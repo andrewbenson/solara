@@ -7,11 +7,12 @@ import SolaraStore
 import SolaraUI
 
 final class NativeNewTabView: ExpoView {
+  private static var introReceipts = NewTabIntroReceipts()
   private static let live = NSHashTable<NativeNewTabView>.weakObjects()
 
   static func focusHero(windowId: String, tabId: String) -> Bool {
     guard let view = live.allObjects.first(where: {
-      $0.windowId == windowId && $0.tabId == tabId && $0.window != nil && !$0.isHiddenOrHasHiddenAncestor
+      $0.windowId == windowId && $0.tabId == tabId && $0.canFocusHero
     }) else { return false }
     view.hero.focusBar()
     return true
@@ -19,15 +20,13 @@ final class NativeNewTabView: ExpoView {
   static func commandHasFocus(windowId: String, tabId: String, profileId: String) -> Bool {
     live.allObjects.contains {
       $0.windowId == windowId && $0.tabId == tabId && $0.profileId == profileId
-        && $0.window?.isKeyWindow == true && $0.hero.model?.tabId == tabId && $0.hero.model?.profileId == profileId
-        && !$0.isHiddenOrHasHiddenAncestor && !$0.hero.panelOpen && !$0.hero.onboarding && $0.hero.model?.field?.hasFocus == true
+        && $0.window?.isKeyWindow == true && $0.canFocusHero && $0.hero.model?.field?.hasFocus == true
     }
   }
   static func commandFocus(windowId: String, tabId: String, profileId: String) -> NSView? {
     guard let view = live.allObjects.first(where: {
       $0.windowId == windowId && $0.tabId == tabId && $0.profileId == profileId
-        && $0.window?.isKeyWindow == true && $0.hero.model?.tabId == tabId && $0.hero.model?.profileId == profileId
-        && !$0.isHiddenOrHasHiddenAncestor && !$0.hero.panelOpen && !$0.hero.onboarding && $0.hero.model?.field != nil
+        && $0.window?.isKeyWindow == true && $0.canFocusHero && $0.hero.model?.field != nil
     }) else {
       #if DEBUG
       let candidates = live.allObjects.filter { $0.windowId == windowId }
@@ -52,7 +51,7 @@ final class NativeNewTabView: ExpoView {
 
   static let events = [
     "onOpen", "onSwitch", "onAction", "onExtension", "onRemoveHistory", "onChosen", "onOpenChip", "onDictate", "onContextMenu", "onJourney",
-    "onLatency", "onBarLayout", "onDriverState",
+    "onLatency", "onBarLayout", "onDriverState", "onProfile", "onIntro",
   ]
 
   let onOpen = EventDispatcher()
@@ -68,13 +67,45 @@ final class NativeNewTabView: ExpoView {
   let onLatency = EventDispatcher()
   let onBarLayout = EventDispatcher()
   let onDriverState = EventDispatcher()
+  let onProfile = EventDispatcher()
+  let onIntro = EventDispatcher()
   var driven = false
 
   let hero = NewTabHeroView(frame: .zero)
   private lazy var actions = NativeOmniboxActions.controller(view: { [weak self] in self?.hero })
   var windowId = ""
   var tabId = ""
-  var profileId = ""
+  private(set) var profileId = ""
+  private var observedStore: Store?
+  private var observation: Int?
+  private var lifecycle: Int?
+  private var observedWindowId = ""
+  private var observedTabId = ""
+
+  private var workspaceStore: Store? {
+    NativeStoreHandle.ownsWorkspace ? NativeStoreHandle.store : nil
+  }
+
+  private var currentContext: NewTabContext? {
+    guard let store = workspaceStore, store === observedStore else { return nil }
+    return NewTabContext.resolve(store.state, windowId: windowId, tabId: tabId, closing: store.memory.closingWindows)
+  }
+
+  private var interactiveModel: HeroBarModel? {
+    guard let model = hero.model, let currentContext,
+      currentContext.accepts(NewTabIdentity(windowId: model.windowId, tabId: model.tabId, profileId: model.profileId), onboarding: hero.onboarding)
+    else { return nil }
+    return model
+  }
+
+  var canFocusHero: Bool {
+    window != nil && !isHiddenOrHasHiddenAncestor && interactiveModel != nil
+  }
+
+  func focusHero() {
+    guard canFocusHero else { return }
+    hero.focusBar()
+  }
   var themeTokens: [String: String] = [:]
   var dark = false
   var marks: [String: String] = [:]
@@ -91,11 +122,17 @@ final class NativeNewTabView: ExpoView {
     hero.fetcher = NewTabNetwork.fetcher
     hero.bangStore = NativeBangs.shared
     hero.favicons = NewTabNetwork.favicons
+    hero.isHidden = true
     hero.events = makeEvents()
+    hero.requestIntro = { [weak self] in
+      guard let self, let context = self.currentContext, context.active else { return nil }
+      let claimed = Self.introReceipts.claim(tabId: context.identity.tabId)
+      if claimed { self.onIntro([:]) }
+      return claimed
+    }
     hero.focusAllowed = { [weak self] in
-      guard let self else { return false }
-      guard NativeStoreHandle.ownsWorkspace, let state = NativeStoreHandle.store?.state else { return true }
-      return state.activeTabId(self.windowId) == self.tabId && NativeCommandBarFocus.allowsAutomaticFocus(windowId: self.windowId, tabId: self.tabId)
+      guard let self, self.canFocusHero else { return false }
+      return NativeCommandBarFocus.allowsAutomaticFocus(windowId: self.windowId, tabId: self.tabId)
     }
     hero.onBarLayout = { [weak self] height, heading in self?.onBarLayout(["height": height, "headingHeight": heading]) }
     addSubview(hero)
@@ -107,44 +144,107 @@ final class NativeNewTabView: ExpoView {
   }
 
   func propsDidUpdate() {
-    if !windowId.isEmpty && !tabId.isEmpty { hero.configure(NewTabIdentity(windowId: windowId, tabId: tabId, profileId: profileId)) }
     hero.theme = NewTabTheme(dark: dark, tokens: themeTokens)
-    NativeWorkspaceCommands.newTabViewReady(self)
     if marks != loadedMarks {
       loadedMarks = marks
       hero.markImages = NewTabNetwork.markImages(marks)
     }
+    bindContext()
   }
 
   override func viewDidMoveToWindow() {
     super.viewDidMoveToWindow()
+    if window != nil {
+      if lifecycle == nil {
+        lifecycle = NativeStoreHandle.subscribeLifecycle { [weak self] in self?.bindContext() }
+      } else {
+        bindContext()
+      }
+    } else {
+      if let lifecycle { NativeStoreHandle.unsubscribeLifecycle(lifecycle) }
+      lifecycle = nil
+      bindContext()
+    }
+  }
+
+  private func bindContext() {
+    let next = window == nil ? nil : workspaceStore
+    if observedStore !== next || observedWindowId != windowId || observedTabId != tabId {
+      if let observation { observedStore?.unsubscribe(observation) }
+      observedStore = next
+      observedWindowId = windowId
+      observedTabId = tabId
+      observation = next?.subscribe { [weak self, weak next, windowId, tabId] commit in
+        guard NewTabContext.changesContext(commit.changes, windowId: windowId, tabId: tabId) else { return }
+        DispatchQueue.main.async {
+          guard let self, let next, self.observedStore === next, self.windowId == windowId, self.tabId == tabId else { return }
+          self.refreshContext()
+        }
+      }
+    }
+    refreshContext()
+  }
+
+  private func refreshContext() {
+    let context = observedStore.flatMap { NewTabContext.resolve($0.state, windowId: windowId, tabId: tabId) }
+    hero.isHidden = context == nil
+    let nextProfile = context?.identity.profileId ?? ""
+    if profileId != nextProfile {
+      profileId = nextProfile
+      if window != nil { onProfile(["profileId": profileId]) }
+    }
+    guard let context else { return }
+    if hero.incognito != context.incognito { hero.incognito = context.incognito }
+    if hero.panelOpen != context.panelOpen { hero.panelOpen = context.panelOpen }
+    hero.configure(context.identity)
     NativeWorkspaceCommands.newTabViewReady(self)
   }
 
   private func makeEvents() -> HeroBarEvents {
     var e = HeroBarEvents()
     e.edited = { [weak self] text in
-      guard let self, !text.isEmpty, let tabId = self.hero.model?.tabId,
+      guard let self, !text.isEmpty, let tabId = self.interactiveModel?.tabId,
         NativeStoreHandle.ownsWorkspace, let store = NativeStoreHandle.store,
         store.state.tabs[tabId]?.newTabPlaceholder == true else { return }
       _ = try? store.dispatch(Command("settleNewTab", [.string(tabId)]), origin: .native)
     }
-    e.open = { [weak self] url, disposition in self?.onOpen(["url": url, "disposition": disposition.rawValue, "nativeActions": false]) }
-    e.switchTo = { [weak self] tab, url, disposition in self?.onSwitch(["tabId": tab, "url": url, "disposition": disposition.rawValue, "nativeActions": false]) }
-    e.runAction = { [weak self] id in self?.onAction(["id": id, "nativeActions": false]) }
-    e.runExtension = { [weak self] s in self?.onExtension(["suggestion": NewTabJSON.suggestion(s)]) }
-    e.removeHistory = { [weak self] url in self?.onRemoveHistory(["url": url]) }
+    e.open = { [weak self] url, disposition in
+      guard let self, self.interactiveModel != nil else { return }
+      self.onOpen(["url": url, "disposition": disposition.rawValue, "nativeActions": false])
+    }
+    e.switchTo = { [weak self] tab, url, disposition in
+      guard let self, self.interactiveModel != nil else { return }
+      self.onSwitch(["tabId": tab, "url": url, "disposition": disposition.rawValue, "nativeActions": false])
+    }
+    e.runAction = { [weak self] id in
+      guard let self, self.interactiveModel != nil else { return }
+      self.onAction(["id": id, "nativeActions": false])
+    }
+    e.runExtension = { [weak self] s in
+      guard let self, self.interactiveModel != nil else { return }
+      self.onExtension(["suggestion": NewTabJSON.suggestion(s)])
+    }
+    e.removeHistory = { [weak self] url in
+      guard let self, self.interactiveModel != nil else { return }
+      self.onRemoveHistory(["url": url])
+    }
     e.chosen = { [weak self] s in self?.onChosen(["suggestion": s.map(NewTabJSON.suggestion) ?? NSNull()]) }
     e.openChip = { [weak self] in
-      guard let self else { return }
-      if self.actions.ownsActions, let model = self.hero.model { NativeOmniboxActions.openChip(model, in: self.hero) }
+      guard let self, let model = self.interactiveModel else { return }
+      if self.actions.ownsActions { NativeOmniboxActions.openChip(model, in: self.hero) }
       else { self.onOpenChip(["nativeActions": false]) }
     }
-    e.dictate = { [weak self] in self?.onDictate([:]) }
-    e.contextMenu = { [weak self] hasSelection, hasValue in self?.onContextMenu(["hasSelection": hasSelection, "hasValue": hasValue]) }
+    e.dictate = { [weak self] in
+      guard let self, self.interactiveModel != nil else { return }
+      self.onDictate([:])
+    }
+    e.contextMenu = { [weak self] hasSelection, hasValue in
+      guard let self, self.interactiveModel != nil else { return }
+      self.onContextMenu(["hasSelection": hasSelection, "hasValue": hasValue])
+    }
     e.journey = { [weak self] mark in
       guard let self else { return }
-      if mark == .focused, self.hero.model?.field?.hasFocus == true {
+      if mark == .focused, self.interactiveModel?.field?.hasFocus == true {
         NativeCommandBarFocus.didFocus(windowId: self.windowId, tabId: self.tabId, profileId: self.profileId, destination: self.hero, hero: true)
       }
       self.onJourney(["mark": mark.rawValue])
@@ -169,7 +269,7 @@ final class NativeNewTabView: ExpoView {
       guard let self, self.driven else { return }
       self.onDriverState(["json": self.driverStateJSON()])
     }
-    return actions.decorate(e, model: { [weak self] in self?.hero.model })
+    return actions.decorate(e, model: { [weak self] in self?.interactiveModel })
   }
 
   func driverState() -> [String: Any] {

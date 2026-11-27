@@ -44,6 +44,7 @@ function debounced(run: () => void) {
 
 export function usePublishSources(windowId: string, profileId: string) {
   useEffect(() => {
+    if (!profileId) return;
     let bookmarks: unknown = null;
     let bookmarkProfile = "";
     let actions = "";

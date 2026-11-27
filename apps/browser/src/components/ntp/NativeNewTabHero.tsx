@@ -1,9 +1,8 @@
 import { NativeNewTab, type NativeNewTabHandle } from "@solara/settings";
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import { StyleSheet } from "react-native";
 import { heroBarFocus } from "../../lib/focusClaims";
 import type { Theme } from "../../lib/theme";
-import { useBrowser } from "../../store/browser";
 import { journeyNavigate } from "../../lib/perfMarks";
 import { registerHeroBar } from "../omnibox/barState";
 import { openFromBar, useNativeBar, useThemeTokens } from "../omnibox/nativeBar";
@@ -14,10 +13,8 @@ export type HeroLayout = { height: number; headingHeight: number };
 export function NativeNewTabHero({
   windowId,
   tabId,
-  profileId,
-  incognito,
   onboarding,
-  playIntro,
+  onIntro,
   under,
   theme,
   marks,
@@ -25,17 +22,15 @@ export function NativeNewTabHero({
 }: {
   windowId: string;
   tabId: string;
-  profileId: string;
-  incognito: boolean;
   onboarding: boolean;
-  playIntro: boolean;
+  onIntro(): void;
   under: number;
   theme: Theme;
   marks: { sun: string; back: string; front: string };
   onLayout(layout: HeroLayout): void;
 }) {
   const ref = useRef<NativeNewTabHandle>(null);
-  const panelOpen = useBrowser((s) => !!s.windowUi[windowId]?.panel.open);
+  const [profileId, setProfileId] = useState("");
   const themeProps = useThemeTokens(theme);
   const go = (url: string, disposition: Disposition = "current") => {
     if (!url) return;
@@ -58,11 +53,9 @@ export function NativeNewTabHero({
       style={StyleSheet.absoluteFill}
       windowId={windowId}
       tabId={tabId}
-      profileId={profileId}
-      incognito={incognito}
       onboarding={onboarding}
-      playIntro={playIntro}
-      panelOpen={panelOpen}
+      onProfile={(e) => setProfileId(e.nativeEvent.profileId)}
+      onIntro={onIntro}
       under={under}
       dark={!!theme.dark}
       theme={themeProps}

@@ -12,11 +12,7 @@ type Event<T> = NativeSyntheticEvent<T & { nativeActions?: boolean }>;
 export type NativeNewTabProps = ViewProps & {
   windowId: string;
   tabId: string;
-  profileId: string;
-  incognito: boolean;
   onboarding: boolean;
-  playIntro: boolean;
-  panelOpen: boolean;
   under: number;
   dark: boolean;
   theme: Record<string, string>;
@@ -35,6 +31,8 @@ export type NativeNewTabProps = ViewProps & {
   onContextMenu?(e: Event<{ hasSelection: boolean; hasValue: boolean }>): void;
   onJourney?(e: Event<{ mark: NewTabJourneyMark; tabId?: string; query?: string; generation?: string; at?: number }>): void;
   onLatency?(e: Event<{ ms: number; query?: string; generation?: string }>): void;
+  onProfile?(e: Event<{ profileId: string }>): void;
+  onIntro?(e: Event<Record<string, never>>): void;
   onBarLayout?(e: Event<{ height: number; headingHeight: number }>): void;
 };
 

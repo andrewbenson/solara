@@ -124,11 +124,7 @@ public class NewTabModule: Module {
 
       Prop("windowId") { (view: NativeNewTabView, v: String) in MainActor.assumeIsolated { view.windowId = v } }
       Prop("tabId") { (view: NativeNewTabView, v: String) in MainActor.assumeIsolated { view.tabId = v } }
-      Prop("profileId") { (view: NativeNewTabView, v: String) in MainActor.assumeIsolated { view.profileId = v } }
-      Prop("incognito") { (view: NativeNewTabView, v: Bool?) in MainActor.assumeIsolated { view.hero.incognito = v ?? false } }
       Prop("onboarding") { (view: NativeNewTabView, v: Bool?) in MainActor.assumeIsolated { view.hero.onboarding = v ?? false } }
-      Prop("playIntro") { (view: NativeNewTabView, v: Bool?) in MainActor.assumeIsolated { view.hero.playIntro = v ?? false } }
-      Prop("panelOpen") { (view: NativeNewTabView, v: Bool?) in MainActor.assumeIsolated { view.hero.panelOpen = v ?? false } }
       Prop("under") { (view: NativeNewTabView, v: Double?) in MainActor.assumeIsolated { view.hero.under = v ?? 0 } }
       Prop("dark") { (view: NativeNewTabView, v: Bool?) in MainActor.assumeIsolated { view.dark = v ?? false } }
       Prop("theme") { (view: NativeNewTabView, v: [String: String]?) in MainActor.assumeIsolated { view.themeTokens = v ?? [:] } }
@@ -138,7 +134,7 @@ public class NewTabModule: Module {
 
       OnViewDidUpdateProps { (view: NativeNewTabView) in MainActor.assumeIsolated { view.propsDidUpdate() } }
 
-      AsyncFunction("focus") { (view: NativeNewTabView) in MainActor.assumeIsolated { view.hero.focusBar() } }.runOnQueue(.main)
+      AsyncFunction("focus") { (view: NativeNewTabView) in MainActor.assumeIsolated { view.focusHero() } }.runOnQueue(.main)
 
       AsyncFunction("applyMenu") { (view: NativeNewTabView, choice: String) in
         MainActor.assumeIsolated { if let c = HeroMenuChoice(rawValue: choice) { view.hero.model?.apply(c) } }

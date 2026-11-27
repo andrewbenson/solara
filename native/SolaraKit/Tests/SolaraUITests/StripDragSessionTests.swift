@@ -133,6 +133,17 @@ private final class StripSessionBridge: StripDragBridge {
     #expect(bridge.drops.count == 1)
   }
 
+  @Test func retiringTheStripPageCancelsItsPendingReorder() throws {
+    let bridge = StripSessionBridge()
+    let page = try page(bridge)
+    _ = try begin(page)
+    page.stop()
+    #expect(!page.drag.active)
+    #expect(page.drag.keyMonitor == nil)
+    #expect(bridge.ends.map(\.commit) == [false])
+    #expect(bridge.drops.isEmpty)
+  }
+
   @Test func losingTheWindowCancelsTheDrag() throws {
     let bridge = StripSessionBridge()
     let page = try page(bridge)

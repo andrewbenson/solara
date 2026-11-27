@@ -14,7 +14,13 @@ public final class TopStripView: NSView {
   private var pages: [String: StripPageView] = [:]
   private var state: BrowserState?
   private var host: StripHostState?
+  private var order: [String] = []
   private var pagerPosition: Double?
+  public var pendingScrollOffsets: [String: CGFloat] = [:]
+
+  public var scrollOffsets: [String: CGFloat] {
+    pendingScrollOffsets.merging(pages.mapValues(\.scrolledX)) { _, live in live }
+  }
   private lazy var dropZone = StripDropZone(strip: self)
   public var takesDrops = true
 
@@ -59,11 +65,13 @@ public final class TopStripView: NSView {
     dragBridge = nil
     state = nil
     host = nil
+    order = []
     for page in pages.values {
       page.stop()
       page.removeFromSuperview()
     }
     pages.removeAll()
+    pendingScrollOffsets.removeAll()
   }
 
   public var current: StripPageView? { host.flatMap { pages[$0.profileId] } }
@@ -73,10 +81,15 @@ public final class TopStripView: NSView {
 
   public func update(state: BrowserState, host: StripHostState) {
     guard !stopped else { return }
+    let previous = order
+    let selectionChanged = self.host?.profileId != host.profileId
     self.state = state
-    if self.host?.profileId != host.profileId, let pagerPosition, abs(pagerPosition - pagerPosition.rounded()) < 0.001 { self.pagerPosition = nil }
     self.host = host
+    order = ProfilePagerSelection.pageOrder(profileId: host.profileId, profiles: SidebarPagerView.profileIDs(state: state, windowId: windowId), looks: host.pages)
+    pagerPosition = ProfilePagerSelection.retainedPosition(pagerPosition, previous: previous, next: order, selectionChanged: selectionChanged)
+    pendingScrollOffsets = pendingScrollOffsets.filter { order.contains($0.key) }
     for id in pages.keys where !order.contains(id) {
+      pages[id]?.stop()
       pages[id]?.removeFromSuperview()
       pages[id] = nil
     }
@@ -96,14 +109,6 @@ public final class TopStripView: NSView {
     let changed = newSize != frame.size
     super.setFrameSize(newSize)
     if changed { place(refresh: true) }
-  }
-
-  private var order: [String] {
-    guard let host else { return [] }
-    guard let looks = host.pages, let state else { return [host.profileId] }
-    let paged = Set(looks.map(\.profileId))
-    let ids = state.profileOrder.filter { paged.contains($0) }
-    return ids.contains(host.profileId) ? ids : [host.profileId]
   }
 
   private var position: Double {
@@ -137,6 +142,7 @@ public final class TopStripView: NSView {
       if refresh || resized {
         let look = id == host.profileId ? host : host.pages?.first { $0.profileId == id }.map(host.page) ?? host
         page.update(state: state, host: look, current: id == host.profileId)
+        if let offset = pendingScrollOffsets.removeValue(forKey: id) { page.restoreScrollOffset(offset) }
       }
     }
   }

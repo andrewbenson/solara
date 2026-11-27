@@ -1,4 +1,6 @@
 import AppKit
+import SolaraModel
+import SolaraStore
 import Testing
 @testable import SolaraUI
 
@@ -17,6 +19,28 @@ struct FullScreenStripTests {
       controls: StripControlsState(title: "Work", incognito: false, profiles: 2, nameColor: "#336699", downloadsOpen: false, downloadsTooltip: "Downloads"),
       downloads: false, addressBar: false, dark: false, theme: [:], dots: [], savedWidth: 190, iconsOnly: icons, windowFullscreen: true))
     return chrome
+  }
+
+  @Test func switchingLayoutAndFullscreenKeepsTheSelectedStripPage() throws {
+    let fixture = ToolbarResizeTests.Fixture(bare: false)
+    defer { close(fixture) }
+    let shell = fixture.shell
+    let strip = TopStripView(windowId: shell.windowId)
+    shell.update { $0.topTabs = true }
+    shell.mount(.topStrip, strip)
+    shell.layoutSubtreeIfNeeded()
+    let state = try BrowserState(stateJSON: [
+      "windows": .object([shell.windowId: ["id": .string(shell.windowId), "profileId": "work"]])
+    ])
+    strip.update(state: state, host: StripHostState(profileId: "work"))
+    let page = try #require(strip.current)
+    shell.update { $0.topTabs = false }
+    shell.update {
+      $0.topTabs = true
+      $0.windowFullscreen = true
+    }
+    shell.layoutSubtreeIfNeeded()
+    #expect(strip.current === page)
   }
 
   @Test func allLayoutsTranslateOnlyTheStripLayersAndKeepTheirPageAndListFrames() {

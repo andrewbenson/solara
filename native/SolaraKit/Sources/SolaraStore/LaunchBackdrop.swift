@@ -1,7 +1,7 @@
 import Foundation
 import SolaraModel
 
-enum LaunchBackdropProvider {
+public enum LaunchBackdropProvider {
   struct Color {
     var r: Double
     var g: Double
@@ -64,7 +64,11 @@ enum LaunchBackdropProvider {
     case "light": appDark = false
     default: appDark = state.caches.systemDark
     }
-    let profile = state.profiles[window.profileId]
+    return profile(state, profileId: window.profileId, appDark: appDark)
+  }
+
+  public static func profile(_ state: BrowserState, profileId: String, appDark: Bool) -> JSONValue {
+    let profile = state.profiles[profileId]
     let color = profile?.color ?? "plum"
     guard let custom = profile?.theme, let base = Look(custom) else { return preset(color, appDark: appDark) }
     let mode = custom["mode"]?.string ?? "auto"

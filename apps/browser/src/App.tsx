@@ -20,7 +20,7 @@ import { LittleSolaraWindow } from "./components/littleSolara/LittleSolaraWindow
 import { SidebarOverlays } from "./components/sidebar/Overlays";
 import { ThemeScope } from "./lib/theme";
 import { useBrowser } from "./store/browser";
-import { useWindowId, useWindowProfileId, WindowContext } from "./store/hooks";
+import { useWindowId, WindowContext } from "./store/hooks";
 import { useNativeWindowBounds } from "./components/layout/windowLayout";
 import { useNativeWindowAnchors } from "./components/layout/nativeWindowAnchors";
 
@@ -73,13 +73,12 @@ function NativeBrowserWindow() {
 
 function NativeLayoutGuests({ topTabs }: { topTabs: boolean }) {
   const windowId = useWindowId();
-  const profileId = useWindowProfileId();
   const addressBar = useAddressBarInSidebar();
   return (
     <>
       <NativeShellModal windowId={windowId} />
       <ContentCard />
-      {topTabs ? <NativeTopStripFeed windowId={windowId} profileId={profileId} /> : <NativeSidebar windowId={windowId} addressBar={addressBar} headless />}
+      {topTabs ? <NativeTopStripFeed windowId={windowId} /> : <NativeSidebar windowId={windowId} addressBar={addressBar} headless />}
     </>
   );
 }

@@ -841,3 +841,12 @@ sidebar-click, sidebar-scroll, sidebar-bulk, sidebar-reuse, downloads-popover,
 folder-panel and settings-live (folders) in window layouts 0 and 1. The Swift
 suites cover private download visibility, per-window rail settings, cleanup
 admission, pinned-group protection, profile order, page palettes and live facts.
+
+
+## Profile paging and the top strip
+
+With native API 105, run profile-pager, profile-swipe, profile-dots-launch and top-strip
+with `SOLARA_NATIVE_WINDOW_LAYOUT=0` and `1`. For top-strip, use `--only=native`
+against API 103 and later. The Swift cases cover profile order and privacy, strip
+controls and live facts, in-flight paging, reorder cancellation and page identity
+through layout and fullscreen changes.

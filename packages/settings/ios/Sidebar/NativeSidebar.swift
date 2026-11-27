@@ -1,5 +1,6 @@
 import AppKit
 import Foundation
+import SolaraCore
 import SolaraLive
 import SolaraModel
 import SolaraStore
@@ -159,6 +160,7 @@ final class SidebarHost {
   var onPresentation: ((BrowserState, SidebarHostState) -> Void)?
   private var pagerObserver: NSObjectProtocol?
   private var fedByShell = false
+  private var rendered = false
   private var mediaListener: UUID?
   #if SOLARA_PROBES
   private var probeStopped = false
@@ -200,6 +202,7 @@ final class SidebarHost {
     view.onAction = { _ in }
     onPresentation = nil
     rowProjection = nil
+    if rendered, !fedByShell { NativeProfilePager.hosts[windowId]?.sidebarScrollOffsets = view.scrollOffsets }
     view.stop()
     #if SOLARA_PROBES
     probeStopped = true
@@ -251,7 +254,12 @@ final class SidebarHost {
     guard var host = hostState else { return }
     if let renaming = NativeWorkspaceRename.override(windowId) { host.renaming = renaming }
     onPresentation?(state, host)
+    if !rendered, !fedByShell { view.pendingScrollOffsets = NativeProfilePager.hosts[windowId]?.sidebarScrollOffsets ?? [:] }
     view.update(state: state, host: host)
+    if !rendered && view.current != nil {
+      rendered = true
+      if let position = ACPager.snapshot(windowId)?["position"] as? Double { view.setPagerPosition(position) }
+    }
     NativeTileFolders.render(windowId: windowId)
   }
 

@@ -3,11 +3,11 @@ import { useShallow } from "zustand/react/shallow";
 import { useBrowser } from "../../store/browser";
 import { useWindowId } from "../../store/hooks";
 import { engineProfile } from "../../store/model";
-import { pagerFor } from "./profilePager";
+import { profilePagerNative } from "@solara/settings";
 
 export function WindowProfile() {
   const windowId = useWindowId();
-  if (pagerFor(windowId).nativeOwned) return null;
+  if (profilePagerNative(windowId)) return null;
   return <ReactWindowProfile />;
 }
 

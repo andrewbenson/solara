@@ -1,9 +1,28 @@
 import AppKit
+import SolaraModel
+import SolaraStore
 import Testing
 
 @testable import SolaraUI
 
 @Suite @MainActor struct StripControlsTests {
+  @Test func controlsFollowTheWindowProfileAndScopeDownloads() throws {
+    let state = try BrowserState(stateJSON: JSONValue.parse(#"""
+      {"profiles":{"p":{"id":"p","name":"Personal"},"q":{"id":"q","name":"Work"}},"profileOrder":["p","q"],
+       "windows":{"a":{"id":"a","profileId":"q"},"b":{"id":"b","profileId":"p","incognito":true}},
+       "windowUi":{"a":{"downloadsOpen":true}}}
+      """#).object ?? [:])
+    let ordinary = try #require(state.windows["a"])
+    let privateWindow = try #require(state.windows["b"])
+    let docked = StripControlsState(state: state, window: ordinary, nameColor: "#123456", downloadsHint: "⌘J")
+    let peek = StripControlsState(state: state, window: privateWindow, nameColor: "#FFFFFF", downloadsHint: nil)
+    #expect(docked.title == "Work")
+    #expect(docked.downloadsOpen)
+    #expect(docked.downloadsTooltip == "Downloads (⌘J)")
+    #expect(peek.title == "Incognito")
+    #expect(!peek.downloadsOpen)
+  }
+
   @Test(arguments: [CGFloat(0), 1, 8, 31, 32, 42, 83, 84])
   func aSingleProfileLeavesNoCaptionSlotInAnEmptyOrNarrowStrip(width: CGFloat) {
     let view = StripControlsView(frame: CGRect(x: 0, y: 0, width: width, height: 34))

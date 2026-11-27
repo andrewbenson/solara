@@ -1,7 +1,8 @@
 import AppKit
 import Foundation
+import SolaraModel
 
-public struct StripHostState: Decodable, Equatable, Sendable {
+public struct StripHostState: Equatable, Sendable {
   public var profileId: String
   public var dark: Bool
   public var theme: [String: String]
@@ -15,7 +16,6 @@ public struct StripHostState: Decodable, Equatable, Sendable {
   public var capture: [String: TabCapture]
   public var bands: [String: String]
   public var closeHint: String?
-  public var newTabMark: String?
   public var pages: [SidebarPageLook]?
   public var selection: [String]?
   public var iconRing: Bool?
@@ -35,9 +35,22 @@ public struct StripHostState: Decodable, Equatable, Sendable {
     bands = [:]
   }
 
-  public static func decode(_ json: String) -> StripHostState? {
-    guard let data = json.data(using: .utf8) else { return nil }
-    return try? JSONDecoder().decode(StripHostState.self, from: data)
+  public mutating func applyWorkspace(state: BrowserState, windowId: String, engineMark: (Tab) -> String?) {
+    guard let window = state.windows[windowId] else { return }
+    profileId = window.profileId
+    selection = state.selection[windowId]?.ids ?? []
+    iconRing = !state.settings.bool("classicPinnedTabs")
+    engines = [:]
+    bands = [:]
+    let extendColor = state.settings.bool("extendWebsiteColor")
+    for id in window.tabIds {
+      guard let tab = state.tabs[id], tab.windowId == windowId else { continue }
+      engines[id] = engineMark(tab)
+      if extendColor, !tab.url.isEmpty, let color = state.live[id]?.themeColor,
+        !OmniboxCommandSources.isDeveloperURL(tab.url, settings: state.settings, profileId: tab.profileId) {
+        bands[id] = color
+      }
+    }
   }
 
   public func page(_ look: SidebarPageLook) -> StripHostState {

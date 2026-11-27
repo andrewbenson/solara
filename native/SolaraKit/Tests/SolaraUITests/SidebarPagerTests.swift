@@ -57,6 +57,19 @@ private func shown(_ pager: SidebarPagerView) -> [String] {
     #expect(SidebarPagerView.profileIDs(state: state, windowId: "w1").isEmpty)
   }
 
+  @Test func selectionAndWarmNeighboursFollowEachWindow() throws {
+    var state = try pagedState()
+    state.windows["w2"] = try BrowserWindow(json: ["id": "w2", "profileId": "q", "incognito": true])
+    let normal = try #require(ProfilePagerSelection(state: state, windowId: "w1"))
+    let privateWindow = try #require(ProfilePagerSelection(state: state, windowId: "w2"))
+    #expect(normal.index == 0)
+    #expect(normal.neighbours == [state.engineProfile("q")])
+    #expect(privateWindow.profileId == "q")
+    #expect(privateWindow.index == nil)
+    #expect(privateWindow.order.isEmpty)
+    #expect(privateWindow.neighbours.isEmpty)
+  }
+
   @Test func theMiniPlayerStaysPutWhileProfilePagesSlide() throws {
     let pager = SidebarPagerView(windowId: "w1")
     pager.frame = NSRect(x: 0, y: 0, width: 200, height: 400)
@@ -93,6 +106,15 @@ private func shown(_ pager: SidebarPagerView) -> [String] {
 
   @Test func atRestOnlyTheCurrentProfileShows() throws {
     let pager = try pager()
+    #expect(shown(pager) == ["p@0"])
+  }
+
+  @Test func reorderingProfilesKeepsTheSelectedProfileAtRest() throws {
+    let pager = try pager()
+    pager.setPagerPosition(0)
+    var state = try pagedState()
+    state.profileOrder = ["q", "p", "r"]
+    pager.update(state: state, host: host("p"))
     #expect(shown(pager) == ["p@0"])
   }
 

@@ -37,7 +37,6 @@ import { useWindowShell } from "./layout/ShellBackdrop";
 import { dropPaneStatusStyle, dropPopoversOverCard, publishPaneStatusStyle, publishPopoversOverCard, usePaneRootDrawn } from "./layout/paneFeed";
 import { nativeSplitPanes, useNativeSplitChrome } from "./layout/nativeSplitChrome";
 import { SplitToolbarFeed } from "./layout/NativeSplitToolbars";
-import { pagerFor } from "./layout/profilePager";
 import { dockMoving, useDockMotion, usePeekEdge } from "./layout/dockMotion";
 import { FrozenPage } from "./layout/frozenPage";
 import { holderOf } from "../store/pinShare";
@@ -144,7 +143,6 @@ export function LegacyContentCard() {
     }
   }, [panes]);
 
-  const pagerPages = pagerFor(windowId).state((st) => st.pages);
   const leaving = useTabDrag((d) => (d.windowId === windowId && d.tabIds.length && (d.outside || !!(d.lifted ?? d.onPage)) ? d.tabIds : null));
   const successor = useMemo(() => {
     if (!leaving) return undefined;
@@ -155,7 +153,10 @@ export function LegacyContentCard() {
   const warm = useBrowser(
     useShallow((s) => {
       const w = s.windows[windowId];
-      const ids = !w || !pagerPages ? [] : pagerPages.map((p) => (p.id === w.profileId ? undefined : w.activeTabIds[p.id])).filter((id): id is string => !!id);
+      if (pooled || !w) return [];
+      const index = w.incognito ? -1 : s.profileOrder.indexOf(w.profileId);
+      const ids = index < 0 ? [] : [s.profileOrder[index - 1], s.profileOrder[index + 1]]
+        .flatMap((profile) => profile && w.activeTabIds[profile] ? [w.activeTabIds[profile]!] : []);
       return successor && s.tabs[successor]?.windowId === windowId && !ids.includes(successor) ? [...ids, successor] : ids;
     }),
   );

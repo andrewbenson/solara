@@ -16,7 +16,6 @@ import { dismissHoverIn } from "../sidebar/hover";
 import { shellColumnFitsAddressBar } from "../sidebar/NativeSidebar";
 import { useSidebarUi } from "../sidebar/state";
 import { followPeekHold, peekHeld, watchPeekHolds } from "./peekHold";
-import { ProfileSwipe } from "./ProfileSwipe";
 import { useShellLayoutPush } from "./shellLayout";
 import { useShellModal } from "./shellModal";
 import {
@@ -415,9 +414,7 @@ function SidebarDock({
   const sidebar = useMemo(
     () => (
       <AreaBoundary area="sidebar">
-        <ProfileSwipe>
-          <Sidebar width={width} />
-        </ProfileSwipe>
+        <Sidebar width={width} />
       </AreaBoundary>
     ),
     [width],

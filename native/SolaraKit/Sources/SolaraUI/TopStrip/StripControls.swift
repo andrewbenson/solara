@@ -1,4 +1,6 @@
 import AppKit
+import SolaraModel
+import SolaraStore
 
 public struct StripControlsState: Decodable, Equatable, Sendable {
   public var title: String
@@ -15,6 +17,13 @@ public struct StripControlsState: Decodable, Equatable, Sendable {
     self.nameColor = nameColor
     self.downloadsOpen = downloadsOpen
     self.downloadsTooltip = downloadsTooltip
+  }
+
+  public init(state: BrowserState, window: BrowserWindow, nameColor: String, downloadsHint: String?) {
+    self.init(title: window.incognito ? "Incognito" : state.profiles[window.profileId]?.name ?? BrowserState.defaultProfile.name,
+      incognito: window.incognito, profiles: state.profileOrder.count, nameColor: nameColor,
+      downloadsOpen: state.windowUi[window.id]?.downloadsOpen ?? false,
+      downloadsTooltip: downloadsHint.map { "Downloads (\($0))" } ?? "Downloads")
   }
 }
 

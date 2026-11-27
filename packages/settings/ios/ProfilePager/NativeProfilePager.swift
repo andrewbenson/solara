@@ -11,30 +11,16 @@ import SolaraUI
 @MainActor
 enum NativeProfilePager {
   static var hosts: [String: ProfilePagerHost] = [:]
-  private(set) static var looks: [String: NSDictionary] = [:]
 
   static func start(_ shell: WindowShellView, subscribeToStore: Bool = true) -> ProfilePagerHost? {
-    guard NativeWindowShell.enabled, NativeTopStrip.enabled else { return nil }
+    guard NativeWindowShell.enabled else { return nil }
     let host = ProfilePagerHost(shell: shell, subscribeToStore: subscribeToStore)
     hosts[shell.windowId] = host
     return host
   }
 
-  static var onPosition: ((String, Double) -> Void)?
-
-  static func moved(_ windowId: String, _ position: Double) {
-    onPosition?(windowId, position)
-  }
-
   static func ended(_ host: ProfilePagerHost) {
     if hosts[host.windowId] === host { hosts[host.windowId] = nil }
-  }
-
-  static func setLooks(_ json: String) {
-    guard let data = json.data(using: .utf8), let all = (try? JSONSerialization.jsonObject(with: data)) as? [String: NSDictionary] else { return }
-    guard all != looks else { return }
-    looks = all
-    for host in hosts.values { host.looksChanged() }
   }
 
   static func describe(_ windowId: String) -> String {
@@ -76,14 +62,6 @@ final class ProfilePagerCommits: @unchecked Sendable {
   }
 }
 
-struct PagerWindow: Equatable {
-  var profileId: String
-  var order: [String]
-  var index: Int?
-  var engineProfile: String
-  var neighbours: [String]
-}
-
 @MainActor
 final class ProfilePagerHost {
   static let wheelThreshold = 1.0
@@ -96,11 +74,22 @@ final class ProfilePagerHost {
   let stripTarget = NativeSwipeTarget()
   let peekTarget = NativeSwipeTarget()
   let tint = ProfileTintView()
+  var sidebarScrollOffsets: [String: CGFloat] = [:]
+  var stripScrollOffsets: [Bool: [String: CGFloat]] = [:]
   private var listener: Int?
   private let commits = ProfilePagerCommits()
   private var positionObserver: NSObjectProtocol?
   private var loadObserver: NSObjectProtocol?
-  private var window: PagerWindow?
+  private struct TintInput: Equatable {
+    var order: [String]
+    var profiles: [Profile?]
+    var dark: Bool
+    var followsAppearance: Bool
+  }
+
+  private var tintInput: TintInput?
+  private var looks: [String: NSDictionary] = [:]
+  private var window: ProfilePagerSelection?
   private var ack = 0
   private var pager: ACPager?
   private var wheel = (sum: 0.0, last: 0.0, trigger: -Double.infinity)
@@ -133,7 +122,6 @@ final class ProfilePagerHost {
       MainActor.assumeIsolated {
         guard let self, !self.stopped else { return }
         self.tint.position = position
-        NativeProfilePager.moved(windowId, position)
       }
     }
     loadObserver = NotificationCenter.default.addObserver(forName: Notification.Name("SolaraCoreProfileDidLoad"), object: nil, queue: .main) {
@@ -181,12 +169,13 @@ final class ProfilePagerHost {
     let live = window?.index != nil
     sidebarTarget.isHidden = !live || sidebar == nil
     stripTarget.isHidden = !live || frames.topStrip == nil
-    if NativeWindowShell.nativeLayoutActive(windowId), let peek = TopStripPeekHost.hosts[windowId], let content = peek.view.content {
+    if let peek = TopStripPeekHost.hosts[windowId], let content = peek.view.content {
       if peekTarget.superview !== content { content.addSubview(peekTarget) }
       peekTarget.frame = content.bounds
       peekTarget.isHidden = !live || !peek.view.live
     } else {
       peekTarget.isHidden = true
+      peekTarget.removeFromSuperview()
     }
     if let last = shell.subviews.last, last !== stripTarget {
       for target in [sidebarTarget, stripTarget] where target.superview === shell {
@@ -195,26 +184,17 @@ final class ProfilePagerHost {
     }
   }
 
-  func looksChanged() {
-    renderTint()
-  }
-
   func commit(_ state: BrowserState, selectionRequested: Bool = false) {
-    guard !stopped, let w = state.windows[windowId] else { return }
-    let order = state.profileOrder
-    let index = w.incognito ? nil : order.firstIndex(of: w.profileId)
-    let next = PagerWindow(
-      profileId: w.profileId, order: order, index: index, engineProfile: state.engineProfile(w.profileId),
-      neighbours: index.map { i in [i - 1, i + 1].filter { order.indices.contains($0) }.map { state.engineProfile(order[$0]) } } ?? [])
+    guard !stopped, let next = ProfilePagerSelection(state: state, windowId: windowId) else { return }
     let previous = window
     window = next
     configure(next, previous: previous, selectionRequested: selectionRequested)
     if previous != next { scheduleSwap() }
-    renderTint()
+    renderTint(state)
     place()
   }
 
-  private func configure(_ w: PagerWindow, previous: PagerWindow?, selectionRequested: Bool) {
+  private func configure(_ w: ProfilePagerSelection, previous: ProfilePagerSelection?, selectionRequested: Bool) {
     let multiple = w.order.count > 1
     for target in [sidebarTarget, stripTarget, peekTarget] {
       target.canSwipeBack = (w.index ?? 0) > 0
@@ -233,7 +213,7 @@ final class ProfilePagerHost {
     self.pager = pager
     sidebarTarget.use(pager)
     stripTarget.use(pager)
-    peekTarget.use(NativeWindowShell.nativeLayoutActive(windowId) ? pager : nil)
+    peekTarget.use(pager)
     pager.configure(selected: index, count: w.order.count, ack: ack, order: w.order.joined(separator: "\n"))
     if selectionRequested {
       for target in [sidebarTarget, stripTarget, peekTarget] { ACSwipe.cancelTarget(target) }
@@ -292,20 +272,44 @@ final class ProfilePagerHost {
     step(delta)
   }
 
-  private func step(_ delta: Int) {
-    guard !stopped, let w = window, let index = w.index else { return }
-    if pager?.step(delta, wrap: false, order: w.order.joined(separator: "\n")) == true { return }
-    let target = index + delta
-    guard w.order.indices.contains(target) else { return }
-    _ = try? NativeStoreHandle.store?.dispatch(Command("switchProfile", [.string(windowId), .string(w.order[target])]), origin: .native)
+  func switchTo(_ profileId: String) {
+    guard !stopped, let w = window, let index = w.order.firstIndex(of: profileId) else { return }
+    if pager?.switchTo(index, order: w.order.joined(separator: "\n")) == true { return }
+    select(profileId)
   }
 
-  private func renderTint() {
-    guard !stopped else { return }
-    guard let w = window, let index = w.index else { return tint.show(nil) }
-    tint.show(w.order.map { ($0, NativeProfilePager.looks[$0]) })
+  func step(_ delta: Int, wrap: Bool = false) {
+    guard !stopped, let w = window, let index = w.index, delta == -1 || delta == 1 else { return }
+    if pager?.step(delta, wrap: wrap, order: w.order.joined(separator: "\n")) == true { return }
+    let target = wrap ? (index + delta + w.order.count) % w.order.count : index + delta
+    guard w.order.indices.contains(target) else { return }
+    select(w.order[target])
+  }
+
+  private func select(_ profileId: String) {
+    _ = try? WorkspaceWrites.store?.dispatch(Command("switchProfile", [.string(windowId), .string(profileId)]), origin: .native)
+  }
+
+  private func renderTint(_ state: BrowserState) {
+    guard let w = window, let index = w.index else {
+      tint.show(nil)
+      shell?.cardEdgeTint = nil
+      return
+    }
+    let input = TintInput(order: w.order, profiles: w.order.map { state.profiles[$0] }, dark: state.ui.appDark,
+      followsAppearance: state.settings.bool("spacesFollowAppearance"))
+    if input != tintInput {
+      tintInput = input
+      looks = Dictionary(uniqueKeysWithValues: Set(w.order).compactMap { id in
+        let look = LaunchBackdropProvider.profile(state, profileId: id, appDark: input.dark).foundation
+        return (look as? NSDictionary).map { (id, $0) }
+      })
+      tint.show(w.order.map { ($0, looks[$0]) })
+    } else if tint.isHidden {
+      tint.show(w.order.map { ($0, looks[$0]) })
+    }
     tint.position = (ACPager.snapshot(windowId)?["position"] as? Double) ?? Double(index)
-    shell?.cardEdgeTint = w.order.indices.contains(index) ? Self.frameColor(NativeProfilePager.looks[w.order[index]]) : nil
+    shell?.cardEdgeTint = Self.frameColor(looks[w.profileId])
   }
 
   static func frameColor(_ look: NSDictionary?) -> NSColor? {
@@ -435,29 +439,30 @@ public class ProfilePagerModule: Module {
   public func definition() -> ModuleDefinition {
     Name("SolaraProfilePager")
 
-    Events("onPagerPosition")
+    Function("active") { (windowId: String) -> Bool in
+      NativeWindowShell.enabled && NativeWindowShell.active(windowId)
+    }
 
-    OnStartObserving("onPagerPosition") {
-      let sink = ProfilePagerSink(self)
-      DispatchQueue.main.async {
-        MainActor.assumeIsolated {
-          NativeProfilePager.onPosition = { windowId, position in
-            sink.module?.sendEvent("onPagerPosition", ["windowId": windowId, "position": position])
-          }
+    AsyncFunction("switchTo") { (windowId: String, profileId: String) in
+      MainActor.assumeIsolated {
+        if let host = NativeProfilePager.hosts[windowId] {
+          host.switchTo(profileId)
+        } else {
+          _ = try? WorkspaceWrites.store?.dispatch(Command("switchProfile", [.string(windowId), .string(profileId)]), origin: .native)
         }
       }
-    }
+    }.runOnQueue(.main)
 
-    OnStopObserving("onPagerPosition") {
-      DispatchQueue.main.async { MainActor.assumeIsolated { NativeProfilePager.onPosition = nil } }
-    }
-
-    Function("active") { (windowId: String) -> Bool in
-      NativeWindowShell.enabled && NativeTopStrip.enabled && NativeWindowShell.active(windowId)
-    }
-
-    AsyncFunction("setLooks") { (json: String) in
-      MainActor.assumeIsolated { NativeProfilePager.setLooks(json) }
+    AsyncFunction("step") { (windowId: String, delta: Int) in
+      MainActor.assumeIsolated {
+        if let host = NativeProfilePager.hosts[windowId] {
+          host.step(delta, wrap: true)
+        } else if let store = WorkspaceWrites.store, let window = ProfilePagerSelection(state: store.state, windowId: windowId),
+          let index = window.index, delta == -1 || delta == 1 {
+          let target = (index + delta + window.order.count) % window.order.count
+          _ = try? store.dispatch(Command("switchProfile", [.string(windowId), .string(window.order[target])]), origin: .native)
+        }
+      }
     }.runOnQueue(.main)
 
     AsyncFunction("describe") { (windowId: String) -> String in
@@ -501,11 +506,6 @@ enum PagerTrace {
     guard let data = try? JSONSerialization.data(withJSONObject: taken) else { return "[]" }
     return String(decoding: data, as: UTF8.self)
   }
-}
-
-private final class ProfilePagerSink: @unchecked Sendable {
-  weak var module: ProfilePagerModule?
-  init(_ module: ProfilePagerModule) { self.module = module }
 }
 
 #if SOLARA_PROBES

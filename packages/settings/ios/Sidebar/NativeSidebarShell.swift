@@ -514,10 +514,12 @@ final class NativeLayoutChrome {
     owner.refresh()
   }
 
-  static func downloadsRect(_ windowId: String) -> NSRect? {
+  static func stripControls(_ windowId: String) -> StripControlsView? {
     guard let owner = owners[windowId], !owner.stopped, !owner.stripRow.isHiddenOrHasHiddenAncestor else { return nil }
-    return owner.controls.downloadsRect
+    return owner.controls
   }
+
+  static func downloadsRect(_ windowId: String) -> NSRect? { stripControls(windowId)?.downloadsRect }
   let shell: WindowShellView
   let generation: UInt64
   let column: SidebarShellColumn
@@ -550,7 +552,6 @@ final class NativeLayoutChrome {
   private var state: BrowserState?
   private var revision = -1
   private var sidebarFeed: SidebarPresentationInput?
-  private var stripFeed: StripHostState?
   private var sidebarDropOver = false
   private var held = false
   private let revealHolds = RevealHolds()
@@ -617,7 +618,7 @@ final class NativeLayoutChrome {
     }
     controls.onAction = { [weak self] action in
       guard let self, !self.stopped else { return }
-      self.sendFeature("topStrip.peek.action", action == .profileMenu ? "profileMenu" : "toggleDownloads")
+      NativeTopStrip.controlAction(action, windowId: self.shell.windowId)
     }
     dock.onPeekCoverage = { [weak self] live, coverage in
       self?.sendFeature(NativeSidebarDock.topic, "peek", ["live": live, "right": coverage?.maxX ?? 0,
@@ -772,25 +773,14 @@ final class NativeLayoutChrome {
       topTabs: input.layout.topTabs, width: Double(input.layout.sidebarWidth), held: held || controls.downloadsOpen,
       sidebarPosition: input.layout.sidebarSide.rawValue, look: look.panel))
     let stripLook = NativeLayoutAppearance(state: state, profileId: window.profileId, incognito: window.incognito, strip: true)
-    var strip = StripHostState(profileId: window.profileId, dark: stripLook.dark)
-    strip.theme = stripLook.tokens
-    strip.border = look.border
-    strip.glow = look.glow
-    strip.pages = window.incognito ? nil : state.profileOrder.map { id in
-      let page = NativeLayoutAppearance(state: state, profileId: id, incognito: false, strip: true)
-      return SidebarPageLook(profileId: id, dark: page.dark, theme: page.tokens, border: page.border, glow: page.glow, tidy: false, incognito: false)
-    }
-    strip.selection = sidebar.selection
-    strip.iconRing = sidebar.iconRing
-    strip.engines = stripFeed?.engines ?? sidebar.engines
-    strip.capture = stripFeed?.capture ?? sidebar.capture ?? [:]
-    strip.bands = stripFeed?.bands ?? [:]
-    strip.closeHint = stripFeed?.closeHint ?? sidebar.closeHint
-    strip.newTabMark = stripFeed?.newTabMark
+    let stripControls = stripLook.controls(state: state, window: window)
+    var strip: StripHostState?
     self.strip.renderingEnabled = input.layout.topTabs
-    if self.strip.renderingEnabled { self.strip.apply(state: state, host: strip) }
-    var stripControls = controls
-    stripControls.nameColor = stripLook.nameColor
+    if input.layout.topTabs {
+      let presentation = NativeTopStrip.presentation(state: state, window: window, look: stripLook)
+      self.strip.apply(state: state, host: presentation)
+      strip = presentation
+    }
     stripRow.leadingInset = input.windowFullscreen ? 8 : ShellMetrics.topStripLeadingReservation
     self.controls.windowFullscreen = input.windowFullscreen
     self.controls.update(stripControls, theme: stripLook.tokens)
@@ -800,9 +790,9 @@ final class NativeLayoutChrome {
     glowOver = NativeSidebarShell.dropGlow(shell.windowId, js: stripOver)
     glowLook = (stripLook.tokens["accent"] ?? "#4A77D4", stripLook.dark)
     glow.view.set(over: glowOver || stripDrop.active, accent: stripLook.tokens["accent"] ?? "#4A77D4", dark: stripLook.dark)
-    strip.floating = true
+    strip?.floating = true
     peek.view.frame = shell.overlay.bounds
-    peek.apply(state: state, host: strip, controls: stripControls,
+    peek.apply(state: state, host: strip, controls: stripControls, theme: stripLook.tokens,
       enabled: input.layout.topTabs && dock.stripAway && !input.layout.fullscreen,
       bandLeft: ShellMetrics.topStripLeadingReservation, look: look.panel, renderStrip: peek.view.live)
     if input.layout.topTabs && effectiveOpen && !dock.moving { ShellWindowEdge.setLightsCenter(shell.windowId, ShellMetrics.topStripLightsCenter) }
@@ -923,9 +913,8 @@ final class NativeLayoutChrome {
         owner.sidebarFeed = (feed["state"] as? String).flatMap(SidebarPresentationInput.decode)
         owner.sidebarDropOver = feed["dropOver"] as? Bool ?? false
         owner.held = feed["held"] as? Bool ?? false
-      } else if topic == "topStrip.nativeFeed", let json = feed["state"] as? String {
-        owner.stripFeed = StripHostState.decode(json)
-        owner.stripOver = ((try? JSONSerialization.jsonObject(with: Data(json.utf8))) as? [String: Any])?["dropOver"] as? Bool ?? false
+      } else if topic == "topStrip.nativeFeed" {
+        owner.stripOver = feed["dropOver"] as? Bool ?? false
       }
       owner.feedRevision += 1
       owner.refresh()
@@ -1083,7 +1072,7 @@ private final class NativeLayoutStripDropView: NSView, DevDropDestination, NSSpr
 }
 
 @MainActor
-private final class NativeLayoutStripRow: NSView {
+final class NativeLayoutStripRow: NSView {
   let strip: TopStripView
   let controls = StripControlsView()
   var leadingInset: CGFloat = ShellMetrics.topStripLeadingReservation {
@@ -1154,10 +1143,7 @@ struct NativeLayoutAppearance {
       return SidebarChromeDot(id: id, name: profile.name, slot: Double(index), icon: profile.icon,
         shortcut: shortcuts[JSKey("switchProfile:\(id)")], color: customTheme(profile).map(ThemeMath.accent) ?? swatches[profile.color] ?? swatches["plum"])
     }
-    let downloadsTooltip = shortcuts[JSKey("downloads")].map { "Downloads (\($0))" } ?? "Downloads"
-    let controls = StripControlsState(title: window.incognito ? "Incognito" : state.profiles[window.profileId]?.name ?? BrowserState.defaultProfile.name,
-      incognito: window.incognito, profiles: state.profileOrder.count, nameColor: look.nameColor,
-      downloadsOpen: state.windowUi[windowId]?.downloadsOpen ?? false, downloadsTooltip: downloadsTooltip)
+    let controls = look.controls(state: state, window: window, downloadsHint: shortcuts[JSKey("downloads")])
     let product = Bundle.main.productName
     let update = AppUpdater.shared.pendingUpdate.map {
       SidebarUpdatePillState(text: "New \(product) Version Available",
@@ -1167,6 +1153,14 @@ struct NativeLayoutAppearance {
       dark: look.dark, theme: look.tokens, dots: dots, savedWidth: geometry.savedWidth, iconsOnly: geometry.iconsOnly,
       dropOver: dropOver, update: update, currentProfileId: window.profileId, sidebarPosition: window.effectiveSidebarPosition(state.settings),
       windowFullscreen: windowFullscreen)
+  }
+
+  func controls(state: BrowserState, window: BrowserWindow) -> StripControlsState {
+    controls(state: state, window: window, downloadsHint: CommandShortcutSnapshot().hint("downloads", state: state))
+  }
+
+  private func controls(state: BrowserState, window: BrowserWindow, downloadsHint: String?) -> StripControlsState {
+    StripControlsState(state: state, window: window, nameColor: nameColor, downloadsHint: downloadsHint)
   }
 
   private static let swatches = ["plum": "#C07A98", "blue": "#4691C3", "purple": "#7873AF", "pink": "#D37B8B", "red": "#C1575C", "orange": "#D87249", "yellow": "#E3AC38", "green": "#3EB489", "neutral": "#8E8E93"]

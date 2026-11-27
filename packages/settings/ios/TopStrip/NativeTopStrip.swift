@@ -1,6 +1,7 @@
 import AppKit
 import ExpoModulesCore
 import Foundation
+import SolaraCore
 import SolaraModel
 import SolaraShell
 import SolaraStore
@@ -96,6 +97,15 @@ public class TopStripModule: Module {
       FrameUpdates.readOnMain { TopStripGlowHost.hosts[windowId]?.view.trace ?? [] }
     }.runOnQueue(.main)
 
+    AsyncFunction("downloadsAnchor") { (windowId: String) -> [Double]? in
+      FrameUpdates.readOnMain {
+        let peek = TopStripPeekHost.hosts[windowId]
+        let rect = peek?.view.live == true ? peek?.row.controls.downloadsRect : NativeTopStrip.downloadsRect(windowId)
+        guard let rect, let root = (peek?.view.window ?? NativeTopStrip.hosts[windowId]?.view.window)?.contentView else { return nil }
+        return [rect.minX, root.bounds.height - rect.maxY, rect.width, rect.height].map(Double.init)
+      }
+    }.runOnQueue(.main)
+
     AsyncFunction("peekState") { (windowId: String) -> String in
       FrameUpdates.readOnMain { TopStripPeekHost.hosts[windowId].flatMap { NativeTopStrip.json($0.describe()) } ?? "null" }
     }.runOnQueue(.main)
@@ -139,7 +149,6 @@ public class TopStripModule: Module {
 @MainActor
 enum NativeTopStrip {
   static let kind = "topStrip"
-  static let floatingKind = "topStripFloating"
   static let peekKind = "topStripPeek"
   static var hosts: [String: TopStripHost] = [:]
 
@@ -149,26 +158,85 @@ enum NativeTopStrip {
 
   static func register() {
     NativeNumberedTabs.register()
-    guard enabled, !NativeWindowShell.nativeLayout else { return }
+    guard !NativeWindowShell.nativeLayout else { return }
     HostedViews.register(kind) { windowId in
       guard !NativeWindowShell.nativeLayout else { return nil }
       let host = TopStripHost(windowId: windowId)
+      let row = NativeLayoutStripRow(strip: host.view)
+      let glow = TopStripGlowHost()
       hosts[windowId] = host
+      host.dockedControls = row.controls
+      TopStripGlowHost.hosts[windowId] = glow
+      row.addSubview(glow.view, positioned: .below, relativeTo: host.view)
+      host.onDropOver = {
+        glow.applyDropOver(NativeSidebarShell.dropGlow(windowId, js: $0))
+      }
+      row.controls.onAction = { action in controlAction(action, windowId: windowId) }
+      row.onPageWidth = { [weak host, weak row] width in
+        host?.pageWidth = Double(width)
+        guard let row else { return }
+        glow.view.frame = StripDropGlowMetrics.frame(width: row.bounds.width, left: row.leadingInset + row.controls.profileSlotWidth,
+          right: StripControlsLayout.trailingReservation)
+      }
+      host.onPresentation = { [weak row, weak host] state, window, look in
+        guard let row, let host else { return }
+        let fullscreen = window.fullScreen != nil && window.fullScreen != 0
+        row.leadingInset = fullscreen ? 8 : ShellMetrics.topStripLeadingReservation
+        row.controls.windowFullscreen = fullscreen
+        row.controls.update(look.controls(state: state, window: window), theme: look.tokens)
+        row.needsLayout = true
+        row.layoutSubtreeIfNeeded()
+        glow.look = (look.tokens["accent"] ?? "#4A77D4", look.dark)
+        host.onDropOver(host.dropOver)
+      }
+      host.setNeedsRender()
       return HostedContent(
-        view: host.view,
-        onUnmount: { [weak host] in
-          host?.stop()
+        view: row,
+        onUnmount: {
+          host.stop()
+          glow.view.stop()
           if hosts[windowId] === host { hosts[windowId] = nil }
+          if TopStripGlowHost.hosts[windowId] === glow { TopStripGlowHost.hosts[windowId] = nil }
         },
         takesFocus: false,
-        onState: { [weak host] json in host?.apply(json) })
-    }
-    HostedViews.register(floatingKind) { windowId in
-      guard !NativeWindowShell.nativeLayout else { return nil }
-      let host = TopStripHost(windowId: windowId, takesDrops: false)
-      return HostedContent(view: host.view, onUnmount: { host.stop() }, takesFocus: false, onState: { [weak host] json in host?.apply(json) })
+        onState: { [weak host] json in
+          guard let host else { return }
+          host.dropOver = (try? JSONValue.parse(json))?["dropOver"]?.bool ?? false
+        })
     }
     TopStripPeekHost.register()
+  }
+
+  static func downloadsRect(_ windowId: String) -> NSRect? {
+    if let controls = hosts[windowId]?.dockedControls, !controls.isHiddenOrHasHiddenAncestor { return controls.downloadsRect }
+    return NativeLayoutChrome.downloadsRect(windowId)
+  }
+
+  static func controlAction(_ action: StripControlAction, windowId: String) {
+    switch action {
+    case .profileMenu:
+      NativeSidebarShell.send(windowId, "profileMenu")
+    case .toggleDownloads:
+      guard let store = WorkspaceWrites.store, store.state.windows[windowId] != nil else { return }
+      _ = try? store.dispatch(Command("setDownloadsOpen", [.string(windowId), .bool(store.state.windowUi[windowId]?.downloadsOpen != true)]), origin: .native)
+      FrameUpdates.flush()
+    }
+  }
+
+  static func presentation(state: BrowserState, window: BrowserWindow, look: NativeLayoutAppearance, floating: Bool = false) -> StripHostState {
+    var host = StripHostState(profileId: window.profileId, dark: look.dark)
+    host.theme = look.tokens
+    host.border = look.border
+    host.glow = look.glow
+    host.floating = floating
+    host.pages = SidebarPagerView.profileIDs(state: state, windowId: window.id).map { id in
+      let page = id == window.profileId ? look : NativeLayoutAppearance(state: state, profileId: id, incognito: false, strip: true)
+      return SidebarPageLook(profileId: id, dark: page.dark, theme: page.tokens, border: page.border, glow: page.glow, tidy: false, incognito: false)
+    }
+    host.closeHint = CommandShortcutSnapshot().hint("closeTab", state: state)
+    let store = NativeStoreHandle.store
+    host.applyWorkspace(state: state, windowId: window.id) { store?.pageEngineMark($0, in: state) }
+    return host
   }
 
   static func incomingPage(_ windowId: String) -> StripPageView? {
@@ -191,7 +259,7 @@ enum NativeTopStrip {
       out["windowY"] = content.bounds.height - inWindow.maxY
       return out
     }
-    return json(["items": items, "chip": page.pageLayout.chip, "scrolled": page.scrolledX, "keys": page.pageLayout.items.map(\.key)])
+    return json(["items": items, "chip": page.pageLayout.chip, "scrolled": page.scrolledX, "pageWidth": page.pageWidth, "keys": page.pageLayout.items.map(\.key)])
   }
 
   static func hoverShifts(windowId: String) -> String? {
@@ -244,7 +312,15 @@ final class TopStripHost {
   private var mediaListener: UUID?
   var storeSubscriptions: Int { listener == nil ? 0 : 1 }
   private let commits = TopStripCommits()
-  private var markUri: String?
+  weak var dockedControls: StripControlsView?
+  var dropOver = false { didSet { if oldValue != dropOver { onDropOver(dropOver) } } }
+  var onDropOver: (Bool) -> Void = { _ in }
+  var onPresentation: ((BrowserState, BrowserWindow, NativeLayoutAppearance) -> Void)?
+  private let floating: Bool
+  private let projectsStore: Bool
+  private var rendered = false
+  private var rendering = false
+  private var dragObserver: NSObjectProtocol?
   private var pagerObserver: NSObjectProtocol?
   #if SOLARA_PROBES
   private var probeStopped = false
@@ -259,6 +335,8 @@ final class TopStripHost {
 
   init(windowId: String, takesDrops: Bool = true, subscribeToStore: Bool = true) {
     self.windowId = windowId
+    floating = !takesDrops
+    projectsStore = subscribeToStore
     view = TopStripView(windowId: windowId)
     view.takesDrops = takesDrops
     view.favicons.loader = { request in try await NativeSidebar.favicon(request) }
@@ -276,6 +354,12 @@ final class TopStripHost {
       guard note.userInfo?["key"] as? String == windowId, let position = note.userInfo?["position"] as? Double else { return }
       MainActor.assumeIsolated { self?.view.setPagerPosition(position) }
     }
+    if subscribeToStore, takesDrops {
+      dragObserver = NotificationCenter.default.addObserver(forName: TabDragSession.changed, object: nil, queue: .main) {
+        [weak self] _ in
+        MainActor.assumeIsolated { if let self { self.onDropOver(self.dropOver) } }
+      }
+    }
     if subscribeToStore, let store = NativeStoreHandle.store {
       state = store.state
       let sink = commits
@@ -286,9 +370,14 @@ final class TopStripHost {
   func stop() {
     guard !stopped else { return }
     stopped = true
+    if rendered, projectsStore { NativeProfilePager.hosts[windowId]?.stripScrollOffsets[floating] = view.scrollOffsets }
     commits.host = nil
     NativeMediaStack.stopListening(mediaListener)
     mediaListener = nil
+    onPresentation = nil
+    onDropOver = { _ in }
+    if let dragObserver { NotificationCenter.default.removeObserver(dragObserver) }
+    dragObserver = nil
     view.onAction = { _ in }
     view.stop()
     #if SOLARA_PROBES
@@ -298,14 +387,6 @@ final class TopStripHost {
     listener = nil
     if let pagerObserver { NotificationCenter.default.removeObserver(pagerObserver) }
     pagerObserver = nil
-  }
-
-  func apply(_ json: String) {
-    guard !stopped, let next = StripHostState.decode(json) else { return }
-    if next == hostState { return }
-    hostState = next
-    loadMark(next.newTabMark)
-    setNeedsRender()
   }
 
   func commit(_ next: BrowserState) {
@@ -318,37 +399,35 @@ final class TopStripHost {
     guard !stopped else { return }
     self.state = state
     hostState = host
-    loadMark(host.newTabMark)
     render()
   }
 
-  private func setNeedsRender() {
+  func setNeedsRender() {
     FrameUpdates.schedule(self) { [weak self] in self?.render() }
   }
 
   private func render() {
-    guard !stopped, renderingEnabled, var hostState, let state = state ?? NativeStoreHandle.store?.state else { return }
+    guard !stopped, !rendering, let state = state ?? NativeStoreHandle.store?.state,
+      let window = state.windows[windowId] else { return }
+    rendering = true
+    defer { rendering = false }
     self.state = state
+    if projectsStore {
+      let look = NativeLayoutAppearance(state: state, profileId: window.profileId, incognito: window.incognito, strip: true)
+      onPresentation?(state, window, look)
+      guard renderingEnabled else { return }
+      hostState = NativeTopStrip.presentation(state: state, window: window, look: look, floating: floating)
+    }
+    guard renderingEnabled, var hostState else { return }
     if let pageWidth { hostState.pageWidth = pageWidth }
     hostState.capture = NowPlayingStore.shared.capture
-    view.update(state: state, host: hostState)
-  }
-
-  private func loadMark(_ uri: String?) {
-    guard let uri, uri != markUri else { return }
-    markUri = uri
-    if let image = SettingsAdapters.image(uri) {
-      image.isTemplate = true
-      view.favicons.newTabMark = image
-      return
+    if !rendered, projectsStore {
+      view.pendingScrollOffsets = NativeProfilePager.hosts[windowId]?.stripScrollOffsets[floating] ?? [:]
     }
-    guard let url = URL(string: uri) else { return }
-    Task { @MainActor [weak self] in
-      let image = await Task.detached { (try? Data(contentsOf: url)).flatMap(NSImage.init(data:)) }.value
-      guard let self, !self.stopped, self.markUri == uri, let image else { return }
-      image.isTemplate = true
-      self.view.favicons.newTabMark = image
-      self.setNeedsRender()
+    view.update(state: state, host: hostState)
+    if !rendered && view.current != nil {
+      rendered = true
+      if let position = ACPager.snapshot(windowId)?["position"] as? Double { view.setPagerPosition(position) }
     }
   }
 
@@ -525,15 +604,8 @@ public enum TopStripRead {
 
   private static func controls(windowId: String) -> [String: Any]? {
     guard let strip = NativeTopStrip.hosts[windowId]?.view, let content = strip.window?.contentView else { return nil }
-    func find(_ root: NSView) -> StripControlsView? {
-      if root.isHiddenOrHasHiddenAncestor { return nil }
-      if let view = root as? StripControlsView { return view }
-      for child in root.subviews {
-        if let view = find(child) { return view }
-      }
-      return nil
-    }
-    guard let host = find(content) else { return nil }
+    guard let host = NativeTopStrip.hosts[windowId]?.dockedControls ?? NativeLayoutChrome.stripControls(windowId),
+      !host.isHiddenOrHasHiddenAncestor else { return nil }
     let profile = host.subviews.first { !$0.isHidden && $0.accessibilityLabel() != "Downloads" }
     let downloads = host.subviews.first { $0.accessibilityLabel() == "Downloads" }
     func rect(_ view: NSView?) -> Any {

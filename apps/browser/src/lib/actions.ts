@@ -1,6 +1,7 @@
-import { listExtensions, stepPager } from "@solara/solaracore";
+import { listExtensions } from "@solara/solaracore";
 import { confirm, focusWindow } from "@solara/shell";
-import { pageToProfile } from "../components/layout/profilePager";
+import { stepProfilePager, switchProfilePager } from "@solara/settings";
+import "../components/layout/profilePager";
 import { profileNames, requestCreateProfile, type CreateProfilePreset } from "../components/profiles/CreateProfile";
 import { useBrowser, type CreateWindowOptions } from "../store/browser";
 import { closeTogether } from "../store/closedTogether";
@@ -172,26 +173,12 @@ export function moveTabToWindow(tabId: string, target: string) {
 }
 
 export function switchProfile(windowId: string, profileId: string, animated = false) {
-  if (animated) pageToProfile(windowId, profileId);
+  if (animated) void switchProfilePager(windowId, profileId);
   else store().switchProfile(windowId, profileId);
 }
 
 export function cycleProfile(windowId: string, delta: 1 | -1) {
-  if (!cycleTarget(windowId, delta)) return;
-  void stepPager(windowId, delta, true, store().profileOrder.join("\n")).then((ok) => ok || cycleFromStore(windowId, delta));
-}
-
-function cycleFromStore(windowId: string, delta: 1 | -1) {
-  const target = cycleTarget(windowId, delta);
-  if (target) switchProfile(windowId, target, true);
-}
-
-function cycleTarget(windowId: string, delta: 1 | -1) {
-  const s = store();
-  const w = s.windows[windowId];
-  if (!w || w.incognito || s.profileOrder.length < 2) return null;
-  const i = s.profileOrder.indexOf(w.profileId);
-  return s.profileOrder[(i + delta + s.profileOrder.length) % s.profileOrder.length]!;
+  void stepProfilePager(windowId, delta);
 }
 
 export function openUrls(urls: string[], windowId?: string | null) {

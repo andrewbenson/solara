@@ -13,11 +13,12 @@ const fixture = session({
   tabs: [{ id: "t-work", profileId: "p-work", url: "about:blank", title: "Work" }],
   settings: { warnBeforeClosingWindow: false, warnBeforeClosingLastTab: false, sleepInactiveTabs: false, sidebarIconsOnly: false },
 });
+const layout = process.env.SOLARA_NATIVE_WINDOW_LAYOUT ?? "1";
 let instance;
 try {
   instance = await launch(resolve(appPath), {
     data: join(scratch, "data"), fresh: true, session: fixture, onboarded: true,
-    env: { SOLARA_NATIVE_WINDOW_LAYOUT: "1" },
+    env: { SOLARA_NATIVE_WINDOW_LAYOUT: layout },
     ready: 'return !!ac.store.getState().windows["w-smoke"]',
   });
   let evidence;
@@ -33,7 +34,7 @@ try {
     await sleep(100);
   }
   writeFileSync(join(scratch, "launch.json"), JSON.stringify(evidence, null, 2));
-  assert.equal(evidence?.shell?.nativeLayout, true, "explicit native window layout");
+  assert.equal(evidence?.shell?.nativeLayout, layout === "1", "requested window layout");
   assert.equal(evidence?.profileId, "p-work", "restored second profile");
   const dots = evidence?.column?.chrome?.dots;
   assert.deepEqual(dots?.map((dot) => dot.id), fixture.profileOrder);

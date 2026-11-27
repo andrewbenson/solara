@@ -258,7 +258,7 @@ try {
     await reset();
     await run(`return swipe("w2", ${STRIP}, ${JSON.stringify(steps([-18, -22, -22]))});`);
     try {
-      const [held, d, strips] = await run(`return Promise.all([S.devPagerState("w2"), P.describe("w2"), globalThis.expo.modules.SolaraWindowShell.describe("w2")]).then(([held, d, shell]) => [held, JSON.parse(d), JSON.parse(shell).nativeLayout ? [JSON.parse(shell).layout.stripAvailableWidth] : acPerf.findFibers("NativeTopStrip", 50).map((f) => f.memoizedProps).filter((p) => p.windowId === "w2" && p.floating === false).map((p) => p.pageWidth)]);`);
+      const [held, d, strips] = await run(`return Promise.all([S.devPagerState("w2"), P.describe("w2"), globalThis.expo.modules.SolaraWindowShell.describe("w2"), globalThis.expo.modules.SolaraTopStrip.items("w2")]).then(([held, d, shell, items]) => [held, JSON.parse(d), JSON.parse(shell).nativeLayout ? [JSON.parse(shell).layout.stripAvailableWidth] : [JSON.parse(items)?.pageWidth]]);`);
       const width = strips.length === 1 && Number.isFinite(strips[0]) && strips[0] >= 0 ? strips[0] + 2 * 15 : NaN;
       mine.strip = held.position;
       if (!Number.isFinite(width) || width <= 0 || !near(d.strip.pageWidth, width) || held.phase !== "tracking" || !(held.position > 0.02) || !near(held.position, 62 * 0.5 / width)) throw new Error(JSON.stringify({ held, target: d.strip, strips, width }));

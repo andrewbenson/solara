@@ -7,7 +7,7 @@ const routes = [
   ["./NativeSidebar.tsx", "sidebar.action", ["click", "close", "middleClick", "rename", "backToPinned", "tileDoubleClick", "toggleMute", "groupMenu", "toggleGroup", "closeGroup", "folder", "folderMenu", "scrolled", "renamed", "tidy", "clear", "cleanUp"], ["handled", "clicked", "removedPin", "tabMenu", "tabMenuChoice", "tabMenuSelectionChoice", "groupMenuChoice", "sidebarMenu", "overflowMenu", "newTab", "tidied", "cleared", "live"]],
   ["../layout/NativeTopStrip.tsx", "topStrip.action", ["click", "activate", "close", "toggleMute", "groupMenu", "toggleGroup", "closeGroup", "tuck", "folderMenu", "tileFolder", "tileFolderMenu"], ["removedPin", "tabMenu", "tabMenuChoice", "tabMenuSelectionChoice", "groupMenuChoice", "newTab"]],
   ["./NativeSidebar.tsx", "SHELL_TOPIC", ["drop", "toggleDownloads", "commitWidth", "iconsOnly"], ["profileMenu", "manageProfiles", "liveWidth"]],
-  ["../layout/NativeTopStrip.tsx", "topStrip.peek.action", ["drop"], ["profileMenu", "toggleDownloads", "live"]],
+  ["../layout/NativeTopStrip.tsx", "topStrip.peek.action", ["drop", "profileMenu", "toggleDownloads"], ["live"]],
 ];
 
 for (const [path, topic, removed, kept] of routes) {

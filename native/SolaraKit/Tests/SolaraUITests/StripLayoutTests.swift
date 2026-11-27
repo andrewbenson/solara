@@ -25,6 +25,28 @@ private func aim(_ from: Int, _ pointer: CGFloat, _ target: (Int) -> Bool = { _ 
 }
 
 @Suite struct StripLayoutTests {
+  @Test func workspaceProjectionReplacesFeedSelectionAndStatusInTheCurrentWindow() throws {
+    var state = try BrowserState(stateJSON: JSONValue.parse(#"""
+      {"windows":{"a":{"id":"a","profileId":"work","tabIds":["t","placeholder"]},"b":{"id":"b","profileId":"p","tabIds":["other"]}},
+       "tabs":{"t":{"id":"t","windowId":"a","profileId":"work","url":"https://example.com/"},
+               "placeholder":{"id":"placeholder","windowId":"a","profileId":"work","url":""},
+               "other":{"id":"other","windowId":"b","profileId":"p","url":"https://example.org/"}}}
+      """#).object ?? [:])
+    state.selection["a"] = TabSelection(["t"])
+    state.live["t"] = PageLiveFacts(themeColor: "#336699")
+    state.live["placeholder"] = PageLiveFacts(themeColor: "#FFFFFF")
+    state.live["other"] = PageLiveFacts(themeColor: "#FF0000")
+    var host = StripHostState(profileId: "stale")
+    host.selection = ["other"]
+    host.engines = ["other": "old"]
+    host.bands = ["other": "#FF0000"]
+    host.applyWorkspace(state: state, windowId: "a") { $0.id == "t" ? "engine" : nil }
+    #expect(host.profileId == "work")
+    #expect(host.selection == ["t"])
+    #expect(host.engines == ["t": "engine"])
+    #expect(host.bands == ["t": "#336699"])
+  }
+
   @Test func draggingRightHoldsTheRoomUntilTheFarQuarter() {
     #expect(aim(0, 110) == StripAim(to: 0, onto: nil))
     #expect(aim(0, 129) == StripAim(to: 0, onto: nil))

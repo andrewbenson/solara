@@ -23,6 +23,12 @@ private func group(collapsed: Bool, width: CGFloat, shown: Int?) -> StripPlacedG
 }
 
 @Suite @MainActor struct StripMotionTests {
+  @Test func aSurfaceChangeKeepsTheInFlightPositionForTheSameOrder() {
+    #expect(ProfilePagerSelection.retainedPosition(0.6, previous: ["p", "q"], next: ["p", "q"], selectionChanged: true) == 0.6)
+    #expect(ProfilePagerSelection.retainedPosition(0.6, previous: ["p", "q"], next: ["q", "p"], selectionChanged: true) == nil)
+    #expect(ProfilePagerSelection.retainedPosition(0, previous: ["p", "q"], next: ["p", "q"], selectionChanged: true) == nil)
+  }
+
   @Test func theGroupSpringOvershootsALittleAndSettlesOnItsTarget() {
     var value = StripSpringValue(0)
     value.animate(to: 1, .group)

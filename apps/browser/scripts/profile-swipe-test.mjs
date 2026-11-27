@@ -631,11 +631,11 @@ try {
     await pageEval("window.scrollTo(400,400); true");
     await sleep(100);
     const before = await pageEval("({x:scrollX,y:scrollY,url:location.href})");
-    const webState = await ac(`return {
+    const webState = await ac(`return Promise.resolve(globalThis.acPager("w1").debug()).then((pager) => ({
       window: ac.store.getState().windows.w1,
-      pager: globalThis.acPager("w1").debug(),
+      pager,
       pane: !!globalThis.acSwipe.pane("t1")
-    };`);
+    }));`);
     if (!webState.pane) {
       const error = new Error("loaded web fixture has no visible t1 swipe pane");
       error.evidence = { fixtureState, webState, windows: await windows(), before };

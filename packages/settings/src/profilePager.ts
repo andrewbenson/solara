@@ -1,10 +1,10 @@
-import { requireOptionalNativeModule, type EventSubscription } from "expo-modules-core";
+import { requireOptionalNativeModule } from "expo-modules-core";
 
 type ProfilePagerModule = {
   active(windowId: string): boolean;
-  setLooks(json: string): Promise<void>;
+  switchTo(windowId: string, profileId: string): Promise<void>;
+  step(windowId: string, delta: number): Promise<void>;
   describe(windowId: string): Promise<string>;
-  addListener(name: "onPagerPosition", listener: (event: { windowId: string; position: number }) => void): EventSubscription;
 };
 
 const native = requireOptionalNativeModule<ProfilePagerModule>("SolaraProfilePager");
@@ -17,11 +17,14 @@ export function profilePagerNative(windowId: string): boolean {
   }
 }
 
-export function setProfilePagerLooks(json: string) {
-  return native?.setLooks(json) ?? Promise.resolve();
+export function switchProfilePager(windowId: string, profileId: string) {
+  return native?.switchTo(windowId, profileId);
 }
 
-export function onProfilePagerPosition(listener: (windowId: string, position: number) => void): () => void {
-  const subscription = native?.addListener("onPagerPosition", (e) => listener(e.windowId, e.position));
-  return () => subscription?.remove();
+export function stepProfilePager(windowId: string, delta: number) {
+  return native?.step(windowId, delta);
+}
+
+export async function describeProfilePager(windowId: string) {
+  return native ? JSON.parse(await native.describe(windowId)) : null;
 }

@@ -8,7 +8,6 @@ import { downloadsIn } from "../store/ui";
 import { SIDEBAR_FOOTER_DOWNLOADS, SIDEBAR_HEADER_WITH_FIELD, useAddressBarInSidebar } from "./layout/windowLayout";
 import { DownloadsButton } from "./Downloads";
 import { PROFILE_INDICATOR_X, ProfileIndicator } from "./ProfileIndicator";
-import { usePagerPages } from "./layout/profilePager";
 import { PROFILE_DOTS_HEIGHT, ProfileDots, useProfileDotsShown } from "./profiles/ProfileDots";
 import { SidebarAddressRow, SidebarHeaderTools } from "./sidebar/AddressBar";
 import { SidebarDropArea } from "./sidebar/fileDrop";
@@ -37,7 +36,6 @@ export function Sidebar({ width }: { width: number }) {
 
 function SidebarFallback({ width, addressBar }: { width: number; addressBar: boolean }) {
   const windowId = useWindowId();
-  const { paging } = usePagerPages(windowId);
   const header = addressBar ? SIDEBAR_HEADER_WITH_FIELD : layout.sidebarHeader;
   const hasDownloads = useBrowser((s) => downloadsIn(s, windowId).length > 0);
   const dots = useProfileDotsShown();
@@ -55,7 +53,7 @@ function SidebarFallback({ width, addressBar }: { width: number; addressBar: boo
           right: 0,
           top: header - GLOW_ROOM,
           bottom: footer,
-          overflow: paging ? "hidden" : "visible",
+          overflow: dots ? "hidden" : "visible",
         }}
       >
         <NativeSidebar windowId={windowId} addressBar={addressBar} />

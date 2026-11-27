@@ -1,5 +1,39 @@
 import AppKit
 import SolaraModel
+import SolaraStore
+
+public struct ProfilePagerSelection: Equatable, Sendable {
+  public let profileId: String
+  public let order: [String]
+  public let index: Int?
+  public let engineProfile: String
+  public let neighbours: [String]
+
+  public init?(state: BrowserState, windowId: String) {
+    guard let window = state.windows[windowId] else { return nil }
+    profileId = window.profileId
+    let order = window.incognito ? [] : state.profileOrder
+    self.order = order
+    index = order.firstIndex(of: window.profileId)
+    engineProfile = state.engineProfile(window.profileId)
+    neighbours = index.map { index in
+      [index - 1, index + 1].compactMap { order.indices.contains($0) ? state.engineProfile(order[$0]) : nil }
+    } ?? []
+  }
+
+  static func pageOrder(profileId: String, profiles: [String], looks: [SidebarPageLook]?) -> [String] {
+    guard let looks else { return [profileId] }
+    let available = Set(looks.map(\.profileId))
+    let order = profiles.filter(available.contains)
+    return order.contains(profileId) ? order : [profileId]
+  }
+
+  static func retainedPosition(_ position: Double?, previous: [String], next: [String], selectionChanged: Bool) -> Double? {
+    guard previous == next, let position else { return nil }
+    if selectionChanged && abs(position - position.rounded()) < 0.001 { return nil }
+    return position
+  }
+}
 
 @MainActor
 public final class SidebarPagerView: NSView {
@@ -21,8 +55,10 @@ public final class SidebarPagerView: NSView {
   private var stale: Set<String> = []
   private var state: BrowserState?
   private var host: SidebarHostState?
+  private var order: [String] = []
   private var pagerPosition: Double?
   private var warm: DispatchWorkItem?
+  public var pendingScrollOffsets: [String: CGFloat] = [:]
 
   static let warmDelay: TimeInterval = 0.3
 
@@ -45,6 +81,7 @@ public final class SidebarPagerView: NSView {
     warm = nil
     state = nil
     host = nil
+    order = []
     onAction = { _ in }
     onLayoutAnchorsChange = nil
     for page in pages.values {
@@ -53,6 +90,7 @@ public final class SidebarPagerView: NSView {
     }
     pages.removeAll()
     stale.removeAll()
+    pendingScrollOffsets.removeAll()
   }
 
   public var current: SidebarView? { host.flatMap { pages[$0.profileId] } }
@@ -63,6 +101,10 @@ public final class SidebarPagerView: NSView {
   }
 
   public var pageIds: [String] { order }
+
+  public var scrollOffsets: [String: CGFloat] {
+    pendingScrollOffsets.merging(pages.mapValues { $0.scroll.contentView.bounds.minY }) { _, live in live }
+  }
 
   public func describePages() -> [[String: Any]] {
     order.compactMap { id in
@@ -91,10 +133,14 @@ public final class SidebarPagerView: NSView {
 
   public func update(state: BrowserState, host: SidebarHostState) {
     guard !stopped else { return }
+    let previous = order
+    let selectionChanged = self.host?.profileId != host.profileId
     self.state = state
-    if self.host?.profileId != host.profileId, let pagerPosition, abs(pagerPosition - pagerPosition.rounded()) < 0.001 { self.pagerPosition = nil }
     self.host = host
+    order = ProfilePagerSelection.pageOrder(profileId: host.profileId, profiles: Self.profileIDs(state: state, windowId: windowId), looks: host.pages)
+    pagerPosition = ProfilePagerSelection.retainedPosition(pagerPosition, previous: previous, next: order, selectionChanged: selectionChanged)
     stale = Set(pages.keys)
+    pendingScrollOffsets = pendingScrollOffsets.filter { order.contains($0.key) }
     for id in pages.keys where !order.contains(id) {
       pages[id]?.stop()
       pages[id]?.removeFromSuperview()
@@ -114,14 +160,6 @@ public final class SidebarPagerView: NSView {
   public override func layout() {
     super.layout()
     place()
-  }
-
-  private var order: [String] {
-    guard let host else { return [] }
-    guard let looks = host.pages, let state else { return [host.profileId] }
-    let paged = Set(looks.map(\.profileId))
-    let ids = state.profileOrder.filter { paged.contains($0) }
-    return ids.contains(host.profileId) ? ids : [host.profileId]
   }
 
   var position: Double {
@@ -178,6 +216,12 @@ public final class SidebarPagerView: NSView {
     let pageHost = id == host.profileId ? host : host.pages?.first { $0.profileId == id }.map(host.page) ?? host
     if page.frame.size != bounds.size { page.frame.size = bounds.size }
     page.update(state: state, host: pageHost)
+    if let offset = pendingScrollOffsets.removeValue(forKey: id) {
+      let clip = page.scroll.contentView
+      let bounds = clip.bounds.offsetBy(dx: 0, dy: offset - clip.bounds.minY)
+      clip.scroll(to: clip.constrainBoundsRect(bounds).origin)
+      page.scroll.reflectScrolledClipView(clip)
+    }
   }
 
   private func scheduleWarm() {

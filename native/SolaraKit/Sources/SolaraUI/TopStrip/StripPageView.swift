@@ -63,7 +63,7 @@ public final class StripPageView: NSView {
   private var groupTraced: (id: String, start: Double)?
   private var groupSamples: [[Double]] = []
   weak var dragBridge: StripDragBridge?
-  var pageWidth: CGFloat = 0
+  public internal(set) var pageWidth: CGFloat = 0
 
   public override var isFlipped: Bool { true }
 
@@ -123,6 +123,14 @@ public final class StripPageView: NSView {
   }
 
   public var scrolledX: CGFloat { scroll.contentView.bounds.minX }
+
+  func restoreScrollOffset(_ offset: CGFloat) {
+    layoutSubtreeIfNeeded()
+    let clip = scroll.contentView
+    let bounds = clip.bounds.offsetBy(dx: offset - clip.bounds.minX, dy: 0)
+    clip.scroll(to: clip.constrainBoundsRect(bounds).origin)
+    scroll.reflectScrolledClipView(clip)
+  }
 
   func update(state: BrowserState, host: StripHostState, current: Bool) {
     guard !stopped else { return }

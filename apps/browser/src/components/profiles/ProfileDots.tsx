@@ -1,11 +1,10 @@
 import { useState } from "react";
-import { Animated, Pressable, View } from "react-native";
+import { Pressable, View } from "react-native";
 import { useShallow } from "zustand/react/shallow";
 import { switchProfile } from "../../lib/actions";
 import { useTheme } from "../../lib/theme";
 import { useBrowser } from "../../store/browser";
-import { useIsIncognito } from "../../store/hooks";
-import { useNativePagerPosition, usePagerPages, type PagerPage } from "../layout/profilePager";
+import { useIsIncognito, useWindowProfileId } from "../../store/hooks";
 import { useHover } from "../primitives";
 import { TooltipAbove } from "../TooltipAbove";
 
@@ -26,29 +25,25 @@ export function useProfileDotsShown() {
 
 export function ProfileDots({ windowId }: { windowId: string }) {
   const ids = useBrowser(useShallow((s) => s.profileOrder));
-  const { pages, pager } = usePagerPages(windowId);
+  const current = useWindowProfileId();
   return (
     <View style={{ height: PROFILE_DOTS_HEIGHT, alignItems: "center" }}>
       <View style={{ marginTop: (PROFILE_DOTS_HEIGHT - 3 - BAND) / 2, height: BAND, flexDirection: "row" }}>
         {ids.map((id) => (
-          <Dot key={id} id={id} windowId={windowId} page={pages.find((p) => p.id === id)} pos={pager.pos} />
+          <Dot key={id} id={id} windowId={windowId} selected={id === current} />
         ))}
       </View>
     </View>
   );
 }
 
-function Dot({ id, windowId, page, pos }: { id: string; windowId: string; page: PagerPage | undefined; pos: Animated.Value }) {
+function Dot({ id, windowId, selected }: { id: string; windowId: string; selected: boolean }) {
   const theme = useTheme();
-  useNativePagerPosition(windowId);
   const name = useBrowser((s) => s.profiles[id]?.name ?? "");
   const { hovered, hoverProps } = useHover();
   const [pressed, setPressed] = useState(false);
   if (pressed && !hovered) setPressed(false);
-  const rest = hovered ? HOVERED : IDLE;
-  const opacity = page
-    ? pos.interpolate({ inputRange: [page.slot - 1, page.slot, page.slot + 1], outputRange: [rest, SELECTED, rest], extrapolate: "clamp" })
-    : rest;
+  const opacity = selected ? SELECTED : hovered ? HOVERED : IDLE;
   return (
     <View {...hoverProps}>
       <TooltipAbove text={name} active={hovered && !pressed} centerX={CELL / 2} bottom={BAND / 2 + DOT_CENTER_TO_TOOLTIP} />
@@ -61,7 +56,7 @@ function Dot({ id, windowId, page, pos }: { id: string; windowId: string; page: 
         }}
       >
         <View style={{ width: CELL, height: BAND, alignItems: "center", justifyContent: "center" }}>
-          <Animated.View style={{ width: DOT, height: DOT, borderRadius: DOT / 2, backgroundColor: theme.dark ? "#FFFFFF" : "#000000", opacity }} />
+          <View style={{ width: DOT, height: DOT, borderRadius: DOT / 2, backgroundColor: theme.dark ? "#FFFFFF" : "#000000", opacity }} />
         </View>
       </Pressable>
     </View>

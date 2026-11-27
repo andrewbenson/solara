@@ -28,41 +28,6 @@ function load(path, modules, suffix = "") {
   return exports;
 }
 
-for (const [tab, title] of [
-  [{ customTitle: "My tab", title: "Page", url: "https://example.com/" }, "My tab"],
-  [{ title: "Page", url: "https://example.com/" }, "Page"],
-  [{ url: "https://example.com/" }, "https://example.com/"],
-  [{}, "New Tab"],
-]) {
-  for (const selected of [false, true]) {
-    test(`strip tab announces ${title} with selected=${selected}`, () => {
-      const { TabChip } = load("./TopTabStrip.tsx", {
-        "@solara/shell": { ContextMenuArea: "ContextMenuArea" },
-        zustand: { create: (initial) => (select) => select(initial()) },
-        "../../store/hooks": {
-          useWindowId: () => "w1",
-          useTab: () => ({ id: "t1", ...tab }),
-          useIsActiveTab: () => selected,
-          useTabLive: () => false,
-        },
-        "../../lib/theme": { useTheme: () => ({ windowTint: ["#000000"] }) },
-        "../primitives": { useHover: hover },
-        "../sidebar/closeControl": { useTabCloseControl: () => ({}) },
-        "./toolbarColors": { toolbarPalette: () => ({}), useEasedColor: () => null },
-        "../site/developerMode": { useToolbarSiteColor: () => null },
-        "./stripGroups": { dragGeometry: () => ({}) },
-      }, "\nexport { TabChip };\n");
-      const view = TabChip({ tabId: "t1", width: 120, dragged: false });
-      const pressable = view.props.children.at(-1).props.children;
-      assert.equal(pressable.type, "Pressable");
-      assert.equal(pressable.props.accessible, true);
-      assert.equal(pressable.props.accessibilityRole, "radio");
-      assert.equal(pressable.props.accessibilityLabel, title);
-      assert.deepEqual(pressable.props.accessibilityState, { selected });
-    });
-  }
-}
-
 for (const incognito of [false, true]) {
   test(`profile control announces its button name with incognito=${incognito}`, () => {
     const { ProfileIndicator } = load("../ProfileIndicator.tsx", {

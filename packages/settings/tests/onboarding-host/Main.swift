@@ -454,7 +454,7 @@ struct HostRegressionTests {
       expect(ImportAdapter.closes == 1, "import window must be closed")
       do { try await adapter.drainOnboardingPreviews() }
       catch { failures.append("import cancellation drain failed: \(error)") }
-      expect(SettingsJS.shared.calls.contains("bookmarks.drainRestoration"), "adapter drain must acknowledge pending bookmark restoration")
+      expect(NativeBookmarkHolderRestoration.drains == 1, "adapter drain must acknowledge pending bookmark restoration")
       expect(ImportAdapter.swiftDrains == 1, "adapter drain must also drain the Swift import session")
       adapter.dispose()
     case "replacementCommittedInstallDoesNotReuseOldBrowserEntry":

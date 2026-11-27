@@ -232,3 +232,11 @@ final class ImportAdapter {
   func close() { Self.closes += 1 }
   static func drainSwift() async { swiftDrains += 1 }
 }
+
+@MainActor
+enum NativeBookmarkHolderRestoration {
+  static var drains = 0
+  static func beginDrain() -> @MainActor () async -> Void {
+    return { drains += 1 }
+  }
+}

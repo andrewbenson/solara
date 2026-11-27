@@ -9,8 +9,6 @@ import { groupLabel } from "../store/organize";
 import type { TabGroup } from "../store/types";
 import { reportBookmarkFailure, submitBookmarks, type BookmarkMutation } from "./bookmarkWriter";
 
-export const ARC_HOLDER = " (Arc)";
-
 function sidebarWindow(s: BrowserState, profileId: string, near?: string | null): string | undefined {
   const w = near ? s.windows[near] : undefined;
   if (w && !w.incognito && w.kind !== "small") return w.id;
@@ -52,82 +50,11 @@ export function addFolderToSidebar(folderId: string, windowId: string | null): s
   return draft ? addGroupsFromDrafts(profileOfWindow(windowId), [draft], windowId).made : [];
 }
 
-function holderProfile(s: Pick<BrowserState, "bookmarks">, folderId: string, prefer?: string): string | undefined {
-  const node = s.bookmarks.nodes[folderId];
-  if (node?.kind !== "folder" || !node.title.endsWith(ARC_HOLDER) || !node.parentId) return undefined;
-  const owners = Object.keys(s.bookmarks.roots).filter((p) => s.bookmarks.roots[p]!.bar === node.parentId);
-  return prefer && owners.includes(prefer) ? prefer : owners[0];
-}
-
 export function restorableArcHolder(s: Pick<BrowserState, "bookmarks">, folderId: string): boolean {
   const node = s.bookmarks.nodes[folderId];
-  return !!holderProfile(s, folderId) && node?.kind === "folder" && node.children.some((id) => makesGroup(s, id));
-}
-
-export const allArcHolders = (s: Pick<BrowserState, "bookmarks">) => [...new Set(Object.keys(s.bookmarks.roots).flatMap((p) => arcHolders(s, p)))];
-
-export function arcHolders(s: Pick<BrowserState, "bookmarks">, profileId: string): string[] {
-  const bar = s.bookmarks.roots[profileId]?.bar;
-  const root = bar ? s.bookmarks.nodes[bar] : undefined;
-  return root?.kind === "folder" ? root.children.filter((id) => restorableArcHolder(s, id)) : [];
-}
-
-function carriedOver(b: BrowserState["bookmarks"], id: string, carried: Set<string>): { whole: boolean; ids: string[] } {
-  const node = b.nodes[id];
-  if (!node) return { whole: false, ids: [] };
-  if (node.kind === "url") return carried.has(id) ? { whole: true, ids: [id] } : { whole: false, ids: [] };
-  const parts = node.children.map((c) => carriedOver(b, c, carried));
-  return node.children.length && parts.every((p) => p.whole) ? { whole: true, ids: [id] } : { whole: false, ids: parts.flatMap((p) => p.ids) };
-}
-
-const restoringArc = new Map<string, Promise<void>>();
-const unremovedArc = new Map<string, Map<string, string>>();
-
-export function restoreArcFolders(holderId: string, windowId: string | null): string[] {
-  return startArcRestore(holderId, windowId).made;
-}
-
-export async function restoreArcFoldersSettled(holderId: string, windowId: string | null): Promise<string[]> {
-  const { made, settled } = startArcRestore(holderId, windowId);
-  await settled;
-  return made;
-}
-
-function startArcRestore(holderId: string, windowId: string | null): { made: string[]; settled: Promise<void> } {
-  const pending = restoringArc.get(holderId);
-  if (pending) return { made: [], settled: pending };
-  const s = useBrowser.getState();
-  const owner = holderProfile(s, holderId, windowId ? profileOfWindow(windowId) : undefined);
-  if (!owner) return { made: [], settled: Promise.resolve() };
-  const profileId = s.profiles[owner] ? owner : profileOfWindow(windowId);
-  const holder = s.bookmarks.nodes[holderId];
-  const folders = holder?.kind === "folder" ? holder.children.filter((id) => makesGroup(s, id)) : [];
-  const near = windowId && s.windows[windowId]?.profileId === profileId ? windowId : null;
-  const { made, carried } = addGroupsFromDrafts(profileId, folders.map((id) => bookmarkDraft(s.bookmarks, id)!), near);
-  const b = useBrowser.getState().bookmarks;
-  const urlOf = (id: string) => {
-    const node = b.nodes[id];
-    return node?.kind === "url" ? node.url : undefined;
-  };
-  const filed = new Map<string, string>([...(unremovedArc.get(holderId) ?? [])].filter(([id, url]) => urlOf(id) === url));
-  for (const id of carried) if (urlOf(id) !== undefined) filed.set(id, urlOf(id)!);
-  const ids = folders.flatMap((id) => carriedOver(b, id, new Set(filed.keys())).ids);
-  const removing = new Set(ids);
-  const left = b.nodes[holderId];
-  const emptied = left?.kind === "folder" && left.children.every((id) => removing.has(id));
-  const edits: BookmarkMutation[] = [...(ids.length ? [{ method: "removeBookmarks" as const, args: [ids] }] : []), ...(emptied ? [{ method: "removeBookmark" as const, args: [holderId] }] : [])];
-  if (!edits.length) return { made, settled: Promise.resolve() };
-  const settled = submitBookmarks(owner, edits)
-    .then(
-      () => void unremovedArc.delete(holderId),
-      (error: unknown) => {
-        unremovedArc.set(holderId, filed);
-        reportBookmarkFailure(error);
-      },
-    )
-    .finally(() => restoringArc.delete(holderId));
-  restoringArc.set(holderId, settled);
-  return { made, settled };
+  return node?.kind === "folder" && node.title.endsWith(" (Arc)") && !!node.parentId
+    && Object.values(s.bookmarks.roots).some((roots) => roots.bar === node.parentId)
+    && node.children.some((id) => makesGroup(s, id));
 }
 
 const filingGroups = new Set<string>();

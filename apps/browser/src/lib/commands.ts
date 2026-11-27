@@ -30,7 +30,7 @@ import { focusSettingsSearch } from "../components/settings/searchState";
 import { closePanelToHeroBar } from "../components/omnibox/barState";
 import { closeNewTabBar, toggleNewTabBar } from "../components/omnibox/newTabBar";
 import { NEW_TAB_BAR_POLICY } from "../store/newTabBar";
-import { addFolderToSidebar, restoreArcFolders } from "./bookmarkGroups";
+import { addFolderToSidebar } from "./bookmarkGroups";
 import { bookmarkWriter, reportBookmarkFailure } from "./bookmarkWriter";
 import { webviews } from "./webviews";
 import { goBack, goForward } from "../components/layout/history";
@@ -65,7 +65,7 @@ export const commandHandlers = {
 };
 
 export function runCommand({ command, arg, windowId: requested }: CommandEvent) {
-  if (command === "openBookmark" || command === "jumpToSelection" || ["copyUrl", "copyUrlAsMarkdown", "copyQuoteLink", "share", "openFile", "autofill", "searchTabs", "tabSwitcher", "focusCommandBar", "cast", "reload", "forceReload", "returnToPinnedUrl", "togglePageEngine", "openExtension", "addExtension", "pinExtensions", "manageExtensions"].includes(command)) return void nativeWorkspaceCommand(command, arg, requested);
+  if (command === "restoreArcFolders" || command === "openBookmark" || command === "jumpToSelection" || ["copyUrl", "copyUrlAsMarkdown", "copyQuoteLink", "share", "openFile", "autofill", "searchTabs", "tabSwitcher", "focusCommandBar", "cast", "reload", "forceReload", "returnToPinnedUrl", "togglePageEngine", "openExtension", "addExtension", "pinExtensions", "manageExtensions"].includes(command)) return void nativeWorkspaceCommand(command, arg, requested);
   if (nativeOwnsWorkspace() && nativeWorkspaceCommand(command, arg, requested)) return;
   if (__DEV__ && !commandHandlersEnabled) { commandHandlerBlocked++; return; }
   if (__DEV__) commandHandlerCalls++;
@@ -100,8 +100,7 @@ export function runCommand({ command, arg, windowId: requested }: CommandEvent) 
   if (route.kind === "window") return runWindowCommand(command, arg, route.windowId);
   if (route.focusWindow) focus(route.focusWindow);
   if (route.kind === "invoker") {
-    if (arg && command === "addFolderToSidebar") addFolderToSidebar(arg, route.windowId);
-    else if (arg) restoreArcFolders(arg, route.windowId);
+    if (arg) addFolderToSidebar(arg, route.windowId);
     return;
   }
   if (route.kind === "noWindow") {

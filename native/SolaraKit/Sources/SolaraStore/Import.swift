@@ -144,6 +144,7 @@ extension Session {
     var tabIds: [[String]] = []
     var groupIds: [String] = []
     var splitIds: [String] = []
+    var carried: [String] = []
     var count = 0
     var skipped = 0
     func keys(_ urls: [String]) -> Set<String> { Set(urls.filter { !$0.isEmpty }.map(pageKey)) }
@@ -230,6 +231,7 @@ extension Session {
       let made = withDraftGroups(next, windowId, profileId, draft.drafts)
       next = made.0
       skipped += Int(made.1["skipped"]?.number ?? 0)
+      carried.append(contentsOf: made.1["carried"]?.array?.compactMap(\.string) ?? [])
       groupIds.append(contentsOf: next.groups.keys.filter { !beforeGroups.contains($0) })
       if next.windows[windowId]?.activeTabIds[profileId] == nil, let id = next.windows[windowId]?.tabIds.first(where: { next.tabs[$0]?.profileId == profileId }) {
         next.windows[windowId]!.activeTabIds[profileId] = id
@@ -243,6 +245,6 @@ extension Session {
     }
     set(next)
     return ["tabs": JSONValue(count), "skipped": JSONValue(skipped), "windows": JSONValue(windowIds), "tabIds": .array(tabIds.map { JSONValue($0) }),
-      "groups": JSONValue(groupIds), "splits": JSONValue(splitIds)]
+      "groups": JSONValue(groupIds), "splits": JSONValue(splitIds), "carried": JSONValue(carried)]
   }
 }

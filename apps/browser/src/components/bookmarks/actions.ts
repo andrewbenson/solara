@@ -25,6 +25,10 @@ export function openFolder(id: string, windowId: string | null | undefined, mode
   nativeWorkspaceCommand("openBookmarkItems", JSON.stringify({ id, mode, folder: true }), windowId ?? null);
 }
 
+export function restoreArcFolders(id: string, windowId: string | null): void {
+  nativeWorkspaceCommand("restoreArcFolders", id, windowId);
+}
+
 export type BookmarkDialogState =
   | { kind: "page"; windowId: string; bookmarkId: string }
   | { kind: "allTabs"; windowId: string; profileId: string; tabs: { url: string; title: string }[] };

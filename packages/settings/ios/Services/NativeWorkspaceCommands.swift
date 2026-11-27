@@ -39,7 +39,7 @@ enum NativeWorkspaceCommands {
     NativePinnedPageCommands.start()
     ToolbarView.commandURLFocusAllowed = { NativeCommandBarFocus.developerAllowed($0, field: $1) }
     ToolbarView.commandURLDidFocus = { NativeCommandBarFocus.developerDidFocus($0, field: $1) }
-    for command in WorkspaceMenuCommand.commands.union(ViewMenuCommand.commands).union(PageMenuCommand.commands).union(FindMenuCommand.commands).union(BookmarkMenuCommand.commands).union(CopyLinkCommand.commands).union(BrowserServiceCommand.commands).union(TabFocusCommand.commands).union(["togglePageEngine"]).union(PinnedPageCommand.commands).union(["focusCommandBar", "cast"]) {
+    for command in WorkspaceMenuCommand.commands.union(ViewMenuCommand.commands).union(PageMenuCommand.commands).union(FindMenuCommand.commands).union(BookmarkMenuCommand.commands).union(CopyLinkCommand.commands).union(BrowserServiceCommand.commands).union(TabFocusCommand.commands).union(["togglePageEngine"]).union(PinnedPageCommand.commands).union(["focusCommandBar", "cast", "restoreArcFolders"]) {
       NativeMenuCommands.argumentHandlers[command] = { arg, windowId in perform(command, arg: arg, windowId: windowId) }
     }
     NativeMenuCommands.keepsMenuDispatch = ViewMenuCommand.commands.union(PageMenuCommand.commands).union(BookmarkMenuCommand.commands).union(CopyLinkCommand.commands).union(BrowserServiceCommand.commands).union(TabFocusCommand.commands)
@@ -245,6 +245,10 @@ enum NativeWorkspaceCommands {
     let timing = NewTabMainThreadTiming.begin("command.\(command)", windowId: windowId)
     defer { NewTabMainThreadTiming.end(timing) }
     #endif
+    if command == "restoreArcFolders" {
+      if let arg { Task { await NativeBookmarkHolderRestoration.restore(id: arg, windowId: windowId) } }
+      return true
+    }
     if command == "cast" { return NativeCast.command(windowID: windowId) }
     if command == "togglePageEngine" { return NativeEngineCommands.perform(command, arg: arg, windowId: windowId) }
     if NativeExtensionCommands.perform(command, arg: arg, windowId: windowId) { return true }

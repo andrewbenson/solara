@@ -804,3 +804,12 @@ in both layouts. The folder case presses Delete in Settings and checks the Live
 document model, the open tab and the surviving group member. The Drive case uses
 loopback consent and token endpoints, submits fixture credentials through the
 native sheet, checks the PKCE exchange and confirms that the authorization tab closes.
+
+## E8 Arc bookmark-holder restoration
+
+Run `BookmarkHolderRestorationTests`, `BookmarkMenuCommandTests`, `ImportSidebarRunTests`
+and `BookmarkJournalWriterTests` with `-Xswiftc -DSOLARA_PROBES`. Run Import E2E,
+sidebar-parity, Pages and Bookmarks Bar in layouts 0 and 1. Import E2E presses the
+Restore Arc Folders as Groups button with local AppKit events, closes Import before
+placement in one run, and checks the native workspace and bookmark catalog after
+relaunch for both the cancelled and completed restores.

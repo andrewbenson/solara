@@ -3,7 +3,7 @@ import { afterEach, beforeEach, test } from "node:test";
 
 const { useBrowser } = await import("../store/browser.ts");
 const { bookmarkWriter, projectNativeBookmarks } = await import("./bookmarkWriter.ts");
-const { moveGroupToBookmarksBar, restoreArcFolders } = await import("./bookmarkGroups.ts");
+const { moveGroupToBookmarksBar } = await import("./bookmarkGroups.ts");
 
 const { seedBookmarkProjection, nextBookmarkProjectionOwner } = await import("../test-native/bookmarkProjection.ts");
 const S = () => useBrowser.getState();
@@ -141,43 +141,6 @@ test("a refused filing keeps the group and makes no bookmarks", async () => {
   assert.equal(S().groups[groupId], undefined, "and a retry files it");
 });
 
-const arcHolder = async () => {
-  const holder = await bookmarkWriter.addBookmarkFolder({ profileId: "default", title: "Home (Arc)", parentId: owner.bar });
-  const work = await bookmarkWriter.addBookmarkFolder({ profileId: "default", title: "Work", parentId: holder });
-  await bookmarkWriter.addBookmark({ profileId: "default", url: "https://a.example/", title: "A", parentId: work });
-  owner.submitted = [];
-  return holder;
-};
-
-test("restoring Arc folders removes their bookmarks through the writer in one submission", async () => {
-  const holder = await arcHolder();
-  const made = restoreArcFolders(holder, windowId);
-  assert.equal(made.length, 1);
-  await tick();
-  assert.deepEqual(owner.submitted.map((batch) => batch.map((m) => m.method)), [["removeBookmarks", "removeBookmark"]]);
-  assert.equal(S().bookmarks.nodes[holder], undefined);
-});
-
-test("a refused Arc removal keeps the bookmarks, reports it, and a later restore can retry", async () => {
-  const holder = await arcHolder();
-  owner.refuse = new Error("journal write failed");
-  const warned = [];
-  const warn = console.warn;
-  console.warn = (...args) => warned.push(args.map(String).join(" "));
-  try {
-    restoreArcFolders(holder, windowId);
-    await tick();
-  } finally {
-    console.warn = warn;
-  }
-  assert.ok(S().bookmarks.nodes[holder], "the source bookmarks are kept");
-  assert.equal(warned.length, 1);
-  owner.refuse = null;
-  restoreArcFolders(holder, windowId);
-  await tick();
-  assert.equal(S().bookmarks.nodes[holder], undefined);
-});
-
 test("a group that changes while its filing is pending is left open", async () => {
   const groupId = group();
   let release;
@@ -191,60 +154,4 @@ test("a group that changes while its filing is pending is left open", async () =
   await pending;
   assert.ok(S().groups[groupId], "the group keeps the tab that was never filed");
   assert.ok(S().groups[groupId].tabIds.includes(late));
-});
-
-test("a retried Arc removal keeps what was added to a carried folder since", async () => {
-  const holder = await arcHolder();
-  const work = S().bookmarks.nodes[holder].children[0];
-  owner.refuse = new Error("journal write failed");
-  const warn = console.warn;
-  console.warn = () => {};
-  try {
-    restoreArcFolders(holder, windowId);
-    await tick();
-  } finally {
-    console.warn = warn;
-  }
-  owner.refuse = null;
-  const kept = await bookmarkWriter.addBookmark({ profileId: "default", url: "javascript:void(0)", title: "Bookmarklet", parentId: work });
-  restoreArcFolders(holder, windowId);
-  await tick();
-  assert.deepEqual(S().bookmarks.nodes[work]?.children, [kept], "the carried link goes, the new bookmarklet stays in Work");
-});
-
-test("waiting on a restore that is already removing waits for that removal", async () => {
-  const { restoreArcFoldersSettled } = await import("./bookmarkGroups.ts");
-  const holder = await arcHolder();
-  let release;
-  owner.hold = new Promise((resolve) => (release = resolve));
-  restoreArcFolders(holder, windowId);
-  let settled = false;
-  const waiting = restoreArcFoldersSettled(holder, windowId).then(() => (settled = true));
-  await tick();
-  assert.equal(settled, false, "the second caller waits for the pending removal");
-  owner.hold = null;
-  release();
-  await waiting;
-  assert.equal(S().bookmarks.nodes[holder], undefined);
-});
-
-test("a retried Arc removal keeps a carried link whose URL changed since", async () => {
-  const holder = await arcHolder();
-  const work = S().bookmarks.nodes[holder].children[0];
-  const [link] = S().bookmarks.nodes[work].children;
-  owner.refuse = new Error("journal write failed");
-  const warn = console.warn;
-  console.warn = () => {};
-  try {
-    restoreArcFolders(holder, windowId);
-    await tick();
-  } finally {
-    console.warn = warn;
-  }
-  owner.refuse = null;
-  await bookmarkWriter.updateBookmark("default", link, { url: "javascript:void(0)" });
-  await bookmarkWriter.addBookmark({ profileId: "default", url: "https://b.example/", title: "B", parentId: work });
-  restoreArcFolders(holder, windowId);
-  await tick();
-  assert.ok(S().bookmarks.nodes[link], "the edited link was never carried, so it stays");
 });

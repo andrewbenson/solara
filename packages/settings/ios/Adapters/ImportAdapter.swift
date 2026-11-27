@@ -60,7 +60,10 @@ final class ImportAdapter: ImportServices {
 
   func cancel() { ImportRuns.shared.cancel(engine: ImportRunEngine.shared) }
 
-  func dispose() { ImportRuns.shared.dispose(engine: ImportRunEngine.shared) }
+  func dispose() {
+    swiftSession = 0
+    ImportRuns.shared.dispose(engine: ImportRunEngine.shared)
+  }
 
   #if DEBUG
   static var devVaultCount: Int { ImportService.shared.devVaultCount }
@@ -150,11 +153,11 @@ final class ImportAdapter: ImportServices {
     }
   }
 
-  func arcHolderCount() async -> Int { await SettingsAdapters.js("bookmarks.arcHolders") as? Int ?? 0 }
+  func arcHolderCount() async -> Int { NativeBookmarkHolderRestoration.count() }
 
   func restoreArcFolders() async -> Int {
     guard ImportRuns.shared.admitted(swiftSession) else { return await arcHolderCount() }
-    return await SettingsAdapters.js("bookmarks.restoreArcFolders") as? Int ?? 0
+    return await NativeBookmarkHolderRestoration.restoreAll()
   }
 
   func isOnboarding() async -> Bool { NativeOnboarding.isActive }

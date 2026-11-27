@@ -281,7 +281,7 @@ public final class NativeStore: Sendable {
     }
   }
 
-  func flush(timeout: TimeInterval) -> FlushResult { FlushResult.flushing(writer, timeout: timeout) }
+  public func flush(timeout: TimeInterval) -> FlushResult { FlushResult.flushing(writer, timeout: timeout) }
 
   public func flushForQuit(barrierTimeout: TimeInterval = 0.5, writerTimeout: TimeInterval = 0.5) -> FlushResult {
     profileDataCleanup.stop()

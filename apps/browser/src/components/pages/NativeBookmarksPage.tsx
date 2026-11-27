@@ -1,14 +1,14 @@
 import { NativePage, type NativePageEvent } from "@solara/settings";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { StyleSheet } from "react-native";
-import { addFolderToSidebar, makesGroup, restorableArcHolder, restoreArcFolders } from "../../lib/bookmarkGroups";
+import { addFolderToSidebar, makesGroup, restorableArcHolder } from "../../lib/bookmarkGroups";
 import { bookmarkWriter, reportBookmarkFailure, submitBookmarks, type BookmarkMutation } from "../../lib/bookmarkWriter";
 import { useTheme } from "../../lib/theme";
 import type { RemovedBookmarks } from "../../store/bookmarks";
 import { useBrowser } from "../../store/browser";
 import { engineProfile } from "../../store/model";
 import type { BookmarkNode } from "../../store/types";
-import { openBookmark, openFolder } from "../bookmarks/actions";
+import { openBookmark, openFolder, restoreArcFolders } from "../bookmarks/actions";
 import { editBookmark } from "../bookmarks/edit";
 import { openImport } from "../settings/windows";
 import { pageThemeState } from "./nativePageTheme";

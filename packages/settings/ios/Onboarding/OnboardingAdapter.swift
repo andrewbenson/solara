@@ -69,9 +69,8 @@ final class OnboardingAdapter: OnboardingServices {
     try await previewWrites.drain()
   }
 
-  private func enqueuePreview(_ name: String, _ arguments: [Any], swiftDrain: Bool = false) {
+  private func enqueuePreview(_ name: String, _ arguments: [Any]) {
     previewWrites.enqueue {
-      if swiftDrain { await ImportAdapter.drainSwift() }
       let deadline = ContinuousClock.now + Self.connectWait
       while !SettingsJS.shared.connected, ContinuousClock.now < deadline {
         try await Task.sleep(for: .milliseconds(100))
@@ -233,7 +232,12 @@ final class OnboardingAdapter: OnboardingServices {
   func cancelOnboardingImport() {
     NativeImportWindow.current?.dispose()
     ImportAdapter().close()
-    enqueuePreview("bookmarks.drainRestoration", [], swiftDrain: true)
+    let drain = NativeBookmarkHolderRestoration.beginDrain()
+    let settlement = Task {
+      await ImportAdapter.drainSwift()
+      await drain()
+    }
+    previewWrites.enqueue { await settlement.value }
   }
 
   var backgroundInstance: Bool { ProcessInfo.processInfo.environment["SOLARA_BACKGROUND"] == "1" }

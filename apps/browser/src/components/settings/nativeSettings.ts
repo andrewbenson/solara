@@ -3,7 +3,6 @@ import { useCli } from "../../lib/cliControl";
 import { compactMemory } from "../../lib/memoryTrim";
 import { autofillHandlers } from "./native/autofill";
 import { replicaHandlers } from "./native/replica";
-import { bookmarkRestorationHandlers } from "./native/bookmarks";
 import { onboardingHandlers, publishOnboarding } from "./native/onboarding";
 import { passwordsHandlers, publishPasswords } from "./native/passwords";
 import { privacyHandlers, publishPrivacy } from "./native/privacy";
@@ -55,7 +54,6 @@ export function startNativeSettings(): boolean {
       shortcutsHandlers,
       profilesHandlers,
       syncHandlers,
-      bookmarkRestorationHandlers,
       replicaHandlers,
       onboardingHandlers,
     );

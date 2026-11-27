@@ -57,6 +57,13 @@ enum NativeImportWindow {
     #if DEBUG
     case "target":
       model.target = argument ?? ""
+    case "restoreArc", "cancelRestoreArc":
+      let pressed = hosting.map { pressRestoreArc(in: $0.view) } ?? false
+      if pressed && action == "cancelRestoreArc" {
+        model.dispose()
+        model.close()
+      }
+      return ["pressed": pressed]
     case "cancelRun":
       model.services.cancel()
     case "ackRelease":
@@ -88,6 +95,7 @@ enum NativeImportWindow {
     }
     let state: [String: Any] = [
       "step": model.step.rawValue,
+      "arcHolders": model.arcHolders,
       "browsers": model.browsers.map(\.id),
       "source": model.source?.id as Any,
       "target": model.target,
@@ -100,6 +108,23 @@ enum NativeImportWindow {
     ]
     return withDevFields(state, model)
   }
+
+  #if DEBUG
+  private static func pressRestoreArc(in view: NSView) -> Bool {
+    guard let frame = ImportRestoreButtonProbe.frame, !frame.isEmpty, let window = view.window else { return false }
+    let local = NSPoint(x: frame.midX, y: view.isFlipped ? frame.midY : view.bounds.height - frame.midY)
+    let point = view.convert(local, to: nil)
+    func mouse(_ type: NSEvent.EventType) -> NSEvent? {
+      NSEvent.mouseEvent(with: type, location: point, modifierFlags: [], timestamp: ProcessInfo.processInfo.systemUptime,
+        windowNumber: window.windowNumber, context: nil, eventNumber: 0, clickCount: 1, pressure: type == .leftMouseDown ? 1 : 0)
+    }
+    guard let down = mouse(.leftMouseDown), let up = mouse(.leftMouseUp) else { return false }
+    let before = ImportRestoreButtonProbe.presses
+    window.sendEvent(down)
+    window.sendEvent(up)
+    return ImportRestoreButtonProbe.presses > before
+  }
+  #endif
 
   static func withDevFields(_ base: [String: Any], _ model: ImportModel?) -> [String: Any] {
     #if DEBUG

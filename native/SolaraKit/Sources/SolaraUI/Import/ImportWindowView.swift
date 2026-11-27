@@ -417,6 +417,14 @@ struct ImportProgressStep: View {
   }
 }
 
+#if DEBUG
+@MainActor
+public enum ImportRestoreButtonProbe {
+  public static var frame: CGRect?
+  public static var presses = 0
+}
+#endif
+
 struct ImportDoneStep: View {
   @Environment(\.colorScheme) private var scheme
   let model: ImportModel
@@ -463,12 +471,29 @@ struct ImportDoneStep: View {
         leftBehind(colors, centered: true)
         extensionList(colors)
         if model.arcHolders > 0 {
-          Button("Restore Arc Folders as Groups") { Task { await model.restoreArcFolders() } }
+          restoreArcButton
         }
       }
       .frame(maxWidth: .infinity)
       .padding(.top, 40)
     }
+  }
+
+  private var restoreArcButton: some View {
+    let button = Button("Restore Arc Folders as Groups") {
+      #if DEBUG
+      ImportRestoreButtonProbe.presses += 1
+      #endif
+      Task { await model.restoreArcFolders() }
+    }
+    #if DEBUG
+    return button.onGeometryChange(for: CGRect.self) { $0.frame(in: .global) } action: {
+      ImportRestoreButtonProbe.frame = $0
+    }
+    .onDisappear { ImportRestoreButtonProbe.frame = nil }
+    #else
+    return button
+    #endif
   }
 
   @ViewBuilder

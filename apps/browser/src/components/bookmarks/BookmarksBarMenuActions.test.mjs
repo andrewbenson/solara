@@ -90,15 +90,15 @@ test("edit, rename and delete use the real editor and bookmark store", async () 
   assert.ok(!barChildren().includes(first));
 });
 
-test("group and Arc restoration choices keep their existing store transformations", async () => {
+test("Add Group files the folder and Arc restoration delegates to the native owner", async () => {
   await choice("addGroup", folder);
   assert.ok(Object.values(S().groups).some((group) => group.name === "Folder" && group.pinned && group.windowId === windowId));
   const holder = S().addBookmarkFolder({ profileId: "default", title: "Space (Arc)" });
   const arc = S().addBookmarkFolder({ profileId: "default", parentId: holder, title: "Arc group" });
   S().addBookmark({ profileId: "default", parentId: arc, title: "Arc link", url: "https://arc.example/" });
   await choice("restoreArc", holder);
-  assert.ok(Object.values(S().groups).some((group) => group.name === "Arc group" && group.pinned));
-  assert.equal(S().bookmarks.nodes[holder], undefined);
+  assert.deepEqual(requests, [["restoreArcFolders", holder, windowId]]);
+  assert.ok(S().bookmarks.nodes[holder]);
 });
 
 test("manage, bar modes, hidden import and Copy Link retain their actions", async () => {

@@ -60,7 +60,7 @@ function harness() {
     "react/jsx-runtime": { jsx: (_type, props) => (h.props = props), jsxs: (_type, props) => (h.props = props) },
     "react-native": { StyleSheet: { absoluteFill: {} } },
     "@solara/settings": { NativePage: () => null },
-    "../../lib/bookmarkGroups": { addFolderToSidebar() {}, makesGroup: () => false, restorableArcHolder: () => false, restoreArcFolders() {} },
+    "../../lib/bookmarkGroups": { addFolderToSidebar() {}, makesGroup: () => false, restorableArcHolder: () => false },
     "../../lib/bookmarkWriter": {
       submitBookmarks: writer,
       bookmarkWriter: {
@@ -72,7 +72,7 @@ function harness() {
     "../../lib/theme": { useTheme: () => ({}) },
     "../../store/browser": { useBrowser },
     "../../store/model": { engineProfile: (id) => id },
-    "../bookmarks/actions": { openFolder() {}, openUrl() {} },
+    "../bookmarks/actions": { restoreArcFolders() {}, openFolder() {}, openUrl() {} },
     "../bookmarks/edit": { editBookmark() {} },
     "../settings/windows": { openImport() {} },
     "./nativePageTheme": { pageThemeState: () => ({}) },

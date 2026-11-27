@@ -1,12 +1,12 @@
 import { cleanUrl } from "@solara/core";
 import { copyText, prompt } from "@solara/shell";
-import { addFolderToSidebar, restoreArcFolders } from "../../lib/bookmarkGroups";
+import { addFolderToSidebar } from "../../lib/bookmarkGroups";
 import { bookmarkWriter, reportBookmarkFailure } from "../../lib/bookmarkWriter";
 import { folderChildren } from "../../store/bookmarks";
 import { useBrowser } from "../../store/browser";
 import type { BookmarkNode } from "../../store/types";
 import { openInternalPage } from "../pages/urls";
-import { openBookmark, openFolder } from "./actions";
+import { openBookmark, openFolder, restoreArcFolders } from "./actions";
 import { editBookmark } from "./edit";
 
 export async function handleBookmarksBarMenuChoice(windowId: string, profileId: string, action: string, id?: string) {
@@ -15,6 +15,7 @@ export async function handleBookmarksBarMenuChoice(windowId: string, profileId: 
   if (id && action === "openAll") return openFolder(id, windowId, "tabs");
   if (id && action === "openAllWindow") return openFolder(id, windowId, "window");
   if (id && action === "openAllIncognito") return openFolder(id, windowId, "incognito");
+  if (id && action === "restoreArc") return restoreArcFolders(id, windowId);
   const s = useBrowser.getState();
   const node = id ? s.bookmarks.nodes[id] : undefined;
   if (node?.kind === "url") {
@@ -24,7 +25,6 @@ export async function handleBookmarksBarMenuChoice(windowId: string, profileId: 
   if (node?.kind === "folder") {
     if (action === "rename") void editBookmark(node.id, windowId);
     if (action === "addGroup") addFolderToSidebar(node.id, windowId);
-    if (action === "restoreArc") restoreArcFolders(node.id, windowId);
   }
   if (action === "delete" && node) await bookmarkWriter.removeBookmark(profileId, node.id).catch(reportBookmarkFailure);
   if (action === "addPage") addPageFromBookmarksBar(windowId, profileId, node ?? null);

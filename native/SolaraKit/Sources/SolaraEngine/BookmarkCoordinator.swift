@@ -1560,6 +1560,11 @@ private struct BookmarkReducer {
       if !ids.isEmpty { remove(ids); return false }
       _ = try apply(BookmarkMutation(method: "addBookmark", args: [["profileId": .string(profile), "url": .string(url), "title": page["title"] ?? "", "favicon": page["favicon"] ?? .null]]))
       return true
+    case "expectBookmarkNodes":
+      guard let expected = arg(0).object, expected.allSatisfy({ nodes[$0.key] == $0.value }) else {
+        throw BookmarkCoordinatorError.conditionFailed("Bookmark folder changed")
+      }
+      return true
     case "expectChildren":
       let folder = arg(1).string ?? ""
       guard nodes[folder]?["kind"] == "folder", nodes[folder]?["children"]?.array?.compactMap(\.string) == arg(2).array?.compactMap(\.string) else {

@@ -166,7 +166,8 @@ const PROMPT_FIELDS = {
   externalApp: ["externalApp", `{ id: "probe-ext", url: "zoommtg://x", scheme: "zoommtg", origin: "https://example.com", app: "zoom.us", appPath: null, icon: null, title: "Open zoom.us?", message: "https://example.com wants to open this application.", remember: "Always allow example.com to open links of this type" }`],
 };
 const PROMPT_NAMES = ["permission", ...Object.keys(PROMPT_FIELDS), "engine", "chooser", "popups"];
-const PAGE_EVENTS = { password: ["onPasswordPrompt", "{}"], autofill: ["onAutofillPrompt", "{ id: 7, closed: true }"], externalApp: ["onExternalApp", "{}"] };
+const PAGE_EVENTS = { password: ["onPasswordPrompt", '{ state: "saved" }'], autofill: ["onAutofillPrompt", "{ id: 7, closed: true }"], externalApp: ["onExternalApp", "{}"] };
+const POOL_PROMPTS = new Set(["onPasswordPrompt", "onAutofillPrompt"]);
 const PANE_KEYS = { permission: "permission", password: "password", autofill: "autofill", externalApp: "externalApp", engine: "engineOffer", chooser: "deviceChooser", popups: "popups" };
 const panePromptsHosted = async (instance) => {
   const hosted = await crossRead(instance, "pane prompts hosting", (snapshot) => snapshot.hostedKinds.includes("panePrompts"),
@@ -205,7 +206,11 @@ async function promptOutcomes(instance) {
   const tab = JSON.stringify(ids.tab);
   await panePromptsHosted(instance);
   let visit = 0;
-  const pageEvent = (name, payload) => instance.eval(`return globalThis.expo.modules.SolaraMedia.devPromptFixture(${tab}, ${JSON.stringify(name)}, ${payload})`);
+  const pageEvent = async (name, payload) => {
+    const event = POOL_PROMPTS.has(name) ? "SolaraTabPool.devPageEvent" : "SolaraMedia.devPromptFixture";
+    const accepted = await instance.eval(`return globalThis.expo.modules.${event}(${tab}, ${JSON.stringify(name)}, ${payload})`);
+    assert.equal(accepted, true, `${name}: the current page accepts the fixture event`);
+  };
   const plant = async (name) => {
     if (name === "engine") return pageEvent("onPageMessage", JSON.stringify({ kind: "drm", data: { keySystem: "com.widevine.alpha" } }));
     if (name === "popups") {
@@ -221,6 +226,7 @@ async function promptOutcomes(instance) {
     instance.eval(
       name === "engine" ? `return globalThis.expo.modules.SolaraMedia.devPromptState(${tab}).then((data) => !!JSON.parse(data).engineOffer)`
       : name === "popups" ? `return globalThis.expo.modules.SolaraMedia.devPromptState(${tab}).then((data) => ac.pageState.getState().popover[${tab}] === "popups" ? JSON.parse(data).popups.map((p) => p.id).join(",") : false)`
+      : POOL_PROMPTS.has(PAGE_EVENTS[name]?.[0]) ? `return !!ac.pageState.getState().pages[${tab}]?.[${JSON.stringify(PROMPT_FIELDS[name][0])}]`
       : `return globalThis.expo.modules.SolaraMedia.devPromptState(${tab}).then((data) => !!JSON.parse(data)[${JSON.stringify(PANE_KEYS[name])}])`,
       { timeout },
     );
@@ -275,7 +281,7 @@ async function promptOutcomes(instance) {
     await run("keys:0:\u001b:53");
     await sleep(400);
     const afterEsc = await crossPresent(name);
-    await show(name);
+    if (name === "popups") await show(name);
     await sleep(400);
     await run("click:700,560");
     await sleep(400);

@@ -88,6 +88,17 @@ public class SettingsModule: Module {
       return DispatchQueue.main.sync { MainActor.assumeIsolated { NativeWorkspaceCommands.perform(command, arg: arg, windowId: windowId) } }
     }
 
+    Function("openSplitPane") { (windowId: String, json: String) -> String? in
+      guard let options = (try? JSONValue.parse(json))?.object else { return nil }
+      if Thread.isMainThread { return MainActor.assumeIsolated { NativeSplitChrome.openPane(windowId: windowId, options: options) } }
+      return DispatchQueue.main.sync { MainActor.assumeIsolated { NativeSplitChrome.openPane(windowId: windowId, options: options) } }
+    }
+
+    Function("openLinkInSplit") { (sourceTabId: String, url: String, adoptId: String?) in
+      if Thread.isMainThread { return MainActor.assumeIsolated { NativeSplitChrome.openLink(sourceTabId: sourceTabId, url: url, adoptId: adoptId) } }
+      DispatchQueue.main.sync { MainActor.assumeIsolated { NativeSplitChrome.openLink(sourceTabId: sourceTabId, url: url, adoptId: adoptId) } }
+    }
+
     Function("presentStoreUnavailable") { (detail: String) -> Bool in
       if Thread.isMainThread { return MainActor.assumeIsolated { StoreUnavailableWindow.presentForInertJS(detail: detail) } }
       return DispatchQueue.main.sync { MainActor.assumeIsolated { StoreUnavailableWindow.presentForInertJS(detail: detail) } }

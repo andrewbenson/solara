@@ -118,10 +118,15 @@ final class TopStripPeekHost {
     HostedViews.register(NativeTopStrip.peekKind) { windowId in
       guard !NativeWindowShell.nativeLayout else { return nil }
       let host = TopStripPeekHost(windowId: windowId)
+      host.view.content = nil
+      let drop = NativeLayoutStripDropView(content: host.row)
+      host.view.content = drop
+      drop.configureLegacy(host: host.strip, peek: host)
       hosts[windowId] = host
       return HostedContent(
         view: host.view,
         onUnmount: { [weak host] in
+          drop.stop()
           host?.stop()
           if hosts[windowId] === host { hosts[windowId] = nil }
         },

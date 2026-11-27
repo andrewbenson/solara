@@ -74,6 +74,22 @@ struct DroppedTabsTests {
     #expect(store.state.windows[window]!.tabIds == before)
   }
 
+  @Test func anExternalDropKeepsItsProfileWhenTheWindowPagesBeforeOpening() throws {
+    let (store, window, before) = try window(tabs: 2)
+    let original = try #require(store.state.windows[window]?.profileId)
+    let paged = try #require(store.dispatch(Command("createProfile", [["name": "Paged"]])).result?.string)
+    try store.dispatch(Command("switchProfile", [.string(window), .string(paged)]))
+    let selected = store.state.activeTabId(window)
+    let placement: JSONValue = ["pinned": true, "beforeId": .string(before[0])]
+
+    let ids = DroppedTabs.open(store, windowId: window, items: [["kind": "url", "url": "https://x.com/"]],
+      placement: placement, profileAtDrop: original)
+    let dropped = try #require(ids.first.flatMap { store.state.tabs[$0] })
+    #expect(dropped.profileId == original && !dropped.pinned)
+    #expect(store.state.activeTabId(window) == selected)
+    #expect(store.state.windows[window]?.profileId == paged)
+  }
+
   @Test func atMostFiftyTabsOpen() throws {
     let (store, window, _) = try window(tabs: 1)
     let items = (0..<60).map { ["kind": "url", "url": "https://x\($0).example/"] }

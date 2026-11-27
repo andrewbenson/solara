@@ -20,6 +20,24 @@ public struct WindowLayoutPageFacts: Equatable, Sendable {
   }
 }
 
+public struct WindowLayoutPreferences: Equatable, Sendable {
+  public let topTabs: Bool
+  public let sidebarOpen: Bool
+  public let sidebarWidth: Double
+  public let sidebarRail: Bool
+  public let addressBarInSidebar: Bool
+
+  public init(window: BrowserWindow, settings: Settings, nativeRail: Bool = true, legacyGuest: Bool = false) {
+    topTabs = (window.tabLayout ?? settings.string("tabLayout")) == "top"
+    sidebarOpen = window.sidebarOpen
+    let savedWidth = window.effectiveSidebarWidth(settings)
+    let iconsOnly = nativeRail && window.effectiveSidebarIconsOnly(settings)
+    sidebarRail = !topTabs && nativeRail && (iconsOnly || SidebarRail.contains(width: savedWidth))
+    sidebarWidth = legacyGuest ? (iconsOnly ? 84 : savedWidth) : (sidebarRail ? SidebarRail.width : savedWidth)
+    addressBarInSidebar = !topTabs && (!sidebarRail || !sidebarOpen) && settings.string("addressBar") == "sidebar"
+  }
+}
+
 public struct WindowLayoutInput: Equatable, Sendable {
   public let windowId: String
   public let windowGeneration: UInt64
@@ -81,9 +99,10 @@ public struct WindowLayoutInput: Equatable, Sendable {
     showSidebarButton = state.settings["showSidebarButton"]?.bool ?? true
     hideToolbarWhileScrolling = state.settings.bool("hideToolbarWhileScrolling")
     let bookmarksBar = state.settings.string("bookmarksBar") ?? "newTab"
-    let topTabs = (window.tabLayout ?? state.settings.string("tabLayout") ?? "sidebar") == "top"
-    let rail = !topTabs && SidebarRail.contains(width: SidebarRail.effectiveWidth(window, state.settings))
-    let address = !topTabs && (!rail || !window.sidebarOpen) && state.settings.string("addressBar") == "sidebar"
+    let preferences = WindowLayoutPreferences(window: window, settings: state.settings)
+    let topTabs = preferences.topTabs
+    let rail = preferences.sidebarRail
+    let address = preferences.addressBarInSidebar
     let fullscreen = fullscreenTabId != nil
     var modes: [String: ToolbarAutoHideMode] = [:]
     var tops: [String: CGFloat] = [:]
@@ -105,7 +124,7 @@ public struct WindowLayoutInput: Equatable, Sendable {
     bookmarksBarHeights = bookmarkHeights
     layout = DockedLayoutInput(
       size: self.bounds.size, dock: window.sidebarOpen ? 1 : 0,
-      sidebarWidth: rail ? CGFloat(SidebarRail.width) : CGFloat(window.effectiveSidebarWidth(state.settings)),
+      sidebarWidth: CGFloat(preferences.sidebarWidth),
       topTabs: topTabs, fullscreen: fullscreen, addressBarInSidebar: address,
       sidebarSide: !topTabs && sidebarPositionAllowed ? SidebarSide(position: window.effectiveSidebarPosition(state.settings)) : .left,
       windowFullscreen: self.windowFullscreen)

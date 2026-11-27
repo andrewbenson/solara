@@ -22,7 +22,6 @@ final class NativeTabDrag {
   private var jsOnPage = false
   private var zoneOnPage = false
   private var onPage: Bool { jsOnPage || zoneOnPage }
-  private var insert = false
   private var zoneInsert: String??
   private var shape = "hidden"
   private var previewShown = false
@@ -55,15 +54,13 @@ final class NativeTabDrag {
   func begin(windowId: String, tabId: String?, tabIds: [String], closing: @escaping () -> Bool) {
     pendingMove = nil
     clearDrag()
-    TabDragSession.windowIdOf = { [weak self] window in
-      guard let id = ShellDrag.windowId(of: window), let source = TabDragSession.current?.sourceWindow else { return nil }
-      return id == source || self?.accepts(id, from: source) == true ? id : nil
-    }
+    TabDragSession.windowIdOf = { ShellDrag.windowId(of: $0) }
     TabDragSession.windowOf = { ShellDrag.window($0) }
     self.closing = closing
     draggedTabId = tabId
     owned = Self.ownsDrop(windowId)
     let session = TabDragSession.begin(tabIds: tabIds, from: windowId)
+    session.admitsWindow = { [weak self] in $0 == windowId || self?.accepts($0, from: windowId) == true }
     session.sourceClosing = { [weak self] in self?.sourceClosing(windowId) }
     session.reaim = { [weak self] in
       guard let self else { return }
@@ -127,6 +124,7 @@ final class NativeTabDrag {
     if !commit { session?.cancel() }
     let outside = session?.outside ?? self.outside
     let over = outside ? session?.overWindow : nil
+    let nativeAim = session?.endedAim
     let zonePage = session?.endedAim.map(Self.onPage) ?? false
     let liftedPage = !outside && lifted == true
     let screen = session?.pointer
@@ -151,17 +149,22 @@ final class NativeTabDrag {
         "outside": outside, "over": over ?? NSNull(), "zonePage": zonePage, "jsOnPage": end?["onPage"] ?? NSNull(), "jsPointer": end?["pointer"] ?? NSNull(),
         "timedOut": unanswered, "owned": owned, "screen": screen.map { [$0.x, $0.y] } ?? NSNull(), "source": ShellDrag.window(windowId).map { [$0.frame.minX, $0.frame.minY, $0.frame.width, $0.frame.height] } ?? NSNull(),
       ]
-      guard outside || (onPage && !unanswered), let screen else {
+      let tearOff = outside && (nativeAim == .newWindow || over != nil)
+      guard (tearOff || onPage && !unanswered), let screen else {
         self.endPreview(preview, cancel: unanswered)
-        return done(false)
+        return done(outside)
       }
       guard WorkspaceWrites.store != nil, NativeStoreHandle.ownershipGeneration == generation else {
         NSLog("[sidebar] dropOutside refused: ownership changed")
         self.endPreview(preview)
         return done(false)
       }
-      let before: String?? = end?["insert"] as? Bool == true ? .some(end?["before"] as? String) : .none
-      self.dropOutside(tabIds, from: windowId, at: screen, over: over.flatMap { self.open($0) ? $0 : nil }, before: before, preview: preview)
+      switch nativeAim {
+      case .split, .insert:
+        self.endPreview(preview)
+      default:
+        self.dropOutside(tabIds, from: windowId, at: screen, over: over, preview: preview)
+      }
       done(true)
     }
     if owned {
@@ -181,9 +184,8 @@ final class NativeTabDrag {
     }
   }
 
-  func pageChanged(onPage: Bool, insert: Bool) {
+  func pageChanged(onPage: Bool) {
     jsOnPage = onPage
-    self.insert = insert
     publish()
     if let source = TabDragSession.current?.sourceWindow { syncPreview(source) }
   }
@@ -224,7 +226,6 @@ final class NativeTabDrag {
     overWindow = nil
     jsOnPage = false
     zoneOnPage = false
-    insert = false
     zoneInsert = .none
     shape = "hidden"
     previewShown = false
@@ -238,8 +239,8 @@ final class NativeTabDrag {
   }
 
   private func accepts(_ target: String, from source: String) -> Bool {
-    guard let state = NativeStoreHandle.store?.state, let from = state.windows[source], !from.incognito, let to = state.windows[target] else { return false }
-    return !to.incognito && to.kind != "small" && open(target)
+    guard let state = NativeStoreHandle.store?.state else { return false }
+    return TabDragSession.canTransfer(from: state.windows[source], to: state.windows[target]) && open(target)
   }
 
   private func open(_ windowId: String) -> Bool {
@@ -249,7 +250,7 @@ final class NativeTabDrag {
 
   private func syncPreview(_ windowId: String) {
     guard session(windowId) != nil else { return }
-    let next = outside ? (overWindow != nil && (insert || zoneInsert != nil) ? "pill" : "card") : ((lifted ?? onPage) ? "card" : "hidden")
+    let next = outside ? (overWindow != nil && zoneInsert != nil ? "pill" : "card") : ((lifted ?? onPage) ? "card" : "hidden")
     if next == "hidden" && shape == "hidden" { return }
     if next != "hidden", let picture {
       self.picture = nil
@@ -284,15 +285,15 @@ final class NativeTabDrag {
       case .placeholder(let title, let favicon): ShellDrag.previewPlaceholder(title: title, favicon: favicon)
       }
     }
+    guard let first = plan() else { return }
     guard NativeTabPictures.available else { return viaJS() }
-    guard let first = plan() else { return viaJS() }
     guard let live = first.liveTabId else { return fallback() }
     NativeTabPictures.capture(live, scale: 0.35, deadline: Self.captureDeadline) { outcome in
       guard showing() else { return }
       switch outcome {
       case .picture(let picture): ShellDrag.previewPage(base64: picture.data, frame: picture.frame)
       case .empty: fallback()
-      case .unavailable: viaJS()
+      case .unavailable: fallback()
       }
     }
   }
@@ -302,25 +303,22 @@ final class NativeTabDrag {
     if cancel { ShellDrag.previewCancel() } else { ShellDrag.previewEnd(windowId: windowId, fallback: fallback) }
   }
 
-  private func dropOutside(_ tabIds: [String], from source: String, at screen: CGPoint, over: String?, before: String??, preview: Int?) {
-    guard let store = WorkspaceWrites.store, let from = store.state.windows[source], !from.incognito, !tabIds.isEmpty else {
-      NSLog("[sidebar] dropOutside refused: native store unavailable or target stale")
-      return endPreview(preview)
+  @discardableResult
+  private func dropOutside(_ tabIds: [String], from source: String, at screen: CGPoint, over: String?, preview: Int?) -> Bool {
+    if let over {
+      defer { endPreview(preview) }
+      guard transfer(tabIds, from: source, to: over, before: nil) else { return false }
+      focus(over)
+      return true
+    }
+    guard let store = WorkspaceWrites.store, let from = store.state.windows[source], !from.incognito,
+      !tabIds.isEmpty, tabIds.allSatisfy({ store.state.tabs[$0]?.windowId == source }),
+      !from.tabIds.allSatisfy(tabIds.contains) else {
+      endPreview(preview)
+      return false
     }
     do {
-      if let over {
-        let moved = (try store.dispatch(Command("moveTabsToWindow", [JSONValue(tabIds), JSONValue(over)]), origin: .native)).result?.string
-        if store.state.windows[source] == nil { WindowHost.closeBrowserWindow(source) }
-        FrameUpdates.flush()
-        endPreview(preview)
-        guard moved == over, open(over) else { return }
-        if let before {
-          _ = try store.dispatch(Command("placeTabs", [JSONValue(tabIds), ["pinned": false, "beforeId": JSONValue(before)]]), origin: .native)
-          FrameUpdates.flush()
-        }
-        return focus(over)
-      }
-      guard !from.tabIds.allSatisfy(tabIds.contains) else { return endPreview(preview) }
+      let before = store.state
       let size = from.frame.flatMap { $0.count == 4 ? CGSize(width: $0[2], height: $0[3]) : nil } ?? CGSize(width: 1200, height: 800)
       let frame = NSRect(x: (screen.x - 90 + 0.5).rounded(.down), y: (screen.y - size.height + 70 + 0.5).rounded(.down), width: size.width, height: size.height)
       let options: JSONValue = [
@@ -329,13 +327,36 @@ final class NativeTabDrag {
         "frame": [JSONValue(frame.minX), JSONValue(frame.minY), JSONValue(frame.width), JSONValue(frame.height)],
       ]
       let created = (try store.dispatch(Command("createWindow", [options]), origin: .native)).result?.string
+      NativeWorkspaceCommands.materializeChanges(before: before, after: store.state)
       FrameUpdates.flush()
       endPreview(preview, windowId: created, fallback: frame)
-      if let created, store.state.windows[created] != nil { focus(created) }
+      guard let created, store.state.windows[created] != nil else { return false }
+      focus(created)
+      return true
     } catch {
       NSLog("[sidebar] dropOutside refused: %@", String(describing: error))
       endPreview(preview)
+      return false
     }
+  }
+
+  func transfer(_ tabIds: [String], from source: String, to target: String, before: String??) -> Bool {
+    guard let store = WorkspaceWrites.store, source != target, accepts(target, from: source),
+      !tabIds.isEmpty, tabIds.allSatisfy({ store.state.tabs[$0]?.windowId == source }) else { return false }
+    let original = store.state
+    do {
+      try store.dispatch(Command("moveTabsToWindow", [JSONValue(tabIds), .string(target)]), origin: .native)
+    } catch {
+      return false
+    }
+    guard tabIds.allSatisfy({ store.state.tabs[$0]?.windowId == target }) else { return false }
+    if let before {
+      let anchor = before.flatMap { store.state.tabs[$0]?.windowId == target ? $0 : nil }
+      _ = try? store.dispatch(Command("placeTabs", [JSONValue(tabIds), ["pinned": false, "beforeId": JSONValue(anchor)]]), origin: .native)
+    }
+    NativeWorkspaceCommands.materializeChanges(before: original, after: store.state)
+    FrameUpdates.flush()
+    return true
   }
 
   private func focus(_ windowId: String) {
@@ -452,7 +473,7 @@ extension NativeTabDrag {
     }
     return ["tabIds": session?.tabIds ?? [], "sourceWindow": session?.sourceWindow as Any? ?? NSNull(),
       "x": pointer.x, "y": pointer.y, "outside": outside, "overWindow": overWindow as Any? ?? NSNull(),
-      "lifted": lifted as Any? ?? NSNull(), "onPage": onPage, "insert": insert, "target": target,
+      "lifted": lifted as Any? ?? NSNull(), "onPage": onPage, "insert": zoneInsert != nil, "target": target,
       "lastDrop": lastDrop]
   }
 }

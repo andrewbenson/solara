@@ -374,7 +374,7 @@ const keyCases = [
 try {
   app = await launch(appPath, {
     data: join(scratch, "data"), fresh: true, onboarded: true, probe: true,
-    env: { SOLARA_NATIVE_WINDOW_LAYOUT: "1", SOLARA_NATIVE_SHELL: "1", SOLARA_DRAW_WINDOWS: "1", ...(inProcess ? { SOLARA_DRAG_CARRY_DESTINATION_PROBE: "1" } : {}) },
+    env: { SOLARA_NATIVE_WINDOW_LAYOUT: process.env.SOLARA_NATIVE_WINDOW_LAYOUT ?? "1", SOLARA_NATIVE_SHELL: "1", SOLARA_DRAW_WINDOWS: "1", ...(inProcess ? { SOLARA_DRAG_CARRY_DESTINATION_PROBE: "1" } : {}) },
     session: session({
       profiles: fixtureProfiles,
       windows: [{ id: "w1", profileId: "default", frame: [80, 80, 1100, 760], tabIds: fixtureTabs.map((tab) => tab.id), activeTabIds }],

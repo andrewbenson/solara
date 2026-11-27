@@ -1,17 +1,46 @@
 import { dropNativeMeasuredWidth, setNativeMeasuredWidths } from "./measuredWidths";
-import { WindowLayoutAnchorFeed, type WindowLayoutAnchors } from "@solara/settings";
+import { WindowLayoutAnchorFeed, windowLayoutPreferences, type WindowLayoutAnchors, type WindowLayoutPreferences } from "@solara/settings";
 import { nativeSidebarShell } from "../sidebar/sidebarShell";
+import { useState } from "react";
 import { create } from "zustand";
 import { switchOn } from "../../lib/killSwitches";
 import { LIGHTS_CENTER, TOP_STRIP_LIGHTS_CENTER } from "./dockMotion";
 import { layout } from "../../lib/theme";
 import { useBrowser, type BrowserState } from "../../store/browser";
 import { useWindowId } from "../../store/hooks";
-import { sidebarUsesIconRail } from "../../store/sidebarRail";
+import { sidebarUsesIconRail, sidebarWidthOf } from "../../store/sidebarRail";
+
+const useNativePreferences = create<Record<string, WindowLayoutPreferences>>()(() => ({}));
+
+export function applyWindowLayoutPreferences(windowId: string, json: string) {
+  const next = JSON.parse(json) as WindowLayoutPreferences;
+  const previous = useNativePreferences.getState()[windowId];
+  if (!previous || next.generation > previous.generation || next.generation === previous.generation && next.revision > previous.revision) {
+    useNativePreferences.setState({ [windowId]: next });
+  }
+}
 
 export function useTabLayout(): "sidebar" | "top" {
+  return useWindowLayoutPreferences().topTabs ? "top" : "sidebar";
+}
+
+export function useWindowLayoutPreferences() {
   const windowId = useWindowId();
-  return useBrowser((s) => s.windows[windowId]?.tabLayout ?? s.settings.tabLayout);
+  const [initial] = useState(() => windowLayoutPreferences(windowId));
+  const latest = useNativePreferences((s) => s[windowId]);
+  const native = latest && (!initial || latest.generation > initial.generation
+    || latest.generation === initial.generation && latest.revision >= initial.revision) ? latest : initial;
+  const fallbackTop = useBrowser((s) => native ? false : (s.windows[windowId]?.tabLayout ?? s.settings.tabLayout) === "top");
+  const fallbackOpen = useBrowser((s) => native ? true : s.windows[windowId]?.sidebarOpen ?? true);
+  const fallbackWidth = useBrowser((s) => native ? 0 : sidebarWidthOf(s.windows[windowId], s.settings, nativeSidebarShell(windowId)));
+  const legacyAddress = !native || !switchOn("sidebarSlide");
+  const fallbackAddress = useBrowser((s) => legacyAddress && addressBarInSidebar(s, windowId));
+  return {
+    topTabs: native?.topTabs ?? fallbackTop,
+    sidebarOpen: native?.sidebarOpen ?? fallbackOpen,
+    sidebarWidth: native?.sidebarWidth ?? fallbackWidth,
+    addressBar: legacyAddress ? fallbackAddress : native.addressBar,
+  };
 }
 
 export function addressBarInSidebar(s: BrowserState, windowId: string): boolean {
@@ -30,8 +59,7 @@ export function commandBarCentred(s: BrowserState, windowId: string): boolean {
 }
 
 export function useAddressBarInSidebar(): boolean {
-  const windowId = useWindowId();
-  return useBrowser((s) => addressBarInSidebar(s, windowId));
+  return useWindowLayoutPreferences().addressBar;
 }
 
 export function openingLightsCenter(s: BrowserState, windowId: string): [number, number] | null {

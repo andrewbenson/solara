@@ -13,6 +13,8 @@ type NativeSettingsModule = {
   engineCommand?(tabId: string, action: string, options: string): Promise<boolean>;
   engineBackAvailable?(tabId: string): boolean;
   workspaceCommand?(command: string, arg: string | null, windowId: string | null): boolean;
+  openSplitPane?(windowId: string, options: string): string | null;
+  openLinkInSplit?(sourceTabId: string, url: string, adoptId: string | null): void;
   presentStoreUnavailable?(detail: string): boolean;
   startAppStartup(optionsJSON: string): Promise<string>;
   completeAppStartup(): Promise<void>;
@@ -492,6 +494,9 @@ export * from "./littleSolara";
 export * from "./cliIndicator";
 export * from "./topStrip";
 export * from "./pages";
+
+export const nativeOpenSplitPane = (windowId: string, options: object) => native?.openSplitPane?.(windowId, JSON.stringify(options)) ?? null;
+export const nativeOpenLinkInSplit = (sourceTabId: string, url: string, adoptId?: string) => native?.openLinkInSplit?.(sourceTabId, url, adoptId ?? null);
 
 export function nativeWorkspaceCommand(command: string, arg: string | null | undefined, windowId: string | null): boolean {
   return native?.workspaceCommand?.(command, arg ?? null, windowId) ?? false;

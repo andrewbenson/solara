@@ -1,10 +1,8 @@
 import { windowNativeLayout } from "@solara/settings";
-import { useEffect, useMemo, useState } from "react";
+import { useState } from "react";
 import { useTheme } from "../lib/theme";
 import { useBrowser } from "../store/browser";
 import { useActiveTabId, useWindowId } from "../store/hooks";
-import { wake } from "../store/model";
-import { needsPage } from "../store/pageSession";
 import { splitOf } from "../store/splits";
 import { toolbarGeometry } from "./layout/geometry";
 import { useNativePanePromptsTheme } from "./layout/nativePaneOverlays";
@@ -12,7 +10,6 @@ import { useFormColors } from "./settings/controls";
 import { useNativeSplitChrome } from "./layout/nativeSplitChrome";
 import { SplitToolbarFeed } from "./layout/NativeSplitToolbars";
 import { FrozenPage } from "./layout/frozenPage";
-import { holderOf } from "../store/pinShare";
 import { NativePeekMount } from "./peek/NativePeekMount";
 import { NativePaneFallback, useNativePaneFallbacks } from "./layout/NativePaneFallback";
 import { useContentServices } from "./ContentServices";
@@ -35,18 +32,9 @@ function NativeContentGuests() {
   const theme = useTheme();
   useContentServices();
   useNativePanePromptsTheme(true, windowId, theme, useFormColors());
-  useNativeSplitChrome(windowId, true, theme, null, false, true, false);
+  useNativeSplitChrome(windowId, true, theme);
   const fallbacks = useNativePaneFallbacks(windowId);
-  const tabIds = useMemo(() => split?.tabIds ?? (activeId ? [activeId] : NO_TABS), [split, activeId]);
-  useEffect(() => {
-    const state = useBrowser.getState();
-    for (const tabId of tabIds) {
-      const tab = state.tabs[tabId];
-      if (!tab || !needsPage(tab)) continue;
-      const holder = holderOf(state, tabId);
-      state.updateTab(tabId, holder ? { pageIn: holder.id, unloaded: undefined } : wake(tab));
-    }
-  }, [tabIds]);
+  const tabIds = split?.tabIds ?? (activeId ? [activeId] : []);
   return (
     <>
       {tabIds.map((tabId) => (
@@ -60,5 +48,3 @@ function NativeContentGuests() {
     </>
   );
 }
-
-const NO_TABS: string[] = [];

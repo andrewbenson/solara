@@ -1,10 +1,25 @@
 import CoreGraphics
+import SolaraModel
 import Testing
 
 @testable import SolaraUI
 
 @Suite struct SidebarDragModelTests {
   private let grid = CGRect(x: 6, y: 54, width: 178, height: 41)
+
+  @Test func aPrivateOrSmallDestinationCannotReceiveCarriedTabs() {
+    let source = BrowserWindow(id: "source", profileId: "p", incognito: false, frame: nil, createdAt: 0)
+    let destination = BrowserWindow(id: "destination", profileId: "q", incognito: false, frame: nil, createdAt: 0)
+    let privateWindow = BrowserWindow(id: "private", profileId: "private", incognito: true, frame: nil, createdAt: 0)
+    var small = destination
+    small.kind = "small"
+
+    #expect(TabDragSession.canTransfer(from: source, to: destination))
+    #expect(!TabDragSession.canTransfer(from: source, to: small))
+    #expect(!TabDragSession.canTransfer(from: source, to: privateWindow))
+    #expect(!TabDragSession.canTransfer(from: privateWindow, to: destination))
+    #expect(!TabDragSession.canTransfer(from: source, to: nil))
+  }
 
   @Test func balancedPinSlotsAndHeightFollowTheBalancedGrid() {
     #expect(PinZone.slot(grid: grid, count: 4, x: 155, y: 74, balanced: true) == 1)

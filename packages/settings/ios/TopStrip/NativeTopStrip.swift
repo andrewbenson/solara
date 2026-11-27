@@ -45,6 +45,12 @@ public class TopStripModule: Module {
       FrameUpdates.readOnMain { NativeTopStrip.hosts[windowId]?.view.current?.slotTrace ?? [] }
     }.runOnQueue(.main)
 
+    #if DEBUG
+    AsyncFunction("externalDropActive") { (windowId: String) -> Bool in
+      FrameUpdates.readOnMain { NativeLayoutChrome.dockedDropActive(windowId) || NativeTopStrip.hosts[windowId]?.externalDropActive == true }
+    }.runOnQueue(.main)
+    #endif
+
     AsyncFunction("incoming") { (windowId: String, x: Double?, y: Double?) -> String in
       FrameUpdates.readOnMain {
         guard let page = NativeTopStrip.incomingPage(windowId) else { return "null" }
@@ -159,8 +165,8 @@ enum NativeTopStrip {
       host.dockedControls = row.controls
       TopStripGlowHost.hosts[windowId] = glow
       row.addSubview(glow.view, positioned: .below, relativeTo: host.view)
-      host.onDropOver = {
-        glow.applyDropOver(NativeSidebarShell.dropGlow(windowId, js: $0))
+      host.onDropOver = { [weak host] in
+        glow.applyDropOver(NativeSidebarShell.dropGlow(windowId, js: $0) || host?.externalDropActive == true)
       }
       row.controls.onAction = { action in controlAction(action, windowId: windowId) }
       row.onPageWidth = { [weak host, weak row] width in
@@ -180,10 +186,13 @@ enum NativeTopStrip {
         glow.look = (look.tokens["accent"] ?? "#4A77D4", look.dark)
         host.onDropOver(host.dropOver)
       }
+      let drop = NativeLayoutStripDropView(content: row)
+      drop.configureLegacy(host: host)
       host.setNeedsRender()
       return HostedContent(
-        view: row,
+        view: drop,
         onUnmount: {
+          drop.stop()
           host.stop()
           glow.view.stop()
           if hosts[windowId] === host { hosts[windowId] = nil }
@@ -305,6 +314,7 @@ final class TopStripHost {
   private let commits = TopStripCommits()
   weak var dockedControls: StripControlsView?
   var dropOver = false { didSet { if oldValue != dropOver { onDropOver(dropOver) } } }
+  var externalDropActive = false { didSet { if oldValue != externalDropActive { onDropOver(dropOver) } } }
   var onDropOver: (Bool) -> Void = { _ in }
   var onPresentation: ((BrowserState, BrowserWindow, NativeLayoutAppearance) -> Void)?
   private let floating: Bool
@@ -462,7 +472,7 @@ final class TopStripHost {
     case .tileFolderMenu(let folderId):
       if !NativeTileFolders.folderMenu(windowId: windowId, folderId: folderId) { NSLog("[strip] tileFolderMenu refused: native store unavailable, dispatch failed or target stale") }
     case .newTab(let split):
-      if split { call("newTab", "", ["split": true]) }
+      if split { NativeSplitChrome.openPane(windowId: windowId) }
       else { _ = NativeWorkspaceCommands.perform("newTab", windowId: windowId) }
     }
   }
@@ -482,14 +492,7 @@ final class TopStripHost {
     }
   }
 
-  private func call(_ name: String, _ id: String, _ extra: [String: Any] = [:]) {
-    let windowId = windowId
-    let payload = SidebarPayload(extra)
-    Task { @MainActor [weak self] in
-      guard let self, !self.stopped else { return }
-      _ = await SettingsAdapters.js("topStrip.action", windowId, name, id, payload.value)
-    }
-  }
+
 }
 
 @MainActor
@@ -517,22 +520,7 @@ final class TopStripDrag: StripDragBridge {
   }
 
   func land(ids: [String], from source: String, in windowId: String, beforeId: String?) -> Bool {
-    guard let store = WorkspaceWrites.store, !ids.isEmpty else {
-      NSLog("[strip] land refused: native store unavailable or no tabs")
-      return false
-    }
-    do {
-      if source != windowId {
-        _ = try store.dispatch(Command("moveTabsToWindow", [JSONValue(ids), JSONValue(windowId)]), origin: .native)
-      }
-      _ = try store.dispatch(Command("placeTabs", [JSONValue(ids), ["pinned": false, "beforeId": JSONValue(beforeId)]]), origin: .native)
-      FrameUpdates.flush()
-      return true
-    } catch {
-      FrameUpdates.flush()
-      NSLog("[strip] land refused: %@", String(describing: error))
-      return false
-    }
+    NativeTabDrag.shared.transfer(ids, from: source, to: windowId, before: .some(beforeId))
   }
 
   func drop(ids: [String], drop: JSONValue) -> Bool {

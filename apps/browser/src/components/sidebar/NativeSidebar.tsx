@@ -4,7 +4,6 @@ import { StyleSheet } from "react-native";
 import { useBrowser } from "../../store/browser";
 import { useSync } from "../../sync/engine";
 import { sidebarWidthOf } from "../../store/sidebarRail";
-import { openNewTabInSplit } from "../layout/splitActions";
 import { addNativeSettingsHandlers } from "../settings/nativeSettings";
 import { applyHoverProbe } from "./hover";
 import { applyNativeRenameState, resetNativeRenames } from "./renameMirror";
@@ -84,15 +83,12 @@ addNativeSettingsHandlers({
     windowId: string,
     name: string,
     id: string,
-    extra: { kind?: "tab" | "group"; split?: boolean; result?: string; seq?: number; windows?: Record<string, number> },
+    extra: { kind?: "tab" | "group"; result?: string; seq?: number; windows?: Record<string, number> },
   ) => {
     if (__DEV__ && name === "renameState") return void applyNativeRenameState(windowId, extra.kind ?? null, id, Number(extra.seq ?? 0));
     if (__DEV__ && name === "renameReset") return resetNativeRenames(extra.windows ?? {});
     switch (name) {
       case "handled":
-        return;
-      case "newTab":
-        if (extra.split) return openNewTabInSplit(windowId);
         return;
       case "tidied":
         return extra.result ? showTidiedPinsToast(windowId, JSON.parse(extra.result)) : undefined;

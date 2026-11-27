@@ -60,7 +60,7 @@ const C = globalThis.expo.modules.SolaraCEF;
 const st = () => ac.store.getState();
 const win = (id) => C.chromeWindows().then((ws) => { const f = st().windows[id].frame; const w = ws.filter((w) => w.hasRoot).find((w) => { const r = w.frame.match(/[-\\d.]+/g).map(Number); return Math.abs(r[0] - f[0]) < 2 && Math.abs(r[2] - f[2]) < 2; }); return w && w.window; });
 const act = (id, a) => win(id).then((n) => C.devWindow(n, a));
-const postDrag = (id, path) => {
+const postDrag = (id, path, releaseDelay = 0) => {
   const points = path.split(";").map((p) => p.split(",").map(Number));
   const steps = [["down", points[0]]];
   for (let i = 1; i < points.length; i++) {
@@ -70,7 +70,7 @@ const postDrag = (id, path) => {
   steps.push(["up", points.at(-1)]);
   const start = performance.now();
   steps.reduce((chain, [type, [x, y]], i) => chain
-    .then(() => new Promise((r) => setTimeout(r, Math.max(0, start + (i ? 150 + i * 16 : 0) - performance.now()))))
+    .then(() => new Promise((r) => setTimeout(r, Math.max(0, start + (i ? 150 + i * 16 + (type === "up" ? releaseDelay : 0) : 0) - performance.now()))))
     .then(() => act(id, "mouse:" + type + ":" + Math.round(x * 100) / 100 + "," + Math.round(y * 100) / 100)), Promise.resolve());
   return Promise.resolve(steps.length + " events posted");
 };
@@ -328,10 +328,10 @@ try {
   const mid = (i) => Math.round((strip[i][0] + strip[i][1]) / 2);
 
   const PREVIEW = `const preview = () => globalThis.expo.modules.SolaraShell.devDragPreviewState();`;
-  const watch = (w, path, ms) => run(`${PREVIEW}
+  const watch = (w, path, ms, releaseDelay = 0) => run(`${PREVIEW}
     const seen = [];
     const iv = setInterval(() => preview().then((p) => seen.push(p)), 30);
-    return postDrag("${w}", "${path}").then(() => settle(${ms})).then(() => { clearInterval(iv); return seen; });`);
+    return postDrag("${w}", "${path}", ${releaseDelay}).then(() => settle(${ms + releaseDelay})).then(() => { clearInterval(iv); return seen; });`);
 
   await check("a tab dragged along the strip reorders and doesn't move the window", async () => {
     const frame = await run(`return st().windows.w1.frame;`);
@@ -962,7 +962,7 @@ try {
     const windows = await run(`return Object.keys(st().windows).length;`);
     const frame = await run(`return st().windows.w1.frame;`);
     const sx = Math.round(row.x + row.w / 2), sy = Math.round(row.y + row.h / 2);
-    const seen = await watch("w1", `${sx},${sy};${sx + 10},${sy + 6};${sx},-40;${sx + 80},-90`, 1400);
+    const seen = await watch("w1", `${sx},${sy};${sx + 10},${sy + 6};${sx},-40;${sx + 80},-90`, 1400, 350);
     const outside = seen.filter((p) => p.shape === "card");
     assert.ok(outside.length, "a card outside the window");
     assert.ok(outside.some((p) => p.frame[1] + p.frame[3] / 2 > frame[1] + frame[3]), JSON.stringify(outside.at(-1)));
@@ -1439,8 +1439,8 @@ try {
     const second = beforeItems?.filter((item) => item.kind === "tab" && loose.includes(item.id))[1];
     if (nativeOwner) assert.ok(second?.width > 0, "the second actual loose native chip is visible");
     const x = nativeOwner ? second.windowX + 4 : xs[1][0] + 4;
-    const incoming = nativeOwner ? `globalThis.expo.modules.SolaraTopStrip.incoming("w1", ${x}, 20).then(JSON.parse)` : `Promise.resolve(globalThis.acTabDrag.getState().insert)`;
-    const active = nativeOwner ? `globalThis.expo.modules.SolaraWindowShell.describe("w1").then(JSON.parse).then((shell) => Number(shell.nativeLayoutChrome.dockedExternalDrop))` : `Promise.resolve(globalThis.acTabDrag.getState().tabIds.length)`;
+    const incoming = `globalThis.expo.modules.SolaraTopStrip.incoming("w1", ${x}, 20).then(JSON.parse)`;
+    const active = `globalThis.expo.modules.SolaraTopStrip.externalDropActive("w1").then(Number)`;
     await run(`return globalThis.expo.modules.SolaraTopStrip.traceGlow("w1");`);
     const stripBefore = nativeOwner ? await stripDropsOf("w1") : null;
     if (nativeOwner) assert.equal(typeof stripBefore, "number", `the native strip reports its drops: ${stripBefore}`);
@@ -1448,7 +1448,7 @@ try {
       return FD.drag("w1", "move", ${x + 30}, 20, { files: [${JSON.stringify(pdf)}] }).then(() => settle(400)).then(() => FD.drag("w1", "move", ${x}, 20)).then(() => settle(400))
         .then(() => ${incoming}).then((g) => { gap = g; return ${nativeOwner ? 'globalThis.expo.modules.SolaraTopStrip.items("w1").then(JSON.parse).then((state) => state.items)' : 'Promise.resolve(null)'}; }).then((i) => { items = i; return FD.drag("w1", "drop", ${x}, 20); }).then((r) => settle(900).then(() => (${active})).then((busy) => ({ r, gap, items,
           added: st().windows.w1.tabIds.filter((id) => !before.has(id)), order: st().windows.w1.tabIds, idle: busy === 0 && globalThis.acTabDrag.getState().tabIds.length === 0 })));`);
-    assert.match(out.r, nativeOwner ? /NativeLayoutStripDropView performed/ : /FileDropView performed/, JSON.stringify(out));
+    assert.match(out.r, /NativeLayoutStripDropView performed/, JSON.stringify(out));
     const glow = await run(`return globalThis.expo.modules.SolaraTopStrip.glowTrace("w1");`);
     const stripDrops = nativeOwner ? await stripDropsOf("w1") : null;
     rep.log(`strip file drop: native owner ${nativeOwner}, native drops ${stripBefore} -> ${stripDrops}`);
@@ -1479,8 +1479,7 @@ try {
           .then((r) => settle(900).then(() => { const w = st().windows[id]; const added = w.tabIds.slice(before);
             const out = { r, windowId: id, added: w.tabIds.filter((t) => st().tabs[t].url === ${JSON.stringify(fileUrl(pdf))}).length, total: w.tabIds.length - before, profile: w.profileId };
             return out; })); });`);
-    const nativeOwner = await run(`return globalThis.expo.modules.SolaraWindowShell.nativeLayout(${JSON.stringify(out.windowId)});`);
-    assert.match(out.r, nativeOwner ? /NativeLayoutStripDropView performed/ : /FileDropView performed/, JSON.stringify(out));
+    assert.match(out.r, /NativeLayoutStripDropView performed/, JSON.stringify(out));
     assert.equal(out.added, 1, JSON.stringify(out));
     await run(`st().closeWindow(${JSON.stringify(out.windowId)}); return settle(600);`);
   });

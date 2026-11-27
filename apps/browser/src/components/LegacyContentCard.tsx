@@ -83,7 +83,7 @@ export function LegacyContentCard() {
   const [pooled] = useState(() => pagesPooledIn(windowId));
   const cardTheme = useTheme();
   useNativePanePromptsTheme(true, windowId, cardTheme, useFormColors());
-  useNativeSplitChrome(windowId, shell, cardTheme, fullscreenTab ?? null, !!peekId, !addressInSidebar && !small, small);
+  useNativeSplitChrome(windowId, shell, cardTheme, pooled ? undefined : { fullscreenTab: fullscreenTab ?? null, covered: !!peekId, toolbar: !addressInSidebar && !small, small });
   useEffect(() => {
     if (fullscreenTab && peekId && !peekFullscreen) dismissPeek(windowId);
   }, [fullscreenTab, peekId, peekFullscreen, windowId]);
@@ -91,6 +91,7 @@ export function LegacyContentCard() {
   const mountedMemo = useRef<{ tabIds?: string[]; tabs?: object; ids: string[]; seen: (Tab | undefined)[]; wants: boolean[] }>({ ids: [], seen: [], wants: [] });
   const mounted = useBrowser(
     useShallow((s) => {
+      if (pooled) return NO_TABS;
       const tabIds = s.windows[windowId]?.tabIds;
       const memo = mountedMemo.current;
       if (memo.tabIds === tabIds && memo.tabs === s.tabs) return memo.ids;
@@ -133,6 +134,7 @@ export function LegacyContentCard() {
   }, [split, activeId, fullscreenTab, size.width, size.height]);
 
   useEffect(() => {
+    if (pooled) return;
     const s = useBrowser.getState();
     for (const id of Object.keys(panes)) {
       const t = s.tabs[id];
@@ -140,9 +142,9 @@ export function LegacyContentCard() {
       const holder = holderOf(s, id);
       s.updateTab(id, holder ? { pageIn: holder.id, unloaded: undefined } : wake(t));
     }
-  }, [panes]);
+  }, [panes, pooled]);
 
-  const leaving = useTabDrag((d) => (d.windowId === windowId && d.tabIds.length && (d.outside || !!(d.lifted ?? d.onPage)) ? d.tabIds : null));
+  const leaving = useTabDrag((d) => (!pooled && d.windowId === windowId && d.tabIds.length && (d.outside || !!(d.lifted ?? d.onPage)) ? d.tabIds : null));
   const successor = useMemo(() => {
     if (!leaving) return undefined;
     const s = useBrowser.getState();
@@ -317,7 +319,7 @@ export function LegacyContentCard() {
           origin={origin}
         />
       )}
-      {!fullscreenTab && <DropTargets panes={panes} origin={origin} windowId={windowId} native={shell} />}
+      {!shell && !fullscreenTab && <DropTargets panes={panes} origin={origin} windowId={windowId} />}
       {(!fullscreenTab || peekFullscreen) && !small && pooled && <NativePeekMount windowId={windowId} origin={origin} fullscreen={peekFullscreen} />}
       {(!fullscreenTab || peekFullscreen) && !small && !pooled && (
         <PeekOverlay

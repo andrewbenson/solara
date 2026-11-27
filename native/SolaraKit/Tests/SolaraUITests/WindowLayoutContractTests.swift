@@ -36,6 +36,23 @@ struct WindowLayoutContractTests {
     return state
   }
 
+  @Test func legacyGuestWidthAndNativeRailAgreeAboutAddressPlacement() throws {
+    var state = try projectionState()
+    state.settings["addressBar"] = "sidebar"
+    var window = try #require(state.windows["w"])
+    window.sidebarIconsOnly = true
+
+    let docked = WindowLayoutPreferences(window: window, settings: state.settings)
+    let legacy = WindowLayoutPreferences(window: window, settings: state.settings, legacyGuest: true)
+    #expect(docked.sidebarWidth == SidebarRail.width)
+    #expect(legacy.sidebarWidth == 84)
+    #expect(!docked.addressBarInSidebar && !legacy.addressBarInSidebar)
+    window.sidebarOpen = false
+    #expect(WindowLayoutPreferences(window: window, settings: state.settings).addressBarInSidebar)
+    window.tabLayout = "top"
+    #expect(!WindowLayoutPreferences(window: window, settings: state.settings).addressBarInSidebar)
+  }
+
   @Test(arguments: [false, true])
   func closedRightSidebarPreservesItsSideAndHiddenFrame(rail: Bool) throws {
     var state = try projectionState()

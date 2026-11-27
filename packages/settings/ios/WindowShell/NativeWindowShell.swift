@@ -29,6 +29,7 @@ enum NativeWindowShell {
   private static var nextGeneration: UInt64 = 0
   private static var latestRevision = -1
   nonisolated private static let activeIds = Mutex<Set<String>>([])
+  nonisolated fileprivate static let layoutPreferences = Mutex<[String: (generation: UInt64, json: String)]>([:])
   nonisolated private static let nativeLayoutGenerations = Mutex<[String: UInt64]>([:])
 
   nonisolated static var enabled: Bool {
@@ -190,6 +191,25 @@ final class ShellHost {
   private var layoutAnchors: WindowAnchors { layoutController?.anchors ?? legacyLayoutAnchors }
   private let windowGeneration: UInt64
   private var layoutState: BrowserState?
+  private var sentPreferences: WindowLayoutPreferences?
+
+  private func preferencesJSON(_ preferences: WindowLayoutPreferences) -> String? {
+    NativeTopStrip.json(["generation": windowGeneration, "revision": layoutRevision, "topTabs": preferences.topTabs,
+      "sidebarOpen": preferences.sidebarOpen, "sidebarWidth": preferences.sidebarWidth, "addressBar": preferences.addressBarInSidebar])
+  }
+
+  private func publishPreferences(_ state: BrowserState) {
+    guard let window = state.windows[shell.windowId] else { return }
+    let next = WindowLayoutPreferences(window: window, settings: state.settings,
+      nativeRail: ownsNativeLayout || profilePager != nil, legacyGuest: !ownsNativeLayout)
+    guard next != sentPreferences, let json = preferencesJSON(next) else { return }
+    sentPreferences = next
+    NativeWindowShell.layoutPreferences.withLock { $0[shell.windowId] = (windowGeneration, json) }
+    Task { @MainActor [weak self] in
+      guard let self, !self.layoutStopped else { return }
+      _ = await SettingsAdapters.js("window.layoutPreferences", self.shell.windowId, json)
+    }
+  }
   private var layoutRevision = -1
   private var layoutGeneration: UInt64 = 0
   private var lastLayoutInput: WindowLayoutInput?
@@ -341,6 +361,9 @@ final class ShellHost {
   func stop() {
     guard !layoutStopped else { return }
     layoutStopped = true
+    NativeWindowShell.layoutPreferences.withLock {
+      if $0[shell.windowId]?.generation == windowGeneration { $0[shell.windowId] = nil }
+    }
     NativeTabPickers.windowEnded(shell.windowId, in: shell.overlay)
     NativeSidebarHoverCard.windowEnded(shell.windowId)
     NativeSidebarIconPicker.close(shell.windowId)
@@ -515,6 +538,7 @@ extension ShellHost {
     #endif
     layoutState = state
     layoutRevision = revision
+    publishPreferences(state)
     scheduleLayoutProjection()
   }
 
@@ -607,6 +631,7 @@ extension ShellHost {
     LayoutTrace.end(inputTrace)
     #endif
     guard let input = madeInput else { return }
+    if !ownsNativeLayout { NativeSplitChrome.applyLegacyPresentation(input) }
     if input.presentation.chromeNavigationRow {
       SidebarAddressBridge.install()
       let navigation = SidebarAddressBars.shared.navigationView(shell.windowId)
@@ -1014,6 +1039,10 @@ public class WindowShellModule: Module {
 
     Function("nativeLayout") { (windowId: String) -> Bool in NativeWindowShell.nativeLayoutActive(windowId) }
     Function("nativeLayoutGeneration") { (windowId: String) -> Double in Double(NativeWindowShell.nativeLayoutGeneration(windowId)) }
+
+    Function("layoutPreferences") { (windowId: String) -> String? in
+      NativeWindowShell.layoutPreferences.withLock { $0[windowId]?.json }
+    }
 
     Function("pagesPool") { () -> Bool in NativeSplitChrome.panesEnabled }
     Function("paneRoots") { (windowId: String) -> Bool in NativePaneRoots.active(windowId) }

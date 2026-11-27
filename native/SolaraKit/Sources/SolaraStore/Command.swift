@@ -196,6 +196,7 @@ extension Session {
                 windowClosedByChrome: a[1]?["windowClosedByChrome"]?.truthy ?? false,
                 successor: a[1]?["successor"]?.string.flatMap { $0.isEmpty ? nil : $0 })
     case "activate": activate(try a.requireString(0))
+    case "prepareVisiblePanePages": prepareVisiblePanePages(a.strings(0))
     case "activateNumberedTab":
       if let tabId = SidebarQuery(state).numberedTab(windowId: try a.requireString(0), number: a.int(1)) { activate(tabId) }
     case "switchPageEngine": switchPageEngine(try a.requireString(0), engine: try a.requireString(1), url: a.string(2))

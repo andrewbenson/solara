@@ -8,7 +8,6 @@ import SolaraUI
 @MainActor
 enum NativeSplitChrome {
   static let themeTopic = "split.theme"
-  static let dragTopic = "split.drag"
   static let toastTopic = "split.toast"
   static let noticeTopic = "split.notice"
   static let toolbarTopic = "split.toolbar"
@@ -32,11 +31,38 @@ enum NativeSplitChrome {
   private static var listener: Int?
   private static let commits = SplitChromeCommits()
 
+  private static var paneLimitToast = -2_000_000
+
+  @discardableResult
+  static func openPane(windowId: String, options: JSONObject = [:]) -> String? {
+    guard let store = WorkspaceWrites.store, !store.memory.closingWindows.contains(windowId) else { return nil }
+    let before = store.state
+    guard let result = try? store.dispatch(Command("openSplitPane", [.string(windowId), .object(options)]), origin: .native).result else { return nil }
+    if result["reason"]?.string == "max" {
+      paneLimitToast -= 1
+      showNativeToast(SplitToastSpec(id: paneLimitToast, title: "Cannot Add New Pane", message: "Split View can show up to \(Splits.maxPanes) tabs at once."), windowId: windowId)
+    }
+    guard result["ok"]?.bool == true else { return nil }
+    NativeWorkspaceCommands.materializeChanges(before: before, after: store.state)
+    FrameUpdates.flush()
+    return result["tabId"]?.string
+  }
+
+  static func openLink(sourceTabId: String, url: String, adoptId: String?) {
+    guard let state = WorkspaceWrites.store?.state, let source = state.tabs[sourceTabId] else { return }
+    var options: JSONObject = ["anchorTabId": .string(sourceTabId), "url": .string(url), "side": "right", "background": true]
+    if let adoptId { options["adoptId"] = .string(adoptId) }
+    if let split = Splits.splitOf(state, sourceTabId), let index = split.tabIds.firstIndex(of: sourceTabId) {
+      let replacement = split.tabIds.dropFirst(index + 1).first ?? (split.tabIds.count >= Splits.maxPanes ? split.tabIds.last : nil)
+      if let replacement, replacement != sourceTabId { options["inPlaceOf"] = .string(replacement) }
+    }
+    openPane(windowId: source.windowId, options: options)
+  }
+
   static func start() {
     guard NativeWindowShell.enabled, !started else { return }
     started = true
     _ = SettingsJS.shared.observe(themeTopic) { value in applyTheme(value) }
-    _ = SettingsJS.shared.observe(dragTopic) { value in applyDrag(value) }
     _ = SettingsJS.shared.observe(toastTopic) { value in applyToast(value) }
     _ = SettingsJS.shared.observe(noticeTopic) { value in applyNotice(value) }
 
@@ -184,8 +210,7 @@ enum NativeSplitChrome {
     zone.covered = { NativeSidebarDock.peekCovers(windowId, point: $0) }
     zone.onDrop = { tabId, target, side in
       let options: JSONObject = ["tabId": .string(tabId), "anchorTabId": .string(target), "side": .string(side.rawValue)]
-      _ = try? NativeStoreHandle.store?.dispatch(Command("openSplitPane", [.string(windowId), .object(options)]), origin: .native)
-      FrameUpdates.flush()
+      return openPane(windowId: windowId, options: options) != nil
     }
     if let old = dropZones[windowId] { TabDragSession.unregister(old) }
     dropZones[windowId] = zone
@@ -219,6 +244,17 @@ enum NativeSplitChrome {
         continue
       }
       let fullscreenTab = entry["fullscreenTab"] as? String
+      if TabPoolHost.available, let host = NativeWindowShell.host(windowId), let input = host.makeLayoutInput() {
+        view.setChrome(theme: theme, fullscreenTab: input.fullscreenTabId, covered: input.peekTabId != nil)
+        if let panes = panesView(windowId) {
+          panes.theme = theme
+          panes.cardColor = theme.color("card", dark: "rgba(18,18,18,0.5)", light: "rgba(255,255,255,0.7)")
+          panes.pagesPooled = true
+          panes.onCardStyle = { [weak shell = host.shell] in shell?.cardStyle = $0 }
+        }
+        applyLegacyPresentation(input)
+        continue
+      }
       view.setChrome(theme: theme, fullscreenTab: fullscreenTab, covered: entry["covered"] as? Bool ?? false)
       if let overlay = overlays[windowId] {
         overlay.toolbarHeight = entry["toolbar"] as? Bool ?? true ? ShellMetrics.toolbarHeight : 0
@@ -233,6 +269,17 @@ enum NativeSplitChrome {
       panes.pagesPooled = TabPoolHost.available
       if let shell = NativeWindowShell.host(windowId)?.shell { panes.onCardStyle = { [weak shell] in shell?.cardStyle = $0 } }
     }
+  }
+
+  static func applyLegacyPresentation(_ input: WindowLayoutInput) {
+    guard TabPoolHost.available, owners[input.windowId] == nil else { return }
+    let windowId = input.windowId
+    let height: CGFloat = input.layout.addressBarInSidebar ? 0 : ShellMetrics.toolbarHeight
+    views[windowId]?.setPresentation(fullscreenTab: input.fullscreenTabId, covered: input.peekTabId != nil)
+    overlays[windowId]?.toolbarHeight = height
+    overlays[windowId]?.setFullscreenTab(input.fullscreenTabId)
+    panes[windowId]?.toolbarHeight = height
+    panes[windowId]?.setFullscreenTab(input.fullscreenTabId)
   }
 
   static func refreshPinnedPages() {
@@ -324,12 +371,6 @@ enum NativeSplitChrome {
 
   static func frozenSnapshot(_ windowId: String) -> [String: Any]? { owners[windowId]?.describeFrozenPages() }
   #endif
-
-  private static func applyDrag(_ value: Any?) {
-    guard let o = value as? [String: Any], let windowId = o["windowId"] as? String else { return }
-    for (id, view) in views where id != windowId { view.setDrag(nil) }
-    if owners[windowId] == nil { view(windowId)?.setDrag(SplitDragFrame(o)) }
-  }
 
   private static var nativeToastActions: [Int: () -> Void] = [:]
 

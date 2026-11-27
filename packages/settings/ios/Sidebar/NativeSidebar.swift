@@ -383,7 +383,7 @@ final class SidebarHost {
     case .sidebarMenu: NativeSidebarMenus.open(windowId: windowId, overflow: false)
     case .overflowMenu: NativeSidebarMenus.open(windowId: windowId, overflow: true)
     case .newTab(let split):
-      if split { call("newTab", "", ["split": true]) }
+      if split { NativeSplitChrome.openPane(windowId: windowId) }
       else { _ = NativeWorkspaceCommands.perform("newTab", windowId: windowId) }
     case .newTabDoubleClick:
       _ = NativeWorkspaceCommands.perform("newTab", windowId: windowId)

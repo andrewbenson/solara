@@ -1,4 +1,5 @@
 import AppKit
+import SolaraModel
 
 public enum TabDropAim: Equatable, Sendable {
   case split(tabId: String, side: SplitSide)
@@ -34,6 +35,7 @@ public final class TabDragSession {
   public private(set) var pointer: CGPoint = .zero
   public private(set) var overWindow: String?
   public private(set) var outside = false
+  public var admitsWindow: (String) -> Bool = { _ in true }
   public var lifted: Bool?
   public var sourceClosing: (() -> Void)?
   public var reaim: (() -> Void)?
@@ -59,6 +61,11 @@ public final class TabDragSession {
   init(tabIds: [String], sourceWindow: String) {
     self.tabIds = tabIds
     self.sourceWindow = sourceWindow
+  }
+
+  public nonisolated static func canTransfer(from source: BrowserWindow?, to target: BrowserWindow?) -> Bool {
+    guard let source, let target else { return false }
+    return source.id != target.id && !source.incognito && !target.incognito && !target.isSmall
   }
 
   public static func register(_ zone: TabDropZone, windowId: String, priority: TabDropPriority) {
@@ -91,11 +98,11 @@ public final class TabDragSession {
     pointer = screenPoint
     if belowSource == nil { belowSource = coveringStart(screenPoint) }
     let window = window(at: screenPoint)
-    overWindow = window.map { $0.0 }
+    overWindow = window.flatMap { admitsWindow($0.0) ? $0.0 : nil }
     outside = overWindow != sourceWindow
     NotificationCenter.default.post(name: Self.changed, object: self)
     var next: (zone: TabDropZone, aim: TabDropAim)?
-    if let (windowId, nsWindow) = window {
+    if let (windowId, nsWindow) = window, overWindow == windowId {
       let local = Self.windowPoint(screenPoint, in: nsWindow)
       let candidates = Self.zones.filter { $0.windowId == windowId && $0.zone != nil }.sorted { $0.priority < $1.priority }
       for entry in candidates {

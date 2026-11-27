@@ -210,6 +210,7 @@ final class TabPoolHost {
     preparingPlacement = true
     defer { preparingPlacement = false }
     store.sequence {
+      prepareVisiblePages(store)
       let snapshot = store.snapshot
       #if DEBUG || SOLARA_PERF_TRACE
       let layoutTrace = LayoutTrace.begin("poolPrepareLayouts", String(snapshot.rev))
@@ -226,9 +227,19 @@ final class TabPoolHost {
     guard !preparingPlacement else { return }
     guard let store = NativeStoreHandle.store else { return }
     store.sequence {
+      prepareVisiblePages(store)
       let snapshot = store.snapshot
       refreshInScope(snapshot.state, revision: snapshot.rev)
     }
+  }
+
+  private func prepareVisiblePages(_ store: Store) {
+    let state = store.state
+    let windows = NativeWindowShell.activeWindowIds.filter { windowId in
+      Splits.visiblePaneIds(state, windowId: windowId).contains { id in state.tabs[id].map(needsPage) == true }
+    }
+    guard !windows.isEmpty else { return }
+    _ = try? store.dispatch(Command("prepareVisiblePanePages", [JSONValue(windows.sorted())]), origin: .native)
   }
 
   private func refreshInScope(_ state: BrowserState, revision: Int) {

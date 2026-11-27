@@ -859,3 +859,15 @@ close-selection and close-recent in both window layouts, alongside sidebar-chrom
 sidebar-rail, window-toolbar and windowing. Swift coverage checks window-scoped
 rename and folder dismissal, hover card actions and group membership, compound
 close and reopen, and Live folder placement when a pinned anchor leaves.
+
+
+## Split, layout and drops
+
+With native API 109, run native-layout, sidebar-chrome, sidebar-rail, window-toolbar,
+windowing, tab-drag, drag-carry, shell-drop and pane-roots-placement in layouts 0
+and 1. The drivers that import sidebar-position can exercise a saved right side
+with `SOLARA_TEST_SAVED_SIDEBAR_POSITION=right`. Set
+`SOLARA_TEST_SIDEBAR_POSITION=left` in layout 0 and `right` in layout 1 to check
+the effective side. Swift covers native and legacy rail geometry, restoring
+visible panes without changing selection, stale and compound split drops, and
+external drops whose window switches profile before the tabs open.

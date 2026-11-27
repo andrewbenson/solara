@@ -22,12 +22,16 @@ public enum DroppedTabs {
   }
 
   @discardableResult
-  public static func open(_ store: Store, windowId: String, items: [[String: String]], placement: JSONValue?, refused: (Error) -> Void = { _ in }) -> [String] {
+  public static func open(_ store: Store, windowId: String, items: [[String: String]], placement: JSONValue?, profileAtDrop: String? = nil, refused: (Error) -> Void = { _ in }) -> [String] {
     let urls = urls(items)
-    guard !urls.isEmpty, let profileId = store.state.windows[windowId]?.profileId else { return [] }
+    let state = store.state
+    guard !urls.isEmpty, let window = state.windows[windowId] else { return [] }
+    let profileId = profileAtDrop ?? window.profileId
+    let paged = profileId != window.profileId
+    guard !paged || !window.incognito && state.profiles[profileId] != nil else { return [] }
     var ids: [String] = []
     for (i, url) in urls.enumerated() {
-      var options: JSONObject = ["url": .string(url), "background": .bool(i > 0), "profileId": .string(profileId)]
+      var options: JSONObject = ["url": .string(url), "background": .bool(paged || i > 0), "profileId": .string(profileId)]
       if let previous = ids.last, let index = store.state.windows[windowId]?.tabIds.firstIndex(of: previous) { options["index"] = .number(Double(index + 1)) }
       do {
         if let id = try store.dispatch(Command("newTab", [.string(windowId), .object(options)]), origin: .native).result?.string, !id.isEmpty { ids.append(id) }
@@ -35,7 +39,7 @@ public enum DroppedTabs {
         refused(error)
       }
     }
-    if !ids.isEmpty, let placement, placement != .null {
+    if !paged, !ids.isEmpty, let placement, placement != .null, store.state.windows[windowId]?.profileId == profileId {
       do {
         try store.dispatch(Command("placeTabs", [JSONValue(ids), placement]), origin: .native)
       } catch {

@@ -1,15 +1,11 @@
-import { addressBarInSidebar } from "./windowLayout";
-import { nativeSidebarShell } from "../sidebar/sidebarShell";
+import { useWindowLayoutPreferences } from "./windowLayout";
 import { onWindowEvent, setTrafficLightsCenter, Surface, watchLeftEdge, WindowDragRegion } from "@solara/shell";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { AccessibilityInfo, Animated, Easing, StyleSheet, View } from "react-native";
-import { useShallow } from "zustand/react/shallow";
 import { switchOn } from "../../lib/killSwitches";
 import { pagesPooledIn } from "../../lib/pagesPool";
 import { hex, layout, useTheme } from "../../lib/theme";
-import { useBrowser } from "../../store/browser";
 import { useWindowId } from "../../store/hooks";
-import { sidebarWidthOf } from "../../store/sidebarRail";
 import { Sidebar } from "../Sidebar";
 import { AreaBoundary } from "../AreaBoundary";
 import { dismissHoverIn } from "../sidebar/hover";
@@ -161,16 +157,7 @@ export function DockedLayout({
 }) {
   const windowId = useWindowId();
   const [pooled] = useState(() => pagesPooledIn(windowId));
-  const [open, savedWidth, addressBar] = useBrowser(
-    useShallow(
-      (s) =>
-        [
-          s.windows[windowId]?.sidebarOpen ?? true,
-          sidebarWidthOf(s.windows[windowId], s.settings, nativeSidebarShell(windowId)),
-          addressBarInSidebar(s, windowId),
-        ] as const,
-    ),
-  );
+  const { sidebarOpen: open, sidebarWidth: savedWidth, addressBar } = useWindowLayoutPreferences();
   const width = useSidebarUi((u) => u.dragWidth[windowId]) ?? savedWidth;
   const cardTop = inset.top + (addressBar && !topTabs && !open ? layout.toolbarHeight : 0);
   const arc = addressBar && !topTabs && switchOn("sidebarSlide");

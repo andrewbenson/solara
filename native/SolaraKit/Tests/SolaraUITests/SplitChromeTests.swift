@@ -333,18 +333,49 @@ private func paneToolbar(_ tabId: String) -> String {
     let panes = ["a": CGRect.zero, "b": CGRect.zero, "c": CGRect.zero]
     #expect(SplitDropZone.candidates(state, windowId: "w1", dragging: "d", panes: panes).isEmpty)
     #expect(SplitDropZone.candidates(state, windowId: "w1", dragging: "a", panes: panes).map(\.tabId) == ["b", "c"])
+    let chrome = SplitChromeView(windowId: "w1")
+    let window = NSWindow(contentRect: CGRect(x: 0, y: 0, width: 1007, height: 700), styleMask: [.borderless], backing: .buffered, defer: true)
+    window.contentView = chrome
+    chrome.update(state: state)
+    chrome.layoutSubtreeIfNeeded()
+    let zone = SplitDropZone(windowId: "w1", chrome: chrome)
+    zone.state = { state }
+    let session = TabDragSession(tabIds: ["d"], sourceWindow: "w1")
+    #expect(zone.aim(session, at: CGPoint(x: 500, y: 350)) == nil)
   }
 
-  @Test func dropRunsTheSplitOnlyForASplitAim() {
+  @Test func dropRunsTheSplitOnlyForASplitAim() throws {
     let zone = SplitDropZone(windowId: "w1", chrome: SplitChromeView(windowId: "w1"))
+    let state = try splitState()
+    zone.state = { state }
     var drops: [String] = []
-    zone.onDrop = { tabId, target, side in drops.append("\(tabId)>\(target):\(side.rawValue)") }
+    zone.onDrop = { tabId, target, side in
+      drops.append("\(tabId)>\(target):\(side.rawValue)")
+      return true
+    }
     let session = TabDragSession.begin(tabIds: ["a"], from: "w1")
     #expect(!zone.drop(session, .page))
     #expect(zone.drop(session, .split(tabId: "b", side: .left)))
     #expect(!zone.drop(session, .split(tabId: "a", side: .left)))
     #expect(drops == ["a>b:left"])
     session.cancel()
+  }
+
+  @Test func staleAndCompoundDragsCannotSplitATab() throws {
+    let state = try splitState()
+    let zone = SplitDropZone(windowId: "w1", chrome: SplitChromeView(windowId: "w1"))
+    zone.state = { state }
+    var count = 0
+    zone.onDrop = { _, _, _ in
+      count += 1
+      return true
+    }
+    let aim = TabDropAim.split(tabId: "b", side: .left)
+    #expect(!zone.drop(TabDragSession(tabIds: ["a", "b"], sourceWindow: "w1"), aim))
+    #expect(!zone.drop(TabDragSession(tabIds: ["missing"], sourceWindow: "w1"), aim))
+    #expect(!zone.drop(TabDragSession(tabIds: ["a"], sourceWindow: "old-window"), aim))
+    #expect(!zone.drop(TabDragSession(tabIds: ["a"], sourceWindow: "w1"), .split(tabId: "missing", side: .right)))
+    #expect(count == 0)
   }
 
   @Test func aPointCoveredByThePeekingSidebarIsNotThePage() throws {

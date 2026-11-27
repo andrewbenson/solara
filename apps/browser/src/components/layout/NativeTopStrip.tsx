@@ -1,8 +1,7 @@
-import { endTopStripIncoming, topStripIncoming, topStripPeek } from "@solara/settings";
+import { topStripPeek } from "@solara/settings";
 import { useEffect, useRef } from "react";
 import { addNativeSettingsHandlers } from "../settings/nativeSettings";
-import { openNewTabInSplit } from "./splitActions";
-import { EXTERNAL_DRAG, setInsert, setInsertResolver, useTabDrag } from "./tabDrag";
+import { useTabDrag } from "./tabDrag";
 import "./nativeTabDrag";
 import { nativeLayoutFeed, useNativeLayoutFeed } from "./nativeLayoutFeed";
 import { devPeeks } from "./dockMotion";
@@ -17,42 +16,6 @@ addNativeSettingsHandlers({
     }
   },
 });
-
-addNativeSettingsHandlers({
-  "topStrip.action": (windowId: string, name: string, _id: string, extra: { split?: boolean }) => {
-    switch (name) {
-      case "newTab":
-        if (extra.split) return openNewTabInSplit(windowId);
-        return;
-    }
-  },
-});
-
-export function useIncomingFile(windowId: string) {
-  const point = useTabDrag((d) => (d.windowId === EXTERNAL_DRAG ? (d.overWindow === windowId && d.overPoint ? d.overPoint.join() : "") : null));
-  const resolved = useRef<string | null | undefined>(undefined);
-  const asked = useRef(0);
-  const dragging = point !== null;
-  useEffect(() => {
-    if (!dragging) return;
-    setInsertResolver(windowId, () => resolved.current);
-    return () => {
-      setInsertResolver(windowId, null);
-      resolved.current = undefined;
-      void endTopStripIncoming(windowId);
-    };
-  }, [dragging, windowId]);
-  useEffect(() => {
-    const ask = ++asked.current;
-    if (point === null) return;
-    const at = point ? (point.split(",").map(Number) as [number, number]) : null;
-    void topStripIncoming(windowId, at).then((beforeId) => {
-      if (ask !== asked.current) return;
-      resolved.current = beforeId;
-      setInsert(windowId, beforeId);
-    });
-  }, [point, windowId]);
-}
 
 const nativeFeed = nativeLayoutFeed<{ dropOver: boolean }>("topStrip.nativeFeed");
 

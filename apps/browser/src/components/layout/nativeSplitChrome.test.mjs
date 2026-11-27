@@ -19,29 +19,20 @@ globalThis.acTestNativeModules = {
   SolaraSettings: { publish: async (topic, json) => published.push([topic, JSON.parse(json)]) },
   SolaraWindowShell: { nativeLayout: (windowId) => windowId === "native" },
 };
-const { publishNativeDrop, useNativeSplitChrome, feedSplitToolbar, dropSplitToolbar } = await import("./nativeSplitChrome.ts");
-const frame = { shown: true, grown: true, px: 10, target: { tabId: "a", side: "right" }, panes: [["a", { x: 0, y: 0, width: 800, height: 600 }]] };
-
-test("native layout refuses a late legacy drag geometry publication", () => {
-  publishNativeDrop("native", frame);
-  assert.deepEqual(published, []);
-});
-
-test("legacy layout still publishes its drag target and pane bounds", () => {
-  published.length = 0;
-  publishNativeDrop("legacy", frame);
-  assert.deepEqual(published, [["split.drag", { v: 1, windowId: "legacy", shown: true, grown: true, px: 10, target: ["a", "right"], panes: [["a", 0, 0, 800, 600]] }]]);
-});
+const { useNativeSplitChrome, feedSplitToolbar, dropSplitToolbar } = await import("./nativeSplitChrome.ts");
 
 test("headless native theme updates omit JavaScript presentation policy", async () => {
   published.length = 0;
-  useNativeSplitChrome("native", true, { dark: true }, "a", false, true, false);
-  useNativeSplitChrome("legacy", true, { dark: false }, null, false, true, false);
+  useNativeSplitChrome("native", true, { dark: true });
+  useNativeSplitChrome("legacy", true, { dark: false });
+  useNativeSplitChrome("fallback", true, { dark: false }, { fullscreenTab: "a", covered: true, toolbar: true, small: false });
   await Promise.resolve();
   const value = published.findLast(([topic]) => topic === "split.theme")?.[1];
   for (const key of ["fullscreenTab", "covered", "toolbar", "small", "pageTops"]) assert.equal(Object.hasOwn(value.windows.native, key), false);
   assert.equal(value.windows.native.theme.dark, true);
-  assert.equal(Object.hasOwn(value.windows.legacy, "pageTops"), false);
+  assert.deepEqual(value.windows.legacy, { theme: { dark: false } });
+  assert.equal(value.windows.fallback.fullscreenTab, "a");
+  assert.equal(value.windows.fallback.covered, true);
 });
 
 test("a retired toolbar publisher cannot remove its replacement pane model", async () => {

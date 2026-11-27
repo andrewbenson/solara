@@ -18,8 +18,8 @@ public class SidebarDragModule: Module {
       }
     }
 
-    AsyncFunction("tabDrag") { (onPage: Bool, insert: Bool) in
-      FrameUpdates.readOnMain { NativeTabDrag.shared.pageChanged(onPage: onPage, insert: insert) }
+    AsyncFunction("tabDrag") { (onPage: Bool) in
+      FrameUpdates.readOnMain { NativeTabDrag.shared.pageChanged(onPage: onPage) }
     }.runOnQueue(.main)
 
     Function("tabPicturesNative") { () -> Bool in

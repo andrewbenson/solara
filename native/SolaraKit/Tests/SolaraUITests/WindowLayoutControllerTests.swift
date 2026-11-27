@@ -11,6 +11,25 @@ struct WindowLayoutControllerTests {
     try BrowserState(stateJSON: JSONValue.parse("{\"windows\":{\"w\":{\"id\":\"w\",\"profileId\":\"default\",\"sidebarOpen\":true,\"tabIds\":[\"a\"],\"activeTabIds\":{\"default\":\"a\"}}},\"tabs\":{\"a\":{\"id\":\"a\",\"windowId\":\"w\",\"profileId\":\"default\"}}}").object ?? [:])
   }
 
+  @Test func restoringVisiblePanesWakesThemWithoutChangingSelection() throws {
+    let store = Store(state: try state())
+    let b = try #require(store.dispatch(Command("newTab", ["w", ["background": true]])).result?.string)
+    let c = try #require(store.dispatch(Command("newTab", ["w", ["background": true]])).result?.string)
+    try store.dispatch(Command("createSplit", [JSONValue(["a", b])]))
+    try store.dispatch(Command("activate", ["a"]))
+    try store.dispatch(Command("updateTab", [.string(b), ["url": "https://example.com/b", "navigation": .null, "unloaded": true]]))
+    try store.dispatch(Command("updateTab", [.string(c), ["url": "https://example.com/c", "navigation": .null, "unloaded": true]]))
+    let split = Splits.splitOf(store.state, "a")
+    #expect(store.state.tabs[b].map(needsPage) == true)
+
+    try store.dispatch(Command("prepareVisiblePanePages", [JSONValue(["w"])]))
+
+    #expect(store.state.activeTabId("w") == "a")
+    #expect(Splits.splitOf(store.state, "a") == split)
+    #expect(store.state.tabs[b].map(needsPage) == false)
+    #expect(store.state.tabs[c].map(needsPage) == true)
+  }
+
   @Test func startsOnceAndStopsWithoutDestroyingRetainedPages() throws {
     let shell = WindowShellView(windowId: "w")
     let page = NSView()

@@ -3,7 +3,7 @@ import type { SplitSide } from "../../store/splits";
 import { addNativeSettingsHandlers } from "../settings/nativeSettings";
 import { beginTabDrag, cancelTabDrag, captureDragPage, endNativeTabDrag, updateNativeTabDrag, useTabDrag } from "./tabDrag";
 
-const native = requireOptionalNativeModule<{ tabDrag(onPage: boolean, insert: boolean): Promise<void> }>("SolaraSidebarDrag");
+const native = requireOptionalNativeModule<{ tabDrag(onPage: boolean): Promise<void> }>("SolaraSidebarDrag");
 
 let stopWatching: (() => void) | null = null;
 
@@ -11,24 +11,23 @@ function watchTabDrag() {
   stopWatching?.();
   let sent = "";
   stopWatching = useTabDrag.subscribe((d) => {
-    const insert = !!d.overWindow && d.insert?.windowId === d.overWindow;
-    const key = `${d.onPage}:${insert}`;
+    const key = String(d.onPage);
     if (key === sent) return;
     sent = key;
-    void native?.tabDrag(d.onPage, insert);
+    void native?.tabDrag(d.onPage);
   });
-  void native?.tabDrag(false, false);
+  void native?.tabDrag(false);
 }
 
 function stopTabDrag() {
   stopWatching?.();
   stopWatching = null;
-  void native?.tabDrag(false, false);
+  void native?.tabDrag(false);
 }
 
 addNativeSettingsHandlers({
-  "tabDrag.begin": (_windowId: string, tabId: string | null, tabIds: string[], owned = false) => {
-    beginTabDrag(tabId, tabIds, true, owned);
+  "tabDrag.begin": (windowId: string, tabId: string | null, tabIds: string[], owned = false) => {
+    beginTabDrag(windowId, tabId, tabIds, owned);
     if (!owned) watchTabDrag();
   },
   "tabDrag.move": (
@@ -48,7 +47,7 @@ addNativeSettingsHandlers({
   "tabDrag.end": (_windowId: string, commit: boolean, deadline?: number) => {
     const end = () => {
       const late = !!deadline && Date.now() > deadline;
-      const reply = commit && !late ? endNativeTabDrag() : (cancelTabDrag(), { split: false, insert: false, before: null, onPage: false });
+      const reply = commit && !late ? endNativeTabDrag() : (cancelTabDrag(), { split: false, onPage: false });
       stopTabDrag();
       return reply;
     };

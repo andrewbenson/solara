@@ -85,7 +85,7 @@ enum NativeSidebarShell {
   }
 
   static func openDropped(_ windowId: String, items: [[String: String]], placement: String?) -> Bool {
-    guard let store = WorkspaceWrites.store else { return false }
+    guard let store = WorkspaceWrites.store, let profile = store.state.windows[windowId]?.profileId else { return false }
     var parsed: JSONValue?
     if let placement {
       do {
@@ -102,7 +102,7 @@ enum NativeSidebarShell {
         guard let store = WorkspaceWrites.store, store === owner, NativeStoreHandle.ownershipGeneration == generation else {
           return NSLog("[sidebar] drop refused: ownership changed for %@", windowId)
         }
-        DroppedTabs.open(store, windowId: windowId, items: items, placement: landing) { error in
+        DroppedTabs.open(store, windowId: windowId, items: items, placement: landing, profileAtDrop: profile) { error in
           NSLog("[drop] %@: the store refused part of a drop: %@", windowId, String(describing: error))
         }
         FrameUpdates.flush()
@@ -541,6 +541,10 @@ final class NativeLayoutChrome {
   private var stripNativeDrops = 0
   #endif
   private let stripRow: NativeLayoutStripRow
+  #if DEBUG
+  static func dockedDropActive(_ windowId: String) -> Bool { owners[windowId]?.stripDrop.active == true }
+  #endif
+
   private let stripDrop: NativeLayoutStripDropView
   private let peekDrop: NativeLayoutStripDropView
   private struct RefreshKey: Equatable {
@@ -863,14 +867,15 @@ final class NativeLayoutChrome {
       _ = NativeDragCarry.activate(destination, windowId: self.shell.windowId)
     }
     target.onDrop = { [weak self] items, placement in
-      guard let self else { return }
+      guard let self else { return false }
       if NativeSidebarShell.openDropped(self.shell.windowId, items: items, placement: placement) {
         #if DEBUG
         self.stripNativeDrops += 1
         #endif
-        return
+        return true
       }
       NSLog("[strip] drop refused: native store unavailable")
+      return false
     }
     target.onActive = { [weak self] active in
       guard let self, !self.stopped, Self.owners[self.shell.windowId] === self else { return }
@@ -927,11 +932,11 @@ final class NativeLayoutChrome {
 }
 
 @MainActor
-private final class NativeLayoutStripDropView: NSView, DevDropDestination, NSSpringLoadingDestination {
+final class NativeLayoutStripDropView: NSView, DevDropDestination, NSSpringLoadingDestination {
   var accepts: () -> Bool = { false }
   var incoming: (CGPoint?) -> String?? = { _ in nil }
   var clearIncoming: () -> Void = {}
-  var onDrop: ([[String: String]], String?) -> Void = { _, _ in }
+  var onDrop: ([[String: String]], String?) -> Bool = { _, _ in false }
   var onActive: (Bool) -> Void = { _ in }
   var carryAdmitted: (NSDraggingInfo) -> Bool = { _ in false }
   var carryTarget: (CGPoint) -> DragCarryTarget? = { _ in nil }
@@ -951,6 +956,24 @@ private final class NativeLayoutStripDropView: NSView, DevDropDestination, NSSpr
   }
 
   required init?(coder: NSCoder) { fatalError() }
+
+  func configureLegacy(host: TopStripHost, peek: TopStripPeekHost? = nil) {
+    let windowId = host.windowId
+    let floating = peek != nil
+    accepts = { [weak host, weak peek] in
+      host?.renderingEnabled == true && (!floating || peek?.view.live == true)
+    }
+    incoming = { [weak host] point in host?.view.current?.incoming(at: point) }
+    clearIncoming = { [weak host] in host?.view.current?.endIncoming() }
+    carryAdmitted = { NativeDragCarry.admits(sequence: $0.draggingSequenceNumber, windowId: windowId) }
+    carryTarget = { [weak host] point in host?.view.current?.dragCarryTab(at: point).map(DragCarryTarget.tab) }
+    onSpring = { _ = NativeDragCarry.activate($0, windowId: windowId) }
+    onDrop = { NativeSidebarShell.openDropped(windowId, items: $0, placement: $1) }
+    onActive = { [weak host, weak peek] held in
+      host?.externalDropActive = held
+      peek?.setExternalDropHeld(held)
+    }
+  }
 
   func hold(_ view: NSView) {
     content?.removeFromSuperview()
@@ -1047,8 +1070,7 @@ private final class NativeLayoutStripDropView: NSView, DevDropDestination, NSSpr
       placement = nil
     }
     leave()
-    onDrop(items, placement)
-    return true
+    return onDrop(items, placement)
   }
 
   private func leave() {
@@ -1067,7 +1089,7 @@ private final class NativeLayoutStripDropView: NSView, DevDropDestination, NSSpr
     accepts = { false }
     incoming = { _ in nil }
     clearIncoming = {}
-    onDrop = { _, _ in }
+    onDrop = { _, _ in false }
     onActive = { _ in }
     carryAdmitted = { _ in false }
     carryTarget = { _ in nil }
@@ -1155,7 +1177,8 @@ struct NativeLayoutAppearance {
     }
     return SidebarChromeState(controls: controls, downloads: state.hasSidebarDownloads(windowId), addressBar: addressBar,
       dark: look.dark, theme: look.tokens, dots: dots, savedWidth: geometry.savedWidth, iconsOnly: geometry.iconsOnly,
-      dropOver: dropOver, update: update, currentProfileId: window.profileId, sidebarPosition: window.effectiveSidebarPosition(state.settings),
+      dropOver: dropOver, update: update, currentProfileId: window.profileId,
+      sidebarPosition: NativeWindowShell.nativeLayoutActive(windowId) ? window.effectiveSidebarPosition(state.settings) : "left",
       windowFullscreen: windowFullscreen)
   }
 

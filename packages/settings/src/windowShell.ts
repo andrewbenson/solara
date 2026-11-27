@@ -7,6 +7,7 @@ type WindowShellModule = {
   layoutAnchorsAvailable?(windowId: string): boolean;
   layoutAnchors?(windowId: string): Promise<string>;
   observeLayoutAnchors?(windowId: string, enabled: boolean, generation: number | null, reader: string): Promise<string>;
+  layoutPreferences?(windowId: string): string | null;
   pagesPool?(): boolean;
   paneRoots?(windowId: string): boolean;
   mainOnTop?(windowId: string): boolean;
@@ -36,6 +37,20 @@ export function windowNativeLayout(windowId: string): boolean {
 
 export function windowNativeLayoutGeneration(windowId: string): number {
   return native?.nativeLayoutGeneration?.(windowId) ?? 0;
+}
+
+export type WindowLayoutPreferences = {
+  generation: number;
+  revision: number;
+  topTabs: boolean;
+  sidebarOpen: boolean;
+  sidebarWidth: number;
+  addressBar: boolean;
+};
+
+export function windowLayoutPreferences(windowId: string): WindowLayoutPreferences | null {
+  const json = native?.layoutPreferences?.(windowId);
+  return json ? JSON.parse(json) as WindowLayoutPreferences : null;
 }
 
 export function windowPagesPoolActive(): boolean {

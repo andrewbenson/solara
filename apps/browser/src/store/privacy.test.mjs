@@ -6,7 +6,6 @@ const { useBrowser } = await import("./browser.ts");
 await startProfileConfirmation();
 const model = await import("./model.ts");
 const { cleanedTabsFor } = await import("./organize.ts");
-const drop = await import("../components/layout/windowDrop.ts");
 const stub = await import("../test-native/index.ts");
 
 const S = () => useBrowser.getState();
@@ -125,19 +124,6 @@ test("favicons: incognito icons stay in memory and in their own profile", async 
   assert.equal(useFavicons.getState().profiles[privateProfile], undefined);
   webviews.clear();
   stop();
-});
-
-test("incognito windows neither give nor take dragged tabs", () => {
-  S().hydrate({});
-  const b = S().createWindow({ url: "c.com" });
-  S().setWindowFrame(b, [1000, 100, 800, 600]);
-  const i = S().createWindow({ incognito: true, url: "d.com" });
-  S().newTab(i, { url: "e.com" });
-  S().setWindowFrame(i, [0, 100, 800, 600]);
-  const [tab] = model.viewTabIds(S(), i);
-  assert.deepEqual(drop.windowUnder(S(), i, 1200, 300), { outside: true, overWindow: null });
-  assert.equal(drop.dropTabsOutside([tab], i, 1200, 300), null);
-  assert.equal(S().tabs[tab].windowId, i);
 });
 
 test("clearing a time range removes visits, not pages", () => {

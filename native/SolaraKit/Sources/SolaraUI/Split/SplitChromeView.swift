@@ -94,6 +94,10 @@ public final class SplitChromeView: NSView {
       notice.theme = next
       for divider in dividers.values { divider.dark = next.dark }
     }
+    setPresentation(fullscreenTab: nextFullscreen, covered: nextCovered)
+  }
+
+  public func setPresentation(fullscreenTab nextFullscreen: String?, covered nextCovered: Bool) {
     if nextFullscreen != fullscreenTab || nextCovered != covered {
       fullscreenTab = nextFullscreen
       covered = nextCovered

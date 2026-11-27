@@ -37,6 +37,12 @@ public enum Splits {
     return next
   }
 
+  public static func visiblePaneIds(_ state: BrowserState, windowId: String) -> [String] {
+    guard let selected = state.activeTabId(windowId), state.tabs[selected]?.windowId == windowId else { return [] }
+    guard let split = splitOf(state, selected), split.windowId == windowId else { return [selected] }
+    return split.tabIds.filter { state.tabs[$0]?.windowId == windowId }
+  }
+
   public static func splitOf(_ s: BrowserState, _ tabId: String?) -> SplitView? {
     guard let tabId else { return nil }
     for v in s.splits.values where v.tabIds.contains(tabId) { return v }
@@ -112,6 +118,24 @@ public enum Splits {
 }
 
 extension Session {
+  func prepareVisiblePanePages(_ windowIds: [String]) {
+    let before = state
+    var tabs = before.tabs
+    for windowId in windowIds {
+      for id in Splits.visiblePaneIds(before, windowId: windowId) {
+        guard var tab = tabs[id], needsPage(tab) else { continue }
+        if let holder = holderOf(before, id) {
+          tab.pageIn = holder.id
+          tab.unloaded = nil
+        } else {
+          wake(&tab)
+        }
+        tabs[id] = tab
+      }
+    }
+    if tabs != before.tabs { update { $0.tabs = tabs } }
+  }
+
   func gatherPinned(_ s: BrowserState, _ anchorId: String, _ members: [String]) -> BrowserState {
     let newcomers = members.filter { $0 != anchorId && s.tabs[$0] != nil && s.tabs[$0]?.isPinnedRow != true }
     let settled = (Splits.splitOf(s, anchorId)?.tabIds ?? []).filter { !newcomers.contains($0) && s.tabs[$0]?.isPinnedRow == true }

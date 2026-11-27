@@ -2,6 +2,8 @@ import AppKit
 import SolaraShell
 import Foundation
 import SolaraLive
+import SolaraStore
+import SolaraUI
 
 private struct NativeLiveDocuments: LiveDocumentStore {
   func read(_ name: String) -> String? { DocumentStore.read(name) }
@@ -91,59 +93,10 @@ final class NativeLiveReplicaBox: @unchecked Sendable {
   }
 }
 
-final class NativeLiveAuth: LiveAuthPresenter, @unchecked Sendable {
-  static let shared = NativeLiveAuth()
-  private let lock = NSLock()
-  private var pending: [String: CheckedContinuation<String, Error>] = [:]
-  private var event: (@Sendable ([String: String]) -> Void)?
-
-  func setEvent(_ event: (@Sendable ([String: String]) -> Void)?) {
-    lock.lock()
-    self.event = event
-    lock.unlock()
-  }
-
-  func authorize(url: String, redirectPrefix: String) async throws -> String {
-    let requestId = UUID().uuidString
-    return try await withTaskCancellationHandler {
-      try await withCheckedThrowingContinuation { continuation in
-        lock.lock()
-        pending[requestId] = continuation
-        let event = self.event
-        lock.unlock()
-        guard let event else {
-          resolve(requestId: requestId, redirectURL: nil, error: "Live authorization presenter unavailable")
-          return
-        }
-        event(["requestId": requestId, "url": url, "redirectPrefix": redirectPrefix])
-        Task {
-          try? await Task.sleep(nanoseconds: 600_000_000_000)
-          self.abandon(requestId: requestId, error: "Live authorization timed out")
-        }
-      }
-    } onCancel: {
-      abandon(requestId: requestId, error: "Live authorization cancelled")
-    }
-  }
-
-  private func abandon(requestId: String, error: String) {
-    lock.lock()
-    let waiting = pending[requestId] != nil
-    let event = self.event
-    lock.unlock()
-    guard waiting else { return }
-    resolve(requestId: requestId, redirectURL: nil, error: error)
-    event?(["requestId": requestId, "cancelled": "1"])
-  }
-
-  func resolve(requestId: String, redirectURL: String?, error: String?) {
-    lock.lock()
-    let continuation = pending.removeValue(forKey: requestId)
-    lock.unlock()
-    guard let continuation else { return }
-    if let error { continuation.resume(throwing: LiveError(.other, error)) }
-    else if let redirectURL { continuation.resume(returning: redirectURL) }
-    else { continuation.resume(throwing: LiveError(.other, "Live authorization cancelled")) }
+private struct NativeLiveAuth: LiveAuthPresenter {
+  @MainActor func authorize(url: String, redirectPrefix: String) async throws -> String {
+    let presenter = LiveBrowserAuth(store: { WorkspaceWrites.store }, focus: ShellDrag.focus)
+    return try await presenter.authorize(url: url, redirectPrefix: redirectPrefix)
   }
 }
 
@@ -172,8 +125,16 @@ final class NativeLiveEngine: @unchecked Sendable {
     calendarProvider = NativeLiveCalendar(fixture: fixture, launchedAt: SystemLiveClock().now())
     engine = LiveEngine(effects: LiveEffects(
       http: NativeLiveHTTP(followsRedirects: !isolated), secrets: NativeLiveSecrets(), clock: SystemLiveClock(), calendar: calendarProvider,
-      auth: NativeLiveAuth.shared, notifier: NativeLiveNotifier(), documents: NativeLiveDocuments(),
-      environment: LiveEnvironment(mockBase: mockBase, calendarFixture: fixture, isolatedDataDirectory: isolated, separateSlowTimers: separate, safeMode: DocumentStore.safeMode)))
+      auth: NativeLiveAuth(), notifier: NativeLiveNotifier(), documents: NativeLiveDocuments(),
+      environment: LiveEnvironment(mockBase: mockBase, calendarFixture: fixture, isolatedDataDirectory: isolated, separateSlowTimers: separate, safeMode: DocumentStore.safeMode),
+      closeFolderTabs: { id in
+        try await MainActor.run {
+          guard let store = WorkspaceWrites.store else {
+            throw LiveError(.other, "Live Folders are paused because this session saves nothing")
+          }
+          try LiveWorkspace.closeFolderTabs(id, in: store)
+        }
+      }))
     let box = self.box
     DocumentStore.registerBeforeQuitFlush { box.flushAtQuit() }
     Task {
@@ -198,6 +159,10 @@ final class NativeLiveEngine: @unchecked Sendable {
     let payload = try JSONSerialization.jsonObject(with: Data(payloadJSON.utf8), options: .fragmentsAllowed)
     let wire = try JSONSerialization.data(withJSONObject: ["name": name, "payload": payload], options: .fragmentsAllowed)
     let command = try LiveJSON.decode(LiveCommand.self, from: wire)
+    return String(decoding: try LiveJSON.encode(await perform(command)), as: UTF8.self)
+  }
+
+  func perform(_ command: LiveCommand) async throws -> LiveCommandResult {
     let before = DocumentStore.safeMode ? try await engine.persistedDocumentJSON() : nil
     let result = try await engine.perform(command)
     let dirty = await engine.documentDirty
@@ -208,7 +173,7 @@ final class NativeLiveEngine: @unchecked Sendable {
       await engine.acknowledgeDocumentSave(saved)
     }
     if let replica = try? await engine.currentReplica() { box.publish(replica) }
-    return String(decoding: try LiveJSON.encode(result), as: UTF8.self)
+    return result
   }
 
   @MainActor func start() async {

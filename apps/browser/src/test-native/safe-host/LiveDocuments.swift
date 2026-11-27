@@ -32,7 +32,7 @@ final class LiveFakes: LiveHTTPClient, LiveSecretStore, LiveClock, LiveCalendarP
   var sleepers = 0
   func send(_ request: LiveHTTPRequest) async throws -> LiveHTTPResponse { LiveHTTPResponse(status: 404) }
   func secret(account: String) async -> String? { nil }
-  func setSecret(_ secret: String, account: String) async -> Bool { true }
+  func setSecret(_ secret: String, account: String) -> Bool { true }
   func deleteSecret(account: String) async -> Bool { deletions += 1; return true }
   func now() -> Double { 1_790_000_000_000 }
   func sleep(milliseconds: Double) async throws {

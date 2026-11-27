@@ -28,3 +28,48 @@ struct SettingsProbeSwitch: ViewModifier {
     }
   }
 }
+
+extension View {
+  @ViewBuilder
+  func liveSettingsControl(_ key: String) -> some View {
+    #if DEBUG
+    if LiveSettingsControlProbe.enabled {
+      background(LiveSettingsControlAnchor(key: key).allowsHitTesting(false))
+    } else {
+      self
+    }
+    #else
+    self
+    #endif
+  }
+}
+
+#if DEBUG
+@MainActor
+public enum LiveSettingsControlProbe {
+  private static let views = NSMapTable<NSString, NSView>.strongToWeakObjects()
+
+  static let enabled = {
+    let env = ProcessInfo.processInfo.environment
+    return env["SOLARA_BACKGROUND"] == "1" && env["SOLARA_DATA_DIR"]?.isEmpty == false && env["SOLARA_LIVE_MOCK"]?.isEmpty == false
+  }()
+
+  static func set(_ view: NSView, for key: String) {
+    views.setObject(view, forKey: key as NSString)
+  }
+
+  public static func view(for key: String) -> NSView? {
+    views.object(forKey: key as NSString)
+  }
+}
+
+private struct LiveSettingsControlAnchor: NSViewRepresentable {
+  let key: String
+
+  func makeNSView(context: Context) -> NSView { NSView() }
+
+  func updateNSView(_ view: NSView, context: Context) {
+    LiveSettingsControlProbe.set(view, for: key)
+  }
+}
+#endif

@@ -5,12 +5,14 @@ public struct LiveHTTPRequest: Sendable, Equatable {
   public var url: String
   public var headers: [String: String]
   public var body: Data?
+  public var followsRedirects: Bool
 
-  public init(method: String = "GET", url: String, headers: [String: String] = [:], body: Data? = nil) {
+  public init(method: String = "GET", url: String, headers: [String: String] = [:], body: Data? = nil, followsRedirects: Bool = true) {
     self.method = method
     self.url = url
     self.headers = headers
     self.body = body
+    self.followsRedirects = followsRedirects
   }
 
   public var bodyText: String? { body.map { String(decoding: $0, as: UTF8.self) } }
@@ -39,7 +41,7 @@ public protocol LiveHTTPClient: Sendable {
 
 public protocol LiveSecretStore: Sendable {
   func secret(account: String) async -> String?
-  func setSecret(_ secret: String, account: String) async -> Bool
+  func setSecret(_ secret: String, account: String) -> Bool
   func deleteSecret(account: String) async -> Bool
 }
 
@@ -135,11 +137,13 @@ public struct LiveEffects: Sendable {
   public var notifier: any LiveNotifier
   public var documents: any LiveDocumentStore
   public var environment: LiveEnvironment
+  public var closeFolderTabs: @Sendable (String) async throws -> Void
 
   public init(
     http: any LiveHTTPClient, secrets: any LiveSecretStore, clock: any LiveClock = SystemLiveClock(),
     calendar: any LiveCalendarProvider, auth: any LiveAuthPresenter, notifier: any LiveNotifier,
-    documents: any LiveDocumentStore, environment: LiveEnvironment = LiveEnvironment()
+    documents: any LiveDocumentStore, environment: LiveEnvironment = LiveEnvironment(),
+    closeFolderTabs: @escaping @Sendable (String) async throws -> Void = { _ in }
   ) {
     self.http = http
     self.secrets = secrets
@@ -149,5 +153,6 @@ public struct LiveEffects: Sendable {
     self.notifier = notifier
     self.documents = documents
     self.environment = environment
+    self.closeFolderTabs = closeFolderTabs
   }
 }

@@ -6,7 +6,8 @@ import SolaraUI
 
 @MainActor
 final class LiveAdapter: LiveFoldersServices, CalendarServices {
-  private let engine = NativeLiveEngine.shared.engine
+  private let host = NativeLiveEngine.shared
+  private var engine: LiveEngine { host.engine }
   private var mocked: Bool { !(engine.effects.environment.mockBase ?? "").isEmpty }
 
   func liveFoldersState() async -> LiveFoldersState {
@@ -34,7 +35,7 @@ final class LiveAdapter: LiveFoldersServices, CalendarServices {
     await perform(.manualRefresh(.object(["folderId": .string(id)])))
   }
 
-  func deleteFolder(_ id: String) { SettingsJS.shared.fire("liveFolders.deleteFolder", id) }
+  func deleteFolder(_ id: String) { fire(.removeFolder(.object(["folderId": .string(id)]))) }
 
   func updateFolder(_ id: String, groupStacks: Bool?, showCompleted: Bool?) {
     var patch: [String: LiveAnyJSON] = [:]
@@ -77,11 +78,7 @@ final class LiveAdapter: LiveFoldersServices, CalendarServices {
   }
 
   func connectGoogleDrive(clientId: String, clientSecret: String) async throws {
-    do {
-      _ = try await SettingsJS.shared.invoke("liveFolders.connectGoogleDrive", [clientId, clientSecret])
-    } catch let error as SettingsJSError {
-      throw LiveConnectError(error.description)
-    }
+    _ = try await connect(.connectGoogleDrive(.object(["clientId": .string(clientId), "clientSecret": .string(clientSecret)])))
   }
 
   func copyText(_ text: String) { SettingsAdapters.copyText(text) }
@@ -145,7 +142,9 @@ final class LiveAdapter: LiveFoldersServices, CalendarServices {
 
   private func connect(_ command: LiveCommand) async throws -> LiveCommandResult {
     do {
-      return try await engine.perform(command)
+      return try await host.perform(command)
+    } catch let error as LiveAuthError {
+      throw LiveConnectError(error.message)
     } catch let error as LiveError {
       throw LiveConnectError(error.message)
     } catch {
@@ -155,7 +154,7 @@ final class LiveAdapter: LiveFoldersServices, CalendarServices {
 
   private func perform(_ command: LiveCommand) async {
     do {
-      _ = try await engine.perform(command)
+      _ = try await host.perform(command)
     } catch {
       NSLog("[settings] Live command failed: %@", String(describing: error))
     }

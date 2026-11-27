@@ -47,7 +47,6 @@ type NativeSettingsModule = {
   liveCommand(name: string, payloadJSON: string): Promise<string>;
   liveStart(): Promise<void>;
   liveMeetingBrowser(snapshotJSON: string): Promise<void>;
-  resolveLiveAuth(requestId: string, redirectURL: string | null, error: string | null): Promise<void>;
   libraryCommand?(kind: string, engineProfile: string, payload: Record<string, unknown>): Promise<unknown>;
   reply(id: number, resultJSON: string | null, error: string | null): Promise<void>;
   publish(topic: string, json: string): Promise<void>;
@@ -58,7 +57,6 @@ type NativeSettingsModule = {
   addListener(event: "onBookmarkWriterState", listener: (state: BookmarkWriterState) => void): EventSubscription;
   addListener(event: "onSettingsCall", listener: (call: SettingsCall) => void): EventSubscription;
   addListener(event: "onLiveReplica", listener: (replica: LiveReplica) => void): EventSubscription;
-  addListener(event: "onLiveAuthRequest", listener: (request: LiveAuthRequest) => void): EventSubscription;
   addListener(event: "onLiveCloseGroup", listener: (value: { groupId: string }) => void): EventSubscription;
 };
 
@@ -75,7 +73,6 @@ export type BookmarkWriterSnapshot = BookmarkWriterBinding & { revision: string;
 
 export type LiveReplica = { revision: number; replicaJSON: string; calendarJSON?: string; meetingAlertJSON?: string; error?: string };
 export type LiveCommandResult = { revision: number; folderId?: string; deviceFlow?: { id: string; userCode: string; verificationUri: string; expiresAt: number }; boolean?: boolean };
-export type LiveAuthRequest = { requestId: string; url: string; redirectPrefix: string } | { requestId: string; cancelled: "1" };
 
 export type LiveShadowSnapshot = {
   folders: { id: string; items: number; hidden: number; completed: number; status: string | null }[];
@@ -417,9 +414,6 @@ export const liveMeetingBrowser = (snapshot: unknown): Promise<void> =>
 export const onLiveCloseGroup = (listener: (groupId: string) => void): EventSubscription | null =>
   native?.addListener?.("onLiveCloseGroup", ({ groupId }) => listener(groupId)) ?? null;
 export const onLiveReplica = (listener: (replica: LiveReplica) => void): EventSubscription | null => native?.addListener?.("onLiveReplica", listener) ?? null;
-export const onLiveAuthRequest = (listener: (request: LiveAuthRequest) => void): EventSubscription | null => native?.addListener?.("onLiveAuthRequest", listener) ?? null;
-export const resolveLiveAuth = (requestId: string, redirectURL: string | null, error: string | null): Promise<void> =>
-  native?.resolveLiveAuth(requestId, redirectURL, error) ?? Promise.reject(new Error("native Live Folders unavailable"));
 
 const libraryCommand = <T>(kind: string, engineProfile: string, payload: Record<string, unknown>): Promise<T> =>
   native?.libraryCommand ? native.libraryCommand(kind, engineProfile, payload) as Promise<T> : Promise.reject(new Error("native library commands unavailable"));

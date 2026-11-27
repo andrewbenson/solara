@@ -153,7 +153,7 @@ final class MemorySecrets: LiveSecretStore, @unchecked Sendable {
   func secret(account: String) async -> String? { values.current[account] }
   let allowWrite = Locked(true)
   let deletions = Locked<[String]>([])
-  @discardableResult func setSecret(_ secret: String, account: String) async -> Bool {
+  @discardableResult func setSecret(_ secret: String, account: String) -> Bool {
     guard allowWrite.current else { return false }
     values.with { $0[account] = secret }
     return true
@@ -236,7 +236,7 @@ struct Rig {
   let auth: FakeAuth
   let notifier: RecordingNotifier
 
-  init(documents: [String: String] = [:], environment: LiveEnvironment = LiveEnvironment(), http: FakeHTTP = FakeHTTP(), state: LiveState? = nil) {
+  init(documents: [String: String] = [:], environment: LiveEnvironment = LiveEnvironment(), http: FakeHTTP = FakeHTTP(), state: LiveState? = nil, closeFolderTabs: @escaping @Sendable (String) async throws -> Void = { _ in }) {
     clock = ManualClock()
     self.http = http
     secrets = MemorySecrets()
@@ -247,7 +247,7 @@ struct Rig {
     engine = LiveEngine(
       effects: LiveEffects(
         http: http, secrets: secrets, clock: clock, calendar: calendar, auth: auth, notifier: notifier, documents: self.documents,
-        environment: environment),
+        environment: environment, closeFolderTabs: closeFolderTabs),
       state: state)
   }
 }

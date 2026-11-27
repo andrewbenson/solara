@@ -3,10 +3,10 @@ import { copyText, prompt, showMenu, type MenuItem } from "@solara/shell";
 import { closeTab } from "../../lib/actions";
 import { menuShortcut } from "../../lib/commandShortcuts";
 import { calendarConnected, connectCalendar, setCalendarHidden, useCalendar } from "../../live/calendar";
-import { deleteLiveFolder, manualRefresh, newLiveFolder, openLiveItem, refreshFolder, statusText } from "../../live/engine";
+import { manualRefresh, newLiveFolder, openLiveItem, refreshFolder, statusText } from "../../live/engine";
 import { ALERT_LEADS } from "../../live/meetings";
 import { SOURCES } from "../../live/sources";
-import { hideItems, live, markRead, markUnread, updateCalendarSettings, updateFolder } from "../../live/store";
+import { hideItems, live, markRead, markUnread, removeFolder, updateCalendarSettings, updateFolder } from "../../live/store";
 import type { LiveItem, LiveSourceId } from "../../live/types";
 import { useBrowser } from "../../store/browser";
 import { openSettings } from "../settings/windows";
@@ -108,7 +108,7 @@ export async function openLiveFolderMenu(windowId: string, folderId: string) {
   else if (choice === "up") moveLiveFolder(windowId, folderId, -1);
   else if (choice === "down") moveLiveFolder(windowId, folderId, 1);
   else if (choice === "settings") openSettings("liveFolders");
-  else if (choice === "delete") deleteLiveFolder(folderId);
+  else if (choice === "delete") void removeFolder(folderId);
 }
 
 export async function openLiveItemMenu(windowId: string, folderId: string, item: LiveItem, tabId: string | null) {

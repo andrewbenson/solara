@@ -251,7 +251,6 @@ public final class LiveFoldersPaneModel: SettingsPaneProvider {
   }
 
   func delete(_ folder: LiveFolderSummary) {
-    state?.folders.removeAll { $0.id == folder.id }
     services.deleteFolder(folder.id)
   }
 
@@ -320,6 +319,7 @@ struct LiveFoldersFolderSection: View {
           HStack(spacing: 6) {
             Button("Refresh") { model.refresh(folder) }
             Button("Delete", role: .destructive) { model.delete(folder) }
+              .liveSettingsControl("live.delete.\(folder.id)")
           }
         }
       }
@@ -354,6 +354,7 @@ struct LiveFoldersSourceRow: View {
           Button("Disconnect") { model.disconnect(source) }
         } else {
           Button("Connect…") { connecting = source }
+            .liveSettingsControl("live.connect.\(source.rawValue)")
         }
       } label: {
         HStack(spacing: 10) {

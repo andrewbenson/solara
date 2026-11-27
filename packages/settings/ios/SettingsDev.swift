@@ -86,7 +86,7 @@ enum SettingsDev {
         view.window?.identifier?.rawValue != "sync-pairing-sensitive" else { return }
       frames.append([path, rounded(view.convert(view.bounds, to: root))])
       if let text = view as? OnboardingTextNSView { texts.append([path, text.text]) }
-      if let field = view as? NSTextField { texts.append([path, field.stringValue]) }
+      if let field = view as? NSTextField, !(field is NSSecureTextField) { texts.append([path, field.stringValue]) }
       var counts: [String: Int] = [:]
       for child in view.subviews {
         let name = String(describing: type(of: child))
@@ -122,6 +122,24 @@ enum SettingsDev {
   }
 
   #if DEBUG
+  private static func liveControl(_ argument: String, in settings: NSWindow) -> Bool {
+    let parts = argument.split(separator: " ", maxSplits: 1).map(String.init)
+    guard let key = parts.first, let target = LiveSettingsControlProbe.view(for: key),
+          let window = target.window, window === settings || window.sheetParent === settings,
+          !target.bounds.isEmpty else { return false }
+    let point = target.convert(NSPoint(x: target.bounds.midX, y: target.bounds.midY), to: nil)
+    for type in [NSEvent.EventType.leftMouseDown, .leftMouseUp] {
+      guard let event = NSEvent.mouseEvent(with: type, location: point, modifierFlags: [],
+        timestamp: ProcessInfo.processInfo.systemUptime, windowNumber: window.windowNumber,
+        context: nil, eventNumber: 0, clickCount: 1, pressure: type == .leftMouseDown ? 1 : 0) else { return false }
+      window.sendEvent(event)
+    }
+    if parts.count == 1 { return true }
+    guard let editor = window.firstResponder as? NSTextView, editor.isFieldEditor else { return false }
+    editor.insertText(parts[1], replacementRange: NSRange(location: 0, length: editor.string.utf16.count))
+    return true
+  }
+
   static func configFiles(_ argument: String?, window: NSWindow?) -> [String: Any] {
     let location = ConfigDirectory.shared?.location
     var out: [String: Any] = [
@@ -208,6 +226,12 @@ enum SettingsDev {
     case "sendFeedback":
       NativeAppIntegration.shared.sendFeedback(argument)
     #if DEBUG
+    case "liveControl":
+      let env = ProcessInfo.processInfo.environment
+      guard env["SOLARA_BACKGROUND"] == "1", env["SOLARA_DATA_DIR"]?.isEmpty == false,
+            env["SOLARA_LIVE_MOCK"]?.isEmpty == false,
+            let window, let argument else { return #"{"accepted":false}"# }
+      return json(["accepted": liveControl(argument, in: window)])
     case "filterList":
       let env = ProcessInfo.processInfo.environment
       guard env["SOLARA_BACKGROUND"] == "1", env["SOLARA_DATA_DIR"]?.isEmpty == false else { return #"{"error":"test instances only"}"# }

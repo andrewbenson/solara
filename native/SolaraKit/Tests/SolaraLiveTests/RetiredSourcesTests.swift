@@ -8,7 +8,7 @@ actor PausedRetiredSecrets: LiveSecretStore {
   var release: CheckedContinuation<Void, Never>?
 
   func secret(account: String) async -> String? { nil }
-  func setSecret(_ secret: String, account: String) async -> Bool { true }
+  nonisolated func setSecret(_ secret: String, account: String) -> Bool { true }
 
   func deleteSecret(account: String) async -> Bool {
     deletionStarted = true

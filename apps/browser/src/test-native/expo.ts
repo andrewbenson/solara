@@ -71,7 +71,6 @@ const settingsModule = {
     return { remove: () => { liveListeners.delete(name); } };
   },
   liveStart: async () => {},
-  resolveLiveAuth: async () => {},
   liveCommand: async (name: string, payloadJSON: string) => {
     const payload = JSON.parse(payloadJSON) as Record<string, any>;
     let folderId: string | undefined;

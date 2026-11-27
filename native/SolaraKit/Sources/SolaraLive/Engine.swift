@@ -60,6 +60,8 @@ public actor LiveEngine {
   var appActive = true
   var postingAlerts = Set<String>()
   var googlePending: Task<Void, Error>?
+  var googleCredentialsGeneration = 0
+  var googleDisconnecting = false
   var meetingHost: (any LiveMeetingHost)?
 
   public init(effects: LiveEffects, state: LiveState? = nil) {

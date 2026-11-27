@@ -67,7 +67,7 @@ import Testing
   @Test func slowJobQueuedBeforeStopDoesNotRun() async {
     let http = FakeHTTP()
     let rig = Rig(http: http)
-    await rig.secrets.setSecret("x", account: "github")
+    rig.secrets.setSecret("x", account: "github")
     _ = await rig.engine.createFolder(profileId: "p", kind: .pullRequests, sources: [.github])
     await rig.engine.start()
     await rig.engine.queueFolderJobThenStop()
@@ -151,7 +151,7 @@ import Testing
   @Test func isolatedEngineNeverCallsHTTPWithoutALoopbackMock() async {
     let http = FakeHTTP { _ in json([:]) }
     let rig = Rig(environment: LiveEnvironment(isolatedDataDirectory: true), http: http)
-    await rig.secrets.setSecret("x", account: "github")
+    rig.secrets.setSecret("x", account: "github")
     let id = await rig.engine.createFolder(profileId: "p", kind: .pullRequests, sources: [.github])
     await rig.engine.refreshFolder(id).value
     #expect(http.log.current.isEmpty)

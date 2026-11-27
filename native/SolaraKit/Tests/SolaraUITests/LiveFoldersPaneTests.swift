@@ -137,7 +137,7 @@ struct LiveFoldersPaneTests {
     #expect(model.folders[0].groupStacks == false)
     #expect(model.folders[0].showCompleted == true)
     model.delete(model.folders[1])
-    #expect(model.folders.map(\.id) == ["lf-1", "lf-3"])
+    #expect(model.folders.map(\.id) == ["lf-1", "lf-2", "lf-3"])
     model.disconnect(.github)
     #expect(model.account(.github) == nil)
     model.refresh(folder)
@@ -147,6 +147,19 @@ struct LiveFoldersPaneTests {
     #expect(services.calls.contains("delete lf-2"))
     #expect(services.calls.contains("disconnect github"))
     #expect(services.calls.contains("refresh lf-1"))
+  }
+
+  @Test func deletionWaitsForTheEngineToAcceptIt() async throws {
+    let (_, model, services) = await Self.loaded()
+    let folder = model.folders[1]
+    model.delete(folder)
+    #expect(model.folders.contains { $0.id == folder.id })
+    var next = services.state
+    next.folders.removeAll { $0.id == folder.id }
+    try await LiveSettingsWait.change({ model.state }) {
+      services.changes.continuation.yield(next)
+    }
+    #expect(!model.folders.contains { $0.id == folder.id })
   }
 
   @Test(.timeLimit(.minutes(3))) func engineChangesReplaceTheStateAndSubscribeOnce() async throws {

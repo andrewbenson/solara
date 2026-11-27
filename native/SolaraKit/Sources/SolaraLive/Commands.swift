@@ -250,6 +250,7 @@ extension LiveEngine {
       updateFolder(id, patch)
     case .removeFolder(let payload):
       let id = try folder(Fields.object(payload, allowed: ["folderId"], required: ["folderId"]))
+      try await effects.closeFolderTabs(id)
       removeFolder(id)
     case .removeProfile(let payload):
       guard !effects.environment.safeMode else { throw LiveError(.other, "Profile deletion is disabled in safe mode") }

@@ -791,3 +791,16 @@ the stored light and dark colors and the unchanged fixture.
 ## Lifecycles slice 9, Cast
 
 `CastLifecycleTests` covers pending toggles, replacement receipts, profile watches, stale sinks and stale actions. Run media-ui with `--prompts` and without it, webkit-pill, pip-window, and SolaraCore acceptance `cast-dialog cast-routes` in both layouts. The acceptance checks use Chrome's fake Cast provider to confirm route updates and verify that picker dismissal leaves the route running. Repeat `cast-dialog` with `--cast-safe` to exercise Safe Mode.
+
+## E8 Settings Live Folders and Drive sign-in
+
+Run `LiveWorkspaceTests`, `CommandTests`, `SourcesTests`, `LiveFoldersPaneTests`
+and `LiveSettingsMappingTests` with `-Xswiftc -DSOLARA_PROBES`.
+In window layouts 0 and 1, run `settings-shift-test.mjs <Debug app> --panes liveFolders,calendar`,
+the calendar and meeting cases in `pages-test.mjs`, and the Settings utility driver.
+
+Run `node packages/settings/scripts/settings-live-test.mjs <Debug app> <scratch directory> [folders|drive]`
+in both layouts. The folder case presses Delete in Settings and checks the Live
+document model, the open tab and the surviving group member. The Drive case uses
+loopback consent and token endpoints, submits fixture credentials through the
+native sheet, checks the PKCE exchange and confirms that the authorization tab closes.

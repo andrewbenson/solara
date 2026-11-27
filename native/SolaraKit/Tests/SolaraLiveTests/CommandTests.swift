@@ -8,6 +8,25 @@ import Testing
     try LiveJSON.decode(LiveCommand.self, from: #"{"name":"\#(name)","payload":\#(payload)}"#)
   }
 
+  @Test func folderDeletionRequiresWorkspaceAcceptance() async throws {
+    let closed = Locked<[String]>([])
+    let refusal = Locked(true)
+    let rig = Rig(closeFolderTabs: { id in
+      if refusal.current { throw LiveError(.other, "Workspace refused deletion") }
+      closed.with { $0.append(id) }
+    })
+    let id = await rig.engine.createFolder(profileId: "p", kind: .documents, sources: [])
+    let deletion = try command("removeFolder", #"{"folderId":"\#(id)"}"#)
+    await #expect(throws: LiveError(.other, "Workspace refused deletion")) {
+      try await rig.engine.perform(deletion)
+    }
+    #expect(await rig.engine.state.folders[id] != nil)
+    refusal.with { $0 = false }
+    _ = try await rig.engine.perform(deletion)
+    #expect(closed.current == [id])
+    #expect(await rig.engine.state.folders[id] == nil)
+  }
+
   @Test func dismissAlertOnlyRecordsWhileAlertsStayInJS() async throws {
     let rig = Rig()
     await rig.engine.start(jobs: [.folders])

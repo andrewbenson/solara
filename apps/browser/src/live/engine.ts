@@ -6,7 +6,7 @@ import { liveCommand } from "./command";
 import { useBrowser } from "../store/browser";
 import { activeTabId, viewTabIds } from "../store/model";
 import { SOURCES } from "./sources";
-import { live, markRead, removeFolder, useLive } from "./store";
+import { live, markRead, useLive } from "./store";
 import type { LiveErrorKind, LiveFolderKind, LiveItem, LiveSourceId } from "./types";
 
 export const COMPLETION_MS = 2600;
@@ -67,13 +67,6 @@ export function openLiveItem(windowId: string, folderId: string, item: LiveItem,
   const id = s.newTab(windowId, { url: item.url, background: options.background });
   useBrowser.getState().updateTab(id, { liveItem: { folderId, itemId: item.id } });
   return id;
-}
-
-export function deleteLiveFolder(folderId: string) {
-  const s = useBrowser.getState();
-  const tabs = Object.values(s.tabs).filter((t) => t.liveItem?.folderId === folderId).map((t) => t.id);
-  if (tabs.length) s.closeTabs(tabs);
-  return removeFolder(folderId);
 }
 
 let started = false;

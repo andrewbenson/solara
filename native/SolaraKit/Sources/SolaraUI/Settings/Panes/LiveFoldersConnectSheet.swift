@@ -7,21 +7,27 @@ final class LiveFoldersConnectRun {
   var busy = false
   var error: String?
   var finished = false
+  @ObservationIgnored private var pending: Task<Void, Never>?
 
   func run(_ task: @escaping @MainActor () async throws -> Void) {
     guard !busy else { return }
     busy = true
     error = nil
-    Task {
+    pending = Task {
+      defer {
+        busy = false
+        pending = nil
+      }
       do {
         try await task()
-        finished = true
+        if !Task.isCancelled { finished = true }
       } catch {
-        self.error = error.localizedDescription
+        if !Task.isCancelled { self.error = error.localizedDescription }
       }
-      busy = false
     }
   }
+
+  func cancel() { pending?.cancel() }
 }
 
 struct LiveFoldersConnectSheet: View {
@@ -51,6 +57,7 @@ struct LiveFoldersConnectSheet: View {
     }
     .padding(20)
     .frame(width: 460)
+    .onDisappear { if source == .gdrive { runner.cancel() } }
     .onChange(of: runner.finished) { _, done in
       if done { dismiss() }
     }
@@ -259,16 +266,22 @@ struct LiveFoldersGoogleConnect: View {
       LiveFoldersConnectField("Client ID") {
         TextField("", text: $clientId, prompt: Text(verbatim: "…apps.googleusercontent.com"))
           .textContentType(.solaraPlainText)
+          .liveSettingsControl("live.google.client")
       }
       LiveFoldersConnectField("Client secret") {
         SecureField("", text: $secret)
+          .liveSettingsControl("live.google.secret")
       }
       LiveFoldersConnectActions {
-        Button("Cancel") { dismiss() }
+        Button("Cancel") {
+          runner.cancel()
+          dismiss()
+        }
           .keyboardShortcut(.cancelAction)
         Button(runner.busy ? "Waiting for Google…" : "Sign In with Google…") { go() }
           .buttonStyle(.borderedProminent)
           .disabled(!filled(clientId, secret) || runner.busy)
+          .liveSettingsControl("live.google.submit")
       }
     }
   }

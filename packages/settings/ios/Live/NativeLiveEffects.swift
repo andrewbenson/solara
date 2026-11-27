@@ -18,7 +18,7 @@ struct NativeLiveHTTP: LiveHTTPClient {
     task.httpMethod = request.method
     task.httpBody = request.body
     for (name, value) in request.headers { task.setValue(value, forHTTPHeaderField: name) }
-    let (body, response) = try await session.data(for: task, delegate: followsRedirects ? nil : RefusingRedirects())
+    let (body, response) = try await session.data(for: task, delegate: followsRedirects && request.followsRedirects ? nil : RefusingRedirects())
     guard let response = response as? HTTPURLResponse else { throw URLError(.badServerResponse) }
     var headers: [String: String] = [:]
     for (name, value) in response.allHeaderFields { headers[String(describing: name)] = String(describing: value) }
@@ -42,7 +42,7 @@ struct NativeLiveSecrets: LiveSecretStore {
   }
 
   func secret(account: String) async -> String? { read(account) }
-  func setSecret(_ secret: String, account: String) async -> Bool { write(account, secret) }
+  func setSecret(_ secret: String, account: String) -> Bool { write(account, secret) }
   func deleteSecret(account: String) async -> Bool { delete(account) }
 }
 

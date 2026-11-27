@@ -24,7 +24,7 @@ public class SettingsModule: Module {
       }
     }.runOnQueue(.main)
 
-    Events("onEngineBackChanged", "onPanePopoversChanged", "onBookmarkProjectionChanged", "onAppIntegrationPresentation", "onSettingsCall", "onLiveReplica", "onLiveAuthRequest", "onLiveCloseGroup", "onBookmarkWriterState")
+    Events("onEngineBackChanged", "onPanePopoversChanged", "onBookmarkProjectionChanged", "onAppIntegrationPresentation", "onSettingsCall", "onLiveReplica", "onLiveCloseGroup", "onBookmarkWriterState")
 
     OnCreate {
       NativeBookmarkLaunch.select()
@@ -468,10 +468,6 @@ public class SettingsModule: Module {
       }
     }.runOnQueue(.main)
 
-    AsyncFunction("resolveLiveAuth") { (requestId: String, redirectURL: String?, error: String?) in
-      NativeLiveAuth.shared.resolve(requestId: requestId, redirectURL: redirectURL, error: error)
-    }.runOnQueue(.main)
-
     #if DEBUG
     AsyncFunction("devLiveSnapshot") { (promise: Promise) in
       nonisolated(unsafe) let reply = promise
@@ -500,9 +496,6 @@ public class SettingsModule: Module {
       NativeLiveEngine.shared.setCloseGroupEvent { groupId in
         DispatchQueue.main.async { sink.module?.sendEvent("onLiveCloseGroup", ["groupId": groupId]) }
       }
-      NativeLiveAuth.shared.setEvent { value in
-        DispatchQueue.main.async { sink.module?.sendEvent("onLiveAuthRequest", value) }
-      }
     }
 
     OnStartObserving("onSettingsCall") {
@@ -523,7 +516,6 @@ public class SettingsModule: Module {
         MainActor.assumeIsolated {
           NativeLiveEngine.shared.setEvent(nil)
           NativeLiveEngine.shared.setCloseGroupEvent(nil)
-          NativeLiveAuth.shared.setEvent(nil)
           NativeAppStartup.shared.disconnect()
         }
       }

@@ -1,6 +1,4 @@
 import { useSyncExternalStore } from "react";
-import { openModeFor, openUrl } from "../bookmarks/actions";
-import { openInternalPage } from "../pages/urls";
 import { nativeEngineBackAvailable, onEngineBackChanged, nativeWorkspaceCommand, windowNativeLayoutGeneration, publishSettingsTopic } from "@solara/settings";
 import { isPageCurrent, nativePageFacts } from "@solara/store";
 import { addNativeSettingsHandlers } from "../settings/nativeSettings";
@@ -205,13 +203,6 @@ type NavigationCompatibilityAction = { kind: "back" | "forward" } | ({ kind: "it
 const nativeNavigationCurrent = (windowId: string, tabId: string, generation: number) => generation > 0 && windowNativeLayoutGeneration(windowId) === generation && store().tabs[tabId]?.windowId === windowId;
 
 addNativeSettingsHandlers({
-  "pane.navigationOpen": (windowId: string, tabId: string, generation: number, item: HistoryItem, click: { metaKey?: boolean; shiftKey?: boolean; altKey?: boolean; middle?: boolean }) => {
-    if (!nativeNavigationCurrent(windowId, tabId, generation) || !item.url) return;
-    openUrl(item.url, windowId, openModeFor(click));
-  },
-  "pane.navigationFullHistory": (windowId: string, tabId: string, generation: number) => {
-    if (nativeNavigationCurrent(windowId, tabId, generation)) openInternalPage("history", windowId);
-  },
   "pane.navigationHistory": async (windowId: string, tabId: string, generation: number, direction: -1 | 1) => {
     if (!nativeNavigationCurrent(windowId, tabId, generation)) return [];
     const handle = webviews.get(tabId);

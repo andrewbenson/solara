@@ -82,19 +82,18 @@ enum NativeOmniboxActions {
 
   static func addressClick(_ click: ToolbarClick, windowId: String, tabId: String, view: NSView?) -> Bool {
     guard ownsActions, click.id == "url" || click.id == "urlEdit" else { return false }
-    guard let store = NativeStoreHandle.store, let tab = store.state.tabs[tabId], tab.windowId == windowId,
-      store.state.windows[windowId]?.profileId == tab.profileId else { return true }
     if click.id == "urlEdit", click.kind == .blur { return false }
-    let active = store.state.activeTabId(windowId)
-    if active != tabId {
-      guard store.state.splits.values.contains(where: { $0.tabIds.contains(tabId) && active.map($0.tabIds.contains) == true }) else { return true }
-      _ = try? store.dispatch(Command("activate", [.string(tabId)]), origin: .native)
+    guard let store = NativeStoreHandle.store, let target = ToolbarActionCommand.resolve(windowId: windowId, tabId: tabId,
+      state: store.state, closing: store.memory.closingWindows) else { return true }
+    if let activate = target.activation {
+      guard (try? store.dispatch(activate, origin: .native)) != nil else { return true }
     }
+    let tab = target.tab
     if click.id == "urlEdit" {
       guard click.kind == .submit else { return false }
       let url = resolveInput(click.text ?? "", search: searchUrlPrefix(store.state.settings))
       if !url.isEmpty {
-        _ = open(url, windowId: windowId, tabId: tabId)
+        openAddress(url, windowId: windowId, tabId: tabId, store: store)
       }
       return true
     }
@@ -109,24 +108,32 @@ enum NativeOmniboxActions {
   }
 
   static func urlMenu(tabId: String, windowId: String, in view: NSView) {
-    guard let store = NativeStoreHandle.store else { return }
+    guard let store = NativeStoreHandle.store,
+      let target = ToolbarActionCommand.resolve(windowId: windowId, tabId: tabId, state: store.state, closing: store.memory.closingWindows) else { return }
     let generation = NativeStoreHandle.ownershipGeneration
     let paste = classifyPaste(NSPasteboard.general.string(forType: .string) ?? "")
     var choices = [("copyURL", "Copy URL", true)]
     if let paste { choices += [("", "", true), ("pasteAndGo", pasteTitle(paste), true)] }
     menu(choices, in: view) { choice in
       guard ownsActions, NativeStoreHandle.store === store, NativeStoreHandle.ownershipGeneration == generation,
-        store.state.activeTabId(windowId) == tabId,
-        let tab = store.state.tabs[tabId], tab.windowId == windowId else { return }
-      if choice == "copyURL" { copy(cleanUrl(tab.url)) }
+        target.isCurrent(in: store.state, closing: store.memory.closingWindows) else { return }
+      if choice == "copyURL" { copy(cleanUrl(target.tab.url)) }
       if choice == "pasteAndGo", let paste = classifyPaste(NSPasteboard.general.string(forType: .string) ?? "") {
         let url: String
         switch paste {
         case .go(let target): url = target
         case .search(let query): url = searchUrl(defaultSearchEngine(store.state.settings), query)
         }
-        _ = open(url, windowId: windowId, tabId: tabId)
+        openAddress(url, windowId: windowId, tabId: tabId, store: store)
       }
+    }
+  }
+
+  private static func openAddress(_ url: String, windowId: String, tabId: String, store: Store) {
+    if store.state.peeks[windowId]?.tabId == tabId {
+      _ = try? store.dispatch(Command("navigate", [.string(tabId), .string(url)]), origin: .native)
+    } else {
+      _ = open(url, windowId: windowId, tabId: tabId)
     }
   }
 

@@ -721,6 +721,10 @@ final class PaneOverlayHost {
     navigationSwipes[tabId]?.openMenu(direction)
   }
 
+  func closeNavigationMenu(_ tabId: String) {
+    navigationSwipes[tabId]?.dismissMenu()
+  }
+
   private func reconcileNavigationSwipes() {
     guard NativeWindowShell.nativeLayoutActive(windowId), PageIssuer.shared != nil,
       let snapshot = NativeStoreHandle.store?.snapshot else { return }
@@ -956,12 +960,19 @@ private final class NativeNavigationSwipe {
   }
 
   func openMenu(_ direction: SwipeCapsuleDirection) {
-    guard current else { return }
+    guard current, let store = NativeStoreHandle.store,
+      let target = ToolbarActionCommand.resolve(windowId: windowId, tabId: registration.tabID, state: store.state,
+        closing: store.memory.closingWindows) else { return }
+    let owner = NativeStoreHandle.ownershipGeneration
+    func targetCurrent() -> Bool {
+      NativeStoreHandle.ownsWorkspace && NativeStoreHandle.store === store && NativeStoreHandle.ownershipGeneration == owner
+        && target.isCurrent(in: store.state, closing: store.memory.closingWindows)
+    }
     controller.stop()
     menuSequence += 1
     let sequence = menuSequence
     history(direction) { [weak self] items in
-      guard let self, self.current, self.menuSequence == sequence, !items.isEmpty else { return }
+      guard let self, self.current, self.menuSequence == sequence, targetCurrent(), !items.isEmpty else { return }
       self.dismissMenu()
       let menu = PanePopover(HistoryPanelView(frame: .zero))
       self.menu = menu
@@ -973,7 +984,7 @@ private final class NativeNavigationSwipe {
       menu.body.onHeight = { [weak menu] in menu?.setHeight($0) }
       menu.popover.onDismiss = { [weak self] in self?.dismissMenu() }
       menu.body.onEvent = { [weak self] event in
-        guard let self, self.current else { return }
+        guard let self, self.current, targetCurrent() else { return }
         switch event {
         case .open(let index, let click):
           guard items.indices.contains(index) else { return }
@@ -983,19 +994,12 @@ private final class NativeNavigationSwipe {
             self.navigate(.item(item))
           } else {
             if click.shift || click.alt { self.dismissMenu() }
-            Task { @MainActor [weak self] in
-              guard let self, self.current else { return }
-              _ = await SettingsAdapters.js("pane.navigationOpen", self.windowId, self.registration.tabID, Double(self.generation),
-                ["key": String(item.offset), "title": item.title, "url": item.url, "offset": item.offset],
-                ["metaKey": click.meta, "shiftKey": click.shift, "altKey": click.alt, "middle": click.middle])
-            }
+            let mode = click.meta || click.middle ? (click.shift ? "foreground" : "background") : click.alt ? "split" : "window"
+            NativeBookmarkCommands.openURL(item.url, mode: mode, windowId: self.windowId)
           }
         case .fullHistory:
           self.dismissMenu()
-          Task { @MainActor [weak self] in
-            guard let self, self.current else { return }
-            _ = await SettingsAdapters.js("pane.navigationFullHistory", self.windowId, self.registration.tabID, Double(self.generation))
-          }
+          _ = try? store.dispatch(Command("omniboxCommand", [.string(self.windowId), "showHistory"]), origin: .native)
         }
       }
       menu.place(in: self.controller.capsule.superview)
@@ -1010,7 +1014,7 @@ private final class NativeNavigationSwipe {
     }
   }
 
-  private func dismissMenu() {
+  func dismissMenu() {
     menuSequence += 1
     menu?.wrap.removeFromSuperview()
     menu = nil

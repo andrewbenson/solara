@@ -11,6 +11,43 @@ enum NativeBookmarkCommands {
   static var cancelConfirmation = false
   static var confirmations: [[String: String]] = []
   #endif
+  private struct ToggleKey: Hashable {
+    let profile: String
+    let url: String
+  }
+
+  private static var toggling: Set<ToggleKey> = []
+
+  static func toggle(_ tab: Tab, profile: String, windowId: String, store: Store) {
+    let key = ToggleKey(profile: profile, url: tab.url)
+    guard !tab.url.isEmpty, toggling.insert(key).inserted else { return }
+    let owner = NativeBookmarkOwner.writableCurrent
+    let generation = NativeStoreHandle.ownershipGeneration
+    let mutation = BookmarkMutation(method: "toggleBookmark", args: [.string(profile), [
+      "url": .string(tab.url), "title": .string(tab.title), "favicon": tab.favicon.map(JSONValue.string) ?? .null,
+    ]])
+    Task { @MainActor in
+      defer { toggling.remove(key) }
+      do {
+        guard NativeStoreHandle.store === store, NativeStoreHandle.ownershipGeneration == generation else { return }
+        guard let owner else { throw BookmarkWriterError.notOwned }
+        guard NativeBookmarkOwner.writableCurrent === owner else { return }
+        let binding = try owner.binding(profile: profile)
+        _ = try await owner.submitAsync(profile: profile, mutations: [mutation], binding: binding, requestID: nil)
+      } catch BookmarkWriterError.expired {
+      } catch {
+        guard NativeStoreHandle.store === store, NativeStoreHandle.ownershipGeneration == generation else { return }
+        NSLog("[toolbar] bookmark toggle failed: %@", String(describing: error))
+        if let host = WindowHost.contentView(windowId) {
+          let title: String
+          if case .savedUnconfirmed? = error as? BookmarkPendingStoreError { title = "Bookmark save unconfirmed" }
+          else { title = "Bookmark not saved" }
+          LinkToast.show(in: host, title: title)
+        }
+      }
+    }
+  }
+
   private static func plan(_ command: String, arg: String?, windowId: String?, store: Store) -> BookmarkOpenPlan? {
     let state = store.state
     let route = CommandRoute.resolve("openBookmark", windowId: windowId, state: state, closing: store.memory.closingWindows)
@@ -18,6 +55,12 @@ enum NativeBookmarkCommands {
     let snapshot = try? NativeBookmarkOwner.displayCurrent?.snapshot(profile: profile)
     return BookmarkMenuCommand.plan(command: command, arg: arg, windowId: windowId, state: state,
       closing: store.memory.closingWindows, snapshot: snapshot)
+  }
+
+  static func openURL(_ url: String, mode: String, windowId: String) {
+    let options: JSONValue = ["url": .string(url), "mode": .string(mode)]
+    guard let data = try? JSONSerialization.data(withJSONObject: options.foundation) else { return }
+    _ = perform("openBookmarkItems", arg: String(decoding: data, as: UTF8.self), windowId: windowId)
   }
 
   static func perform(_ command: String, arg: String?, windowId: String?) -> Bool {

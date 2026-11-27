@@ -44,6 +44,20 @@ const press = async (key, keyCode, modifiers) => {
   assert.notEqual(result.handledBy, "none", `${key}: shortcut was not handled`);
   return result;
 };
+const clickToolbar = async (id) => {
+  const point = (await run('return expo.modules.SolaraToolbar.devToolbar("w1", "a").then(JSON.parse);')).buttonPoints?.[`button:${id}`];
+  assert.ok(point, `mounted toolbar button ${id}`);
+  const number = await run(`
+    const browser = Number(Object.entries(ac.pageState.getState().browsers).find(([, tab]) => tab === "a")?.[0] ?? 0);
+    return expo.modules.SolaraCEF.devWindowNumber(browser);
+  `);
+  assert.ok(number > 0, "toolbar fixture has a mounted Chromium window");
+  const click = point.map(Math.round).join(",");
+  await run(`return expo.modules.SolaraCEF.devWindow(${number}, "fakeActiveClicks");`);
+  const hit = await run(`return expo.modules.SolaraCEF.devWindow(${number}, "hit:${click}");`);
+  assert.match(String(hit), /ToolbarButtonView/);
+  await run(`return expo.modules.SolaraCEF.devWindow(${number}, "click:${click}");`);
+};
 const bridge = (command, windowId = "w1") =>
   run(`ac.runCommand({ command: ${JSON.stringify(command)}, arg: null, windowId: ${JSON.stringify(windowId)} }); return true;`);
 
@@ -109,7 +123,7 @@ try {
     session: session({
       windows: [{ id: "w1", frame: [80, 80, 1100, 800], activeTabIds: { default: "a" } }],
       tabs: [{ id: "a", url: `${base}/a`, title: "A" }, { id: "b", url: `${other}/b`, title: "B" }],
-      settings: { sleepInactiveTabs: false, warnBeforeClosingWindow: false, warnBeforeClosingLastTab: false },
+      settings: { tabLayout: "top", sleepInactiveTabs: false, warnBeforeClosingWindow: false, warnBeforeClosingLastTab: false },
     }),
     ready: "return !!ac.commandHandlers && !!ac.runCommand && !!ac.shell.devKeyEquivalent && !!globalThis.acPerf && !!expo.modules.SolaraApp.devWorkspaceMenuCommand && !!ac.store.getState().windows.w1;",
   });
@@ -124,6 +138,24 @@ try {
   handlerBaseline = await run(`const stats = ac.commandHandlers.stats(); ac.commandHandlers.setEnabled(${baseline}); return stats;`);
 
   pass("native layout capability", { layout: await run('return expo.modules.SolaraWindowShell.nativeLayout("w1");') });
+  if (!baseline) {
+    await run('return expo.modules.SolaraToolbar.devBlockToolbarFallbacks(["reload", "back", "forward", "splitMenu"]);');
+    await until("toolbar fixture selected", s => s.windows.w1.activeTabIds[s.windows.w1.profileId] === "a" && !s.live?.a?.isLoading);
+    await reloads("toolbar reload with its JS fallback disabled", "/a", () => clickToolbar("reload"));
+    await run(`ac.store.getState().navigate("a", ${JSON.stringify(`${base}/toolbar-history`)}); return true;`);
+    await until("toolbar history committed", s => s.tabs.a.url === `${base}/toolbar-history` && s.live?.a?.canGoBack === true && !s.live?.a?.isLoading);
+    await step("toolbar back with its JS fallback disabled", () => clickToolbar("back"), (_, s) => s.tabs.a.url === `${base}/a`);
+    await step("toolbar forward with its JS fallback disabled", () => clickToolbar("forward"), (_, s) => s.tabs.a.url === `${base}/toolbar-history`);
+    await step("toolbar back restores the fixture", () => clickToolbar("back"), (_, s) => s.tabs.a.url === `${base}/a` && !s.live?.a?.isLoading);
+    const splitId = await run('const store = ac.store.getState(); const id = store.createSplit(["a", "b"]); store.activate("b"); return id;');
+    const split = await until("inactive split toolbar mounted", async s => s.splits[splitId]?.tabIds.join() === "a,b"
+      && s.windows.w1.activeTabIds[s.windows.w1.profileId] === "b"
+      && (await run('return expo.modules.SolaraToolbar.devToolbar("w1", "a").then(JSON.parse);')).buttonPoints?.["button:splitMenu"]);
+    await run('return expo.modules.SolaraShell.devContextMenu("arm", "flip");');
+    await step("inactive toolbar activates once and flips its split with JS disabled", () => clickToolbar("splitMenu"), (_, s) =>
+      s.windows.w1.activeTabIds[s.windows.w1.profileId] === "a" && s.splits[splitId]?.tabIds.join() === [...split.splits[splitId].tabIds].reverse().join());
+    await run(`ac.store.getState().separateSplit(${JSON.stringify(splitId)}); return true;`);
+  }
   if (!baseline) {
     const probe = (action) => run(`return expo.modules.SolaraSettings.devLinkCommands(${JSON.stringify(action)});`);
     await probe("begin");

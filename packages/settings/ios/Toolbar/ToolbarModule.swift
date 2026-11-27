@@ -106,6 +106,12 @@ public class ToolbarModule: Module {
     #endif
 
     #if DEBUG
+    AsyncFunction("devBlockToolbarFallbacks") { (ids: [String]) in
+      MainActor.assumeIsolated {
+        if SolaraCoreTestHooksAllowed() { NativeToolbarActions.blockedFallbacks = Set(ids) }
+      }
+    }.runOnQueue(.main)
+
     Function("devToolbarStates") { (windowId: String) -> String in
       if Thread.isMainThread { return MainActor.assumeIsolated { NativeToolbarHostView.devStates(windowId) } }
       return DispatchQueue.main.sync { MainActor.assumeIsolated { NativeToolbarHostView.devStates(windowId) } }
@@ -116,6 +122,7 @@ public class ToolbarModule: Module {
       MainActor.assumeIsolated {
         #if DEBUG
         let toolbar = NativeToolbarHostView.toolbar(windowId: windowId, tabId: tabId)
+          ?? NativeSplitChrome.devLegacyToolbar(windowId: windowId, tabId: tabId)
         var out: [String: Any] = [
           "extensions": toolbar?.describeExtensions() ?? [],
           "urlRight": toolbar?.state.map { $0.geometry.urlRight as Any } ?? NSNull(),
@@ -123,10 +130,14 @@ public class ToolbarModule: Module {
           "urlEditor": toolbar.map { containsDeveloperUrlField($0) } ?? false,
         ]
         if SolaraCoreTestHooksAllowed(), let toolbar, !toolbar.isHiddenOrHasHiddenAncestor,
-          let frameView = toolbar.window?.contentView?.superview,
-          let button = toolbar.layoutAnchors["button:sidebar"], !button.isEmpty {
-          let point = toolbar.convert(CGPoint(x: button.midX, y: button.midY), to: nil)
-          out["sidebarButtonPoint"] = [point.x, frameView.bounds.height - point.y]
+          let frameView = toolbar.window?.contentView?.superview {
+          let points = toolbar.layoutAnchors.compactMapValues { rect -> [CGFloat]? in
+            guard !rect.isEmpty else { return nil }
+            let point = toolbar.convert(CGPoint(x: rect.midX, y: rect.midY), to: nil)
+            return [point.x, frameView.bounds.height - point.y]
+          }
+          out["buttonPoints"] = points
+          out["sidebarButtonPoint"] = points["button:sidebar"]
         }
         return (try? JSONSerialization.data(withJSONObject: out)).flatMap { String(data: $0, encoding: .utf8) } ?? "null"
         #else
@@ -248,6 +259,7 @@ final class NativeToolbarHostView: ExpoView {
           }
           return
         }
+        guard NativeToolbarActions.allowsFallback(click) else { return }
         let payload: [String: Any] = ["tabId": target, "id": click.id, "kind": click.kind.rawValue, "meta": click.meta, "alt": click.alt, "shift": click.shift, "text": click.text ?? NSNull()]
         if click.id == "urlEdit", click.kind.rawValue == "focus" { NativeExtensionActionPopup.dropHeldFieldBlur(from: self) }
         if click.id == "urlEdit", click.kind.rawValue == "blur",
@@ -398,6 +410,7 @@ enum SidebarAddressBridge {
         }
         return
       }
+      guard NativeToolbarActions.allowsFallback(click) else { return }
       var payload: [String: Any] = ["id": click.id, "kind": click.kind.rawValue, "meta": click.meta, "alt": click.alt, "shift": click.shift, "text": click.text ?? NSNull()]
       payload["tabId"] = presented.tabId
       Task { @MainActor in _ = await SettingsAdapters.js("sidebar.addressClick", windowId, payload) }

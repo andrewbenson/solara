@@ -32,7 +32,7 @@ public final class ToolbarView: NSView {
   private var extensionAnchorRects: [String: CGRect] = [:]
   private var reportedFullScreenOffset: CGFloat = 0
   private var url = ToolbarUrlFieldView()
-  private var bindingGeneration: UInt64 = 0
+  public private(set) var bindingGeneration: UInt64 = 0
   private let updatePill = SidebarUpdatePill()
   static let updatePillHeight: CGFloat = 24
   static let updatePillPadding: CGFloat = 12

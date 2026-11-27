@@ -18,8 +18,6 @@ import { toggleBookmarkFromUI } from "../lib/bookmarkWriter";
 import { usePageProgress } from "../store/pageProgress";
 import { openModeFor, openUrl } from "./bookmarks/actions";
 import { showNativePanelNow } from "./CommandPanel";
-import { useNativeToolbarExtensions } from "./extensions/ToolbarExtensionHost";
-import { openPageIn } from "../lib/engines";
 import { type ToolbarGeometry } from "./layout/geometry";
 import { closeHistoryMenu, goBack, goForward, historyItems, openHistoryMenu, useHistoryMenu } from "./layout/history";
 import { setPopover, usePage, usePages } from "./layout/pageState";
@@ -37,7 +35,6 @@ import { insecureLevel } from "./Toolbar";
 import { installUpdateNow, UPDATE_PILL_SHORT_TEXT, UPDATE_PILL_TEXT, updatePillTooltip, usePendingUpdate } from "../lib/pendingUpdate";
 
 
-const WEBKIT_PILL_ACTION = "webkit:openInChromium";
 
 const LIGHT_STRIPES = require("../../assets/developer-stripes-light.png");
 const DARK_STRIPES = require("../../assets/developer-stripes-dark.png");
@@ -96,7 +93,6 @@ export function useNativeToolbarModel({ tabId, geometry, windowId, focused, bare
       bookmarked: !!tab && isBookmarked(s.bookmarks, bookmarkProfileId(s, window), tab.url),
     };
   }));
-  const extensions = useNativeToolbarExtensions(windowId, tabId);
   const pending = usePendingUpdate();
   const insecure = usePage(tabId, insecureLevel);
   const editing = useUrlEdit((u) => u.tabId === tabId);
@@ -132,52 +128,54 @@ export function useNativeToolbarModel({ tabId, geometry, windowId, focused, bare
   });
 
   const onClick = async (c: ToolbarClick) => {
-    const state = useBrowser.getState();
-    const tab = state.tabs[tabId];
-    if ((c.tabId !== undefined && c.tabId !== tabId) || !tab || tab.windowId !== windowId || tab.profileId !== state.windows[windowId]?.profileId) return;
-    const focus = () => {
+    if (c.tabId !== undefined && c.tabId !== tabId) return;
+    const state = nativeOwnsWorkspace() ? undefined : useBrowser.getState();
+    const tab = state?.tabs[tabId];
+    if (state) {
+      if (!tab || tab.windowId !== windowId || tab.profileId !== state.windows[windowId]?.profileId) return;
       if (!focused) state.activate(tabId);
-    };
-    focus();
+    }
+    if (c.id === "urlEdit") {
+      if (c.kind === "focus") return claimFocusTag(windowId, urlEditFocus(tabId), focusHandle);
+      if (c.kind === "submit") runOmniboxFallback("developerSubmit", c, () => submitUrlEdit(tabId, c.text ?? ""));
+      else endUrlEdit(tabId);
+      if (c.kind !== "blur") void webviews.get(tabId)?.focus();
+      return;
+    }
     const m = { metaKey: c.meta, altKey: c.alt, shiftKey: c.shift };
+    if (c.id === "back" || c.id === "forward") {
+      const direction = c.id === "back" ? -1 : 1;
+      if (c.kind === "menu") {
+        const open = useHistoryMenu.getState().menu;
+        if (open?.tabId === tabId && open.direction === direction) return closeHistoryMenu();
+        return void openHistoryMenu(tabId, direction);
+      }
+      closeHistoryMenu();
+      const mode = openModeFor({ ...m, middle: c.kind === "middle" });
+      if (mode === "current" || mode === "split") return direction < 0 ? goBack(tabId) : goForward(tabId);
+      const tab = useBrowser.getState().tabs[tabId];
+      const [target] = await historyItems(tabId, direction, 1);
+      const current = useBrowser.getState().tabs[tabId];
+      if (target?.url && current?.windowId === windowId && current.profileId === tab?.profileId && current.navigation?.seq === tab?.navigation?.seq)
+        openUrl(target.url, windowId, mode);
+      return;
+    }
+    if (!state || !tab) return;
     const developer = tabInDeveloperMode(tabId);
     switch (c.id) {
       case "sidebar":
         return runCommand({ command: "toggleSidebar", arg: null, windowId });
-      case "back":
-      case "forward": {
-        const direction = c.id === "back" ? -1 : 1;
-        if (c.kind === "menu") {
-          const open = useHistoryMenu.getState().menu;
-          if (open?.tabId === tabId && open.direction === direction) return closeHistoryMenu();
-          return void openHistoryMenu(tabId, direction);
-        }
-        closeHistoryMenu();
-        const mode = openModeFor({ ...m, middle: c.kind === "middle" });
-        if (mode === "current" || mode === "split") return direction < 0 ? goBack(tabId) : goForward(tabId);
-        const [target] = await historyItems(tabId, direction, 1);
-        const current = useBrowser.getState().tabs[tabId];
-        if (target?.url && current?.windowId === windowId && current.profileId === tab.profileId && current.navigation?.seq === tab.navigation?.seq)
-          openUrl(target.url, windowId, mode);
-        return;
-      }
       case "reload":
         if (c.kind === "menu") return void showDeveloperReloadMenu(tabId);
         if (state.live[tabId]?.isLoading) return void webviews.get(tabId)?.stopLoading();
-        if (m.metaKey) return void useBrowser.getState().newTab(tab.windowId, { url: tab.url, background: true, openerId: tab.id });
+        if (m.metaKey) return void state.newTab(tab.windowId, { url: tab.url, background: true, openerId: tab.id });
         if (developer && !m.shiftKey) return developerReload(tabId);
         return void withLivePage(tabId, (page) => (m.shiftKey ? page.forceReload() : page.reload()));
       case "url":
         if (c.kind === "menu") return void showUrlBarMenu(tab);
         if (developer) return useUrlEdit.getState().tabId === tabId ? undefined : startUrlEdit(tabId);
         showNativePanelNow(windowId, tab.url);
-        return useBrowser.getState().openPanel(windowId, tab.url);
-      case "urlEdit":
-        if (c.kind === "focus") return claimFocusTag(windowId, urlEditFocus(tabId), focusHandle);
-        if (c.kind === "submit") runOmniboxFallback("developerSubmit", c, () => submitUrlEdit(tabId, c.text ?? ""));
-        else endUrlEdit(tabId);
-        if (c.kind !== "blur") void webviews.get(tabId)?.focus();
-        return;
+        return state.openPanel(windowId, tab.url);
       case "lock":
       case "capture":
       case "siteControls":
@@ -203,16 +201,11 @@ export function useNativeToolbarModel({ tabId, geometry, windowId, focused, bare
         return closePane(tabId);
       case "update":
         return installUpdateNow();
-      case WEBKIT_PILL_ACTION:
-        return void openPageIn(tabId, "chromium");
-      default:
-        if (c.id.startsWith("ext")) extensions.onClick(c.id, c.kind === "menu" ? "menu" : "press");
     }
   };
 
-  const onAnchors = ({ toolbarExtensionsWidth, ...anchors }: Record<string, [number, number, number, number]>) => {
+  const onAnchors = ({ toolbarExtensionsWidth }: Record<string, [number, number, number, number]>) => {
     if (toolbarExtensionsWidth && !sidebar && focused) setToolbarExtensionsWidth(windowId, toolbarExtensionsWidth[2]);
-    extensions.onAnchors(anchors);
   };
 
   return { json, onClick, onAnchors };

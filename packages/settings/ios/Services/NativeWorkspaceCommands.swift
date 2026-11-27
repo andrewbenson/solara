@@ -533,7 +533,7 @@ enum NativeWorkspaceCommands {
     }
   }
 
-  private static func closeFromControl(_ tabId: String, store: Store) {
+  static func closeFromControl(_ tabId: String, store: Store) {
     let before = store.state
     guard let close = WorkspaceClosePolicy.control(tabId, state: before, lastTabKeepsWindow: store.memory.lastTabKeepsWindow) else { return }
     let windowId = close.windowId

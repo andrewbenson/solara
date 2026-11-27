@@ -1,4 +1,4 @@
-import { useUrlEdit } from "../site/developerMode";
+import { startUrlEdit, useUrlEdit } from "../site/developerMode";
 import { publishSettingsTopic, windowNativeLayout, windowPagesPoolActive, type ToolbarClick } from "@solara/settings";
 import { useEffect, type RefObject } from "react";
 import { addNativeSettingsHandlers } from "../settings/nativeSettings";
@@ -126,6 +126,7 @@ export function dropSplitToolbar(windowId: string, tabId: string, handlers: RefO
 }
 
 addNativeSettingsHandlers({
+  "toolbar.startEdit": (tabId: string) => startUrlEdit(tabId),
   "toolbar.presentURL": (tabId: string, request: number) => useUrlEdit.setState({ tabId, request }),
   "toolbar.endEdit": (tabId: string, request: number) => {
     const edit = useUrlEdit.getState();

@@ -119,6 +119,7 @@ enum NativeSplitChrome {
         }
         return
       }
+      guard NativeToolbarActions.allowsFallback(click) else { return }
       let payload: [String: Any] = ["id": click.id, "kind": click.kind.rawValue, "meta": click.meta, "alt": click.alt, "shift": click.shift, "text": click.text ?? NSNull()]
       let send: () -> Void = {
         #if DEBUG
@@ -254,6 +255,11 @@ enum NativeSplitChrome {
   static func toolbar(windowId: String, tabId: String) -> ToolbarView? { owners[windowId]?.panes.toolbar(tabId) }
 
   #if DEBUG
+  static func devLegacyToolbar(windowId: String, tabId: String) -> ToolbarView? {
+    guard let view = panes[windowId], view.window != nil else { return nil }
+    return view.toolbar(tabId)
+  }
+
   private static var didSendToolbarClick: ((String, String, ToolbarClick) -> Void)?
 
   static func devRetireDeveloperURL(windowId: String, from tabId: String, to nextId: String, text: String) -> String {

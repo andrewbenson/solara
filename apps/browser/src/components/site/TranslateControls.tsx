@@ -1,7 +1,8 @@
 import { showMenu, type MenuItem } from "@solara/shell";
 import { useBrowser } from "../../store/browser";
+import { addNativeSettingsHandlers } from "../settings/nativeSettings";
 import { isIncognitoProfile } from "../../store/model";
-import { defaultTarget, isNeverTranslated, languageName, otherLanguages, revertPage, setNeverTranslate, translatePage, translateStateOf } from "./translate";
+import { defaultTarget, isNeverTranslated, languageName, otherLanguages, revertPage, setNeverTranslate, toggleTranslation, translatePage, translateStateOf } from "./translate";
 
 export async function chooseLanguage(tabId: string) {
   const languages = await otherLanguages();
@@ -28,3 +29,12 @@ export async function showTranslateMenu(tabId: string) {
   else if (choice === "choose") void chooseLanguage(tabId);
   else if (choice === "never") setNeverTranslate(tabId, !isNeverTranslated(tab.profileId, tab.url));
 }
+
+addNativeSettingsHandlers({
+  "toolbar.translation": (windowId: string, tabId: string, url: string, menu: boolean) => {
+    const tab = useBrowser.getState().tabs[tabId];
+    if (tab?.windowId !== windowId || tab.url !== url) return;
+    if (menu) return void showTranslateMenu(tabId);
+    toggleTranslation(tabId);
+  },
+});

@@ -18,6 +18,7 @@ public struct SidebarAddressBarState: Decodable, Equatable, Sendable {
   public var extensions: [ToolbarButtonState]
   public var progress: Double?
   public var tabId: String? = nil
+  public var newTabShown: Bool? = nil
 
   public static func decode(_ json: String) -> SidebarAddressBarState? {
     guard let data = json.data(using: .utf8) else { return nil }
@@ -56,18 +57,41 @@ public final class SidebarAddressBarView: NSView {
   public var navigationLeadingInset = ShellMetrics.railToolbarLeadingInset { didSet { needsLayout = true } }
 
   private var buttons: [ToolbarButtonView] = []
-  private let field = ToolbarUrlFieldView()
+  private var field = ToolbarUrlFieldView()
+  public private(set) var bindingGeneration: UInt64 = 0
   private var reportedAnchors: [String: CGRect]?
 
   public override var isFlipped: Bool { true }
 
   public override init(frame: NSRect) {
     super.init(frame: frame)
-    field.onClick = { [weak self] click in self?.onClick(click) }
-    addSubview(field)
+    bindField()
   }
 
   required init?(coder: NSCoder) { fatalError() }
+
+  private func dispatchClick(_ generation: UInt64) -> (ToolbarClick) -> Void {
+    { [weak self] click in
+      guard let self, self.bindingGeneration == generation else { return }
+      self.onClick(click)
+    }
+  }
+
+  private func bindField() {
+    field.onClick = dispatchClick(bindingGeneration)
+    addSubview(field)
+  }
+
+  private func retireBindings() {
+    field.retireEditing()
+    bindingGeneration &+= 1
+    field.removeFromSuperview()
+    field = ToolbarUrlFieldView()
+    bindField()
+    for button in buttons { button.removeFromSuperview() }
+    buttons = []
+    reportedAnchors = nil
+  }
 
   public override func hitTest(_ point: NSPoint) -> NSView? {
     let hit = super.hitTest(point)
@@ -76,6 +100,7 @@ public final class SidebarAddressBarView: NSView {
 
   public func update(_ next: SidebarAddressBarState) {
     guard next != state else { return }
+    if let state, state.tabId != next.tabId { retireBindings() }
     state = next
     buttons = sync(buttons, next.buttons, next.palette)
     field.update(next.url ?? SidebarAddressBarView.empty, palette: next.palette, look: next.look, accessory: next.extensions, progress: next.progress, accent: next.accent)
@@ -83,9 +108,8 @@ public final class SidebarAddressBarView: NSView {
   }
 
   public func clear() {
+    if state != nil { retireBindings() }
     state = nil
-    for button in buttons { button.removeFromSuperview() }
-    buttons = []
     field.isHidden = true
   }
 
@@ -105,7 +129,7 @@ public final class SidebarAddressBarView: NSView {
         out.append(views[i])
       } else {
         let made = ToolbarButtonView(state: spec, palette: palette)
-        made.onClick = { [weak self] click in self?.onClick(click) }
+        made.onClick = dispatchClick(bindingGeneration)
         addSubview(made)
         out.append(made)
       }
@@ -156,6 +180,11 @@ public final class SidebarAddressBarView: NSView {
     guard anchors != reportedAnchors else { return }
     reportedAnchors = anchors
     onAnchors(anchors)
+  }
+
+  public func extensionAnchor(_ id: String, fallback: Bool) -> CGRect? {
+    guard let rect = field.accessoryAnchors[id] ?? (fallback ? field.accessoryAnchors["*"] : nil) else { return nil }
+    return windowRect(field.convert(rect, to: self))
   }
 
   public func reannounceAnchors() {

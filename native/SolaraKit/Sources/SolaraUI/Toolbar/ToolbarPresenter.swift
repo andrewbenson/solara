@@ -150,7 +150,7 @@ public struct ToolbarPresenter {
       right: right, rightInset: 8, extensions: extensions, extensionsRight: inSplit ? 68 : 8,
       update: top && !sidebar && focused ? input.update : nil,
       hairline: hasPage && !input.bare && !frame, progress: page.loading ? input.progress : nil, stripes: stripes,
-      inSplit: inSplit, windowToolbar: input.windowToolbar)
+      inSplit: inSplit, windowToolbar: input.windowToolbar, newTabShown: input.newTabShown)
   }
 
   public static func sidebar(_ input: Input, state: BrowserState, toolbar: ToolbarState?) -> SidebarAddressBarState? {
@@ -162,7 +162,7 @@ public struct ToolbarPresenter {
       buttons[index].radius = Double(SidebarHeaderMetrics.plateRadius)
     }
     return SidebarAddressBarState(palette: toolbar?.palette ?? input.palette, accent: input.accent, look: look, buttons: buttons,
-      url: toolbar?.url, extensions: toolbar?.url == nil ? [] : toolbar?.extensions ?? [], progress: toolbar?.progress, tabId: input.tabId)
+      url: toolbar?.url, extensions: toolbar?.url == nil ? [] : toolbar?.extensions ?? [], progress: toolbar?.progress, tabId: input.tabId, newTabShown: input.newTabShown)
   }
 
   private static func palette(_ input: Input, state: BrowserState, page: Page, onFrame: Bool) -> ToolbarPaletteState {

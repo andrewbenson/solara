@@ -127,6 +127,10 @@ export function dropSplitToolbar(windowId: string, tabId: string, handlers: RefO
 
 addNativeSettingsHandlers({
   "toolbar.presentURL": (tabId: string, request: number) => useUrlEdit.setState({ tabId, request }),
+  "toolbar.endEdit": (tabId: string, request: number) => {
+    const edit = useUrlEdit.getState();
+    if (edit.tabId === tabId && edit.request === request) useUrlEdit.setState({ tabId: null });
+  },
   "split.toolbarClick": (windowId: string, tabId: string, click: ToolbarClick) => {
     void toolbarHandlers.get(`${windowId}:${tabId}`)?.current?.onClick(click);
   },

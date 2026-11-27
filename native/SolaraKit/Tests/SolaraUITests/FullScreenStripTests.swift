@@ -269,7 +269,7 @@ struct FullScreenStripTests {
     }
   }
 
-  @Test func nativePaneToolbarsAtTheTopMoveAcrossThePageWhileLowerRowsStayPut() {
+  @Test func nativePaneToolbarsAtTheTopMoveAcrossThePageWhileLowerRowsStayPut() throws {
     let fixture = ToolbarResizeTests.Fixture(bare: false)
     defer { close(fixture) }
     let shell = fixture.shell
@@ -280,9 +280,10 @@ struct FullScreenStripTests {
        "geometry":{"back":21,"forward":57,"reload":92,"urlLeft":110,"urlRight":8},
        "left":[],"url":null,"right":[],"rightInset":8,"hairline":false}
       """#
+    let state = try #require(ToolbarState.decode(toolbar))
     let leaves = [CGRect(x: 0, y: 0, width: 390, height: 300), CGRect(x: 397, y: 0, width: 390, height: 300), CGRect(x: 0, y: 307, width: 390, height: 300)].map { frame in
       let leaf = SplitLeafView(frame: frame)
-      leaf.setToolbar(toolbar)
+      leaf.setToolbar(state)
       shell.card.addSubview(leaf)
       leaf.needsLayout = true
       leaf.layoutSubtreeIfNeeded()

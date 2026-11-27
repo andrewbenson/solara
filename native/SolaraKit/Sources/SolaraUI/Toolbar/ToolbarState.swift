@@ -1,7 +1,7 @@
 import AppKit
 import Foundation
 
-public struct ToolbarPaletteState: Decodable, Equatable, Sendable {
+public struct ToolbarPaletteState: Codable, Equatable, Sendable {
   public var background: String?
   public var text: String
   public var secondary: String
@@ -15,7 +15,7 @@ public struct ToolbarPaletteState: Decodable, Equatable, Sendable {
   public var urlPath: String?
 }
 
-public struct ToolbarGeometryState: Decodable, Equatable, Sendable {
+public struct ToolbarGeometryState: Codable, Equatable, Sendable {
   public var sidebarButton: Double?
   public var back: Double
   public var forward: Double
@@ -24,20 +24,20 @@ public struct ToolbarGeometryState: Decodable, Equatable, Sendable {
   public var urlRight: Double
 }
 
-public struct ToolbarBadgeState: Decodable, Equatable, Sendable {
+public struct ToolbarBadgeState: Codable, Equatable, Sendable {
   public var text: String
   public var color: String
   public var textColor: String
 }
 
-public struct ToolbarInfoState: Decodable, Equatable, Sendable {
+public struct ToolbarInfoState: Codable, Equatable, Sendable {
   public var title: String
   public var message: String
   public var action: String
   public var actionId: String
 }
 
-public struct ToolbarButtonState: Decodable, Equatable, Sendable {
+public struct ToolbarButtonState: Codable, Equatable, Sendable {
   public var id: String
   public var icon: String
   public var label: String?
@@ -61,13 +61,13 @@ public struct ToolbarButtonState: Decodable, Equatable, Sendable {
   public var plain: Bool?
 }
 
-public struct ToolbarDeveloperState: Decodable, Equatable, Sendable {
+public struct ToolbarDeveloperState: Codable, Equatable, Sendable {
   public var text: String
   public var editing: Bool
   public var request: Int
 }
 
-public struct ToolbarUrlState: Decodable, Equatable, Sendable {
+public struct ToolbarUrlState: Codable, Equatable, Sendable {
   public var developer: ToolbarDeveloperState?
   public var host: String
   public var restTrail: String
@@ -78,13 +78,13 @@ public struct ToolbarUrlState: Decodable, Equatable, Sendable {
   public var pinned: Bool
 }
 
-public struct ToolbarUpdateState: Decodable, Equatable, Sendable {
+public struct ToolbarUpdateState: Codable, Equatable, Sendable {
   public var text: String
   public var short: String
   public var tooltip: String?
 }
 
-public struct ToolbarState: Decodable, Equatable, Sendable {
+public struct ToolbarState: Codable, Equatable, Sendable {
   public var tabId: String
   public var height: Double
   public var bare: Bool

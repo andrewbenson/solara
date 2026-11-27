@@ -115,7 +115,7 @@ try {
     globalThis.audit = {
       frames: (n) => new Promise((r) => { let k = n || 2; const step = () => (k-- > 0 ? requestAnimationFrame(step) : r()); step(); }),
       props: (name, tabId) => acPerf.findFibers(name, 500).filter((f) => !tabId || f.memoizedProps?.tabId === tabId || f.memoizedProps?.tab?.id === tabId).map((f) => ({ props: f.memoizedProps, rendered: !!f.child })),
-      native: (tabId) => acPerf.findFibers("NativeToolbarView", 500).map((f) => { try { return JSON.parse(f.memoizedProps?.state ?? "null"); } catch { return null; } }).filter((n) => n && n.tabId === tabId),
+      native: (tabId) => JSON.parse(expo.modules.SolaraToolbar.devToolbarStates("w1")).filter((n) => n.tabId === tabId),
       until: (test, ms) => new Promise((r) => { const end = Date.now() + (ms || 15000); const poll = () => (test() ? r(true) : Date.now() > end ? r(false) : setTimeout(poll, 50)); poll(); }),
     };
     return true;`);

@@ -73,7 +73,7 @@ public final class SplitPanesView: FrameLayoutView {
   private var activeId: String?
   private var fullscreenTab: String?
   private var state: BrowserState?
-  private var toolbars: [String: String] = [:]
+  private var toolbars: [String: ToolbarState] = [:]
   private var panes: [String: SplitLeafView] = [:]
   private var liveTops: [String: CGFloat] = [:]
   private var installed: WindowLayoutSnapshot?
@@ -208,6 +208,10 @@ public final class SplitPanesView: FrameLayoutView {
   }
 
   public func setToolbars(_ next: [String: String]) {
+    setToolbarStates(next.compactMapValues(ToolbarState.decode))
+  }
+
+  public func setToolbarStates(_ next: [String: ToolbarState]) {
     toolbars = next
     for (tabId, pane) in panes { pane.setToolbar(next[tabId]) }
   }
@@ -402,7 +406,7 @@ final class SplitLeafView: FrameLayoutView {
   let edgeRim = CardEdgeView(part: .rim)
   private(set) var toolbar = ToolbarView(frame: .zero)
   private(set) var empty: SplitEmptyStateView?
-  private var toolbarJson: String?
+  private var toolbarState: ToolbarState?
   #if DEBUG || SOLARA_PROBES
   private(set) var placementLayoutPasses = 0
   #endif
@@ -420,7 +424,7 @@ final class SplitLeafView: FrameLayoutView {
     didSet { if railFraction != oldValue { layer?.cornerRadius = radius } }
   }
   var radius: CGFloat { fullscreen ? 0 : ShellMetrics.cardRadius }
-  var hasToolbar: Bool { toolbarJson != nil }
+  var hasToolbar: Bool { toolbarState != nil }
   var toolbarHeight: CGFloat = ShellMetrics.toolbarHeight { didSet { if toolbarHeight != oldValue { needsLayout = true } } }
   var band: CGFloat = 0 {
     didSet {
@@ -478,15 +482,15 @@ final class SplitLeafView: FrameLayoutView {
       addSubview(toolbar)
       needsLayout = true
     }
-    toolbarJson = nil
+    toolbarState = nil
     setEmpty(nil)
   }
 
-  func setToolbar(_ json: String?) {
-    guard json != toolbarJson else { return }
-    toolbarJson = json
-    guard let json, let state = ToolbarState.decode(json) else {
-      toolbar.isHidden = true
+  func setToolbar(_ state: ToolbarState?) {
+    guard state != toolbarState else { return }
+    toolbarState = state
+    guard let state else {
+      toolbar.clearPresentation()
       return
     }
     toolbar.update(state)
@@ -512,7 +516,7 @@ final class SplitLeafView: FrameLayoutView {
     super.layout()
     if toolbar.superview === self {
       toolbar.frame = installedToolbar ?? CGRect(x: 0, y: 0, width: bounds.width, height: toolbarHeight)
-      toolbar.isHidden = toolbarHeight == 0 || toolbarJson == nil
+      toolbar.isHidden = toolbarHeight == 0 || toolbarState == nil
     }
     let caption = fullscreen ? 0 : windowShell?.captionTop(in: self) ?? 0
     let pageTop = min(max(caption, liveTop.map { min(max(0, $0), bounds.height) } ?? toolbarHeight) + max(0, band), bounds.height)

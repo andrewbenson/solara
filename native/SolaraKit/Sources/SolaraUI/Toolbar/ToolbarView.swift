@@ -82,18 +82,34 @@ public final class ToolbarView: NSView {
     }
   }
 
+  private func replaceURLField() {
+    url.removeFromSuperview()
+    url = ToolbarUrlFieldView()
+    content.addSubview(url)
+    bindURL()
+  }
+
   func resetForTabRebind() -> Bool {
     let reusable = url.editorView == nil
     url.retireEditing()
     onHiddenOrDetached()
-    bindingGeneration &+= 1
-    if let anchor = ToolbarInfoPopover.current?.anchorView, anchor.isDescendant(of: self) { ToolbarInfoPopover.close() }
+    invalidateBinding()
     onHiddenOrDetached = {}
     onGeometryChange = {}
     onClick = { _ in }
     onAnchors = { _ in }
     onLayoutAnchorsChange = {}
     guard reusable else { return false }
+    resetPresentation()
+    return true
+  }
+
+  private func invalidateBinding() {
+    bindingGeneration &+= 1
+    if let anchor = ToolbarInfoPopover.current?.anchorView, anchor.isDescendant(of: self) { ToolbarInfoPopover.close() }
+  }
+
+  private func resetPresentation() {
     state = nil
     reportedAnchors = nil
     reportedLayoutAnchors = [:]
@@ -107,10 +123,7 @@ public final class ToolbarView: NSView {
     right = []
     extensions = []
     updatePill.isHidden = true
-    url.removeFromSuperview()
-    url = ToolbarUrlFieldView()
-    content.addSubview(url)
-    bindURL()
+    replaceURLField()
     stripes.show(nil)
     band.removeAllAnimations()
     progress.removeAllAnimations()
@@ -119,7 +132,6 @@ public final class ToolbarView: NSView {
     setAutoHide(opacity: 1, scale: 1, lift: 0, interactive: true)
     isHidden = true
     needsLayout = true
-    return true
   }
 
   public func setAutoHide(opacity: CGFloat, scale: CGFloat, lift: CGFloat, interactive: Bool) {
@@ -164,6 +176,14 @@ public final class ToolbarView: NSView {
     guard interactive else { return nil }
     let hit = super.hitTest(point)
     return hit === self || hit === content ? nil : hit
+  }
+
+  public func clearPresentation() {
+    guard state != nil else { return }
+    state = nil
+    url.retireEditing()
+    invalidateBinding()
+    resetPresentation()
   }
 
   public func update(_ next: ToolbarState) {
@@ -448,7 +468,11 @@ public final class ToolbarView: NSView {
   }
 
   public func refreshFullScreenAnchors() {
-    let anchors = extensionAnchorRects.mapValues { windowRect($0) }
+    var anchors = extensionAnchorRects.mapValues { windowRect($0) }
+    if let state {
+      let width = state.geometry.urlRight - (state.inSplit == true ? 68 : 12)
+      anchors["toolbarExtensionsWidth"] = CGRect(x: 0, y: 0, width: width, height: 0)
+    }
     if window != nil, anchors != reportedAnchors {
       reportedAnchors = anchors
       onAnchors(anchors)

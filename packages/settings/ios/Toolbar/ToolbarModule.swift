@@ -13,14 +13,14 @@ public class ToolbarModule: Module {
   public func definition() -> ModuleDefinition {
     Name("SolaraToolbar")
 
-    Events("onExtensionPopupChanged", "onExtensionToolbarChanged")
+    Events("onExtensionPopupChanged")
 
     OnCreate {
       let sink = ToolbarPopupEventSink(module: self)
       DispatchQueue.main.async { MainActor.assumeIsolated {
         NativeExtensionCommands.install()
         NativeExtensionCatalog.emit = { toolbar, menus in
-          if toolbar { sink.module?.sendEvent("onExtensionToolbarChanged", [:]) }
+          if toolbar { NativeToolbarPresenter.refreshContributions() }
           if menus {
             NativeSiteControls.shared.refresh()
             ShellMenus.refreshExtensions()
@@ -44,13 +44,6 @@ public class ToolbarModule: Module {
     AsyncFunction("refreshExtensionCatalog") { (profile: String, afterChange: Bool) async -> String in
       await NativeExtensionCatalog.refreshAndWait(profile, afterChange: afterChange)
     }
-
-    AsyncFunction("extensionToolbar") { (json: String) -> String in
-      MainActor.assumeIsolated {
-        let value = NativeExtensionCommands.toolbar((try? JSONValue.parse(Data(json.utf8))) ?? .null)
-        return String(decoding: (try? JSONSerialization.data(withJSONObject: value.foundation)) ?? Data("{}".utf8), as: UTF8.self)
-      }
-    }.runOnQueue(.main)
 
     AsyncFunction("extensionCommand") { (json: String, promise: Promise) in
       nonisolated(unsafe) let reply = promise
@@ -112,6 +105,13 @@ public class ToolbarModule: Module {
     }.runOnQueue(.main)
     #endif
 
+    #if DEBUG
+    Function("devToolbarStates") { (windowId: String) -> String in
+      if Thread.isMainThread { return MainActor.assumeIsolated { NativeToolbarHostView.devStates(windowId) } }
+      return DispatchQueue.main.sync { MainActor.assumeIsolated { NativeToolbarHostView.devStates(windowId) } }
+    }
+    #endif
+
     AsyncFunction("devToolbar") { (windowId: String, tabId: String) -> String in
       MainActor.assumeIsolated {
         #if DEBUG
@@ -154,7 +154,7 @@ public class ToolbarModule: Module {
     View(NativeToolbarHostView.self) {
       Events("onToolbarClick", "onToolbarAnchors")
 
-      Prop("state") { (view: NativeToolbarHostView, v: String) in MainActor.assumeIsolated { view.setState(v) } }
+      Prop("input") { (view: NativeToolbarHostView, v: String) in MainActor.assumeIsolated { view.setInput(v) } }
     }
   }
 }
@@ -163,7 +163,8 @@ final class NativeToolbarHostView: ExpoView {
   let onToolbarClick = EventDispatcher()
   let onToolbarAnchors = EventDispatcher()
   let toolbar = ToolbarView(frame: .zero)
-  private var json = ""
+  private var input = ""
+  private lazy var presenter = NativeToolbarPresenter { [weak self] state, _ in self?.apply(state) }
   private weak var toolbarShell: WindowShellView?
   private static let live = NSHashTable<NativeToolbarHostView>.weakObjects()
 
@@ -198,6 +199,15 @@ final class NativeToolbarHostView: ExpoView {
     return view.subviews.flatMap { toolbars(in: $0) }
   }
 
+  #if DEBUG
+  static func devStates(_ windowId: String) -> String {
+    guard SolaraCoreTestHooksAllowed(), let model = NativeStoreHandle.store?.state.windows[windowId] else { return "[]" }
+    let states = model.tabIds.compactMap { toolbar(windowId: windowId, tabId: $0)?.state }
+    guard let data = try? JSONEncoder().encode(states) else { return "[]" }
+    return String(decoding: data, as: UTF8.self)
+  }
+  #endif
+
   static func host(windowId: String, tabId: String) -> NativeToolbarHostView? {
     let tabWindow = NativeStoreHandle.store?.state.tabs[tabId]?.windowId
     guard tabWindow == nil || tabWindow == windowId else { return nil }
@@ -227,18 +237,18 @@ final class NativeToolbarHostView: ExpoView {
     }
     toolbar.onClick = { [weak self] click in
       MainActor.assumeIsolated {
-        guard let self else { return }
+        guard let self, let target = self.toolbar.state?.tabId else { return }
         if NativeToolbarActions.perform(click, source: self.toolbar,
           target: self.toolbar.state.map { .pane($0.tabId) }) { return }
         if let tabId = self.toolbar.state?.tabId,
           click.id == "urlEdit" || click.kind == .menu || self.toolbar.state?.url?.developer == nil,
           NativeOmniboxActions.addressClick(click, windowId: self.toolbarShell?.windowId ?? NativeStoreHandle.store?.state.tabs[tabId]?.windowId ?? "", tabId: tabId, view: self.toolbar) {
           if click.id == "urlEdit", click.kind == .submit {
-            self.onToolbarClick(["id": "urlEdit", "kind": "cancel", "nativeActions": true, "meta": false, "alt": false, "shift": false])
+            self.onToolbarClick(["tabId": target, "id": "urlEdit", "kind": "cancel", "nativeActions": true, "meta": false, "alt": false, "shift": false])
           }
           return
         }
-        let payload: [String: Any] = ["id": click.id, "kind": click.kind.rawValue, "meta": click.meta, "alt": click.alt, "shift": click.shift, "text": click.text ?? NSNull()]
+        let payload: [String: Any] = ["tabId": target, "id": click.id, "kind": click.kind.rawValue, "meta": click.meta, "alt": click.alt, "shift": click.shift, "text": click.text ?? NSNull()]
         if click.id == "urlEdit", click.kind.rawValue == "focus" { NativeExtensionActionPopup.dropHeldFieldBlur(from: self) }
         if click.id == "urlEdit", click.kind.rawValue == "blur",
           NativeExtensionActionPopup.holdFieldBlur(from: self, fieldContainer: self.toolbar, flush: { self.onToolbarClick(payload) }) { return }
@@ -267,10 +277,20 @@ final class NativeToolbarHostView: ExpoView {
     return hit === self ? nil : hit
   }
 
-  func setState(_ next: String) {
-    guard next != json, let state = ToolbarState.decode(next) else { return }
-    json = next
+  func setInput(_ next: String) {
+    guard next != input else { return }
+    input = next
+    if window != nil { presenter.update(next) }
+  }
+
+  private func apply(_ state: ToolbarState?) {
+    guard let state else {
+      toolbar.clearPresentation()
+      return
+    }
+    if toolbar.state?.tabId != state.tabId { toolbar.clearPresentation() }
     toolbar.update(state)
+    toolbar.isHidden = false
     syncToolbarShell()
     AutoHideHost.toolbarReady(tabId: state.tabId)
   }
@@ -307,7 +327,8 @@ final class NativeToolbarHostView: ExpoView {
   override func viewDidMoveToWindow() {
     super.viewDidMoveToWindow()
     syncToolbarShell()
-    if window != nil, let tabId = toolbar.state?.tabId { AutoHideHost.toolbarReady(tabId: tabId) }
+    if window != nil { presenter.update(input) }
+    else { presenter.end() }
   }
 }
 
@@ -322,7 +343,7 @@ public class SidebarAddressBarModule: Module {
     AsyncFunction("set") { (windowId: String, json: String?) in
       MainActor.assumeIsolated {
         SidebarAddressBridge.install()
-        SidebarAddressBars.shared.set(windowId, json: json)
+        SidebarAddressBridge.set(windowId, input: json)
       }
     }.runOnQueue(.main)
 
@@ -345,11 +366,26 @@ public class SidebarAddressBarModule: Module {
 @MainActor
 enum SidebarAddressBridge {
   private static var installed = false
+  private static var presenters: [String: NativeToolbarPresenter] = [:]
+
+  static func set(_ windowId: String, input: String?) {
+    guard let input else {
+      presenters.removeValue(forKey: windowId)?.end()
+      return
+    }
+    if presenters[windowId] == nil {
+      presenters[windowId] = NativeToolbarPresenter { _, state in SidebarAddressBars.shared.set(windowId, state: state) }
+    }
+    presenters[windowId]?.update(input)
+  }
 
   static func install() {
     guard !installed else { return }
     installed = true
     SidebarAddressBars.shared.onClick = { windowId, source, click in
+      guard let presented = source.state else { return }
+      let target = NativeStoreHandle.store?.state.activeTabId(windowId)
+      if NativeStoreHandle.ownsWorkspace, presented.tabId != (target ?? "") { return }
       if NativeToolbarActions.perform(click, source: source, windowId: windowId, target: .window) { return }
       let bar = SidebarAddressBars.shared.existing(windowId)
       if NativeOmniboxActions.ownsActions, click.id == "url" || click.id == "urlEdit",
@@ -358,11 +394,12 @@ enum SidebarAddressBridge {
         click.id == "urlEdit" || click.kind == .menu || bar?.state?.url?.developer == nil,
         NativeOmniboxActions.addressClick(click, windowId: windowId, tabId: tabId, view: bar) {
         if click.id == "urlEdit", click.kind == .submit {
-          Task { @MainActor in _ = await SettingsAdapters.js("sidebar.addressClick", windowId, ["id": "urlEdit", "kind": "cancel", "nativeActions": true]) }
+          Task { @MainActor in _ = await SettingsAdapters.js("sidebar.addressClick", windowId, ["tabId": tabId, "id": "urlEdit", "kind": "cancel", "nativeActions": true]) }
         }
         return
       }
-      let payload: [String: Any] = ["id": click.id, "kind": click.kind.rawValue, "meta": click.meta, "alt": click.alt, "shift": click.shift, "text": click.text ?? NSNull()]
+      var payload: [String: Any] = ["id": click.id, "kind": click.kind.rawValue, "meta": click.meta, "alt": click.alt, "shift": click.shift, "text": click.text ?? NSNull()]
+      payload["tabId"] = presented.tabId
       Task { @MainActor in _ = await SettingsAdapters.js("sidebar.addressClick", windowId, payload) }
     }
     SidebarAddressBars.shared.onAnchors = { windowId, anchors in

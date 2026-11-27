@@ -20,7 +20,8 @@ enum NativeSplitChrome {
   private static var panes: [String: SplitPanesView] = [:]
   private static var overlays: [String: PaneOverlaysView] = [:]
   private static var dropZones: [String: SplitDropZone] = [:]
-  private static var toolbars: [String: [String: String]] = [:]
+  private static var toolbars: [String: [String: ToolbarState]] = [:]
+  private static var toolbarPresenters: [String: [String: NativeToolbarPresenter]] = [:]
   private static let favicons: SidebarFavicons = {
     let made = SidebarFavicons()
     made.loader = { request in try await NativeSidebar.favicon(request) }
@@ -146,7 +147,7 @@ enum NativeSplitChrome {
     view.onNavigate = { tabId, text in _ = try? NativeStoreHandle.store?.dispatch(Command("navigate", [.string(tabId), .string(text)]), origin: .native) }
     view.onReplace = { tabId, other in _ = try? NativeStoreHandle.store?.dispatch(Command("replaceSplitPane", [.string(tabId), .string(other)]), origin: .native) }
     if let overlay = overlays[windowId], overlay.superview === card { card.addSubview(view, positioned: .below, relativeTo: overlay) } else { card.addSubview(view) }
-    view.setToolbars(toolbars[windowId] ?? [:])
+    view.setToolbarStates(toolbars[windowId] ?? [:])
     if supplied == nil, let state = NativeStoreHandle.store?.state { view.update(state: state) }
     panes[windowId] = view
     return view
@@ -333,13 +334,28 @@ enum NativeSplitChrome {
 
   private static func applyToolbars(_ value: Any?) {
     guard let o = value as? [String: Any], o["v"] as? Int == 1, let all = o["windows"] as? [String: [String: String]] else { return }
-    toolbars = all
-    for (windowId, view) in panes {
-      view.setToolbars(all[windowId] ?? [:])
-      if owners[windowId] != nil {
-        for tabId in all[windowId]?.keys ?? Dictionary<String, String>().keys {
-          AutoHideHost.toolbarReady(windowId: windowId, tabId: tabId, toolbar: view.toolbar(tabId))
+    for (windowId, presenters) in toolbarPresenters {
+      for (tabId, presenter) in presenters where all[windowId]?[tabId] == nil {
+        presenter.end()
+        toolbarPresenters[windowId]?[tabId] = nil
+      }
+      if toolbarPresenters[windowId]?.isEmpty == true { toolbarPresenters[windowId] = nil }
+    }
+    for (windowId, feeds) in all {
+      for (tabId, input) in feeds {
+        if toolbarPresenters[windowId]?[tabId] == nil {
+          toolbarPresenters[windowId, default: [:]][tabId] = NativeToolbarPresenter { state, _ in
+            toolbars[windowId, default: [:]][tabId] = state
+            if toolbars[windowId]?.isEmpty == true { toolbars[windowId] = nil }
+            if let view = panes[windowId] {
+              view.setToolbarStates(toolbars[windowId] ?? [:])
+              if state != nil && owners[windowId] != nil {
+                AutoHideHost.toolbarReady(windowId: windowId, tabId: tabId, toolbar: view.toolbar(tabId))
+              }
+            }
+          }
         }
+        toolbarPresenters[windowId]?[tabId]?.update(input)
       }
     }
   }

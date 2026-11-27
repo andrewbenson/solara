@@ -681,6 +681,7 @@ extension ShellHost {
     }
     let snapshot = WindowLayoutSnapshot.of(input, generation: layoutGeneration + 1)
     if let state = layoutState { paneLayout?.install(snapshot, state: state) }
+    NativeToolbarPresenter.refreshLayout(windowId: shell.windowId, fullscreen: snapshot.fullscreenTabId != nil)
     AutoHideHost.install(snapshot)
     NativePeek.presentationChanged(shell.windowId, fullscreenTabId: snapshot.fullscreenTabId)
     if let state = layoutState { NativePeek.install(state, shell: shell, fullscreenTabId: snapshot.fullscreenTabId) }

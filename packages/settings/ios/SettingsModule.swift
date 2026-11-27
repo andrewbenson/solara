@@ -45,7 +45,10 @@ public class SettingsModule: Module {
           projectionSink.module?.sendEvent("onPanePopoversChanged", ["values": values])
         }
         NativeEngineCommands.backChanged = {
-          DispatchQueue.main.async { projectionSink.module?.sendEvent("onEngineBackChanged", [:]) }
+          DispatchQueue.main.async {
+            MainActor.assumeIsolated { NativeToolbarPresenter.refreshContributions() }
+            projectionSink.module?.sendEvent("onEngineBackChanged", [:])
+          }
         }
         NativeEngineCommands.start()
         NativeSelectionTools.start()

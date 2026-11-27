@@ -1,17 +1,8 @@
 import { SolaraHostedView } from "@solara/settings";
-import { useShallow } from "zustand/react/shallow";
 import { layout, useTheme } from "../lib/theme";
-import { useBrowser } from "../store/browser";
-import type { Tab } from "../store/types";
 import type { ToolbarGeometry } from "./layout/geometry";
 import type { PageState } from "./layout/pageState";
 import { NativeToolbar } from "./NativeToolbar";
-
-type ToolbarTab = Pick<Tab, "id" | "url" | "title" | "windowId" | "zoom">;
-const toolbarTab = (t: Tab | undefined): ToolbarTab | undefined =>
-  t && { id: t.id, url: t.url, title: isWebUrl(t.url) ? "" : t.title, windowId: t.windowId, zoom: t.zoom };
-const isWebUrl = (url: string) => /^https?:/i.test(url);
-export const useToolbarTab = (tabId: string | undefined) => useBrowser(useShallow((s) => toolbarTab(tabId ? s.tabs[tabId] : undefined)));
 
 export const URL_FIELD = { top: 21.2 - 15, height: 30 } as const;
 export const GLYPH = 13;

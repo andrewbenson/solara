@@ -1,19 +1,13 @@
-import { useEffect, useMemo, useRef, type RefObject } from "react";
+import { useEffect, useRef, type RefObject } from "react";
 import { NativeSidebarAddressBarView, setSidebarAddressBar, type ToolbarClick } from "@solara/settings";
 import { StyleSheet } from "react-native";
-import { useShortcutHint, withShortcut } from "../../lib/commandShortcuts";
 import { layout, useTheme } from "../../lib/theme";
 import { useBrowser } from "../../store/browser";
 import { useActiveTabId, useWindowId } from "../../store/hooks";
-import { extensionsFitting } from "../extensions/ToolbarExtensionHost";
-import { toolbarPalette } from "../layout/toolbarColors";
 import { addressBarInSidebar, setUrlAnchor } from "../layout/windowLayout";
-import { GLYPH } from "../Toolbar";
 import { useNativeToolbarModel } from "../NativeToolbar";
 import { addNativeSettingsHandlers } from "../settings/nativeSettings";
 
-const PLATE = 32;
-const PLATE_RADIUS = 6;
 const HOST_ROOM = 84;
 
 export function SidebarAddressRow(_: { width: number }) {
@@ -34,8 +28,7 @@ addNativeSettingsHandlers({
 });
 
 const noFocusHandle = () => null;
-const SIDEBAR_PLATE = { box: PLATE, radius: PLATE_RADIUS };
-const SIDEBAR_GEOMETRY = (toggle: boolean) => ({ sidebarButton: toggle ? 0 : null, back: 0, forward: 0, reload: 0, urlLeft: 0 });
+const SIDEBAR_GEOMETRY = { sidebarButton: null, back: 0, forward: 0, reload: 0, urlLeft: 0 };
 
 export function SidebarHeaderTools({ width }: { width: number }) {
   const windowId = usePublishedSidebarAddressBar(width);
@@ -51,35 +44,15 @@ function usePublishedSidebarAddressBar(width: number): string {
   const windowId = useWindowId();
   const tabId = useActiveTabId() ?? "";
   const theme = useTheme();
-  const toggle = useBrowser((s) => s.settings.showSidebarButton !== false);
-  const sidebarHint = useShortcutHint("toggleSidebar");
-  const extensionLimit = extensionsFitting(width - 2 * layout.sidebarInset - 10 - 3 - HOST_ROOM);
-  const geometry = useMemo(() => SIDEBAR_GEOMETRY(toggle), [toggle]);
-  const model = useNativeToolbarModel({ tabId, geometry, windowId, inSplit: false, focused: true, sidebar: { extensionLimit } }, noFocusHandle);
-  const palette = toolbarPalette(theme, null);
-  const { state } = model;
-  const page = !!model.tab?.url;
-  const json = useMemo(
-    () =>
-      JSON.stringify({
-        palette: state?.palette ?? palette,
-        accent: theme.accent,
-        look: { resting: theme.pinnedResting, stroke: theme.pinnedRestingStroke, hover: theme.tabHover, placeholder: theme.placeholder, prompt: "Search or enter address" },
-        buttons: [
-          ...(toggle ? [{ id: "sidebar", icon: "sidebar.left", size: GLYPH, ...SIDEBAR_PLATE, tooltip: withShortcut("Auto-Hide Tabs", sidebarHint) }] : []),
-          ...(state ? state.left.filter((b) => b.id !== "sidebar").map((b) => ({ ...b, ...SIDEBAR_PLATE })) : []),
-        ],
-        url: page ? state?.url ?? null : null,
-        extensions: page ? state?.extensions ?? [] : [],
-        progress: state?.progress ?? null,
-      }),
-    [state, palette, theme, toggle, sidebarHint, page],
-  );
+  const extensionLimit = Math.max(1, Math.floor((width - 2 * layout.sidebarInset - 10 - 3 - HOST_ROOM + 2) / 30));
+  const look = { resting: theme.pinnedResting, stroke: theme.pinnedRestingStroke, hover: theme.tabHover, placeholder: theme.placeholder, prompt: "Search or enter address" };
+  const model = useNativeToolbarModel({ tabId, geometry: SIDEBAR_GEOMETRY, windowId, inSplit: false, focused: true, sidebar: { extensionLimit, look } }, noFocusHandle);
   const handlers = useRef<AddressBarHandlers>({ onClick: () => undefined, onAnchors: () => undefined });
   handlers.current = {
     onClick: (c) => {
+      if (c.tabId !== undefined && c.tabId !== tabId) return;
       if (c.id === "sidebar") return useBrowser.getState().toggleSidebar(windowId);
-      if (c.id === "url" && !page) return c.kind === "press" ? useBrowser.getState().openPanel(windowId, "") : undefined;
+      if (c.id === "url" && !useBrowser.getState().tabs[tabId]?.url) return c.kind === "press" ? useBrowser.getState().openPanel(windowId, "") : undefined;
       return model.onClick(c);
     },
     onAnchors: ({ field, ...extensions }) => {
@@ -93,7 +66,7 @@ function usePublishedSidebarAddressBar(width: number): string {
       if (addressBarHandlers.get(windowId) === handlers) addressBarHandlers.delete(windowId);
     };
   }, [windowId]);
-  useEffect(() => setSidebarAddressBar(windowId, json), [windowId, json]);
+  useEffect(() => setSidebarAddressBar(windowId, model.json), [windowId, model.json]);
   useEffect(() => () => setSidebarAddressBar(windowId, null), [windowId]);
   return windowId;
 }

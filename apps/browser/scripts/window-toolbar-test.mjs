@@ -242,12 +242,12 @@ try {
         const toolbars = wt.fibers("Toolbar").map((f) => ({ tabId: f.memoizedProps.tabId, bare: !!f.memoizedProps.bare, windowToolbar: !!f.memoizedProps.windowToolbar, pane: wt.inPane(f) }));
         const auto = wt.fibers("AutoHideToolbar").map((f) => ({ tabId: f.memoizedProps.tabId, mode: f.memoizedProps.mode, pane: wt.inPane(f) }));
         const backdrops = [...wt.fibers("AutoHideBackdrop"), ...wt.fibers("ToolbarBackdrop"), ...wt.fibers("NativeAutoHide")].map((f) => ({ tabId: f.memoizedProps.tabId, pane: wt.inPane(f) }));
-        const native = acPerf.findFibers("NativeToolbarView", 500).map((f) => { try { return JSON.parse(f.memoizedProps?.state ?? "null"); } catch { return null; } }).filter((n) => n?.tabId);
+        const native = JSON.parse(expo.modules.SolaraToolbar.devToolbarStates("w1"));
         const hosts = [...wt.fibers("UrlField").map((f) => f.memoizedProps.tab?.url), ...native.filter((n) => n.url?.host).map((n) => ac.store.getState().tabs[n.tabId]?.url)];
         const w = ac.store.getState().windows.w1;
         return { active: w.activeTabIds[w.profileId], hideToolbarWhileScrolling: ac.store.getState().settings.hideToolbarWhileScrolling, toolbars, auto, backdrops, hosts,
           tabIds: [...w.tabIds], tabUrls: Object.fromEntries(w.tabIds.map((id) => [id, ac.store.getState().tabs[id]?.url])),
-          nativeToolbars: native.map((n) => ({ tabId: n.tabId, bare: !!n.bare, windowToolbar: !!n.windowToolbar, background: n.palette.background, hairline: n.hairline, stripes: n.stripes, urlHost: n.url?.host ?? null })) };
+          nativeToolbars: native.map((n) => ({ tabId: n.tabId, bare: !!n.bare, windowToolbar: !!n.windowToolbar, background: n.palette.background ?? null, hairline: n.hairline, stripes: n.stripes ?? null, urlHost: n.url?.host ?? null })) };
       },
       until: (test, ms) => new Promise((r) => { const end = Date.now() + (ms || 15000); const poll = () => (test() ? r(true) : Date.now() > end ? r(false) : setTimeout(poll, 50)); poll(); }),
     };

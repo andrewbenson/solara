@@ -17,6 +17,7 @@ public struct SidebarAddressBarState: Decodable, Equatable, Sendable {
   public var url: ToolbarUrlState?
   public var extensions: [ToolbarButtonState]
   public var progress: Double?
+  public var tabId: String? = nil
 
   public static func decode(_ json: String) -> SidebarAddressBarState? {
     guard let data = json.data(using: .utf8) else { return nil }
@@ -246,11 +247,19 @@ public final class SidebarAddressBars {
   }
 
   public func set(_ windowId: String, json: String?) {
-    guard let json, let state = SidebarAddressBarState.decode(json) else {
+    set(windowId, state: json.flatMap(SidebarAddressBarState.decode))
+  }
+
+  public func set(_ windowId: String, state: SidebarAddressBarState?) {
+    guard let state else {
       states[windowId] = nil
       remounts.remove(windowId)
       navigationViews[windowId]?.clear()
-      if claims.contains(windowId) { return }
+      if claims.contains(windowId) {
+        views[windowId]?.clear()
+        anchors[windowId] = nil
+        return
+      }
       views[windowId]?.removeFromSuperview()
       views[windowId] = nil
       anchors[windowId] = nil

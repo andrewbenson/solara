@@ -25,6 +25,9 @@ enum NativeSelectionTools {
   static func zoomShown(_ tabId: String) -> Bool { popovers.values[tabId] == "zoom" }
 
   static func setPopover(_ tabId: String, value: String?) -> [String: String] {
+    if value != nil, popovers.values[tabId] == nil, let id = NativeStoreHandle.store?.state.tabs[tabId]?.windowId {
+      NativeDownloadsPanel.setOpen(id, false)
+    }
     popovers.set(value, tabId: tabId)
     popoversChanged?(popovers.values)
     changed(tabId)

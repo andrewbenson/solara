@@ -1,3 +1,9 @@
+import Foundation
+
+public enum DownloadAction: String, Sendable {
+  case open, reveal, trash, pause, resume, keep, cancel, remove, retry, source, copy, whenDone
+}
+
 public struct Download: Sendable, Hashable {
   public var json: JSONObject
 
@@ -15,6 +21,29 @@ public struct Download: Sendable, Hashable {
   public var state: String? { json["state"]?.string }
   public var isDownloading: Bool { state == "downloading" }
   public var isPrivate: Bool { offTheRecord || (profile.map(Ids.isIncognitoProfile) ?? false) }
+
+  public var url: String { json["url"]?.string ?? "" }
+  public var filename: String { json["filename"]?.string ?? "" }
+  public var path: String { json["path"]?.string ?? "" }
+  public var paused: Bool { json["paused"]?.bool == true }
+  public var dangerous: Bool { isDownloading && json["dangerous"]?.bool == true }
+
+  public func allows(_ action: DownloadAction, fileExists: Bool = false) -> Bool {
+    switch action {
+    case .open, .reveal, .trash: state == "finished" && fileExists
+    case .pause: isDownloading && !dangerous && !paused
+    case .resume: isDownloading && !dangerous && paused
+    case .keep: dangerous
+    case .cancel: isDownloading
+    case .remove: !isDownloading
+    case .retry:
+      (state == "failed" || state == "cancelled") && URLComponents(string: url).map {
+        ["http", "https"].contains($0.scheme?.lowercased() ?? "") && $0.host?.isEmpty == false
+      } == true
+    case .source, .copy: !url.isEmpty
+    case .whenDone: isDownloading && !dangerous
+    }
+  }
 
   public static let maxKept = 100
   static let stagingKeys = ["staging", "stagingId", "destination"]

@@ -71,7 +71,7 @@ struct DownloadsPanelTests {
 struct DownloadsNativeInputTests {
   @Test func downloadButtonRetainsItsLabelAndRequiresAnActiveClick() throws {
     let button = DownloadButtonView(frame: CGRect(x: 0, y: 0, width: 30, height: 30))
-    button.apply(json: "{\"open\":true,\"tooltip\":null,\"theme\":{\"icon\":\"#111111\",\"toolbarHover\":\"#222222\",\"toolbarPressed\":\"#333333\"}}")
+    button.update(open: true, tooltip: nil, theme: ["icon": "#111111", "toolbarHover": "#222222", "toolbarPressed": "#333333"])
     let control = try #require(button.subviews.first as? PostcardControl)
     var clicks = 0
     button.onPress = { clicks += 1 }
@@ -108,5 +108,26 @@ struct DownloadsNativeInputTests {
     try await Task.sleep(for: .milliseconds(30))
     #expect(closed == 0)
     #expect(panel.hitTest(CGPoint(x: 400, y: 400)) == nil)
+  }
+}
+
+extension DownloadsPanelTests {
+  @Test func placementUsesLiveButtonAndFallsBackWhenItLeavesTheWindow() {
+    let viewport = CGSize(width: 800, height: 600)
+    let upper = DownloadsPanelPlacement.resolve(in: viewport, anchor: CGRect(x: 756, y: 4, width: 36, height: 34), topStrip: true, footer: false)
+    #expect(upper.placement == DownloadsPanelPlacement(width: 300, left: 492, top: 39, arrow: .top, arrowX: 282))
+    let lower = DownloadsPanelPlacement.resolve(in: viewport, anchor: CGRect(x: 10, y: 540, width: 36, height: 34), topStrip: false, footer: true)
+    #expect(lower.placement == DownloadsPanelPlacement(width: 300, left: 8, bottom: 61, arrow: .bottom, arrowX: 20))
+    #expect(lower.listMax == 320)
+    let fallback = DownloadsPanelPlacement.resolve(in: viewport, anchor: CGRect(x: -2, y: 540, width: 36, height: 34), topStrip: false, footer: true)
+    #expect(fallback.placement.arrow == .none)
+    #expect(fallback.placement.bottom == 43)
+    let narrow = DownloadsPanelPlacement.resolve(in: CGSize(width: 260, height: 200),
+      anchor: CGRect(x: 200, y: 4, width: 34, height: 34), topStrip: true, footer: false)
+    #expect(narrow.placement == DownloadsPanelPlacement(width: 244, left: 8, top: 39, arrow: .top, arrowX: 209))
+    #expect(narrow.listMax == 63)
+    let short = DownloadsPanelPlacement.resolve(in: CGSize(width: 260, height: 80), anchor: nil, topStrip: false, footer: false)
+    #expect(short.placement.top == 44)
+    #expect(short.listMax == 40)
   }
 }

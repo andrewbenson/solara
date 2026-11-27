@@ -6,7 +6,6 @@ type TopStripModule = {
   peekShow(windowId: string): Promise<void>;
   peekHide(windowId: string): Promise<void>;
   peekState(windowId: string): Promise<string>;
-  downloadsAnchor(windowId: string): Promise<[number, number, number, number] | null>;
   pinPeek(windowId: string, value: number): Promise<void>;
   tracePeek(windowId: string): Promise<void>;
   peekTrace(windowId: string): Promise<number[][]>;
@@ -22,10 +21,6 @@ export async function topStripIncoming(windowId: string, point: [number, number]
 
 export function endTopStripIncoming(windowId: string) {
   return native?.endIncoming?.(windowId) ?? Promise.resolve();
-}
-
-export function topStripDownloadsAnchor(windowId: string) {
-  return native?.downloadsAnchor(windowId) ?? Promise.resolve(null);
 }
 
 export type TopStripPeekState = { live: boolean; slide: number; watching: boolean; panel: number[] | null; downloads: number[] | null; pageWidth: number };

@@ -50,14 +50,14 @@ public class HostedModule: Module {
       HostedViews.declare("developerStripes")
       HostedViews.declare(HostedSmallWindowCard.kind)
       HostedViews.declare(HostedGroupPanel.kind)
-      HostedViews.declare(NativeDownloadsPanel.kind)
+      HostedViews.declare(NativeDownloadsPanel.surfaceKind)
       HostedViews.declare(NativeDownloadsPanel.buttonKind)
       let sink = HostedSink(self)
       DispatchQueue.main.async {
         FrameUpdates.readOnMain {
           HostedViews.emit = { body in sink.module?.sendEvent("onHostedEvent", body) }
           NativeBookmarksBar.registerMenuSource()
-          NativeStatusBubble.register(); NativeSidebar.register(); NativeDownloadMagnet.register(); NativeTabPickers.register()
+          NativeStatusBubble.register(); NativeSidebar.register(); NativeTabPickers.register()
           NativeToolTour.register()
           HostedPersonalize.register()
           HostedCheckInBanner.register()

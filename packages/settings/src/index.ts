@@ -483,7 +483,6 @@ export * from "./hosted";
 export * from "./omnibox";
 export * from "./toolbar";
 export * from "./findBar";
-export * from "./downloads";
 export * from "./prompt";
 export * from "./sitePanel";
 export * from "./windowShell";

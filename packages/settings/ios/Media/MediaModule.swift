@@ -26,7 +26,6 @@ public class MediaModule: Module {
           NativeCast.start()
           NativeLittleSolara.install()
           NativePaneOverlays.start()
-          NativeDownloadsPanel.start()
         }
       }
     }

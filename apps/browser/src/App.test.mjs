@@ -40,7 +40,7 @@ test("opening and closing a native modal updates shell ownership without redrawi
   modules["./components/layout/shellModal"] = load("./components/layout/shellModal.ts", modules);
   for (const [module, names] of [
     ["./components/CommandPanel", ["CommandPanel"]], ["./components/ContentCard", ["ContentCard"]],
-    ["./components/Downloads", ["DownloadMagnet", "DownloadsPopover"]], ["./components/onboarding", ["OnboardingOverlay"]],
+    ["./components/onboarding", ["OnboardingOverlay"]],
     ["./components/profiles/CreateProfile", ["CreateProfileHost"]], ["./components/layout/WindowProfile", ["WindowProfile"]],
     ["./components/sidebar/NativeSidebar", ["NativeSidebar"]],
     ["./components/layout/ShellBackdrop", ["ShellBackdrop"]], ["./components/sidebar/Overlays", ["SidebarOverlays"]],

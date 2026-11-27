@@ -168,3 +168,50 @@ import Testing
   }
 
 }
+
+extension PrivateSessionRetentionTests {
+  @Test func windowDownloadActionsTrackProgressAndKeepPrivateRowsScoped() throws {
+    let store = makeStore()
+    let ordinary = try window(store, privateMode: false, url: "about:blank")
+    let privateID = try window(store, privateMode: true, url: "about:blank")
+    let paused = Download(json: ["id": "active", "state": "downloading", "received": 20, "paused": true])
+    try store.dispatch(upsert(paused))
+    try store.dispatch(upsert(Download(json: ["id": "private", "state": "finished", "offTheRecord": true, "profile": ""])))
+    try store.dispatch(upsert(Download(json: ["id": "saved-1", "state": "failed", "url": "https://example.test/report"])))
+    #expect(store.state.visibleDownloads(in: ordinary).map(\.id) == ["saved-1", "active"])
+    #expect(store.state.visibleDownloads(in: privateID).map(\.id) == ["private"])
+    #expect(store.state.download("private", in: ordinary) == nil)
+    #expect(store.state.download("active", in: privateID) == nil)
+    #expect(store.state.download("active", in: ordinary)?.allows(.resume) == true)
+    #expect(store.state.download("active", in: ordinary)?.allows(.remove) == false)
+    #expect(store.state.download("saved-1", in: ordinary)?.allows(.retry) == true)
+    var progress = paused
+    progress.json["received"] = 80
+    progress.json["paused"] = false
+    try store.dispatch(upsert(progress))
+    #expect(store.state.download("active", in: ordinary)?.json["received"] == 80)
+    #expect(store.state.download("active", in: ordinary)?.allows(.resume) == false)
+    try store.dispatch(Command("clearDownloads", [.string(ordinary)]))
+    #expect(store.state.visibleDownloads(in: ordinary).map(\.id) == ["active"])
+    #expect(store.state.visibleDownloads(in: privateID).map(\.id) == ["private"])
+    try store.dispatch(Command("closeWindow", [.string(privateID)]))
+    #expect(store.state.download("private", in: privateID) == nil)
+  }
+
+  @Test func downloadLimitKeepsRunningRowsWithoutReopeningOnProgress() throws {
+    let store = makeStore()
+    let id = try window(store, privateMode: false, url: "about:blank")
+    let active = Download(json: ["id": "active", "state": "downloading"])
+    try store.dispatch(upsert(active))
+    for index in 0..<Download.maxKept {
+      try store.dispatch(upsert(Download(json: ["id": .string("d\(index)"), "state": "finished"])))
+    }
+    #expect(store.state.visibleDownloads(in: id).count == Download.maxKept)
+    #expect(store.state.download("active", in: id) != nil)
+    try store.dispatch(Command("setDownloadsOpen", [.string(id), false]))
+    var progress = active
+    progress.json["received"] = 12
+    try store.dispatch(upsert(progress))
+    #expect(store.state.windowUi[id]?.downloadsOpen == false)
+  }
+}

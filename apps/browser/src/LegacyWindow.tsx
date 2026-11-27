@@ -4,8 +4,8 @@ import { useState } from "react";
 import { View } from "react-native";
 import { CommandPanel } from "./components/CommandPanel";
 import { ContentCard } from "./components/ContentCard";
+import { DownloadsSurface } from "./components/Downloads";
 import { requireNativeViewManager } from "expo-modules-core";
-import { DownloadMagnet, DownloadsPopover } from "./components/Downloads";
 import { OnboardingOverlay } from "./components/onboarding";
 import { CreateProfileHost } from "./components/profiles/CreateProfile";
 import { useFullscreenTab } from "./components/layout/pageState";
@@ -47,10 +47,9 @@ export function LegacyWindow() {
         <SidePanelSpacer windowId={windowId} pointerEvents="none" />
       </DockedLayout>}
       <CommandPanel windowWidth={width} />
-      <DownloadsPopover />
-      <DownloadMagnet />
       <CreateProfileHost />
       <SidebarOverlays windowWidth={width} />
+      {!shell && <DownloadsSurface windowId={windowId} />}
       <OnboardingOverlay />
     </View>
   );

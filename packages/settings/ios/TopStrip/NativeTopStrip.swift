@@ -97,15 +97,6 @@ public class TopStripModule: Module {
       FrameUpdates.readOnMain { TopStripGlowHost.hosts[windowId]?.view.trace ?? [] }
     }.runOnQueue(.main)
 
-    AsyncFunction("downloadsAnchor") { (windowId: String) -> [Double]? in
-      FrameUpdates.readOnMain {
-        let peek = TopStripPeekHost.hosts[windowId]
-        let rect = peek?.view.live == true ? peek?.row.controls.downloadsRect : NativeTopStrip.downloadsRect(windowId)
-        guard let rect, let root = (peek?.view.window ?? NativeTopStrip.hosts[windowId]?.view.window)?.contentView else { return nil }
-        return [rect.minX, root.bounds.height - rect.maxY, rect.width, rect.height].map(Double.init)
-      }
-    }.runOnQueue(.main)
-
     AsyncFunction("peekState") { (windowId: String) -> String in
       FrameUpdates.readOnMain { TopStripPeekHost.hosts[windowId].flatMap { NativeTopStrip.json($0.describe()) } ?? "null" }
     }.runOnQueue(.main)

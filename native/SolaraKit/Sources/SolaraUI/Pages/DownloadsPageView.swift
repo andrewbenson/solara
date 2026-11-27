@@ -3,55 +3,24 @@ import Observation
 import SwiftUI
 import UniformTypeIdentifiers
 
-public struct PageDownload: Decodable, Equatable, Sendable, Identifiable {
-  public var id: String
-  public var url: String
-  public var filename: String
-  public var path: String
-  public var state: String
-  public var received: Double
-  public var total: Double
-  public var speed: Double
-  public var paused: Bool
-  public var dangerous: Bool?
-
-  var row: DownloadRowState {
-    DownloadRowState(id: id, filename: filename, path: path, state: state, received: received, total: total, speed: speed, paused: paused, url: url, dangerous: dangerous)
-  }
-}
-
-public enum DownloadsPageEvent: Equatable, Sendable {
-  case open(String)
-  case reveal(String)
-  case pause(String)
-  case resume(String)
-  case keep(String)
-  case cancel(String)
-  case menu(String)
-  case remove(String)
-  case source(String)
-  case clearAll
-}
-
-@MainActor
 @Observable
 public final class DownloadsPageModel {
-  public var downloads: [PageDownload] = []
+  public var downloads: [DownloadRowState] = []
   public var theme = PageTheme.fallbackLight
   public var query = ""
   public var focusRequest = 0
-  @ObservationIgnored public var onEvent: (DownloadsPageEvent) -> Void = { _ in }
+  @ObservationIgnored public var onEvent: (DownloadsEvent) -> Void = { _ in }
   @ObservationIgnored public var fileExists: (String) -> Bool = { FileManager.default.fileExists(atPath: $0) }
 
   public init() {}
 
-  public var shown: [PageDownload] {
-    downloads.filter { PageFormat.matches(query, $0.filename, $0.url) }
+  public var shown: [DownloadRowState] {
+    downloads.filter { PageFormat.matches(query, $0.filename, $0.url ?? "") }
   }
 
   var clearable: Bool { downloads.contains { $0.state != "downloading" } }
 
-  func exists(_ d: PageDownload) -> Bool { d.state != "finished" || fileExists(d.path) }
+  func exists(_ d: DownloadRowState) -> Bool { d.state != "finished" || fileExists(d.path) }
 }
 
 public struct DownloadsPageView: View {
@@ -65,7 +34,7 @@ public struct DownloadsPageView: View {
     let shown = model.shown
     VStack(spacing: 0) {
       PageHeader(title: "Downloads", query: $model.query, placeholder: "Search downloads", focus: model.focusRequest) {
-        if model.clearable { PageButton(title: "Clear All") { model.onEvent(.clearAll) } }
+        if model.clearable { PageButton(title: "Clear All") { model.onEvent(.clear) } }
       }
       if shown.isEmpty {
         PageEmptyState(icon: "arrow.down.circle", title: model.query.isEmpty ? "Files you download appear here" : "No search results found")
@@ -90,16 +59,16 @@ public struct DownloadsPageView: View {
 
 struct DownloadCard: View {
   @Environment(\.pageTheme) private var theme
-  let download: PageDownload
+  let download: DownloadRowState
   let exists: Bool
-  let onEvent: (DownloadsPageEvent) -> Void
+  let onEvent: (DownloadsEvent) -> Void
   @State private var hovered = false
 
   var body: some View {
     let d = download
     let done = d.state == "finished" && exists
     let progress = d.total > 0 ? d.received / d.total : 0
-    let blocked = DownloadsFormat.awaitsKeep(d.row)
+    let blocked = DownloadsFormat.awaitsKeep(d)
     HStack(spacing: 14) {
       Image(nsImage: Self.icon(d.path.isEmpty ? d.filename : d.path))
         .resizable()
@@ -112,7 +81,7 @@ struct DownloadCard: View {
           .onTapGesture { if done { onEvent(.open(d.id)) } }
           .accessibilityAddTraits(done ? .isButton : [])
           .accessibilityAction { if done { onEvent(.open(d.id)) } }
-        OnboardingText(PageFormat.hostLabel(d.url), size: 12, color: theme.textTertiary, lines: 1)
+        OnboardingText(PageFormat.hostLabel(d.url ?? ""), size: 12, color: theme.textTertiary, lines: 1)
           .contentShape(Rectangle())
           .onTapGesture { onEvent(.source(d.id)) }
           .accessibilityAddTraits(.isButton)
@@ -128,7 +97,7 @@ struct DownloadCard: View {
           .frame(height: 3)
           .padding(.top, 3)
         }
-        OnboardingText(DownloadsFormat.status(d.row, exists: exists), size: 12, color: blocked ? theme.destructive : theme.textSecondary, lines: 1)
+        OnboardingText(DownloadsFormat.status(d, exists: exists), size: 12, color: blocked ? theme.destructive : theme.textSecondary, lines: 1)
       }
       .frame(maxWidth: .infinity, alignment: .leading)
       if blocked {
@@ -168,21 +137,5 @@ struct DownloadCard: View {
     if FileManager.default.fileExists(atPath: path) { return image }
     let ext = (path as NSString).pathExtension
     return NSWorkspace.shared.icon(for: UTType(filenameExtension: ext.isEmpty ? "bin" : ext) ?? .data)
-  }
-}
-
-extension DownloadsPageModel {
-  public struct State: Decodable, Sendable {
-    public var downloads: [PageDownload]
-    public var dark: Bool
-    public var theme: [String: String]
-    public var panelShadowOpacity: Double?
-  }
-
-  public func apply(json: String) {
-    guard let data = json.data(using: .utf8), let state = try? JSONDecoder().decode(State.self, from: data) else { return }
-    if downloads != state.downloads { downloads = state.downloads }
-    let next = PageTheme(dark: state.dark, tokens: state.theme, panelShadowOpacity: state.panelShadowOpacity)
-    if theme != next { theme = next }
   }
 }

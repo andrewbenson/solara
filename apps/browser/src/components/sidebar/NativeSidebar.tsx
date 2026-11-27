@@ -1,4 +1,4 @@
-import { hostedSidebarShell, nativeOmniboxAvailable, publishSettingsTopic, sidebarAddressBarAvailable, SolaraHostedView } from "@solara/settings";
+import { nativeOmniboxAvailable, publishSettingsTopic, sidebarAddressBarAvailable, SolaraHostedView } from "@solara/settings";
 import { memo, useEffect, useMemo, useState } from "react";
 import { StyleSheet } from "react-native";
 import { useBrowser } from "../../store/browser";
@@ -11,7 +11,6 @@ import { applyNativeRenameState, resetNativeRenames } from "./renameMirror";
 import { setSidebarUi, sidebarUi } from "./state";
 import { showTidiedPinsToast } from "./tidyPinsUi";
 import { requestCreateProfile } from "../profiles/CreateProfile";
-import { registerDownloadsAnchor } from "../Downloads";
 import { useTabDrag } from "../layout/tabDrag";
 import { followPeekHold } from "../layout/peekHold";
 import { nativeLayoutFeed, useNativeLayoutFeed } from "../layout/nativeLayoutFeed";
@@ -63,20 +62,9 @@ addNativeSettingsHandlers({
   },
 });
 
-function useNativeDownloadsAnchor(windowId: string) {
-  useEffect(
-    () => registerDownloadsAnchor(windowId, async () => {
-      const rect = (JSON.parse(await hostedSidebarShell(windowId)) as { downloads?: number[] } | null)?.downloads;
-      return rect ? { x: rect[0]!, y: rect[1]!, width: rect[2]!, height: rect[3]! } : null;
-    }),
-    [windowId],
-  );
-}
-
 function ShellColumnState({ windowId, state, dropOver, addressWidth }: { windowId: string; state: string; dropOver: boolean; addressWidth: number | null }) {
   useEffect(() => publishShellColumn(windowId, { state, dropOver }), [windowId, state, dropOver]);
   useEffect(() => () => publishShellColumn(windowId, null), [windowId]);
-  useNativeDownloadsAnchor(windowId);
   return addressWidth === null ? null : <SidebarAddressBarState width={addressWidth} />;
 }
 
@@ -87,7 +75,6 @@ function NativeSidebarFeed({ windowId, state, dropOver, addressBar }: { windowId
   useEffect(() => followPeekHold(windowId, floating, setHeld, true), [windowId, floating]);
   const value = useMemo(() => ({ state, dropOver, held }), [state, dropOver, held]);
   useNativeLayoutFeed(nativeFeed, windowId, value);
-  useNativeDownloadsAnchor(windowId);
   return addressBar ? <SidebarAddressBarState width={width} /> : null;
 }
 

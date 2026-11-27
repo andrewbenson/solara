@@ -6,7 +6,7 @@ import { layout } from "../../lib/theme";
 import { useWindowId } from "../../store/hooks";
 import { lightsCenter, TOP_STRIP_LIGHTS_CENTER } from "./dockMotion";
 import { TabDropArea, type TabDropTarget } from "./fileDrop";
-import { useIncomingFile, useTopStripDownloadsAnchor, useTopStripPeekProbe } from "./NativeTopStrip";
+import { useIncomingFile, useTopStripPeekProbe } from "./NativeTopStrip";
 import { beginExternalDrag, endExternalDrag, moveExternalDrag, useTabDrag } from "./tabDrag";
 
 export const TOP_STRIP_HEIGHT = 42;
@@ -16,7 +16,6 @@ export function TopTabStrip({ hidden }: { hidden: boolean }) {
   const windowId = useWindowId();
   const dropOver = useTabDrag((drag) => drag.overWindow === windowId);
   useIncomingFile(windowId);
-  useTopStripDownloadsAnchor(windowId);
   useEffect(() => {
     if (hidden) return;
     void setTrafficLightsCenter(windowId, [...TOP_STRIP_LIGHTS_CENTER]);
@@ -57,7 +56,6 @@ export function TopStripPeek({ windowWidth, enabled }: { windowWidth: number; en
   const windowId = useWindowId();
   const [live, setLive] = useState(false);
   useIncomingFile(windowId);
-  useTopStripDownloadsAnchor(windowId);
   useTopStripPeekProbe(windowId, setLive);
   useEffect(() => {
     if (!enabled) return;

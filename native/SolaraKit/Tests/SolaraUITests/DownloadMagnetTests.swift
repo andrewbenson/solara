@@ -3,12 +3,11 @@ import Testing
 
 @testable import SolaraUI
 
-private let json = ##"{"flight":{"id":"d1","path":"/tmp/a.zip","start":[600,360],"target":[24,24]}}"##
+private let flight = DownloadFlight(id: "d1", path: "a.zip", start: CGPoint(x: 600, y: 360), target: CGPoint(x: 24, y: 24))
 
 @MainActor
 @Suite struct DownloadMagnetTests {
   @Test func theArcMatchesRNsFiveSteps() {
-    let flight = DownloadFlight.decode(json)!
     let c = DownloadMagnetMotion.centers(flight)
     #expect(c.count == 5)
     #expect(c[0] == CGPoint(x: 600, y: 360))
@@ -21,14 +20,13 @@ private let json = ##"{"flight":{"id":"d1","path":"/tmp/a.zip","start":[600,360]
   @Test func aNewDownloadFliesOnceAndARepeatedStateDoesNothing() {
     let v = DownloadMagnetView(frame: NSRect(x: 0, y: 0, width: 1200, height: 800))
     v.iconFor = { _ in NSImage(size: NSSize(width: 44, height: 44)) }
-    v.apply(json: json)
+    v.fly(flight)
     let first = try! #require(v.flightAnimation)
     #expect(first.duration == 0.7)
     #expect(first.animations?.count == 3)
     #expect(v.flying == "d1")
-    v.apply(json: json)
+    v.fly(flight)
     #expect(v.flights == 1)
-    v.apply(json: ##"{"flight":null}"##)
     #expect(v.flying == "d1")
   }
 

@@ -13,19 +13,6 @@ public struct DownloadFlight: Equatable, Sendable {
     self.start = start
     self.target = target
   }
-
-  public static func decode(_ json: String) -> DownloadFlight? {
-    guard let data = json.data(using: .utf8), let state = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any],
-      let flight = state["flight"] as? [String: Any], let id = flight["id"] as? String,
-      let start = point(flight["start"]), let target = point(flight["target"])
-    else { return nil }
-    return DownloadFlight(id: id, path: flight["path"] as? String ?? "", start: start, target: target)
-  }
-
-  private static func point(_ value: Any?) -> CGPoint? {
-    guard let xy = value as? [Double], xy.count == 2 else { return nil }
-    return CGPoint(x: xy[0], y: xy[1])
-  }
 }
 
 public enum DownloadMagnetMotion {
@@ -53,7 +40,7 @@ public final class DownloadMagnetView: NSView {
   public var iconFor: (String) -> NSImage = { NSWorkspace.shared.icon(forFile: $0) }
   public private(set) var flying: String?
   public private(set) var flights = 0
-  private var shown: String?
+  public private(set) var flight: DownloadFlight?
   private let iconLayer = CALayer()
 
   public override init(frame: NSRect) {
@@ -74,13 +61,9 @@ public final class DownloadMagnetView: NSView {
     iconLayer.contentsScale = window?.backingScaleFactor ?? 2
   }
 
-  public func apply(json: String) {
-    guard let flight = DownloadFlight.decode(json), flight.id != shown else { return }
-    shown = flight.id
-    fly(flight)
-  }
-
   public func fly(_ flight: DownloadFlight) {
+    guard self.flight?.id != flight.id else { return }
+    self.flight = flight
     flying = flight.id
     flights += 1
     iconLayer.contents = iconFor(flight.path)
@@ -116,7 +99,7 @@ public final class DownloadMagnetView: NSView {
     iconLayer.removeAnimation(forKey: "flight")
     iconLayer.contents = nil
     flying = nil
-    shown = nil
+    flight = nil
   }
 
   var flightAnimation: CAAnimationGroup? { iconLayer.animation(forKey: "flight") as? CAAnimationGroup }

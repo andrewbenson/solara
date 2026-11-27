@@ -1,6 +1,7 @@
 import AppKit
+import SolaraModel
 
-public struct DownloadRowState: Decodable, Equatable, Sendable {
+public struct DownloadRowState: Equatable, Sendable, Identifiable {
   public var id: String
   public var filename: String
   public var path: String
@@ -11,18 +12,49 @@ public struct DownloadRowState: Decodable, Equatable, Sendable {
   public var paused: Bool
   public var url: String?
   public var dangerous: Bool?
+
+  public init(_ download: Download) {
+    id = download.id
+    filename = download.filename
+    path = download.path
+    state = download.state ?? ""
+    received = download.json["received"]?.number ?? 0
+    total = download.json["total"]?.number ?? 0
+    speed = download.json["speed"]?.number ?? 0
+    paused = download.paused
+    url = download.url
+    dangerous = download.dangerous
+  }
+
+  init(id: String, filename: String, path: String, state: String, received: Double, total: Double, speed: Double,
+    paused: Bool, url: String? = nil, dangerous: Bool? = nil)
+  {
+    self.id = id
+    self.filename = filename
+    self.path = path
+    self.state = state
+    self.received = received
+    self.total = total
+    self.speed = speed
+    self.paused = paused
+    self.url = url
+    self.dangerous = dangerous
+  }
 }
 
-public struct DownloadsListState: Decodable, Equatable, Sendable {
+public struct DownloadsListState: Equatable, Sendable {
   public var rows: [DownloadRowState]
   public var clearable: Bool
   public var listMax: Double
   public var dark: Bool
   public var theme: [String: String]
 
-  public static func decode(_ json: String) -> DownloadsListState? {
-    guard let data = json.data(using: .utf8) else { return nil }
-    return try? JSONDecoder().decode(DownloadsListState.self, from: data)
+  public init(rows: [DownloadRowState], clearable: Bool, listMax: Double, dark: Bool, theme: [String: String]) {
+    self.rows = rows
+    self.clearable = clearable
+    self.listMax = listMax
+    self.dark = dark
+    self.theme = theme
   }
 }
 
@@ -34,6 +66,8 @@ public enum DownloadsEvent: Sendable, Equatable {
   case keep(String)
   case cancel(String)
   case menu(String)
+  case remove(String)
+  case source(String)
   case clear
   case viewAll
 }
@@ -509,6 +543,8 @@ public final class DownloadsListView: NSView {
   required init?(coder: NSCoder) { fatalError() }
 
   public func update(_ next: DownloadsListState) {
+    guard state != next else { return }
+    let previous = state
     state = next
     let theme = NewTabTheme(dark: next.dark, tokens: next.theme)
     title.attributedStringValue = NSAttributedString(
@@ -524,10 +560,13 @@ public final class DownloadsListView: NSView {
     CATransaction.setDisableActions(true)
     separator.backgroundColor = (next.dark ? NSColor(white: 1, alpha: 0.12) : NSColor(white: 0, alpha: 0.1)).cgColor
     CATransaction.commit()
+    var remaining = Dictionary(rows.map { ($0.row.id, $0) }, uniquingKeysWith: { first, _ in first })
     var kept: [DownloadRowView] = []
     for r in next.rows {
-      if let existing = rows.first(where: { $0.row.id == r.id }) {
-        existing.update(r, theme: theme, dark: next.dark)
+      if let existing = remaining.removeValue(forKey: r.id) {
+        if existing.row != r || previous?.theme != next.theme || previous?.dark != next.dark {
+          existing.update(r, theme: theme, dark: next.dark)
+        }
         kept.append(existing)
       } else {
         let made = DownloadRowView(row: r, theme: theme, dark: next.dark)
@@ -536,7 +575,7 @@ public final class DownloadsListView: NSView {
         kept.append(made)
       }
     }
-    for r in rows where !kept.contains(where: { $0 === r }) { r.removeFromSuperview() }
+    for view in remaining.values { view.removeFromSuperview() }
     rows = kept
     needsLayout = true
     layoutSubtreeIfNeeded()

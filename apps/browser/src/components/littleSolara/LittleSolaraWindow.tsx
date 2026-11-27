@@ -9,7 +9,7 @@ import { useBrowser } from "../../store/browser";
 import { useActiveTab, useTabLive, useWindowId, useWindowProfile, useWindowUi } from "../../store/hooks";
 import { CommandPanel } from "../CommandPanel";
 import { ContentCard } from "../ContentCard";
-import { DownloadsPopover } from "../Downloads";
+import { DownloadsSurface } from "../Downloads";
 import { setUrlAnchor } from "../layout/windowLayout";
 import { showUrlBarMenu } from "../omnibox/paste";
 import { profileSymbol } from "../profiles/icons";
@@ -46,7 +46,7 @@ export function LittleSolaraWindow() {
         </View>
       )}
       <CommandPanel windowWidth={width} />
-      <DownloadsPopover />
+      <DownloadsSurface windowId={windowId} />
     </View>
   );
 }

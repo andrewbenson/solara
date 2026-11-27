@@ -204,8 +204,16 @@ extension Session {
       next.downloads = next.downloads.map { $0.id == d.id ? d : $0 }
     } else {
       next.downloads = [d] + next.downloads
-      if !config.safeMode { next.downloads = Array(next.downloads.prefix(Download.maxKept)) }
       if let focused = next.ui.focusedWindowId, next.downloadVisible(d, in: next.windows[focused]) { next.openDownloads(focused) }
+    }
+    if !config.safeMode && next.downloads.count > Download.maxKept {
+      var remaining = max(0, Download.maxKept - next.downloads.count(where: \.isDownloading))
+      next.downloads = next.downloads.filter { download in
+        if download.isDownloading { return true }
+        guard remaining > 0 else { return false }
+        remaining -= 1
+        return true
+      }
     }
     set(next)
   }
@@ -217,9 +225,11 @@ extension Session {
   }
 
   public func clearDownloads(_ windowId: String?) {
-    var next = state
-    let s = next
-    next.downloads = s.downloads.filter { d in d.isDownloading || (windowId != nil && !s.downloadVisible(d, in: s.windows[windowId!])) }
+    let window = windowId.flatMap { state.windows[$0] }
+    if windowId != nil && window == nil { return }
+    let current = state
+    var next = current
+    next.downloads = current.downloads.filter { $0.isDownloading || (windowId != nil && !current.downloadVisible($0, in: window)) }
     set(next)
   }
 
@@ -246,6 +256,16 @@ public extension BrowserState {
     let session = downloadSession(download)
     if window.incognito { return session != nil && session == privateSession(window.profileId) }
     return session == nil && (download.profile ?? "") == engineProfile(window.profileId)
+  }
+
+  func visibleDownloads(in windowId: String) -> [Download] {
+    guard let window = windows[windowId] else { return [] }
+    return downloads.filter { downloadVisible($0, in: window) }
+  }
+
+  func download(_ id: String, in windowId: String) -> Download? {
+    guard let window = windows[windowId] else { return nil }
+    return downloads.first { $0.id == id && downloadVisible($0, in: window) }
   }
 
   func hasSidebarDownloads(_ windowId: String) -> Bool {

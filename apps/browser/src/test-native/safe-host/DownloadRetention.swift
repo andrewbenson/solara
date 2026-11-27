@@ -3,6 +3,7 @@ import Foundation
 struct Download {
   static let maxKept = 100
   var id: String
+  var isDownloading = false
 }
 struct Window {}
 struct UI { var focusedWindowId: String? }

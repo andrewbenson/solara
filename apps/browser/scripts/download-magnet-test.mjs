@@ -40,14 +40,6 @@ const fixture = session({
 const HELPERS = `
 const H = globalThis.expo.modules.SolaraHosted;
 const settle = (ms) => new Promise((r) => setTimeout(r, ms));
-const inMagnet = (pred) => {
-  const m = acPerf.findFibers("DownloadMagnet", 5)[0];
-  let hit = null;
-  const visit = (f) => { for (let c = f; c && !hit; c = c.sibling) { if (pred(c)) hit = c; else visit(c.child); } };
-  if (m) visit(m.child);
-  return hit;
-};
-const hostedState = () => { const f = inMagnet((c) => c.memoizedProps && c.memoizedProps.kind === "downloadMagnet"); return f ? JSON.parse(f.memoizedProps.state || "null") : null; };
 const magnet = () => H.downloadMagnet("w1").then(JSON.parse);
 `;
 
@@ -70,7 +62,7 @@ try {
   app = await launch(appPath, {
     data: join(scratch, "data"), fresh: true, session: fixture, onboarded: true, probe: true,
     env: { SOLARA_DOWNLOADS_DIR: downloads },
-    ready: "return !!ac.store.getState().windows.w1 && !!globalThis.acPerf",
+    ready: "return !!ac.store.getState().windows.w1",
   });
   rep.log(`native: pid ${app.pid}`);
   await rep.check("the native magnet flies to the downloads target and settles", () => magnetChecks(downloads));
@@ -83,8 +75,6 @@ try {
 process.exit(rep.summary() ? 0 : 1);
 
 async function magnetChecks(downloads) {
-  const kinds = await run("return H.kinds();");
-  assert.ok(kinds.includes("downloadMagnet"), "the downloadMagnet kind is registered");
   const end = Date.now() + 10000;
   let mounted = null;
   while (Date.now() < end && !(mounted?.inWindow && mounted.size[0] > 0)) {
@@ -99,7 +89,7 @@ async function magnetChecks(downloads) {
     const samples = [];
     ac.actions.openUrls([${JSON.stringify(`${base}/file.bin`)}], "w1");
     const loop = () => magnet().then((d) => {
-      const s = { t: Date.now() - t0, d, state: hostedState() };
+      const s = { t: Date.now() - t0, d };
       samples.push(s);
       const first = samples.find((x) => x.d && x.d.flights > 0);
       if (s.t > 8000 || (first && s.t - first.t > 1400)) return samples;
@@ -126,8 +116,8 @@ async function magnetChecks(downloads) {
   const snapshot = await untilSnapshot("download in native store", (state) => state.downloads.count === download.length && state.downloads.finished === download.filter((item) => item.state === "finished").length);
   assert.equal(snapshot.downloads.count, download.length, "native and JS download counts agree");
 
-  const flight = samples.map((s) => s.state?.flight).find(Boolean);
-  assert.ok(flight, "JS handed the native view a flight");
+  const flight = samples.map((s) => s.d?.flight).find(Boolean);
+  assert.ok(flight, "the native store update triggered a flight");
   const [sx, sy] = flight.start;
   const [tx, ty] = flight.target;
   const animating = samples.filter((s) => s.d?.animating);
@@ -151,7 +141,6 @@ async function magnetChecks(downloads) {
   assert.equal(last.flying, undefined, "the flight ended");
   assert.ok(Math.abs(last.restingPosition[0] - tx) <= 0.5 && Math.abs(last.restingPosition[1] - ty) <= 0.5, `it settled at the target (${last.restingPosition} vs ${tx},${ty})`);
   assert.equal(last.restingOpacity, 0, "it settled faded out");
-  assert.equal(samples.at(-1).state?.flight ?? null, null, "JS cleared the flight once it landed");
   rep.log(`native flight ${span} ms, arc ${lift.toFixed(1)} pt, ${flight.start} -> ${flight.target}`);
   return `native flight ${span} ms, arc ${lift.toFixed(1)} pt`;
 }

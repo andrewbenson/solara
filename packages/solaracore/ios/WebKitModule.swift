@@ -238,3 +238,14 @@ final class WebKitTabView: ExpoView, WebKitTabDelegate, @preconcurrency RCTInval
     }
   }
 }
+
+@MainActor
+public enum NativeDownloadEngine {
+  public static func command(_ action: String, id: String) {
+    if id.hasPrefix("wk-download-") {
+      if action != "keep" { WebKitHub.shared.downloads.command(action, id: id) }
+    } else {
+      SolaraCoreServices.downloadCommand(action, id: id)
+    }
+  }
+}

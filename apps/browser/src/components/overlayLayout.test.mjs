@@ -7,7 +7,7 @@ const require = createRequire(import.meta.url);
 const react = require("react");
 const ts = require("typescript");
 
-async function fixture(kind) {
+async function fixture() {
   const renders = {};
   const props = {};
   const errors = [];
@@ -45,10 +45,10 @@ async function fixture(kind) {
   };
   modules["../live/MeetingAlert"] = { MeetingAlert: leaf("MeetingAlert") };
   const exports = {};
-  const source = readFileSync(new URL(kind === "sidebar" ? "./sidebar/Overlays.tsx" : "./Downloads.tsx", import.meta.url), "utf8");
+  const source = readFileSync(new URL("./sidebar/Overlays.tsx", import.meta.url), "utf8");
   const code = ts.transpileModule(source, { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022, jsx: ts.JsxEmit.ReactJSX } }).outputText;
   new Function("require", "exports", code)((name) => modules[name] ?? {}, exports);
-  const Component = kind === "sidebar" ? exports.SidebarOverlays : exports.DownloadMagnet;
+  const Component = exports.SidebarOverlays;
   const previousHook = globalThis.__REACT_DEVTOOLS_GLOBAL_HOOK__;
   globalThis.__REACT_DEVTOOLS_GLOBAL_HOOK__ = {
     supportsFiber: true,
@@ -87,11 +87,6 @@ async function fixture(kind) {
   return {
     renders, props,
     hasLayout: () => !!onLayout,
-    async layout(width, height, x = 0, y = 0) {
-      onLayout({ nativeEvent: { layout: { width, height, x, y } } });
-      await settle();
-      assert.deepEqual(errors, []);
-    },
     stop() {
       renderer.unmountComponentAtNode(1);
       globalThis.__REACT_DEVTOOLS_GLOBAL_HOOK__ = previousHook;
@@ -100,22 +95,9 @@ async function fixture(kind) {
 }
 
 test("sidebar overlay leaves layout to its native presenters", async () => {
-  const f = await fixture("sidebar");
+  const f = await fixture();
   try {
     assert.equal(f.hasLayout(), false);
     assert.equal(f.renders.MeetingAlert, 1);
-  } finally { f.stop(); }
-});
-
-test("download overlay ignores repeated bounds and origin-only layouts", async () => {
-  const f = await fixture("download");
-  try {
-    await f.layout(1000, 700);
-    const before = { ...f.renders };
-    assert.equal(before.DownloadMagnet, 2);
-    for (const [x, y] of [[0, 0], [12, 8], [0, 0]]) await f.layout(1000, 700, x, y);
-    assert.deepEqual(f.renders, before);
-    await f.layout(1024, 720);
-    for (const [name, count] of Object.entries(before)) assert.equal(f.renders[name], count + 1);
   } finally { f.stop(); }
 });

@@ -1,6 +1,5 @@
-import { endTopStripIncoming, topStripIncoming, topStripPeek, topStripDownloadsAnchor } from "@solara/settings";
+import { endTopStripIncoming, topStripIncoming, topStripPeek } from "@solara/settings";
 import { useEffect, useRef } from "react";
-import { registerDownloadsAnchor } from "../Downloads";
 import { addNativeSettingsHandlers } from "../settings/nativeSettings";
 import { openNewTabInSplit } from "./splitActions";
 import { EXTERNAL_DRAG, setInsert, setInsertResolver, useTabDrag } from "./tabDrag";
@@ -57,16 +56,6 @@ export function useIncomingFile(windowId: string) {
 
 const nativeFeed = nativeLayoutFeed<{ dropOver: boolean }>("topStrip.nativeFeed");
 
-export function useTopStripDownloadsAnchor(windowId: string) {
-  useEffect(
-    () => registerDownloadsAnchor(windowId, async () => {
-      const rect = await topStripDownloadsAnchor(windowId);
-      return rect ? { x: rect[0], y: rect[1], width: rect[2], height: rect[3] } : null;
-    }),
-    [windowId],
-  );
-}
-
 export function useTopStripPeekProbe(windowId: string, onLive?: (live: boolean) => void) {
   const latest = useRef(onLive);
   latest.current = onLive;
@@ -91,7 +80,6 @@ export function useTopStripPeekProbe(windowId: string, onLive?: (live: boolean) 
 export function NativeTopStripFeed({ windowId }: { windowId: string }) {
   const dropOver = useTabDrag((d) => d.overWindow === windowId);
   useNativeLayoutFeed(nativeFeed, windowId, { dropOver });
-  useTopStripDownloadsAnchor(windowId);
   useTopStripPeekProbe(windowId);
   return null;
 }

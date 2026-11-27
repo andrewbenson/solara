@@ -1,7 +1,7 @@
 import AppKit
 import QuartzCore
 
-public struct DownloadsPanelPlacement: Decodable, Equatable, Sendable {
+public struct DownloadsPanelPlacement: Equatable, Sendable {
   public var width: Double
   public var left: Double
   public var top: Double?
@@ -17,23 +17,44 @@ public struct DownloadsPanelPlacement: Decodable, Equatable, Sendable {
     self.arrow = arrow
     self.arrowX = arrowX
   }
+
+  public static func resolve(in viewport: CGSize, anchor: CGRect?, topStrip: Bool, footer: Bool,
+    scale: CGFloat = 2) -> (placement: DownloadsPanelPlacement, listMax: Double)
+  {
+    let margin: CGFloat = 8
+    let width = max(0, min(300, viewport.width - margin * 2))
+    let placement: DownloadsPanelPlacement
+    let room: CGFloat
+    if let anchor, !anchor.isEmpty, CGRect(origin: .zero, size: viewport).contains(anchor) {
+      let left = max(margin, min(anchor.midX - width / 2, viewport.width - margin - width))
+      if anchor.midY > viewport.height / 2 {
+        placement = DownloadsPanelPlacement(width: width, left: left, bottom: viewport.height - anchor.minY + 1, arrow: .bottom, arrowX: anchor.midX - left)
+        room = anchor.minY - 1 - DownloadsPanelMetrics.arrowHeight - margin
+      } else {
+        let top = anchor.maxY + 1
+        placement = DownloadsPanelPlacement(width: width, left: left, top: top, arrow: .top, arrowX: anchor.midX - left)
+        room = viewport.height - top - DownloadsPanelMetrics.arrowHeight - margin
+      }
+    } else {
+      let left = topStrip ? max(margin, viewport.width - margin - width) : 10
+      placement = DownloadsPanelPlacement(width: width, left: left, top: footer ? nil : 44, bottom: footer ? 43 : nil, arrow: .none, arrowX: width / 2)
+      room = viewport.height - (footer ? 43 : 44) - margin
+    }
+    let chrome = DownloadsMetrics.padTop + DownloadsMetrics.header + 1 / max(scale, 1)
+      + DownloadsMetrics.separatorGap * 2 + DownloadsMetrics.rowHeight + DownloadsMetrics.padBottom
+    return (placement, max(DownloadsMetrics.row, min(8 * DownloadsMetrics.row, room - chrome)))
+  }
 }
 
-public struct DownloadsPanelState: Decodable, Equatable, Sendable {
+public struct DownloadsPanelState: Equatable, Sendable {
   public var list: DownloadsListState
   public var placement: DownloadsPanelPlacement
   public var closing: Bool
-  public var token: Int?
 
   public init(list: DownloadsListState, placement: DownloadsPanelPlacement, closing: Bool) {
     self.list = list
     self.placement = placement
     self.closing = closing
-    self.token = nil
-  }
-
-  public static func decode(_ json: String) -> DownloadsPanelState? {
-    json.data(using: .utf8).flatMap { try? JSONDecoder().decode(DownloadsPanelState.self, from: $0) }
   }
 }
 
@@ -52,6 +73,7 @@ public final class DownloadsPanelView: NSView {
   public var onEvent: (DownloadsEvent) -> Void = { _ in }
   public var onDismiss: () -> Void = {}
   public var onClosed: () -> Void = {}
+  public var onResize: () -> Void = {}
   public let list = DownloadsListView(frame: .zero)
   public private(set) var state: DownloadsPanelState?
   private let motion = PrimitiveFlippedView()
@@ -105,7 +127,7 @@ public final class DownloadsPanelView: NSView {
   public var presentedOpacity: Double { Double(motion.layer?.presentation()?.opacity ?? motion.layer?.opacity ?? 0) }
 
   public func update(_ next: DownloadsPanelState) {
-    guard !ended else { return }
+    guard !ended, next != state else { return }
     let wasClosing = state?.closing ?? false
     state = next
     let dark = next.list.dark
@@ -137,6 +159,12 @@ public final class DownloadsPanelView: NSView {
     PrimitiveMotion.setInstantly { card.frame = CGRect(x: CGFloat(p.left), y: y, width: width, height: height) }
     bubble.frame = card.bounds
     if !opened, !closing, window != nil { animate(to: 1) } else { apply(progress: tween.to) }
+  }
+
+  public override func setFrameSize(_ newSize: NSSize) {
+    let changed = newSize != frame.size
+    super.setFrameSize(newSize)
+    if changed { onResize() }
   }
 
   public override func viewDidMoveToWindow() {
@@ -213,6 +241,7 @@ public final class DownloadsPanelView: NSView {
     closeTimer = nil
     motion.layer?.removeAllAnimations()
     onClosed = {}
+    onResize = {}
     onDismiss = {}
     onEvent = { _ in }
     list.onEvent = { _ in }
@@ -242,15 +271,7 @@ public final class DownloadButtonView: NSView {
   private let control = PostcardControl(frame: .zero)
   private var palette: [String: String] = [:]
   private var open = false
-  public private(set) var token: Int?
   public override var isFlipped: Bool { true }
-
-  private struct State: Decodable {
-    var open: Bool
-    var tooltip: String?
-    var token: Int?
-    var theme: [String: String]
-  }
 
   public override init(frame: NSRect) {
     super.init(frame: frame)
@@ -277,12 +298,10 @@ public final class DownloadButtonView: NSView {
     control.frame = bounds
   }
 
-  public func apply(json: String) {
-    guard let data = json.data(using: .utf8), let state = try? JSONDecoder().decode(State.self, from: data) else { return }
-    open = state.open
-    token = state.token
-    palette = state.theme
-    control.toolTip = state.tooltip
+  public func update(open: Bool, tooltip: String?, theme: [String: String]) {
+    self.open = open
+    palette = theme
+    control.toolTip = tooltip
     control.setAccessibilityValue(open ? "Open" : "Closed")
     refresh()
   }

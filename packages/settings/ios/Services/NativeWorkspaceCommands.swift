@@ -38,6 +38,7 @@ enum NativeWorkspaceCommands {
 
   static func install() {
     NativePinnedPageCommands.start()
+    NativeDownloadsPanel.start()
     ToolbarView.commandURLFocusAllowed = { NativeCommandBarFocus.developerAllowed($0, field: $1) }
     ToolbarView.commandURLDidFocus = { NativeCommandBarFocus.developerDidFocus($0, field: $1) }
     for command in WorkspaceMenuCommand.commands.union(ViewMenuCommand.commands).union(PageMenuCommand.commands).union(FindMenuCommand.commands).union(BookmarkMenuCommand.commands).union(NativeBookmarkCommands.formCommands).union(CopyLinkCommand.commands).union(BrowserServiceCommand.commands).union(TabFocusCommand.commands).union(["togglePageEngine"]).union(PinnedPageCommand.commands).union(NativeSidebarMenus.commands).union(["focusCommandBar", "cast", "restoreArcFolders", "showHistory", "manageBookmarks"]) {

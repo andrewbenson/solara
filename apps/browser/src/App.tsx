@@ -4,7 +4,6 @@ import { useState } from "react";
 import { StyleSheet, View } from "react-native";
 import { CommandPanel } from "./components/CommandPanel";
 import { ContentCard } from "./components/ContentCard";
-import { DownloadMagnet, DownloadsPopover } from "./components/Downloads";
 import { isUtilityWindowId } from "./components/settings/windows";
 import { OnboardingOverlay } from "./components/onboarding";
 import { CreateProfileHost } from "./components/profiles/CreateProfile";
@@ -58,8 +57,6 @@ function NativeBrowserWindow() {
       <WindowProfile />
       <NativeLayoutGuests topTabs={topTabs} />
       <CommandPanel windowWidth={width} />
-      <DownloadsPopover />
-      <DownloadMagnet />
       <CreateProfileHost />
       <SidebarOverlays windowWidth={width} />
       <OnboardingOverlay />

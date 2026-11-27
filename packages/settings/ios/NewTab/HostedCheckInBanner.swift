@@ -1,5 +1,6 @@
 import AppKit
 import Foundation
+import SolaraModel
 import SolaraUI
 
 @MainActor
@@ -14,23 +15,36 @@ enum HostedCheckInBanner {
     let windowId: String
     let view = CheckInBannerView(frame: .zero)
     let focus = HostedFocusRestoration()
+    let context: HostedNoticeContext
+    var payload: JSONObject?
     var ended = false
     var iconURI: String?
     var imageTask: Task<Void, Never>?
 
     init(windowId: String) {
       self.windowId = windowId
+      context = HostedNoticeContext(windowId: windowId)
       view.onAction = { [weak self] action, profileId, token in
-        guard let self, !self.ended, let state = self.view.state, state.visible, state.profileId == profileId, state.token == token else { return }
+        guard let self, !self.ended, let state = self.view.state, state.visible, state.profileId == profileId, state.token == token,
+          let receipt = self.payload?["token"]?.string, let current = self.context.current(token) else { return }
+        self.focus.updateContext(current.focusContext)
         self.focus.restore()
-        HostedViews.send(kind, windowId: self.windowId, "action", ["action": action, "profileId": profileId, "token": token])
+        HostedViews.send(kind, windowId: self.windowId, "action", ["action": action, "token": receipt])
       }
     }
 
     func update(_ json: String) {
       guard !ended else { return }
-      let state = CheckInBannerState.decode(json)
-      focus.updateContext(state.map { "\($0.profileId)\u{1}\($0.focusContext ?? "")" })
+      payload = (try? JSONValue.parse(json))?.object
+      refresh()
+    }
+
+    func refresh() {
+      guard !ended else { return }
+      let state = payload.flatMap { payload in
+        payload["token"]?.string.flatMap { context.project(payload, receipt: $0, receiptKey: "token") }
+      }.flatMap(CheckInBannerState.decode)
+      focus.updateContext(state?.focusContext)
       if state?.visible != true { focus.restore() }
       view.update(state)
       guard iconURI != state?.icon else { return }
@@ -51,6 +65,7 @@ enum HostedCheckInBanner {
 
     func end() {
       ended = true
+      context.stop()
       focus.cancel()
       imageTask?.cancel()
       imageTask = nil
@@ -63,6 +78,8 @@ enum HostedCheckInBanner {
   static func register() {
     HostedViews.register(kind) { windowId in
       let entry = Entry(windowId: windowId)
+      entry.context.onChange = { [weak entry] in entry?.refresh() }
+      entry.context.observe()
       #if DEBUG
         let id = UUID()
         entries[id] = entry

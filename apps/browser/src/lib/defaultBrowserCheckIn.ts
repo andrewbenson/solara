@@ -4,7 +4,6 @@ import {
   defaultBrowserTrialStartedAt,
   recordDefaultBrowserCheckInDone,
 } from "../components/onboarding/state";
-import { useBrowser } from "../store/browser";
 import { sendFeedback } from "./appIntegration";
 import { PRODUCT } from "./productName";
 
@@ -27,9 +26,8 @@ export function dismissDefaultBrowserCheckIn() {
 
 export function useDefaultBrowserCheckIn(windowId: string) {
   const due = useCheckIn(checkInDue);
-  const incognito = useBrowser((s) => !!s.windows[windowId]?.incognito);
   return {
-    visible: due && !incognito,
+    visible: due,
     leaveFeedback() {
       dismissDefaultBrowserCheckIn();
       void sendFeedback(windowId).catch((error) => {

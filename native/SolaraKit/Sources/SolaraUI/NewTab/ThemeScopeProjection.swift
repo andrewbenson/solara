@@ -57,6 +57,19 @@ public struct ThemeScopeProjection: Encodable, Equatable, Sendable {
       sidebarInk: ink(look, dark: shown.dark, strip: false), stripInk: ink(look, dark: shown.dark, strip: true), adjustInk: adjustInk)
   }
 
+  public static func postcardColors(_ profile: Profile?) -> [String] {
+    let accent = profile?.theme.flatMap(parseTheme).map(ThemeMath.accent)
+      ?? presets[profile?.color ?? "plum"] ?? presets["plum"]!
+    let base = ThemeMath.hexColor(accent)
+    func mix(_ color: String, _ fraction: Double) -> String {
+      let target = ThemeMath.hexColor(color)
+      return ThemeMath.hex(zip([base.r, base.g, base.b], [target.r, target.g, target.b]).map {
+        $0.0 + ($0.1 - $0.0) * fraction
+      })
+    }
+    return [mix("#FFFFFF", 0.45), mix("#10121A", 0.5)]
+  }
+
   public static func mayChange(_ changes: ChangeSet) -> Bool {
     let settings = ["defaultProfileId", "spacesFollowAppearance", "lightColorsKeepWhiteText"]
     return !changes.profiles.isEmpty || !changes.windows.isEmpty || changes.lists.contains("ui")

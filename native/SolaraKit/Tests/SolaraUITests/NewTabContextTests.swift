@@ -7,11 +7,36 @@ import Testing
 struct NewTabContextTests {
   private func fixture() -> BrowserState {
     var state = BrowserState(settings: Settings.hydrated(from: [:]))
+    state.profiles["home"] = Profile(id: "home", name: "Home", color: "plum", icon: nil, createdAt: 0)
     state.windows["w"] = BrowserWindow(id: "w", profileId: "home", incognito: false, frame: nil, createdAt: 0)
     state.windows["w"]?.tabIds = ["t"]
     state.windows["w"]?.activeTabIds["home"] = "t"
     state.tabs["t"] = Tab(id: "t", windowId: "w", profileId: "home", url: "", now: 0)
     return state
+  }
+
+  @Test func noticeAdmissionDistinguishesExplicitPagesAndPrivatePrompts() {
+    var state = fixture()
+    #expect(NewTabNoticeContext.resolve(state, windowId: "w", explicitPage: false) != nil)
+    state.windows["w"]?.incognito = true
+    #expect(NewTabNoticeContext.resolve(state, windowId: "w", explicitPage: false) == nil)
+    #expect(NewTabNoticeContext.resolve(state, windowId: "w", explicitPage: true) != nil)
+    #expect(NewTabNoticeContext.resolve(state, windowId: "w", explicitPage: true, closing: ["w"]) == nil)
+  }
+
+  @Test func noticeActionsRejectStaleTabsAndKeepFocusChangesSeparate() throws {
+    var state = fixture()
+    let shown = try #require(NewTabNoticeContext.resolve(state, windowId: "w", explicitPage: false))
+    state.ui.focusedWindowId = "other"
+    let unfocused = try #require(NewTabNoticeContext.resolve(state, windowId: "w", explicitPage: false))
+    #expect(unfocused.identity == shown.identity)
+    #expect(unfocused.focusContext != shown.focusContext)
+    state.tabs["t"]?.url = "https://example.com"
+    #expect(NewTabNoticeContext.resolve(state, windowId: "w", explicitPage: false) == nil)
+    state.tabs["t"]?.url = ""
+    state.tabs["next"] = Tab(id: "next", windowId: "w", profileId: "home", url: "", now: 0)
+    state.windows["w"]?.activeTabIds["home"] = "next"
+    #expect(NewTabNoticeContext.resolve(state, windowId: "w", explicitPage: false)?.identity != shown.identity)
   }
 
   @Test func profileSwitchAndPrivateHeading() {

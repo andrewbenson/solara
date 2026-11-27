@@ -80,7 +80,7 @@ function NativeNewTabPage({ tabId, toolbar = true }: { tabId: string; toolbar?: 
         marks={marksFor(theme.profileColor === "incognito" ? "neutral" : theme.profileColor)}
         onLayout={setHero}
       />
-      {size && bar && <NewTabExtras size={size} bar={bar} />}
+      {size && bar && <NewTabExtras tabId={tabId} size={size} bar={bar} />}
     </View>
   );
 }

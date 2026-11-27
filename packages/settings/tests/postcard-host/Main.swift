@@ -12,7 +12,7 @@ struct PostcardHostTests {
     func expect(_ value: @autoclosure () -> Bool, _ message: String) { if !value() { failures.append(message) } }
     var events: [[String: Any]] = []
     HostedViews.emit = { events.append($0) }
-    let compactContent = HostedViews.make(HostedPostcard.postcardKind, windowId: "compact")!
+    let compactContent = NoticeHostFixture.make(HostedPostcard.postcardKind, windowId: "compact")!
     let compact = compactContent.view as! PostcardView
     compact.frame = CGRect(x: 0, y: 0, width: 559, height: 419)
     compactContent.onState?(state())
@@ -22,7 +22,7 @@ struct PostcardHostTests {
     compact.layoutSubtreeIfNeeded()
     expect(!compact.isHidden && compact.motion["opacity"] == 1 && compact.motion["drop"] == 0, "enlarging a compact mount must reveal the settled card without replay")
     compactContent.onUnmount?()
-    let cardContent = HostedViews.make(HostedPostcard.postcardKind, windowId: "card")!
+    let cardContent = NoticeHostFixture.make(HostedPostcard.postcardKind, windowId: "card")!
     let card = cardContent.view as! PostcardView
     card.frame = CGRect(x: 0, y: 0, width: 800, height: 600)
     card.makeBackdrop = { _ in NSView() }
@@ -54,7 +54,7 @@ struct PostcardHostTests {
       return root.subviews.lazy.compactMap { artwork(in: $0) }.first
     }
     if let cg = artwork(in: card)?.layer?.backgroundColor, let fill = NSColor(cgColor: cg)?.usingColorSpace(.sRGB) {
-      expect(abs(fill.redComponent - 97.0 / 255) < 0.00001 && abs(fill.greenComponent - 134.0 / 255) < 0.00001 && abs(fill.blueComponent - 118.0 / 255) < 0.00001, "artwork must retain midpoint fill even when native shader backdrop is injected")
+      expect(abs(fill.redComponent - 162.0 / 255) < 0.00001 && abs(fill.greenComponent - 126.0 / 255) < 0.00001 && abs(fill.blueComponent - 144.0 / 255) < 0.00001, "artwork must retain midpoint fill even when native shader backdrop is injected")
     } else { failures.append("artwork must provide an opaque parent fill under its shader") }
     expect(HostedPostcard.drive("card", HostedPostcard.postcardKind, "press", "What's new in Solara")["accepted"] as? Bool == true, "postcard must expose AX press")
     expect(events.last?["name"] as? String == "open", "postcard opens existing release notes")
@@ -134,7 +134,7 @@ struct PostcardHostTests {
     edgeWindow.close()
     let defaultControl = PostcardControl(frame: .zero)
     expect(!defaultControl.acceptsFirstMouse(for: nil), "first click must be opt-in per control")
-    let pageContent = HostedViews.make(HostedPostcard.pageKind, windowId: "page")!
+    let pageContent = NoticeHostFixture.make(HostedPostcard.pageKind, windowId: "page")!
     let page = pageContent.view as! PostcardView
     page.frame = CGRect(x: 0, y: 0, width: 800, height: 600)
     let window = NSWindow(contentRect: page.frame, styleMask: [.titled], backing: .buffered, defer: false)
@@ -289,14 +289,14 @@ struct PostcardHostTests {
     (field.currentEditor() as? NSTextView)?.setSelectedRange(selection)
     let host = NSView(frame: root.bounds)
     root.addSubview(host)
-    let card = HostedViews.make(HostedPostcard.postcardKind, windowId: "chain")!
+    let card = NoticeHostFixture.make(HostedPostcard.postcardKind, windowId: "chain")!
     let cardMount = HostedMount(content: card, in: host, window: window)
     card.onState?(state())
     (card.view as! PostcardView).inspectMotion(4)
     _ = HostedPostcard.drive("chain", HostedPostcard.postcardKind, "focus", "What's new in Solara")
     _ = HostedPostcard.drive("chain", HostedPostcard.postcardKind, "key", "What's new in Solara|Return")
     cardMount.end()
-    let page = HostedViews.make(HostedPostcard.pageKind, windowId: "chain")!
+    let page = NoticeHostFixture.make(HostedPostcard.pageKind, windowId: "chain")!
     let pageMount = HostedMount(content: page, in: host, window: window)
     page.onState?(state())
     (page.view as! PostcardView).inspectMotion(4)
@@ -330,7 +330,7 @@ struct PostcardHostTests {
       (field.currentEditor() as? NSTextView)?.setSelectedRange(NSRange(location: 1, length: 2))
       let host = NSView(frame: root.bounds)
       root.addSubview(host)
-      let content = HostedViews.make(kind, windowId: "focus-" + kind)!
+      let content = NoticeHostFixture.make(kind, windowId: "focus-" + kind)!
       let mount = HostedMount(content: content, in: host, window: window)
       let view = content.view as! PostcardView
       content.onState?(state())

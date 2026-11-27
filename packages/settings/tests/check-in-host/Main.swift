@@ -18,7 +18,7 @@ struct CheckInHostTests {
     func expect(_ value: @autoclosure () -> Bool, _ message: String) { if !value() { failures.append(message) } }
     var events: [[String: Any]] = []
     HostedViews.emit = { events.append($0) }
-    let content = HostedViews.make("checkInBanner", windowId: "window")!
+    let content = NoticeHostFixture.make("checkInBanner", windowId: "window")!
     let view = content.view as! CheckInBannerView
     view.frame = CGRect(x: 0, y: 0, width: 282, height: 69)
     expect(!content.takesFocus, "banner must preserve page focus on mounting")
@@ -47,7 +47,7 @@ struct CheckInHostTests {
     _ = view.close.accessibilityPerformPress()
     try? await Task.sleep(for: .milliseconds(260))
     expect(events.count == 1 && (events.last?["payload"] as? [String: Any])?["action"] as? String == "dismiss", "dismiss must emit once after exit")
-    expect((events.last?["payload"] as? [String: Any])?["profileId"] as? String == "profile" && (events.last?["payload"] as? [String: Any])?["token"] as? String == "token", "events must retain profile and presentation identity")
+    expect(view.state?.profileId == "profile" && (events.last?["payload"] as? [String: Any])?["token"] as? String == "token", "events must retain profile and presentation identity")
     let window = NSWindow(contentRect: CGRect(x: 0, y: 0, width: 800, height: 600), styleMask: [.titled], backing: .buffered, defer: false)
     window.isReleasedWhenClosed = false
     window.alphaValue = 0
@@ -160,7 +160,7 @@ struct CheckInHostTests {
     (field.currentEditor() as? NSTextView)?.setSelectedRange(NSRange(location: 1, length: 2))
     let host = NSView(frame: root.bounds)
     root.addSubview(host)
-    let content = HostedViews.make(HostedCheckInBanner.kind, windowId: "focus")!
+    let content = NoticeHostFixture.make(HostedCheckInBanner.kind, windowId: "focus")!
     let mount = HostedMount(content: content, in: host, window: window)
     let view = content.view as! CheckInBannerView
     content.onState?(state())

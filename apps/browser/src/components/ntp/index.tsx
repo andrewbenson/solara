@@ -8,7 +8,7 @@ import { closeReleaseNotes, openReleaseNotes, retireReleaseNotes, usePendingRele
 
 export type Frame = { x: number; y: number; width: number; height: number };
 
-export function NewTabExtras({ size, bar }: { size: { width: number; height: number }; bar: Frame }) {
+export function NewTabExtras({ tabId, size, bar }: { tabId: string; size: { width: number; height: number }; bar: Frame }) {
   const windowId = useWindowId();
   const pending = usePendingReleaseNotes();
   const page = useReleaseNotesPage(windowId);
@@ -17,12 +17,12 @@ export function NewTabExtras({ size, bar }: { size: { width: number; height: num
     <View style={StyleSheet.absoluteFill} pointerEvents="box-none">
       <View ref={tourAnchorRef(windowId, "page")} style={StyleSheet.absoluteFill} pointerEvents="none" />
       <View ref={tourAnchorRef(windowId, "commandBar")} style={{ position: "absolute", left: bar.x, top: bar.y, width: bar.width, height: bar.height }} pointerEvents="none" />
-      <CheckInBanner windowId={windowId} />
+      <CheckInBanner windowId={windowId} tabId={tabId} />
       <PersonalizeButton windowId={windowId} />
       {pending && !page ? (
-        <ReleaseNotesPostcard notes={pending} size={size} onOpen={() => openReleaseNotes(windowId)} onDismiss={retireReleaseNotes} />
+        <ReleaseNotesPostcard tabId={tabId} notes={pending} size={size} onOpen={() => openReleaseNotes(windowId)} onDismiss={retireReleaseNotes} />
       ) : null}
-      {page ? <ReleaseNotesPage notes={page} size={size} onClose={closeReleaseNotes} /> : null}
+      {page ? <ReleaseNotesPage tabId={tabId} notes={page} size={size} onClose={closeReleaseNotes} /> : null}
     </View>
   );
 }

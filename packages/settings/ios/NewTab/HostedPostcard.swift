@@ -1,5 +1,6 @@
 import AppKit
 import Foundation
+import SolaraModel
 import SolaraUI
 #if canImport(SolaraShaders)
   import SolaraShaders
@@ -19,8 +20,25 @@ enum HostedPostcard {
     let kind: String
     weak var view: PostcardView?
     let focus = HostedFocusRestoration()
+    let context: HostedNoticeContext
+    var payload: JSONObject?
     var ended = false
-    init(windowId: String, kind: String, view: PostcardView) { self.windowId = windowId; self.kind = kind; self.view = view }
+
+    init(windowId: String, kind: String, view: PostcardView) {
+      self.windowId = windowId
+      self.kind = kind
+      self.view = view
+      context = HostedNoticeContext(windowId: windowId, explicitPage: kind == pageKind)
+    }
+
+    func refresh() {
+      guard !ended else { return }
+      let state = payload.flatMap { payload in
+        payload["presentationId"]?.string.flatMap { context.project(payload, receipt: $0, receiptKey: "presentationId", postcard: true) }
+      }.flatMap(PostcardState.decode)
+      focus.updateContext(state?.focusContext)
+      if view?.state != state { view?.update(state) }
+    }
   }
 
   static func register() {
@@ -28,6 +46,8 @@ enum HostedPostcard {
       HostedViews.register(kind) { windowId in
         let view = PostcardView(mode: mode)
         let entry = Entry(windowId: windowId, kind: kind, view: view)
+        entry.context.onChange = { [weak entry] in entry?.refresh() }
+        entry.context.observe()
         #if canImport(SolaraShaders)
           view.makeBackdrop = { colors in EarlyBackdrop.make(["colors": colors, "vibrancy": false, "angle": 150, "grainOpacity": 0.1]) }
         #endif
@@ -36,23 +56,26 @@ enum HostedPostcard {
           entries[id] = entry
         #endif
         view.onAction = { [weak entry] name, state in
-          guard let entry, !entry.ended, entry.view?.state == state else { return }
+          guard let entry, !entry.ended, entry.view?.state == state,
+            let receipt = entry.payload?["presentationId"]?.string,
+            let current = entry.context.current(state.presentationId) else { return }
+          entry.focus.updateContext(current.focusContext)
           entry.focus.restore()
-          HostedViews.send(entry.kind, windowId: entry.windowId, name, ["profileId": state.profileId, "version": state.notes.version, "presentationId": state.presentationId])
+          HostedViews.send(entry.kind, windowId: entry.windowId, name, ["version": state.notes.version, "presentationId": receipt])
         }
         return HostedContent(view: view, onUnmount: {
           entry.ended = true
+          entry.context.stop()
           entry.focus.cancel()
           view.update(nil)
           view.onAction = { _, _ in }
           #if DEBUG
             entries[id] = nil
           #endif
-        }, takesFocus: false, focusRestoration: entry.focus, onState: { [weak view] json in
+        }, takesFocus: false, focusRestoration: entry.focus, onState: { json in
           guard !entry.ended else { return }
-          let state = PostcardState.decode(json)
-          entry.focus.updateContext(state.map { "\($0.profileId)\u{1}\($0.focusContext ?? "")" })
-          view?.update(state)
+          entry.payload = (try? JSONValue.parse(json))?.object
+          entry.refresh()
         })
       }
     }

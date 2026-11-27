@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import { sidebarPosition, sidebarPositionSpecified, sidebarSession, assertSidebarPosition } from "./sidebar-position-test.mjs";
 import { isDeepStrictEqual } from "node:util";
 import { mkdtempSync, rmSync } from "node:fs";
+import { createServer } from "node:http";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { launch, reporter, session, sleep } from "../../../scripts/lib/instance.mjs";
@@ -19,6 +20,39 @@ const rep = reporter(join(scratch, "hover-card-test.log"), { name: "hover-card-t
 const ids = Array.from({ length: 8 }, (_, i) => `t${i}`);
 const titleOf = (id, i) => (i === 3 ? "Anker USB-C to USB-C Cable (240W, 6 ft), Nylon Braided" : `Tab ${id}`);
 const tabs = ids.map((id, i) => ({ id, url: `data:text/html,<title>${titleOf(id, i)}</title>`, title: titleOf(id, i), lastActiveAt: Date.now() - i * 60_000 }));
+
+const tone = (() => {
+  const rate = 8000;
+  const samples = 20 * rate;
+  const bytes = Buffer.alloc(44 + samples * 2);
+  bytes.write("RIFF", 0);
+  bytes.writeUInt32LE(bytes.length - 8, 4);
+  bytes.write("WAVEfmt ", 8);
+  bytes.writeUInt32LE(16, 16);
+  bytes.writeUInt16LE(1, 20);
+  bytes.writeUInt16LE(1, 22);
+  bytes.writeUInt32LE(rate, 24);
+  bytes.writeUInt32LE(rate * 2, 28);
+  bytes.writeUInt16LE(2, 32);
+  bytes.writeUInt16LE(16, 34);
+  bytes.write("data", 36);
+  bytes.writeUInt32LE(samples * 2, 40);
+  for (let i = 0; i < samples; i++) bytes.writeInt16LE(Math.round(Math.sin(2 * Math.PI * 440 * i / rate) * 32), 44 + i * 2);
+  return bytes;
+})();
+const media = createServer((request, response) => {
+  if (request.url === "/tone.wav") {
+    response.writeHead(200, { "content-type": "audio/wav", "content-length": tone.length });
+    return response.end(tone);
+  }
+  response.writeHead(200, { "content-type": "text/html" });
+  response.end(`<!doctype html><title>Tab t0</title><link rel="icon" href="data:,"><audio id="tone" src="/tone.wav" loop></audio>
+    <script>navigator.mediaSession.metadata = new MediaMetadata({ title: "A Song", artist: "An Artist" });
+    document.getElementById("tone").addEventListener("play", () => { navigator.mediaSession.playbackState = "playing"; });</script>`);
+});
+await new Promise((done) => media.listen(0, "127.0.0.1", done));
+const mediaURL = `http://127.0.0.1:${media.address().port}/player`;
+
 
 const midnight = new Date();
 midnight.setHours(24, 0, 0, 0);
@@ -39,7 +73,7 @@ const app = await launch(resolve(appArg), {
   probe: true,
   session: session(sidebarSession({ profiles: ["Personal", "Work"], windows: [{ id: "w1", tabIds: ids, activeTabIds: { default: "t1" }, frame: [60, 60, 1200, 800] }], tabs })),
   ready: "return !!ac.store",
-});
+}).catch((error) => { media.close(); throw error; });
 let nativePollDeadline = 0;
 const run = (body, timeout = 30000) => {
   if (nativePollDeadline) {
@@ -54,7 +88,7 @@ const untilSnapshot = async (what, accept, ms = 3000, args = {}) => {
   do {
     if (!app.alive) throw new Error(`${what}: the owned app exited`);
     if (end - Date.now() < 1000) break;
-    last = await app.snapshot({ windowId: "w1", ...args }, { timeout: 1000 });
+    last = await app.snapshot({ windowId: "w1", fields: ["windows.hoverCard"], ...args }, { timeout: 1000 });
     assert.equal(last.schema, 1);
     nativePollDeadline = end;
     try {
@@ -274,10 +308,16 @@ try {
   await rep.check("a playing pinned tab's player card shows natively, and its artwork goes back to the tab", async () => {
     await point(900, 600);
     await gone("hover away");
-    await run(`ac.store.getState().updateSettings({ sidebarMediaControls: true }); ac.store.getState().togglePin("t0");
-      ac.media.setState((m) => ({ sessions: { ...m.sessions, t0: { title: "A Song", artist: "An Artist", album: "", artwork: null, playbackState: "playing", position: 30, duration: 200,
-        playbackRate: 0, timestamp: Date.now(), hasVideo: false, actions: ["play", "pause"], controllable: true, playedAt: Date.now() } } })); return true`);
-    await sleep(800);
+    await run(`const state = ac.store.getState(); state.updateSettings({ sidebarMediaControls: true }); state.togglePin("t0"); state.activate("t0"); state.navigate("t0", ${JSON.stringify(mediaURL)}, { userInitiated: true }); return true`);
+    const page = await app.page(mediaURL);
+    try {
+      await page.eval(`document.getElementById("tone").play().then(() => true)`, { userGesture: true });
+    } finally {
+      page.close();
+    }
+    await until("the native playing session", () => run(`return expo.modules.SolaraMedia.probe("media.nowPlaying", "w1").then(JSON.parse).then((entries) => entries.some((entry) => entry.tabId === "t0" && entry.title === "A Song" && entry.playbackState === "playing" && entry.controllable));`));
+    await run(`ac.store.getState().activate("t1"); return true`);
+    await untilSnapshot("the player tab is in the background", (state) => state.windows[0]?.selectedTabId === "t1", 3000, { fields: ["windows.selectedTabId"] });
     await onRow("t0");
     const c = await shown("t0");
     assert.equal(c.kind, "player");
@@ -288,6 +328,7 @@ try {
     await sleep(200);
     await run(`return ac.shell.devClick("w1", { x: ${x + w / 2}, y: ${y + h / 2} })`);
     await until("t0 active", () => run(`const s = ac.store.getState(); return s.windows.w1.activeTabIds[s.windows.w1.profileId] === "t0"`));
+    await untilSnapshot("artwork activates the player tab", (state) => state.windows[0]?.selectedTabId === "t0", 3000, { fields: ["windows.selectedTabId"] });
     await gone("going back to the tab");
   });
 
@@ -363,7 +404,7 @@ try {
       ["out", { x: 900, y: 600 }, (t) => 1 - ease(Math.min(1, Math.max(0, t / 100))), spring(0.2, 0.6, 1, 0.92)],
     ]) {
       const samples = await sample(phase, to);
-      const nativeSnapshot = await untilSnapshot("native presentation records", (s) => s.windows[0]?.hoverPresentationTrace?.some((p) => p.sequence === samples.at(-1)[3]));
+      const nativeSnapshot = await untilSnapshot("native presentation records", (s) => s.windows[0]?.hoverPresentationTrace?.some((p) => p.sequence === samples.at(-1)[3]), 3000, { fields: ["windows.hoverPresentationTrace"] });
       const records = nativeSnapshot.windows[0].hoverPresentationTrace;
       const bySequence = new Map(records.map((p) => [p.sequence, p]));
       const mirrored = samples.filter((sample) => bySequence.has(sample[3]));
@@ -375,7 +416,7 @@ try {
         assert.ok(near(native.rect, rect), `presentation ${sequence} frame`);
       }
       const endpoint = await untilSnapshot("native presentation endpoint", (s) => s.windows[0]?.hoverCard?.phase === (phase === "in" ? "shown" : "hidden"), 3000,
-        { hoverPresentation: [probe.x, probe.y, w * 0.75, w + 1, h * 0.75, h + 1] });
+        { fields: ["windows.hoverCard", "windows.hoverPresentation"], hoverPresentation: [probe.x, probe.y, w * 0.75, w + 1, h * 0.75, h + 1] });
       if (phase === "in") {
         assert.ok(Math.abs(endpoint.windows[0].hoverPresentation.opacity - samples.at(-1)[1]) <= 0.02);
         assert.ok(Math.abs(endpoint.windows[0].hoverPresentation.scale - samples.at(-1)[2]) <= 0.02);
@@ -440,6 +481,7 @@ try {
     }
   });
 } finally {
+  media.close();
   await app.quit();
   if (!keep) rmSync(join(scratch, "data"), { recursive: true, force: true });
 }

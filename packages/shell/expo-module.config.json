@@ -23,7 +23,6 @@
       "CalendarModule",
       "KeychainModule",
       "InlineCompletionModule",
-      "TranslateModule",
       "WindowProfileModule",
       "CliModule"
     ]

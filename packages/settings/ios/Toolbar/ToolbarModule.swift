@@ -19,6 +19,7 @@ public class ToolbarModule: Module {
       let sink = ToolbarPopupEventSink(module: self)
       DispatchQueue.main.async { MainActor.assumeIsolated {
         NativeExtensionCommands.install()
+        NativeTranslation.shared.start()
         NativeExtensionCatalog.emit = { toolbar, menus in
           if toolbar { NativeToolbarPresenter.refreshContributions() }
           if menus {
@@ -58,6 +59,29 @@ public class ToolbarModule: Module {
     Function("extensionPopupWindow") { () -> String? in
       NativeExtensionActionPopup.visibleWindowId
     }
+
+    #if DEBUG
+    AsyncFunction("devTranslationFixture") { (prefix: String, delay: Int, fail: Bool) in
+      MainActor.assumeIsolated {
+        if SolaraCoreTestHooksAllowed() { NativeTranslation.shared.fixture(prefix: prefix, delay: delay, fail: fail) }
+      }
+    }.runOnQueue(.main)
+
+    AsyncFunction("devTranslationState") { (tabId: String) -> String in
+      MainActor.assumeIsolated {
+        guard SolaraCoreTestHooksAllowed() else { return "{}" }
+        let result = NativeTranslation.shared.probe(tabId)
+        guard let data = try? JSONSerialization.data(withJSONObject: result) else { return "{}" }
+        return String(decoding: data, as: UTF8.self)
+      }
+    }.runOnQueue(.main)
+
+    AsyncFunction("devTranslationAction") { (tabId: String, action: String, target: String?) in
+      MainActor.assumeIsolated {
+        if SolaraCoreTestHooksAllowed() { NativeTranslation.shared.testAction(tabId, action: action, target: target) }
+      }
+    }.runOnQueue(.main)
+    #endif
 
     Function("available") { () -> Bool in ToolbarModule.available }
 

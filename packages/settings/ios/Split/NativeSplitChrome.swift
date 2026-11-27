@@ -20,6 +20,8 @@ enum NativeSplitChrome {
   private static var panes: [String: SplitPanesView] = [:]
   private static var overlays: [String: PaneOverlaysView] = [:]
   private static var dropZones: [String: SplitDropZone] = [:]
+  private static var shownToasts: [String: Int] = [:]
+  private static var jsToasts: [String: SplitToastSpec] = [:]
   private static var toolbars: [String: [String: ToolbarState]] = [:]
   private static var toolbarPresenters: [String: [String: NativeToolbarPresenter]] = [:]
   private static let favicons: SidebarFavicons = {
@@ -65,6 +67,7 @@ enum NativeSplitChrome {
     for (id, view) in views where owners[id] == nil {
       if view.superview == nil {
         views[id] = nil
+        shownToasts[id] = nil
         if let zone = dropZones.removeValue(forKey: id) { TabDragSession.unregister(zone) }
       } else {
         view.update(state: state)
@@ -169,7 +172,7 @@ enum NativeSplitChrome {
     }
     view.onToastHidden = { [weak shell] id in
       shell?.coverChanged()
-      Task { @MainActor in _ = await SettingsAdapters.js("split.toast", windowId, id, "hidden") }
+      toastHidden(id, windowId: windowId)
     }
     view.onToastAction = { id in Task { @MainActor in _ = await SettingsAdapters.js("split.toast", windowId, id, "action") } }
     shell.mount(.splitChrome, view)
@@ -246,7 +249,10 @@ enum NativeSplitChrome {
   static func end(_ owner: NativePaneLayoutHost) {
     let id = owner.shell.windowId
     if owners[id] === owner { owners[id] = nil }
-    if views[id] === owner.chrome { views[id] = nil }
+    if views[id] === owner.chrome {
+      views[id] = nil
+      shownToasts[id] = nil
+    }
     if panes[id] === owner.panes { panes[id] = nil }
     if overlays[id] === owner.overlays { overlays[id] = nil }
     if dropZones[id] === owner.zone { dropZones[id] = nil }
@@ -323,13 +329,39 @@ enum NativeSplitChrome {
     if owners[windowId] == nil { view(windowId)?.setDrag(SplitDragFrame(o)) }
   }
 
+  private static func toastHidden(_ id: Int, windowId: String) {
+    if shownToasts[windowId] == id { shownToasts[windowId] = nil }
+    if id >= 0 { Task { @MainActor in _ = await SettingsAdapters.js("split.toast", windowId, id, "hidden") } }
+  }
+
+  static func showNativeToast(_ toast: SplitToastSpec, windowId: String) {
+    if let prior = shownToasts[windowId], prior >= 0 { toastHidden(prior, windowId: windowId) }
+    setToast(toast, windowId: windowId)
+  }
+
+  static func hideNativeToast(_ id: Int, windowId: String) {
+    guard shownToasts[windowId] == id else { return }
+    setToast(nil, windowId: windowId)
+  }
+
+  private static func setToast(_ toast: SplitToastSpec?, windowId: String) {
+    guard let view = view(windowId) else { return }
+    shownToasts[windowId] = toast?.id
+    view.setToast(toast)
+    NativeWindowShell.host(windowId)?.shell.coverChanged()
+  }
+
   private static func applyToast(_ value: Any?) {
     guard let all = windows(value) else { return }
-    for (windowId, entry) in all {
-      view(windowId)?.setToast(SplitToastSpec(entry))
-      NativeWindowShell.host(windowId)?.shell.coverChanged()
+    let next = all.compactMapValues(SplitToastSpec.init)
+    defer { jsToasts = next }
+    for windowId in Set(next.keys).union(jsToasts.keys) where next[windowId] != jsToasts[windowId] {
+      if let toast = next[windowId] {
+        setToast(toast, windowId: windowId)
+      } else if shownToasts[windowId] == jsToasts[windowId]?.id {
+        setToast(nil, windowId: windowId)
+      }
     }
-    for (id, view) in views where all[id] == nil { view.setToast(nil) }
   }
 
   private static func applyNotice(_ value: Any?) {

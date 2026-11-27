@@ -194,7 +194,8 @@ final class NativeToolbarPresenter {
     let toolbar = ToolbarPresenter.present(input, state: state, page: page, shell: NativeWindowShell.active(windowId),
       fullscreen: fullscreen ?? ToolbarPresenter.fullscreen(input, state: state),
       engineBack: NativeEngineCommands.hasBack(page.tab.pageIn ?? tabId), bookmarked: bookmarked, extensions: extensionButtons,
-      extensionsWidth: projection["width"]?.number ?? 0)
+      extensionsWidth: projection["width"]?.number ?? 0,
+      translation: NativeTranslation.shared.toolbar(tabId: tabId, windowId: windowId))
     if input.sidebar != nil { publish(nil, ToolbarPresenter.sidebar(input, state: state, toolbar: toolbar)) }
     else { publish(toolbar, nil) }
   }

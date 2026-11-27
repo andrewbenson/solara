@@ -821,3 +821,11 @@ window-specific selection and privacy, and changes to Clear, pinned icons and Ne
 Tab placement. Run sidebar-chrome, sidebar-rail, window-toolbar, windowing,
 sidebar-click, close-selection and sidebar-close with matching native API and JS
 in window layouts 0 and 1.
+
+## Lifecycles slice 12, Translation
+
+Run `TranslationLifetimeTests` with `-Xswiftc -DSOLARA_PROBES`. Run pane-prompts, pool-e2e, little-solara and
+`node apps/browser/scripts/translation-lifecycle-test.mjs <Debug app> <scratch> [default|pool-off|safe]` with the
+native window layout unset and set to 1. The translation driver uses a local page and a deterministic native
+provider to check language detection, DOM batches and dynamic text, exact revert, a failed batch, same-URL reload,
+Peek promotion, tab and window close, profile replacement, private site rules and Little Solara.

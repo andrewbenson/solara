@@ -27,7 +27,6 @@ public struct ToolbarPresenter {
     public var capture: Capture?
     public var popover: String?
     public var progress: Double?
-    public var translation: Translation?
     public var newTabShown: Bool
     public var backToNewTab: Bool
     public var historyKnown: Bool
@@ -46,9 +45,15 @@ public struct ToolbarPresenter {
       var screen: Bool?
     }
 
-    public struct Translation: Decodable, Sendable {
-      var translated: Bool
-      var language: String
+  }
+
+  public struct Translation: Sendable {
+    let translated: Bool
+    let language: String
+
+    public init(translated: Bool, language: String) {
+      self.translated = translated
+      self.language = language
     }
   }
 
@@ -108,7 +113,7 @@ public struct ToolbarPresenter {
   }
 
   public static func present(_ input: Input, state: BrowserState, page: Page, shell: Bool, fullscreen: Bool,
-    engineBack: Bool, bookmarked: Bool, extensions: [ToolbarButtonState], extensionsWidth: Double) -> ToolbarState? {
+    engineBack: Bool, bookmarked: Bool, extensions: [ToolbarButtonState], extensionsWidth: Double, translation: Translation? = nil) -> ToolbarState? {
     let tab = page.tab
     guard let window = state.windows[input.windowId], tab.id == input.tabId, tab.windowId == window.id,
       tab.profileId == window.profileId, state.tabs[tab.id] == tab else { return nil }
@@ -146,7 +151,7 @@ public struct ToolbarPresenter {
     let stripes = page.developer && !frame ? stripeAsset(input, palette: palette) : nil
     return ToolbarState(tabId: tab.id, height: Double(ShellMetrics.toolbarHeight), bare: input.bare, focused: focused,
       palette: palette, accent: input.accent, geometry: geometry, left: left,
-      url: hasPage ? urlState(input, page: page, fullURL: state.settings.bool("showFullUrl"), bookmarked: bookmarked, canSplit: !inSplit && !sidebar) : nil,
+      url: hasPage ? urlState(input, page: page, fullURL: state.settings.bool("showFullUrl"), bookmarked: bookmarked, canSplit: !inSplit && !sidebar, translation: translation) : nil,
       right: right, rightInset: 8, extensions: extensions, extensionsRight: inSplit ? 68 : 8,
       update: top && !sidebar && focused ? input.update : nil,
       hairline: hasPage && !input.bare && !frame, progress: page.loading ? input.progress : nil, stripes: stripes,
@@ -215,7 +220,7 @@ public struct ToolbarPresenter {
     ]
   }
 
-  private static func urlState(_ input: Input, page: Page, fullURL: Bool, bookmarked: Bool, canSplit: Bool) -> ToolbarUrlState {
+  private static func urlState(_ input: Input, page: Page, fullURL: Bool, bookmarked: Bool, canSplit: Bool, translation: Translation?) -> ToolbarUrlState {
     let tab = page.tab
     let insecure = input.insecure == "warning" || input.insecure == "dangerous" ? input.insecure : nil
     let shown = address(tab.url, title: tab.title, fullURL: fullURL, insecure: insecure)
@@ -226,10 +231,10 @@ public struct ToolbarPresenter {
     let pinned = input.popover == "siteControls"
     hover.append(small("siteControls", "slider.horizontal.3", "Site Controls", active: pinned))
     return ToolbarUrlState(developer: developer, host: shown.host, restTrail: shown.rest, hoverTrail: shown.hover,
-      insecure: insecure, hoverButtons: hover, trailing: trailing(input, page: page), pinned: pinned)
+      insecure: insecure, hoverButtons: hover, trailing: trailing(input, page: page, translation: translation), pinned: pinned)
   }
 
-  private static func trailing(_ input: Input, page: Page) -> [ToolbarButtonState] {
+  private static func trailing(_ input: Input, page: Page, translation: Translation?) -> [ToolbarButtonState] {
     var buttons: [ToolbarButtonState] = []
     if let capture = input.capture {
       let devices = [capture.camera == true ? "camera" : nil, capture.microphone == true ? "microphone" : nil,
@@ -247,7 +252,7 @@ public struct ToolbarPresenter {
         .init(id: "divider-dev-end", icon: ""),
       ]
     }
-    if let translation = input.translation {
+    if let translation {
       buttons.append(small("translate", "translate",
         translation.translated ? "Show Original (\(translation.language))" : "Translate this page",
         color: translation.translated ? input.accent : nil, menu: true))

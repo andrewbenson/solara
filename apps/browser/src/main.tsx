@@ -8,7 +8,6 @@ import { AppRegistry, unstable_batchedUpdates } from "react-native";
 import { WindowRoot } from "./App";
 import { registerPaneRoot } from "./PaneRoot";
 import { AreaBoundary } from "./components/AreaBoundary";
-import { startTranslate } from "./components/site/translate";
 import { afterFirstWindow, installAfterFirstWindowScheduler } from "./lib/afterFirstWindow";
 import { jsErrorsSurvivable } from "./lib/jsErrors";
 import { offerNativeDefaultBrowserAfterFirstWindow, startAppIntegrationPresentation, startScriptLoading } from "./lib/appIntegration";
@@ -51,7 +50,6 @@ afterFirstWindow(() => {
 });
 startNativeKeepAlive();
 startTabLifecycle();
-startTranslate();
 startPairingSync();
 startPerfMarks();
 afterFirstWindow(startNativeSettings);

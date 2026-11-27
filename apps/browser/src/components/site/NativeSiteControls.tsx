@@ -10,8 +10,7 @@ import type { Tab } from "../../store/types";
 import type { Settings } from "../../store/settings";
 import { builtInEngine, recommendedEngineFor, ruleFor, tabEngine } from "../../store/engines";
 import { useShallow } from "zustand/react/shallow";
-import { NativeSitePanelView, type NativeSitePanelEvent } from "@solara/settings";
-import { translation } from "@solara/shell";
+import { NativeSitePanelView } from "@solara/settings";
 import { useEffect, useRef, useState } from "react";
 import { StyleSheet } from "react-native";
 import { useTheme } from "../../lib/theme";
@@ -19,33 +18,8 @@ import { useBrowser, type BrowserState } from "../../store/browser";
 import { engineProfile, isIncognitoProfile, tabLabel } from "../../store/model";
 import { useThemeTokens } from "../omnibox/nativeBar";
 import { siteControlsMounted } from "../overlayGates";
-import { chooseLanguage } from "./TranslateControls";
-import { defaultTarget, isNeverTranslated, languageName, setNeverTranslate, toggleTranslation, useTranslateState } from "./translate";
 
 type Rect = [number, number, number, number];
-
-type SitePanelItem =
-  | { kind: "section"; title: string; tight?: boolean }
-  | { kind: "extensions"; columns: number; extensions: { id: string; name: string; icon?: string | null; symbol?: string; dimmed?: boolean }[] }
-  | {
-      kind: "row";
-      id: string;
-      icon?: string;
-      title: string;
-      pressable?: boolean;
-      accessory?: { kind: "toggle"; value: boolean };
-    }
-  | { kind: "separator" }
-  | { kind: "slot"; id: "extensions" | "translate"; columns?: number };
-
-type SitePanelHandler = {
-  press?(rect: Rect, clickAt: number): void;
-  menu?(rect: Rect): void;
-  toggle?(value: boolean): void;
-  zoom?(step: number): void;
-};
-
-const anchorOf = ([x, y, width, height]: Rect) => ({ x, y, width, height });
 
 type SiteControlsProps = { tabId: string; open: boolean; right?: number; left?: number; top: number };
 
@@ -60,69 +34,17 @@ export function useNativeSiteControlsShown(open: boolean) {
 export function NativeSiteControls({ tabId, open, right, left, top, onClosed }: SiteControlsProps & { onClosed: () => void }) {
   const theme = useTheme();
   const tokens = useThemeTokens(theme);
-  const windowId = useBrowser((s) => s.tabs[tabId]?.windowId ?? "");
-  const translate = useTranslateState(tabId);
-  const tab = useBrowser((s) => s.tabs[tabId]);
-  useBrowser((s) => s.settings.neverTranslateSites);
   const onClose = () => setPopover(tabId, null);
-  const all: Record<string, SitePanelHandler> = {};
-  const items: SitePanelItem[] = [{ kind: "slot", id: "extensions" }, { kind: "slot", id: "translate" }];
   const security = usePage(tabId, (p) => p.security);
   const blocked = usePage(tabId, (p) => p.blocked);
   const access = usePage(tabId, (p) => p.mediaAccess);
   const playingAudio = useBrowser((s) => !!s.live[tabId]?.playingAudio);
-  const contributed: { extensions: SitePanelItem[]; translate: SitePanelItem[] } = { extensions: [], translate: [] };
-
-  for (const item of items) {
-    if (item.kind !== "slot") continue;
-    const expanded = contributed[item.id];
-    if (item.id === "extensions") continue;
-    const never = tab ? isNeverTranslated(tab.profileId, tab.url) : false;
-    if (!translation || !tab || (!translate.source && translate.status === "idle" && !never)) continue;
-    const translated = translate.status !== "idle";
-    if (!never) {
-      expanded.push({
-        kind: "row",
-        id: "translate:toggle",
-        icon: translated ? "arrow.uturn.backward" : "translate",
-        title: translated ? `Show Original (${languageName(translate.source ?? "")})` : `Translate to ${languageName(defaultTarget())}`,
-        pressable: true,
-      });
-      expanded.push({ kind: "row", id: "translate:choose", icon: "globe", title: "Choose Another Language…", pressable: true });
-      all["translate:toggle"] = {
-        press: () => {
-          onClose();
-          toggleTranslation(tabId);
-        },
-      };
-      all["translate:choose"] = {
-        press: () => {
-          onClose();
-          void chooseLanguage(tabId);
-        },
-      };
-    }
-    if (!isIncognitoProfile(tab.profileId)) {
-      expanded.push({ kind: "row", id: "translate:never", icon: "nosign", title: "Never Translate This Site", accessory: { kind: "toggle", value: never } });
-      all["translate:never"] = { toggle: (v) => setNeverTranslate(tabId, v) };
-    }
-    expanded.push({ kind: "separator" });
-  }
   const fallbackContext = useBrowser(useShallow((s) => siteControlsFallbackContext(s, tabId)));
   const request = JSON.stringify({
     tabId, fallbackContext, open, top, right, left, dark: !!theme.dark, theme: tokens,
     security, blocked, camera: !!access?.camera, microphone: !!access?.microphone, playingAudio,
-    extensions: contributed.extensions, translate: contributed.translate,
   });
-  const onEvent = (e: NativeSitePanelEvent) => {
-    const handler = all[e.id];
-    if (!handler) return;
-    if (e.kind === "press") handler.press?.(e.rect, e.clickAt);
-    else if (e.kind === "menu") handler.menu?.(e.rect);
-    else if (e.kind === "toggle") handler.toggle?.(e.value);
-    else handler.zoom?.(e.step);
-  };
-  return <NativeSitePanelView style={StyleSheet.absoluteFill} request={request} onSitePanelDismiss={onClose} onSitePanelClosed={onClosed} onSitePanelEvent={(e) => onEvent(e.nativeEvent)} />;
+  return <NativeSitePanelView style={StyleSheet.absoluteFill} request={request} onSitePanelDismiss={onClose} onSitePanelClosed={onClosed} />;
 }
 
 function siteControlsFallbackContext(s: BrowserState, tabId: string) {

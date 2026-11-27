@@ -101,7 +101,7 @@ const shell: Modules["SolaraShell"] = {
 
 const appEvents = nativeEvents();
 const app: Modules["SolaraApp"] & { apiVersion: number } = {
-  apiVersion: 97,
+  apiVersion: 98,
   waitForLaunchIdle: () => Promise.resolve(false),
   cancelLaunchIdle: () => Promise.resolve(),
   launchChromeCommittedAt: () => Promise.resolve(null),
@@ -180,18 +180,6 @@ const keychain: Modules["SolaraKeychain"] = {
   delete: () => Promise.resolve(true),
 };
 
-const translate: Modules["SolaraTranslate"] = {
-  available: false,
-  userLanguages: () => ["en"],
-  languageName: (identifier) => identifier,
-  detect: () => Promise.resolve(null),
-  status: () => Promise.resolve("unsupported"),
-  supportedLanguages: () => Promise.resolve([]),
-  prepare: () => Promise.resolve(),
-  translate: (_source, _target, texts) => Promise.resolve(texts),
-  translateBlocks: (_source, _target, blocks) => Promise.resolve(blocks),
-};
-
 export const shellNativeModules: Modules = {
   SolaraShell: shell,
   SolaraApp: app,
@@ -201,7 +189,6 @@ export const shellNativeModules: Modules = {
   SolaraGlassEffect: { isLiquidGlass: () => false },
   SolaraDockSelection: { iconTheme: () => Promise.resolve(null) },
   SolaraInlineCompletion: { complete: () => Promise.resolve(0) },
-  SolaraTranslate: translate,
 };
 
 const cliEvents = nativeEvents();

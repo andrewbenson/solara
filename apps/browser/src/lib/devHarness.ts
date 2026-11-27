@@ -51,9 +51,6 @@ export function startDevHarness() {
     get media(): typeof import("../components/media/state").useMedia {
       return require("../components/media/state").useMedia;
     },
-    get translate(): typeof import("../components/site/translate") {
-      return require("../components/site/translate");
-    },
     get peek(): typeof import("../components/peek/actions") {
       return require("../components/peek/actions");
     },

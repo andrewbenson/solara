@@ -1,77 +1,69 @@
 import AppKit
-import ExpoModulesCore
 import NaturalLanguage
 import SwiftUI
 @_weakLinked import Translation
 
-public class TranslateModule: Module {
-  public func definition() -> ModuleDefinition {
-    Name("SolaraTranslate")
+@MainActor
+public enum PageTranslationProvider {
+  public enum Status { case installed, supported, unsupported }
 
-    Constant("available") { () -> Bool in
-      if #available(macOS 26.0, *) { return true }
-      return false
+  public static var available: Bool {
+    if #available(macOS 26.0, *) { return true }
+    return false
+  }
+
+  public static func detect(_ text: String) -> String? {
+    let recognizer = NLLanguageRecognizer()
+    recognizer.processString(text)
+    guard let (language, confidence) = recognizer.languageHypotheses(withMaximum: 1).first, confidence >= 0.5 else { return nil }
+    return language.rawValue
+  }
+
+  public static func status(_ source: String, _ target: String) async -> Status {
+    guard #available(macOS 26.0, *) else { return .unsupported }
+    switch await LanguageAvailability().status(from: Locale.Language(identifier: source), to: Locale.Language(identifier: target)) {
+    case .installed: return .installed
+    case .supported: return .supported
+    default: return .unsupported
     }
+  }
 
-    Function("userLanguages") { () -> [String] in Locale.preferredLanguages }
+  nonisolated public static func supportedLanguages() async -> [String] {
+    guard #available(macOS 26.0, *) else { return [] }
+    return await LanguageAvailability().supportedLanguages.map { $0.minimalIdentifier }
+  }
 
-    Function("languageName") { (identifier: String) -> String in
-      Locale.current.localizedString(forIdentifier: identifier) ?? identifier
+  public static func prepare(_ source: String, _ target: String, in window: NSWindow?) async throws {
+    guard #available(macOS 26.0, *) else { throw TranslateError.unavailable }
+    guard let content = window?.contentView else { throw TranslateError.noWindow }
+    do {
+      try await DownloadPrompt().run(source: Locale.Language(identifier: source), target: Locale.Language(identifier: target), in: content)
+    } catch {
+      throw TranslateError.explained(error)
     }
-
-    AsyncFunction("detect") { (text: String) -> String? in
-      let recognizer = NLLanguageRecognizer()
-      recognizer.processString(text)
-      guard let (language, confidence) = recognizer.languageHypotheses(withMaximum: 1).first, confidence >= 0.5 else { return nil }
-      return language.rawValue
+    let deadline = Date().addingTimeInterval(180)
+    while await status(source, target) != .installed {
+      guard Date() < deadline else { throw TranslateError.notDownloaded(Locale.current.localizedString(forLanguageCode: source) ?? source) }
+      try await Task.sleep(for: .milliseconds(500))
     }
+  }
 
-    AsyncFunction("status") { (source: String, target: String) async -> String in
-      guard #available(macOS 26.0, *) else { return "unsupported" }
-      switch await LanguageAvailability().status(from: Locale.Language(identifier: source), to: Locale.Language(identifier: target)) {
-      case .installed: return "installed"
-      case .supported: return "supported"
-      default: return "unsupported"
-      }
-    }
+  public static func translateBlocks(_ source: String, _ target: String, _ blocks: [[String]]) async -> [[String]?] {
+    guard #available(macOS 26.4, *) else { return blocks.map { _ in nil } }
+    return await TranslationSessions.translateBlocks(source: source, target: target, blocks)
+  }
 
-    AsyncFunction("supportedLanguages") { () async -> [String] in
-      guard #available(macOS 26.0, *) else { return [] }
-      return await LanguageAvailability().supportedLanguages.map { $0.minimalIdentifier }
-    }
-
-    AsyncFunction("prepare") { (source: String, target: String) async throws in
-      guard #available(macOS 26.0, *) else { throw TranslateError.unavailable }
-      let from = Locale.Language(identifier: source), to = Locale.Language(identifier: target)
-      do {
-        try await DownloadPrompt.run(source: from, target: to)
-      } catch {
-        throw TranslateError.explained(error)
-      }
-      let deadline = Date().addingTimeInterval(180)
-      while await LanguageAvailability().status(from: from, to: to) != .installed {
-        guard Date() < deadline else { throw TranslateError.notDownloaded(Locale.current.localizedString(forLanguageCode: source) ?? source) }
-        try await Task.sleep(for: .milliseconds(500))
-      }
-    }
-
-    AsyncFunction("translateBlocks") { (source: String, target: String, blocks: [[String]]) async -> [[String]?] in
-      guard #available(macOS 26.4, *) else { return blocks.map { _ in nil } }
-      return await TranslationSessions.translateBlocks(source: source, target: target, blocks)
-    }
-
-    AsyncFunction("translate") { (source: String, target: String, texts: [String]) async throws -> [String?] in
-      guard #available(macOS 26.0, *) else { throw TranslateError.unavailable }
-      do {
-        return try await TranslationSessions.translate(source: source, target: target, texts)
-      } catch {
-        throw TranslateError.explained(error)
-      }
+  public static func translate(_ source: String, _ target: String, _ texts: [String]) async throws -> [String?] {
+    guard #available(macOS 26.0, *) else { throw TranslateError.unavailable }
+    do {
+      return try await TranslationSessions.translate(source: source, target: target, texts)
+    } catch {
+      throw TranslateError.explained(error)
     }
   }
 }
 
-extension TranslateModule {
+extension PageTranslationProvider {
   static func linkedPieces(_ pieces: [String]) -> AttributedString {
     var text = AttributedString()
     for (i, piece) in pieces.enumerated() {
@@ -87,6 +79,7 @@ extension TranslateModule {
   }
 
   static func parts(of translated: AttributedString, over pieces: [String]) -> [String]? {
+    guard !pieces.isEmpty else { return nil }
     var parts = Array(repeating: "", count: pieces.count)
     var order: [Int] = []
     var last = 0
@@ -151,7 +144,7 @@ enum TranslationSessions {
     await translatePassages(source: source, target: target, standard: false, pending, into: &found)
     let unchanged = pending.filter { passage in
       guard let parts = found[passage.key] else { return true }
-      return TranslateModule.isUnchanged(parts, from: passage.pieces)
+      return PageTranslationProvider.isUnchanged(parts, from: passage.pieces)
     }
     if !unchanged.isEmpty, lowLatencyPairs.contains(pairKey(source, target)),
       await LanguageAvailability().status(from: Locale.Language(identifier: source), to: Locale.Language(identifier: target)) == .installed
@@ -159,7 +152,7 @@ enum TranslationSessions {
       await translatePassages(source: source, target: target, standard: true, unchanged, into: &found)
     }
     for (key, pieces) in pending {
-      if let parts = found[key], !TranslateModule.isUnchanged(parts, from: pieces) { remember(key, parts) }
+      if let parts = found[key], !PageTranslationProvider.isUnchanged(parts, from: pieces) { remember(key, parts) }
     }
     return keys.map { found[$0] }
   }
@@ -173,16 +166,16 @@ enum TranslationSessions {
       for response in (try? await translations(source: source, target: target, standard: standard, requests)) ?? [] {
         guard let i = response.clientIdentifier.flatMap(Int.init), single.indices.contains(i) else { continue }
         let parts = [response.targetText]
-        if found[single[i].key] == nil || !TranslateModule.isUnchanged(parts, from: single[i].pieces) { found[single[i].key] = parts }
+        if found[single[i].key] == nil || !PageTranslationProvider.isUnchanged(parts, from: single[i].pieces) { found[single[i].key] = parts }
         answered.insert(single[i].key)
       }
     }
     for (key, pieces) in passages where !answered.contains(key) {
-      let text = TranslateModule.linkedPieces(pieces)
+      let text = PageTranslationProvider.linkedPieces(pieces)
       guard let translated = try? await run(source: source, target: target, standard: standard, { try await $0.translate(text).attributedTargetText }),
-        let parts = TranslateModule.parts(of: translated, over: pieces)
+        let parts = PageTranslationProvider.parts(of: translated, over: pieces)
       else { continue }
-      if found[key] == nil || !TranslateModule.isUnchanged(parts, from: pieces) { found[key] = parts }
+      if found[key] == nil || !PageTranslationProvider.isUnchanged(parts, from: pieces) { found[key] = parts }
     }
   }
 
@@ -197,6 +190,7 @@ enum TranslationSessions {
     let previous = tail
     let task = Task { @MainActor () async throws -> T in
       await previous?.value
+      try Task.checkCancellation()
       let key = standard ? "\(pairKey(source, target))>standard" : pairKey(source, target)
       let session: TranslationSession
       if let cached = sessions[key] {
@@ -205,6 +199,7 @@ enum TranslationSessions {
         session = await make(source: source, target: target, standard: standard)
         sessions[key] = session
       }
+      try Task.checkCancellation()
       do {
         return try await work(session)
       } catch {
@@ -214,7 +209,11 @@ enum TranslationSessions {
     }
     tail = Task { _ = try? await task.value }
     defer { forgetWhenIdle() }
-    return try await task.value
+    return try await withTaskCancellationHandler {
+      try await task.value
+    } onCancel: {
+      task.cancel()
+    }
   }
 
   private static func forgetWhenIdle() {
@@ -238,7 +237,7 @@ enum TranslationSessions {
   }
 }
 
-extension TranslateModule {
+extension PageTranslationProvider {
   static func distribute(_ text: String, over pieces: [String]) -> [String] {
     let chars = Array(text)
     let total = max(1, pieces.reduce(0) { $0 + $1.count })
@@ -286,25 +285,33 @@ enum TranslateError: LocalizedError {
 
 @available(macOS 26.0, *)
 @MainActor
-enum DownloadPrompt {
-  static func run(source: Locale.Language, target: Locale.Language) async throws {
-    guard let content = (NSApp.keyWindow ?? NSApp.mainWindow ?? NSApp.windows.first { $0.isVisible })?.contentView else {
-      throw TranslateError.noWindow
-    }
-    try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
-      var host: NSView?
-      var finished = false
-      let view = DownloadPromptView(configuration: .init(source: source, target: target)) { result in
-        guard !finished else { return }
-        finished = true
-        host?.removeFromSuperview()
-        continuation.resume(with: result)
+private final class DownloadPrompt {
+  private weak var host: NSView?
+  private var reply: CheckedContinuation<Void, Error>?
+
+  func run(source: Locale.Language, target: Locale.Language, in content: NSView) async throws {
+    try await withTaskCancellationHandler {
+      try Task.checkCancellation()
+      try await withCheckedThrowingContinuation { continuation in
+        reply = continuation
+        let view = DownloadPromptView(configuration: .init(source: source, target: target)) { [weak self] result in
+          self?.finish(result)
+        }
+        let hosting = NSHostingView(rootView: view)
+        hosting.frame = NSRect(x: 0, y: 0, width: 1, height: 1)
+        host = hosting
+        content.addSubview(hosting)
       }
-      let hosting = NSHostingView(rootView: view)
-      hosting.frame = NSRect(x: 0, y: 0, width: 1, height: 1)
-      host = hosting
-      content.addSubview(hosting)
+    } onCancel: {
+      Task { @MainActor in self.finish(.failure(CancellationError())) }
     }
+  }
+
+  private func finish(_ result: Result<Void, Error>) {
+    guard let reply else { return }
+    self.reply = nil
+    host?.removeFromSuperview()
+    reply.resume(with: result)
   }
 }
 

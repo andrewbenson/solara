@@ -15,7 +15,7 @@ final class SplitToastView: NSView {
   private var appear: (spring: SpringTrack?, tween: RNTween) = (nil, .resting(0))
   private var hideTimer: Timer?
   private var link: CADisplayLink?
-  private var hiding: Int?
+  private var hiding: Bool?
   private let card = NSView()
   private let effect = NSVisualEffectView()
   private let glyph = NSImageView()
@@ -114,10 +114,10 @@ final class SplitToastView: NSView {
   }
 
   private func hide(_ now: CFTimeInterval, report: Bool) {
-    guard let spec else { return }
+    guard spec != nil else { return }
     hideTimer?.invalidate()
     hideTimer = nil
-    hiding = report ? spec.id : -1
+    hiding = report
     appear = (nil, RNTween(from: value(now), to: 0, start: now, duration: Self.hideDuration, easing: .inQuad))
     run()
   }
@@ -173,10 +173,11 @@ final class SplitToastView: NSView {
     link?.invalidate()
     link = nil
     if let hiding {
+      let id = spec?.id
       self.hiding = nil
       spec = nil
       card.isHidden = true
-      if hiding >= 0 { onHidden?(hiding) }
+      if hiding, let id { onHidden?(id) }
     }
   }
 

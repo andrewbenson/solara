@@ -581,18 +581,3 @@ export type InlineWrite = 0 | 1 | 2;
 
 export const completeInline = (tag: number, typed: string, completion: string) =>
   InlineCompletionModule.complete(tag, typed, completion);
-
-export type TranslationModule = {
-  readonly available: boolean;
-  userLanguages(): string[];
-  languageName(identifier: string): string;
-  detect(text: string): Promise<string | null>;
-  status(source: string, target: string): Promise<"installed" | "supported" | "unsupported">;
-  supportedLanguages(): Promise<string[]>;
-  prepare(source: string, target: string): Promise<void>;
-  translate(source: string, target: string, texts: string[]): Promise<(string | null)[]>;
-  translateBlocks(source: string, target: string, blocks: string[][]): Promise<(string[] | null)[]>;
-};
-const TranslationNative = nativeModule("SolaraTranslate");
-
-export const translation: Omit<TranslationModule, "available"> | null = TranslationNative.available ? TranslationNative : null;

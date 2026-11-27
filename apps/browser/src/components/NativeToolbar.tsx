@@ -1,6 +1,6 @@
 import { create } from "zustand";
 import { NativeToolbarView, onPopupCountsChanged, popupCounts, type ToolbarClick } from "@solara/settings";
-import { translation, WindowDragRegion } from "@solara/shell";
+import { WindowDragRegion } from "@solara/shell";
 import { useEffect, useRef } from "react";
 import { useShallow } from "zustand/react/shallow";
 import { findNodeHandle, Image, StyleSheet, View } from "react-native";
@@ -29,8 +29,6 @@ import { runOmniboxFallback } from "./omnibox/nativeActions";
 import { endUrlEdit, startUrlEdit, submitUrlEdit, tabInDeveloperMode, useUrlEdit } from "./site/developerMode";
 import { developerReload, showDeveloperReloadMenu } from "./site/DeveloperButtons";
 import { claimFocusTag, urlEditFocus } from "../lib/focusClaims";
-import { showTranslateMenu } from "./site/TranslateControls";
-import { languageName, toggleTranslation, useTranslateState } from "./site/translate";
 import { insecureLevel } from "./Toolbar";
 import { installUpdateNow, UPDATE_PILL_SHORT_TEXT, UPDATE_PILL_TEXT, updatePillTooltip, usePendingUpdate } from "../lib/pendingUpdate";
 
@@ -105,7 +103,6 @@ export function useNativeToolbarModel({ tabId, geometry, windowId, focused, bare
   const historyKnown = usePage(tabId, (p) => p.historyKnown);
   const popover = usePages((p) => p.popover[tabId] ?? null);
   const progress = usePageProgress(tabId);
-  const translate = useTranslateState(tabId);
   const hints = {
     sidebar: useShortcutHint("toggleSidebar"),
     back: useShortcutHint("back"),
@@ -114,7 +111,6 @@ export function useNativeToolbarModel({ tabId, geometry, windowId, focused, bare
     bookmark: useShortcutHint("bookmarkPage"),
     split: useShortcutHint("openSplitPane"),
   };
-  const translated = translate.status !== "idle";
   const json = JSON.stringify({
     windowId, tabId, geometry, bare: !!bare, windowToolbar: !!windowToolbar, fullscreenTabs, fallback,
     palette: toolbarPalette(theme, null), accent: theme.accent, dark: !!theme.dark,
@@ -123,7 +119,6 @@ export function useNativeToolbarModel({ tabId, geometry, windowId, focused, bare
     sidebar: sidebar?.look, extensionLimit: sidebar?.extensionLimit,
     hints, insecure, editing, editRequest, popups, capture, popover, progress,
     newTabShown, backToNewTab, historyKnown,
-    translation: translation && (translate.source || translated) ? { translated, language: languageName(translate.source ?? "") } : null,
     update: pending ? { text: UPDATE_PILL_TEXT, short: UPDATE_PILL_SHORT_TEXT, tooltip: updatePillTooltip(pending) } : null,
   });
 
@@ -184,9 +179,6 @@ export function useNativeToolbarModel({ tabId, geometry, windowId, focused, bare
         return void toggleBookmarkFromUI(bookmarkProfileId(state, state.windows[windowId]), { url: tab.url, title: tab.title, favicon: tab.favicon });
       case "split":
         return openSplitPane(windowId, { anchorTabId: tabId });
-      case "translate":
-        if (c.kind === "menu") return void showTranslateMenu(tabId);
-        return toggleTranslation(tabId);
       case "zoom":
         return togglePopover(tabId, "zoom");
       case "popups":

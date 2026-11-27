@@ -138,10 +138,9 @@ enum NativeToolbarActions {
         }
       }
     case "translate":
-      Task { @MainActor in
-        guard current() else { return }
-        _ = await SettingsAdapters.js("toolbar.translation", windowId, tabId, tab.url, click.kind == .menu)
-      }
+      guard current() else { return true }
+      if click.kind == .menu { NativeTranslation.shared.menu(tabId: tabId, windowId: windowId) }
+      else if click.kind == .press { NativeTranslation.shared.toggle(tabId: tabId, windowId: windowId) }
     case "bookmark":
       NativeBookmarkCommands.toggle(tab, profile: action.bookmarkProfile, windowId: windowId, store: store)
     case "split":

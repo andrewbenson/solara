@@ -1,7 +1,3 @@
-
-export type Passage = [number, [number, string][]];
-
-const INSTALL = String.raw`
 const KEY = Symbol.for("solara.translator");
 if (!window[KEY]) {
   const SKIP = "script,style,noscript,template,code,pre,kbd,samp,var,textarea,input,select,option,svg,math,iframe,[contenteditable]:not([contenteditable=false]),[translate=no],.notranslate";
@@ -30,6 +26,7 @@ if (!window[KEY]) {
   const eligible = (n) => n.nodeType === 3 && n.nodeValue.length <= MAX_TEXT && LETTER.test(n.nodeValue) && !skipped(n.parentElement);
   const root = () => document.body || document.documentElement;
   const t = (window[KEY] = {
+    document: newDocument,
     active: false,
     token: null,
     seq: 0,
@@ -48,7 +45,7 @@ if (!window[KEY]) {
       const w = document.createTreeWalker(root(), NodeFilter.SHOW_TEXT);
       let text = "";
       for (let n = w.nextNode(), i = 0; n && text.length < 2500 && i < 20000; n = w.nextNode(), i++) if (eligible(n)) text += n.nodeValue.trim() + " ";
-      return { lang: document.documentElement.lang || "", text, active: this.active };
+      return { lang: document.documentElement.lang || "", text, token: this.token };
     },
     enqueue(block) {
       if (this.queued.has(block)) return;
@@ -96,8 +93,34 @@ if (!window[KEY]) {
       }
       return out;
     },
-    release(node) {
+    forget(node) {
+      const record = this.records.get(node);
+      if (record) this.byId.delete(record.id);
       this.records.delete(node);
+    },
+    unwatch(block) {
+      if (!this.watched.delete(block)) return;
+      this.visibility.unobserve(block);
+      this.watchedCount--;
+    },
+    untrack(node) {
+      if (node.isConnected) return;
+      const release = (child) => {
+        if (child.nodeType === 1) this.unwatch(child);
+        else {
+          const record = this.records.get(child);
+          if (record && child.nodeValue === record.applied) child.nodeValue = record.orig;
+          this.forget(child);
+        }
+      };
+      release(node);
+      if (node.nodeType === 1) {
+        const w = document.createTreeWalker(node, NodeFilter.SHOW_TEXT | NodeFilter.SHOW_ELEMENT);
+        for (let n = w.nextNode(); n; n = w.nextNode()) release(n);
+      }
+    },
+    release(node) {
+      this.forget(node);
       const tries = (this.retries.get(node) || 0) + 1;
       this.retries.set(node, tries);
       if (tries <= MAX_RETRIES && node.isConnected) this.track(node);
@@ -107,23 +130,27 @@ if (!window[KEY]) {
       this.active = true;
       this.token = token;
       this.visibility = new IntersectionObserver((entries) => {
+        if (this.token !== token) return;
         for (const e of entries) {
           if (!e.isIntersecting) continue;
-          this.visibility.unobserve(e.target);
-          this.watched.delete(e.target);
+          this.unwatch(e.target);
           this.shown.add(e.target);
           this.enqueue(e.target);
         }
       }, { rootMargin: MARGIN + "px 0px" });
       this.track(root());
       this.observer = new MutationObserver((mutations) => {
+        if (this.token !== token) return;
         for (const m of mutations) {
           if (m.type === "characterData") {
             const rec = this.records.get(m.target);
             if (rec && m.target.nodeValue === rec.applied) continue;
-            if (rec) this.records.delete(m.target);
+            if (rec) this.forget(m.target);
             this.track(m.target);
-          } else for (const n of m.addedNodes) this.track(n);
+          } else {
+            for (const n of m.removedNodes) this.untrack(n);
+            for (const n of m.addedNodes) this.track(n);
+          }
         }
       });
       this.observer.observe(document.documentElement, { childList: true, subtree: true, characterData: true });
@@ -138,31 +165,44 @@ if (!window[KEY]) {
         this.queued.delete(block);
         if (!block.isConnected) continue;
         const nodes = this.pieces(block);
-        for (let i = 0; i < nodes.length; i += MAX_PIECES) {
+        let index = 0;
+        while (index < nodes.length && passages.length < max && chars < maxChars) {
           const pieces = [];
           let previous = null;
-          for (const { node, gap } of nodes.slice(i, i + MAX_PIECES)) {
+          while (index < nodes.length && pieces.length < MAX_PIECES) {
+            const { node, gap } = nodes[index];
+            const length = node.nodeValue.length + (gap && previous !== null ? 1 : 0);
+            if (chars > 0 && chars + length > maxChars) break;
+            index++;
             const id = ++this.seq;
             const spaced = gap && previous !== null;
             if (spaced) previous.gapAfter = true;
-            previous = { orig: node.nodeValue, applied: null, gapBefore: spaced, gapAfter: false };
-            this.byId.set(id, node);
+            previous = { id, orig: node.nodeValue, applied: null, gapBefore: spaced, gapAfter: false };
+            this.byId.set(id, [node, previous]);
             this.records.set(node, previous);
             pieces.push([id, spaced ? " " + node.nodeValue : node.nodeValue]);
-            chars += node.nodeValue.length;
+            chars += length;
           }
+          if (!pieces.length) break;
           passages.push([++this.seq, pieces]);
+        }
+        if (index < nodes.length) {
+          this.queued.add(block);
+          this.queue.unshift(block);
+          break;
         }
       }
       this.done += passages.length;
       return { passages, more: this.queue.length > 0, gone: false, done: this.done, total: this.done + this.queue.length };
     },
-    apply(results) {
+    apply(token, results) {
+      if (!this.active || this.token !== token) return false;
       for (const [id, text] of results) {
-        const node = this.byId.get(id);
+        const entry = this.byId.get(id);
         this.byId.delete(id);
-        const rec = node && this.records.get(node);
-        if (!rec || rec.applied !== null || !node.isConnected || node.nodeValue !== rec.orig) continue;
+        if (!entry) continue;
+        const [node, rec] = entry;
+        if (this.records.get(node) !== rec || rec.applied !== null || !node.isConnected || node.nodeValue !== rec.orig) continue;
         if (typeof text !== "string") {
           this.release(node);
           continue;
@@ -175,7 +215,8 @@ if (!window[KEY]) {
       }
       return true;
     },
-    revert() {
+    revert(token) {
+      if (this.token !== token) return false;
       this.active = false;
       this.token = null;
       if (this.observer) this.observer.disconnect();
@@ -193,9 +234,4 @@ if (!window[KEY]) {
       return true;
     },
   });
-}
-`;
-
-export function translatorCall(op: "sample" | "start" | "next" | "apply" | "revert", ...args: unknown[]): string {
-  return `${INSTALL}\npost("result", JSON.stringify(window[Symbol.for("solara.translator")].${op}(...${JSON.stringify(args)})));`;
 }

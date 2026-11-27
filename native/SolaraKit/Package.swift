@@ -34,7 +34,7 @@ let package = Package(
     .target(name: "SolaraSyncCore", swiftSettings: [.swiftLanguageMode(.v5), .define("SOLARA_PAIRING_TESTING", .when(configuration: .debug))]),
     .target(name: "SolaraImport", dependencies: ["SolaraModel"]),
     .target(name: "SolaraEngine", dependencies: ["SolaraStore", "SolaraOmnibox"]),
-    .target(name: "SolaraUI", dependencies: ["SolaraModel", "SolaraStore", "SolaraOmnibox", "SolaraEngine", "SolaraLive", "SolaraProbes"], resources: [.copy("Resources/new-tab-mark.png")]),
+    .target(name: "SolaraUI", dependencies: ["SolaraModel", "SolaraStore", "SolaraOmnibox", "SolaraEngine", "SolaraLive", "SolaraProbes"], resources: [.copy("Resources/new-tab-mark.png"), .copy("Resources/PageTranslator.js")]),
     .target(name: "SolaraSignposts"),
     .target(name: "SolaraLive", dependencies: ["SolaraModel"]),
     .target(name: "SolaraProbes"),

@@ -28,8 +28,6 @@ test("opening and closing a native modal updates shell ownership without redrawi
     "react-native": { View: "RCTView", StyleSheet: { absoluteFill: {} } },
     "@solara/settings": { windowNativeLayout: () => true, windowShellActive: () => true, setWindowShellModal: (...args) => calls.push(args) },
     "../../store/browser": { useBrowser },
-    "../bookmarks/actions": { useBookmarkDialog: (select) => select({}) },
-    "../bookmarks/edit": { useBookmarkEditor: (select) => select({}) },
     "../onboarding/state": { useOnboarding: (select) => select({}) },
     "../profiles/CreateProfile": { useCreateProfileOpen: () => false },
     "./components/settings/windows": { isUtilityWindowId: () => false },
@@ -42,7 +40,6 @@ test("opening and closing a native modal updates shell ownership without redrawi
   modules["./components/layout/shellModal"] = load("./components/layout/shellModal.ts", modules);
   for (const [module, names] of [
     ["./components/CommandPanel", ["CommandPanel"]], ["./components/ContentCard", ["ContentCard"]],
-    ["./components/bookmarks/BookmarkDialog", ["BookmarkDialog"]], ["./components/bookmarks/EditBookmarkDialog", ["EditBookmarkDialog"]],
     ["./components/Downloads", ["DownloadMagnet", "DownloadsPopover"]], ["./components/onboarding", ["OnboardingOverlay"]],
     ["./components/profiles/CreateProfile", ["CreateProfileHost"]], ["./components/layout/WindowProfile", ["WindowProfile"]],
     ["./components/sidebar/NativeSidebar", ["NativeSidebar"]],

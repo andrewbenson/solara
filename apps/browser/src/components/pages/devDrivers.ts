@@ -1,6 +1,4 @@
 import { openImport, openSettings } from "../settings/windows";
-import { useBookmarkDialog } from "../bookmarks/actions";
-import { useBookmarkEditor } from "../bookmarks/edit";
 import { useMeetingAlert } from "../../live/alerts";
 import { useCalendar } from "../../live/calendar";
 import { measureRow, setSidebarUi } from "../sidebar/state";
@@ -23,8 +21,6 @@ export const pagesDrivers = {
   openInternalPage,
   openSettings,
   openImport,
-  bookmarkDialog: useBookmarkDialog,
-  bookmarkEditor: useBookmarkEditor,
   clearDataRequest: useClearDataRequest,
   meetingAlert: useMeetingAlert,
   calendar: useCalendar,

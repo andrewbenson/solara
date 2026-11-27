@@ -63,6 +63,35 @@ enum NativeBookmarkCommands {
     _ = perform("openBookmarkItems", arg: String(decoding: data, as: UTF8.self), windowId: windowId)
   }
 
+  static let formCommands: Set<String> = ["bookmarkPage", "bookmarkTab", "bookmarkAllTabs", "editBookmark"]
+
+  static func showForm(_ command: String, arg: String?, windowId: String?) -> Bool {
+    guard let store = NativeStoreHandle.store, NativeStoreHandle.ownsWorkspace else { return true }
+    if let windowId, store.state.windows[windowId] == nil, !CommandRoute.utilityWindowIds.contains(windowId) { return true }
+    let route = CommandRoute.resolve(command, windowId: windowId, state: store.state, closing: store.memory.closingWindows)
+    switch command {
+    case "bookmarkPage":
+      if let id = route.windowId, let tab = route.tabId { NativeBookmarkForms.bookmarkTab(windowId: id, tabId: tab) }
+    case "bookmarkTab":
+      if let windowId, let arg { NativeBookmarkForms.bookmarkTab(windowId: windowId, tabId: arg) }
+    case "bookmarkAllTabs":
+      if let id = route.windowId { NativeBookmarkForms.bookmarkTabs(windowId: id) }
+    case "editBookmark":
+      if let windowId, let arg, let options = try? JSONValue.parse(arg) {
+        NativeBookmarkForms.edit(windowId: windowId, id: options["id"]?.string, folder: options["folder"]?.truthy == true,
+          parent: options["parentId"]?.string, index: options["index"]?.number.flatMap(Int.init(exactly:)), profile: options["profileId"]?.string)
+      }
+    default: break
+    }
+    return true
+  }
+
+  static func openItem(_ id: String, mode: String, folder: Bool = false, windowId: String) {
+    let options: JSONValue = ["id": .string(id), "mode": .string(mode), "folder": .bool(folder)]
+    guard let data = try? JSONSerialization.data(withJSONObject: options.foundation) else { return }
+    _ = perform("openBookmarkItems", arg: String(decoding: data, as: UTF8.self), windowId: windowId)
+  }
+
   static func perform(_ command: String, arg: String?, windowId: String?) -> Bool {
     guard NativeStoreHandle.ownsWorkspace, let store = NativeStoreHandle.store else { return true }
     guard let wanted = plan(command, arg: arg, windowId: windowId, store: store) else { return true }

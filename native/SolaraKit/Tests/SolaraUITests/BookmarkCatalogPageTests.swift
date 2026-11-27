@@ -1,5 +1,6 @@
 import AppKit
 import SolaraEngine
+import SolaraModel
 import SwiftUI
 import Testing
 @testable import SolaraUI
@@ -112,6 +113,39 @@ struct BookmarkCatalogPageTests {
     #expect(model.dropFor(CGPoint(x: 120, y: 100)) == .at(parentId: "bar", index: expectedIndex))
   }
 
+  @Test func multiRowDropPreservesVisibleOrderAcrossTheInsertionPoint() throws {
+    let model = largeFolder(6)
+    let listed = model.ids
+    let moving = ["b0", "b2", "b4"]
+    let mutations = try #require(BookmarkPageEdits.moves(moving, to: .at(parentId: "bar", index: 4), listed: listed))
+    var result = listed
+    for mutation in mutations {
+      let id = try #require(mutation.args.first?.string)
+      result.removeAll { $0 == id }
+      let index = try #require(mutation.args[2].number)
+      result.insert(id, at: Int(index))
+    }
+    #expect(result == ["b1", "b3", "b0", "b2", "b4", "b5"])
+  }
+
+  @Test func undoRefusalRenewsExpiryAndOldCompletionsCannotReplaceNewUndo() throws {
+    let model = BookmarksPageModel()
+    let first = model.recordRemoval(["places": [["id": "a"]]], now: .zero)
+    let pending = try #require(model.beginUndo(now: .seconds(7)))
+    #expect(model.beginUndo(now: .seconds(7)) == nil)
+    model.expireUndo(now: .seconds(8))
+    #expect(model.undoCount == 1)
+    model.finishUndo(pending, restored: false, now: .seconds(9))
+    #expect(model.undoCount == 1)
+    let retry = try #require(model.beginUndo(now: .seconds(10)))
+    #expect(retry.removed == pending.removed)
+    #expect(first != model.recordRemoval(["places": [["id": "b"], ["id": "c"]]], now: .seconds(11)))
+    model.finishUndo(retry, restored: true, now: .seconds(12))
+    #expect(model.undoCount == 2)
+    model.expireUndo(now: .seconds(19))
+    #expect(model.undoCount == nil)
+  }
+
   private func largeFolder(_ count: Int = 3000) -> BookmarksPageModel {
     let model = BookmarksPageModel()
     let ids = (0..<count).map { "b\($0)" }
@@ -129,8 +163,7 @@ struct BookmarkCatalogPageTests {
     let roots = BookmarkRoots(bar: "bar@default", other: "other@default")
     let bar = BookmarkNode(id: roots.bar, kind: "folder", parentId: nil, title: "Bookmarks Bar", children: ["a"])
     let other = BookmarkNode(id: roots.other, kind: "folder", parentId: nil, title: "Other Bookmarks", children: [])
-    let link = BookmarkNode(id: "a", kind: "url", parentId: roots.bar, title: "A", url: "https://a.example/")
-    model.bookmarkIcons = ["a": "data:image/png;base64,a"]
+    let link = BookmarkNode(id: "a", kind: "url", parentId: roots.bar, title: "A", url: "https://a.example/", favicon: "data:image/png;base64,a")
     model.apply(snapshot: BookmarkSnapshot(roots: roots, nodes: [bar.id: bar, other.id: other, link.id: link], ready: false))
     #expect(model.nodes.isEmpty)
     model.apply(snapshot: BookmarkSnapshot(roots: roots, nodes: [bar.id: bar, other.id: other, link.id: link], ready: true, revision: 1))

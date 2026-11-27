@@ -82,7 +82,8 @@ const safePageURL = (value, dataPath = "") => {
     return value.replace(/^(\w+:\/\/)[^/@]*@/, "$1").slice(0, 2048);
   } catch { return null; }
 };
-const pageValues = (page, sanitize = true, dataPath = "") => Object.fromEntries(Object.entries(page).filter(([key]) => key !== "ax" && key !== "frames")
+const pageValues = (page, sanitize = true, dataPath = "") => Object.fromEntries(Object.entries(page).filter(([key]) =>
+  ["kind", "query", "shown", "selected", "clearOpen", "folder", "undo", "name", "url", "valid"].includes(key))
   .map(([key, value]) => [key, !sanitize ? value : key === "url" ? safePageURL(value, dataPath)
     : page.kind === "history" && ["shown", "selected"].includes(key) ? value.map((url) => safePageURL(url, dataPath)) : value]));
 const matchesRows = (native, js, match) => {
@@ -552,20 +553,21 @@ try {
   const bookmarkParent = (id) => crossRead(app, "bookmark parent", (snapshot) => snapshot.windows.flatMap((window) => window.bookmarks).find((node) => node.id === id)?.parentId ?? null,
     (timeout) => app.eval(`return ac.store.getState().bookmarks.nodes[${JSON.stringify(id)}]?.parentId ?? null`, { timeout }));
   const openPopover = async (id) => {
-    await app.eval(`const s = ac.store.getState(); ac.pages.bookmarkDialog.getState().set({ kind: "page", windowId: Object.keys(s.windows)[0], bookmarkId: ${JSON.stringify(id)} }); return true`);
+    const shown = await app.eval(`const s = ac.store.getState(); return expo.modules.SolaraPages.devBookmarkForm(Object.keys(s.windows)[0], ${JSON.stringify(id)}, true)`);
+    assert.equal(shown, "shown", "bookmark popover admission");
     return until(async () => {
       const now = await formPage();
       return { ok: !!now && !!frameOf(now, "Done"), now };
     });
   };
   const dialogOpen = () => crossRead(app, "bookmark form visibility", (snapshot) => snapshot.pages.some((page) => page.kind === "bookmarkForm"),
-    (timeout) => app.eval(`return !!ac.pages.bookmarkDialog.getState().open || !!ac.pages.bookmarkEditor.getState().open`, { timeout }), { fields: ["root.pages"] });
+    (timeout) => app.eval(`return expo.modules.SolaraPages.devPages().then((json) => JSON.parse(json).pages.some((page) => page.kind === "bookmarkForm"))`, { timeout }), { fields: ["root.pages"] });
   const closed = () => until(async () => ({ ok: !(await dialogOpen()) }));
 
   await rep.check("the ⌘D popover renames with Return and moves to the picked folder with Done", async () => {
     const id = marks.ids[1];
     let shown = await openPopover(id);
-    assert.ok(shown.ok, "popover shown");
+    assert.ok(shown.ok, `popover shown ${JSON.stringify(shown.now && { valid: shown.now.valid, kind: shown.now.formKind, frames: shown.now.frames.map((frame) => frame.label) })}`);
     await dev("type:Beta Renamed");
     await dev("keys:0:\r:36");
     assert.ok((await closed()).ok, "closed after Return");
@@ -599,14 +601,15 @@ try {
   await rep.check("the editor needs a URL, saves with Return, and Esc or a click outside cancels", async () => {
     const id = marks.ids[3];
     const openEditor = async () => {
-      await app.eval(`const s = ac.store.getState(); const w = Object.keys(s.windows)[0]; ac.pages.bookmarkEditor.getState().set({ windowId: w, bookmarkId: ${JSON.stringify(id)}, folder: false, profileId: s.windows[w].profileId }); return true`);
+      const shown = await app.eval(`const s = ac.store.getState(); const w = Object.keys(s.windows)[0]; return expo.modules.SolaraPages.devBookmarkForm(w, ${JSON.stringify(id)}, false)`);
+      assert.equal(shown, "shown", "bookmark editor admission");
       return until(async () => {
         const now = await formPage();
         return { ok: !!now && !!frameOf(now, "URL field"), now };
       });
     };
     let shown = await openEditor();
-    assert.ok(shown.ok, "editor shown");
+    assert.ok(shown.ok, `editor shown ${JSON.stringify(shown.now && { valid: shown.now.valid, kind: shown.now.formKind, frames: shown.now.frames.map((frame) => frame.label) })}`);
     await click(frameOf(shown.now, "URL field"));
     await dev("keys:1048576:a:0");
     await dev("type: ");
@@ -816,6 +819,26 @@ try {
     const snapshot = await app.snapshot({ fields: ["root.haptics"] }, { timeout: 1000 });
     assert.equal(snapshot.haptics.performed, 0, "hidden bookmark drags perform no haptics");
     return snapshot.haptics;
+  });
+  await rep.check("Bookmark This Page and Bookmark All Tabs use native commands", async () => {
+    const windowId = await app.eval(`const s = ac.store.getState(); const w = Object.keys(s.windows)[0];
+      s.newTab(w, { url: ${JSON.stringify(base)} + "/bookmark-command" }); return w;`);
+    const result = await app.eval(`const menu = (command) => expo.modules.SolaraApp.devWorkspaceMenuCommand(${JSON.stringify(windowId)}, command, null);
+      const before = ac.commandHandlers.stats();
+      ac.commandHandlers.setEnabled(false);
+      return menu("bookmarkPage").then(() => before).finally(() => ac.commandHandlers.setEnabled(before.enabled));`);
+    assert.ok((await until(async () => ({ ok: !!(await formPage())?.frames.find((frame) => frame.label === "Done") }))).ok);
+    await dev("keys:0:\u001b:53");
+    assert.ok((await closed()).ok);
+    const after = await app.eval(`const before = ac.commandHandlers.stats();
+      ac.commandHandlers.setEnabled(false);
+      return expo.modules.SolaraApp.devWorkspaceMenuCommand(${JSON.stringify(windowId)}, "bookmarkAllTabs", null)
+        .then(() => ac.commandHandlers.stats()).finally(() => ac.commandHandlers.setEnabled(before.enabled));`);
+    assert.ok((await until(async () => ({ ok: !!(await formPage())?.frames.find((frame) => frame.label === "Save") }))).ok);
+    assert.equal(after.calls, result.calls);
+    assert.equal(after.blocked, result.blocked);
+    await click(frameOf(await formPage(), "Cancel"));
+    assert.ok((await closed()).ok);
   });
   await rep.check("Library menu commands open and reuse tabs with JS command handlers disabled", async () => {
     const result = await app.eval(`const store = expo.modules.SolaraStoreAdapter;

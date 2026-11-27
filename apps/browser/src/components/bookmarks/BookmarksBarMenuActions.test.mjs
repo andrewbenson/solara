@@ -4,7 +4,7 @@ import { registerHooks } from "node:module";
 import { after, beforeEach, test } from "node:test";
 const { useBrowser } = await import('../../store/browser.ts');
 const { shellNativeModules } = await import('../../test-native/shell.ts');
-const { useBookmarkEditor } = await import('./edit.ts');
+const bookmarkEditURL = new URL("./edit.ts", import.meta.url).href;
 
 const actionsURL = new URL("../../lib/actions.ts", import.meta.url).href;
 const bookmarkActionsURL = new URL("./actions.ts", import.meta.url).href;
@@ -13,7 +13,7 @@ const browserURL = new URL("../../store/browser.ts", import.meta.url).href;
 const fake = (source) => ({ url: `data:text/javascript,${encodeURIComponent(source)}`, shortCircuit: true });
 const hooks = registerHooks({
   resolve(specifier, context, next) {
-    if ((context.parentURL === bookmarkActionsURL || context.parentURL === pageURLs) && specifier === "@solara/settings") return fake(`export const nativeWorkspaceCommand = (...args) => globalThis.bookmarkMenuRequests.push(args);`);
+    if ((context.parentURL === bookmarkActionsURL || context.parentURL === bookmarkEditURL || context.parentURL === pageURLs) && specifier === "@solara/settings") return fake(`export const nativeWorkspaceCommand = (...args) => globalThis.bookmarkMenuRequests.push(args);`);
     const resolved = next(specifier, context);
     if (resolved.url === actionsURL) return fake(`import { useBrowser } from ${JSON.stringify(browserURL)}; export const focus = (id) => useBrowser.getState().setFocusedWindow(id); export const openWindow = (options) => useBrowser.getState().createWindow(options);`);
     return resolved;
@@ -37,7 +37,6 @@ beforeEach(() => {
   first = S().addBookmark({ profileId: "default", title: "First", url: "https://example.com/?utm_source=fixture&keep=1" });
   folder = S().addBookmarkFolder({ profileId: "default", title: "Folder" });
   nested = S().addBookmark({ profileId: "default", parentId: folder, title: "Nested", url: "https://nested.example/" });
-  useBookmarkEditor.getState().set(null);
   requests = globalThis.bookmarkMenuRequests = [];
 });
 after(() => Object.assign(shell, original));
@@ -66,7 +65,7 @@ test("folder choices delegate opening and confirmation to the native owner", asy
 
 test("shared Add Page and prompted Add Folder flows insert after their context node", async () => {
   await choice("addPage", first);
-  assert.deepEqual(useBookmarkEditor.getState().open, { windowId, bookmarkId: null, folder: false, profileId: "default", parentId: S().bookmarks.roots.default.bar, index: 1 });
+  assert.deepEqual(requests.pop(), ["editBookmark", JSON.stringify({ id: null, profileId: "default", parentId: S().bookmarks.roots.default.bar, index: 1 }), windowId]);
   shell.prompt = (request) => { requests.push(request); return Promise.resolve("Created"); };
   await choice("addFolder", first);
   const made = S().bookmarks.nodes[barChildren()[1]];
@@ -75,17 +74,14 @@ test("shared Add Page and prompted Add Folder flows insert after their context n
   assert.equal(requests[0].title, "New Folder");
   assert.equal(requests[0].windowId, windowId);
   await choice("addPage");
-  assert.equal(useBookmarkEditor.getState().open.parentId, S().bookmarks.roots.default.bar);
-  assert.equal(useBookmarkEditor.getState().open.index, undefined);
+  assert.deepEqual(requests.pop(), ["editBookmark", JSON.stringify({ id: null, profileId: "default", parentId: S().bookmarks.roots.default.bar }), windowId]);
 });
 
-test("edit, rename and delete use the real editor and bookmark store", async () => {
+test("edit, rename and delete route to the native editor and bookmark store", async () => {
   await choice("edit", first);
-  assert.equal(useBookmarkEditor.getState().open.bookmarkId, first);
-  assert.equal(useBookmarkEditor.getState().open.folder, false);
+  assert.deepEqual(requests.pop(), ["editBookmark", JSON.stringify({ id: first }), windowId]);
   await choice("rename", folder);
-  assert.equal(useBookmarkEditor.getState().open.bookmarkId, folder);
-  assert.equal(useBookmarkEditor.getState().open.folder, true);
+  assert.deepEqual(requests.pop(), ["editBookmark", JSON.stringify({ id: folder }), windowId]);
   await choice("delete", first);
   assert.equal(S().bookmarks.nodes[first], undefined);
   assert.ok(!barChildren().includes(first));

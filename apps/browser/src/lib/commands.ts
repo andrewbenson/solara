@@ -22,7 +22,6 @@ import {
   switchProfile,
   toggleMute,
 } from "./actions";
-import { bookmarkAllTabs, bookmarkTab } from "../components/bookmarks/actions";
 import { useClearDataRequest } from "../components/pages/ClearDataDialog";
 import { openInternalPage } from "../components/pages/urls";
 import { openImport, openSettings } from "../components/settings/windows";
@@ -65,7 +64,7 @@ export const commandHandlers = {
 };
 
 export function runCommand({ command, arg, windowId: requested }: CommandEvent) {
-  if (command === "restoreArcFolders" || command === "openBookmark" || command === "jumpToSelection" || ["copyUrl", "copyUrlAsMarkdown", "copyQuoteLink", "share", "openFile", "autofill", "searchTabs", "tabSwitcher", "focusCommandBar", "cast", "reload", "forceReload", "returnToPinnedUrl", "togglePageEngine", "openExtension", "addExtension", "pinExtensions", "manageExtensions", "showHistory", "manageBookmarks"].includes(command)) return void nativeWorkspaceCommand(command, arg, requested);
+  if (command === "restoreArcFolders" || command === "openBookmark" || command === "jumpToSelection" || ["copyUrl", "copyUrlAsMarkdown", "copyQuoteLink", "share", "openFile", "autofill", "searchTabs", "tabSwitcher", "focusCommandBar", "cast", "reload", "forceReload", "returnToPinnedUrl", "togglePageEngine", "openExtension", "addExtension", "pinExtensions", "manageExtensions", "showHistory", "manageBookmarks", "bookmarkPage", "bookmarkAllTabs"].includes(command)) return void nativeWorkspaceCommand(command, arg, requested);
   if (nativeOwnsWorkspace() && nativeWorkspaceCommand(command, arg, requested)) return;
   if (__DEV__ && !commandHandlersEnabled) { commandHandlerBlocked++; return; }
   if (__DEV__) commandHandlerCalls++;
@@ -231,8 +230,6 @@ export function runCommand({ command, arg, windowId: requested }: CommandEvent) 
       return tab && arg ? void moveTabToProfile(tab.id, arg) : undefined;
     case "moveTabToWindow":
       return tab && arg ? moveTabToWindow(tab.id, arg) : undefined;
-    case "bookmarkPage":
-      return page ? bookmarkTab(windowId, page.id) : undefined;
     case "addBookmarkToFolder":
       return page && arg ? void addBookmarkToFolder(windowId, page.id, arg) : undefined;
     case "toggleMute":
@@ -242,8 +239,6 @@ export function runCommand({ command, arg, windowId: requested }: CommandEvent) 
     case "clearBrowsingData":
       openInternalPage("history", windowId);
       return useClearDataRequest.getState().request(windowId);
-    case "bookmarkAllTabs":
-      return bookmarkAllTabs(windowId);
     case "mergeAllWindows":
       return s.mergeAllWindows(windowId);
     case "switchProfile":

@@ -103,7 +103,7 @@ const measured = async (name, body) => {
   } finally { await stopSampler(); }
 };
 const start = async (seed = false) => {
-  app = await launch(appPath, { data, ...(seed ? { session: fixture, onboarded: true } : {}), keepData: true, probe: true, js: args.includes("--debug") ? "pinned" : "none", metroPort: 8104, env: { AC_BENCH_BOOKMARKS: "1", AC_BENCH_FRAMES: "1", AC_BENCH_STALLS: "1", DYLD_INSERT_LIBRARIES: `${dylib}:${marker}` }, switches: "--host-resolver-rules=MAP * ~NOTFOUND, EXCLUDE localhost, EXCLUDE 127.0.0.1", ready: "return !!ac.store.getState().windows.w1 && ac.store.getState().bookmarksReady.default === true;" });
+  app = await launch(appPath, { data, ...(seed ? { session: fixture, onboarded: true } : {}), keepData: true, probe: true, js: args.includes("--debug") ? "pinned" : "none", metroPort: Number(process.env.METRO_PORT ?? 8104), env: { AC_BENCH_BOOKMARKS: "1", AC_BENCH_FRAMES: "1", AC_BENCH_STALLS: "1", DYLD_INSERT_LIBRARIES: `${dylib}:${marker}` }, switches: "--host-resolver-rules=MAP * ~NOTFOUND, EXCLUDE localhost, EXCLUDE 127.0.0.1", ready: "return !!ac.store.getState().windows.w1 && ac.store.getState().bookmarksReady.default === true;" });
   await evaluate('return C.chromeWindows().then((windows) => C.devWindow(windows.find((window) => window.hasRoot).window, "fakeActiveClicks"));');
   (result.probes ??= []).push(await probe("info"));
 };

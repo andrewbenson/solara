@@ -40,10 +40,10 @@ enum NativeWorkspaceCommands {
     NativePinnedPageCommands.start()
     ToolbarView.commandURLFocusAllowed = { NativeCommandBarFocus.developerAllowed($0, field: $1) }
     ToolbarView.commandURLDidFocus = { NativeCommandBarFocus.developerDidFocus($0, field: $1) }
-    for command in WorkspaceMenuCommand.commands.union(ViewMenuCommand.commands).union(PageMenuCommand.commands).union(FindMenuCommand.commands).union(BookmarkMenuCommand.commands).union(CopyLinkCommand.commands).union(BrowserServiceCommand.commands).union(TabFocusCommand.commands).union(["togglePageEngine"]).union(PinnedPageCommand.commands).union(["focusCommandBar", "cast", "restoreArcFolders", "showHistory", "manageBookmarks"]) {
+    for command in WorkspaceMenuCommand.commands.union(ViewMenuCommand.commands).union(PageMenuCommand.commands).union(FindMenuCommand.commands).union(BookmarkMenuCommand.commands).union(NativeBookmarkCommands.formCommands).union(CopyLinkCommand.commands).union(BrowserServiceCommand.commands).union(TabFocusCommand.commands).union(["togglePageEngine"]).union(PinnedPageCommand.commands).union(["focusCommandBar", "cast", "restoreArcFolders", "showHistory", "manageBookmarks"]) {
       NativeMenuCommands.argumentHandlers[command] = { arg, windowId in perform(command, arg: arg, windowId: windowId) }
     }
-    NativeMenuCommands.keepsMenuDispatch = ViewMenuCommand.commands.union(PageMenuCommand.commands).union(BookmarkMenuCommand.commands).union(CopyLinkCommand.commands).union(BrowserServiceCommand.commands).union(TabFocusCommand.commands).union(["showHistory", "manageBookmarks"])
+    NativeMenuCommands.keepsMenuDispatch = ViewMenuCommand.commands.union(PageMenuCommand.commands).union(BookmarkMenuCommand.commands).union(NativeBookmarkCommands.formCommands).union(CopyLinkCommand.commands).union(BrowserServiceCommand.commands).union(TabFocusCommand.commands).union(["showHistory", "manageBookmarks"])
     NativeMenuCommands.workspaceAvailability = { command, arg, windowId in
       if command == "findInPage", windowId == NativeSettingsWindow.windowId { return true }
       if command == "returnToPinnedUrl" { return NativePinnedPageCommands.available(windowId: windowId) }
@@ -275,6 +275,7 @@ enum NativeWorkspaceCommands {
     if PinnedPageCommand.commands.contains(command) { return NativePinnedPageCommands.perform(command, arg: arg, windowId: windowId) }
     if TabFocusCommand.commands.contains(command) { return NativeTabFocusCommands.perform(command, arg: arg, windowId: windowId) }
     if BrowserServiceCommand.commands.contains(command) { return NativeBrowserServiceCommands.perform(command, arg: arg, windowId: windowId) }
+    if NativeBookmarkCommands.formCommands.contains(command) { return NativeBookmarkCommands.showForm(command, arg: arg, windowId: windowId) }
     if BookmarkMenuCommand.commands.contains(command) { return NativeBookmarkCommands.perform(command, arg: arg, windowId: windowId) }
     if CopyLinkCommand.commands.contains(command) { return NativeLinkCommands.perform(command, arg: arg, windowId: windowId) }
     if command == "focusCommandBar" { return NativeCommandBarFocus.perform(windowId: windowId) }

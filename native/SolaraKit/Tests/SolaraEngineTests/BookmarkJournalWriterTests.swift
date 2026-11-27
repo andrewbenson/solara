@@ -11,6 +11,32 @@ struct BookmarkJournalWriterTests {
     return directory
   }
 
+  @Test func refusedRestoreLeavesTheRemovalAvailableForRetry() async throws {
+    let directory = try directory()
+    defer { try? FileManager.default.removeItem(at: directory) }
+    let pending = BookmarkPendingStore(directory: directory)
+    let setup = BookmarkCoordinator(profiles: ["p": ""], defaultProfile: "p", pendingStore: pending)
+    setup.seed(engine: "", document: BookmarkCoordinatorTests().document(["https://a.test", "https://b.test", "https://c.test"]), ready: true)
+    let deletion = try await setup.performJournalWrite {
+      try $0.submit(profile: "p", mutations: [.init(method: "removeBookmarks", args: [["b2", "b0"]])])
+    }
+    let removed = try #require(deletion.results.first)
+    #expect(removed["places"]?.array?.compactMap { $0["id"]?.string } == ["b2", "b0"])
+    var operations = BookmarkPendingFileOperations.live
+    operations.syncFile = { _ in throw BookmarkPendingStoreError.io("file", 5) }
+    let refusing = BookmarkCoordinator(profiles: ["p": ""], defaultProfile: "p",
+      pendingStore: BookmarkPendingStore(directory: directory, fileOperations: operations))
+    let restore = BookmarkMutation(method: "restoreBookmarks", args: [removed])
+    await #expect(throws: BookmarkPendingStoreError.self) {
+      _ = try await refusing.performJournalWrite { try $0.submit(profile: "p", mutations: [restore]) }
+    }
+    #expect(refusing.desiredView(engine: "").document == deletion.view.document)
+    let retrying = BookmarkCoordinator(profiles: ["p": ""], defaultProfile: "p", pendingStore: pending)
+    let restored = try await retrying.performJournalWrite { try $0.submit(profile: "p", mutations: [restore]) }
+    let bar = BookmarkFlat.roots("").bar
+    #expect(restored.view.document["nodes"]?[bar]?["children"]?.array?.compactMap(\.string) == ["b0", "b1", "b2"])
+  }
+
   @MainActor @Test func mainHandoffAndReadsFinishWhileSyncBlocksAndQuitWaits() async throws {
     let directory = try directory()
     defer { try? FileManager.default.removeItem(at: directory) }

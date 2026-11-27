@@ -51,16 +51,8 @@ const postDrag = (id, path) => {
 const settle = (ms) => new Promise((done) => setTimeout(done, ms));
 const active = () => S().windows.w1.activeTabIds.default;
 const barIds = () => S().bookmarks.nodes[bmbar.bar].children;
-const editorState = () => acPerf.findFibers("NativeBookmarkEditor", 200).map((fiber) => fiber.memoizedProps?.state).find((state) => state?.windowId === "w1") ?? null;
-const cancelEditor = () => {
-  const form = acPerf.findFibers("NativePage", 2000).find((fiber) => {
-    for (let parent = fiber.return; parent; parent = parent.return) if (acPerf.nameOf(parent.type) === "NativeBookmarkEditor" && parent.memoizedProps?.state?.windowId === "w1") return true;
-    return false;
-  });
-  if (!form?.memoizedProps?.onPageEvent) return false;
-  form.memoizedProps.onPageEvent({ nativeEvent: { kind: "cancel" } });
-  return true;
-};
+const editorState = () => expo.modules.SolaraPages.devPages().then((json) => JSON.parse(json).pages.find((page) => page.kind === "bookmarkForm" && page.windowId === "w1") ?? null);
+const cancelEditor = () => act("w1", "keys:0:" + String.fromCharCode(27) + ":53");
 `;
 let app;
 const coroutine = `const runSteps = (steps) => new Promise((resolve, reject) => {
@@ -489,10 +481,10 @@ try {
       await choose("item", id, `${action}:${id}`);
       const state = await until("bookmark editor request", "return editorState();");
       assert.equal(state.bookmarkId, id);
-      assert.equal(state.folder, folder);
+      assert.equal(state.formKind, folder ? "renameFolder" : "editBookmark");
       assert.equal(state.windowId, "w1");
-      assert.equal(await run("return cancelEditor();"), true);
-      await until("bookmark editor closes", "return editorState() === null;");
+      await run("return cancelEditor();");
+      await until("bookmark editor closes", "return editorState().then((state) => state === null);");
     });
   }
   for (const [trigger, context] of [["item", ids.first], ["blank", null]]) {
@@ -502,10 +494,10 @@ try {
       const state = await until("Add Page editor request", "return editorState();");
       assert.equal(state.bookmarkId, null);
       assert.equal(state.profileId, "default");
-      assert.equal(state.parentId, ids.bar);
+      assert.equal(state.folder, ids.bar);
       assert.equal(state.index ?? null, expectedIndex);
-      assert.equal(await run("return cancelEditor();"), true);
-      await until("Add Page editor closes", "return editorState() === null;");
+      await run("return cancelEditor();");
+      await until("Add Page editor closes", "return editorState().then((state) => state === null);");
     });
     await rep.check(`native-menu-add-folder-${trigger}`, async () => {
       const before = await run("return { children: [...barIds()], prompts: bmbar.prompts.length }; ");

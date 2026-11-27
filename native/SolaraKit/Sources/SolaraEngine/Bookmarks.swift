@@ -46,17 +46,19 @@ public struct BookmarkNode: Sendable, Equatable, Identifiable {
   public var parentId: String?
   public var title: String
   public var url: String?
+  public var favicon: String?
   public var addedAt: Double
   public var syncKey: String?
   public var children: [String]?
   public var isFolder: Bool { kind == "folder" }
 
-  public init(id: String, kind: String, parentId: String?, title: String, url: String? = nil, addedAt: Double = 0, syncKey: String? = nil, children: [String]? = nil) {
+  public init(id: String, kind: String, parentId: String?, title: String, url: String? = nil, addedAt: Double = 0, syncKey: String? = nil, children: [String]? = nil, favicon: String? = nil) {
     self.id = id
     self.kind = kind
     self.parentId = parentId
     self.title = title
     self.url = url
+    self.favicon = favicon
     self.addedAt = addedAt
     self.syncKey = syncKey
     self.children = children

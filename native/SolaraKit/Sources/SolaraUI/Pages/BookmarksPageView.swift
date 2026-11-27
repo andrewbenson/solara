@@ -1,6 +1,7 @@
 import AppKit
 import Observation
 import SolaraEngine
+import SolaraModel
 import SolaraOmnibox
 import SwiftUI
 
@@ -47,13 +48,12 @@ public final class BookmarksPageModel {
   public var roots: PageBookmarkRoots?
   public var groupable: Set<String> = []
   public var arcRestorable: Set<String> = []
-  public var bookmarkIcons: [String: String] = [:]
   public private(set) var recoveryMessage: String?
   public private(set) var editsPaused = false
   public private(set) var recoveryConflictCount = 0
-  public var undoCount: Int?
+  public private(set) var undoCount: Int?
   public var theme = PageTheme.fallbackLight
-  public var profileId = ""
+  public private(set) var profileId = ""
   public private(set) var engineProfile = ""
   public var folderId: String? { didSet { if folderId != oldValue { selected = [] } } }
   public var query = "" { didSet { if query != oldValue { selected = [] } } }
@@ -69,7 +69,16 @@ public final class BookmarksPageModel {
   @ObservationIgnored var rowFrameOwners: [String: UUID] = [:]
   @ObservationIgnored var treeFrames: [String: CGRect] = [:]
   @ObservationIgnored public var onEvent: (BookmarksPageEvent) -> Void = { _ in }
-  @ObservationIgnored private var seen: State?
+  public struct Undo: Equatable, Sendable {
+    public let removed: JSONValue
+    fileprivate let id: UUID
+  }
+
+  @ObservationIgnored private var undo: Undo?
+  @ObservationIgnored private var restoring: UUID?
+  @ObservationIgnored private var undoDeadline: Duration?
+  @ObservationIgnored private var undoTimer: Task<Void, Never>?
+  @ObservationIgnored public private(set) var scopeGeneration = 0
   @ObservationIgnored private let catalog: LibraryCatalog?
   @ObservationIgnored private var bookmarkObserver: Task<Void, Never>?
 
@@ -86,7 +95,84 @@ public final class BookmarksPageModel {
   }
 
 
-  deinit { bookmarkObserver?.cancel() }
+  deinit {
+    bookmarkObserver?.cancel()
+    undoTimer?.cancel()
+  }
+
+  nonisolated public static var undoTime: Duration { .seconds(ProcessInfo.processInfo.systemUptime) }
+
+  @discardableResult public func recordRemoval(_ removed: JSONValue, now: Duration = undoTime) -> UUID? {
+    guard let count = removed["places"]?.array?.count, count > 0 else { return nil }
+    let next = Undo(removed: removed, id: UUID())
+    undo = next
+    undoCount = count
+    scheduleExpiry(now: now)
+    return next.id
+  }
+
+  public func beginUndo(now: Duration = undoTime) -> Undo? {
+    expireUndo(now: now)
+    guard restoring == nil, let undo else { return nil }
+    restoring = undo.id
+    return undo
+  }
+
+  public func finishUndo(_ attempt: Undo, restored: Bool, now: Duration = undoTime) {
+    guard restoring == attempt.id else { return }
+    restoring = nil
+    guard undo?.id == attempt.id else {
+      expireUndo(now: now)
+      return
+    }
+    if restored { clearUndo() } else { scheduleExpiry(now: now) }
+  }
+
+  public func expireUndo(now: Duration = undoTime) {
+    guard let undo, restoring != undo.id, let undoDeadline, now >= undoDeadline else { return }
+    clearUndo()
+  }
+
+  private func clearUndo() {
+    undoTimer?.cancel()
+    undoDeadline = nil
+    undo = nil
+    undoCount = nil
+  }
+
+  private func scheduleExpiry(now: Duration) {
+    undoTimer?.cancel()
+    undoDeadline = now + .seconds(8)
+    undoTimer = Task { [weak self] in
+      do { try await Task.sleep(for: .seconds(8)) } catch { return }
+      self?.expireUndo(now: now + .seconds(8))
+    }
+  }
+
+  public func setScope(profileId: String, engineProfile: String) {
+    clearScope()
+    self.profileId = profileId
+    self.engineProfile = engineProfile
+    observeBookmarks()
+  }
+
+  public func clearScope() {
+    scopeGeneration += 1
+    bookmarkObserver?.cancel()
+    bookmarkObserver = nil
+    clearUndo()
+    restoring = nil
+    roots = nil
+    folderId = nil
+    query = ""
+    selected = []
+    expanded = []
+    anchor = nil
+    draggedRowId = nil
+    dragging = []
+    drop = nil
+    apply(snapshot: BookmarkSnapshot())
+  }
 
   var searching: Bool { !query.trimmingCharacters(in: .whitespaces).isEmpty }
 
@@ -206,11 +292,15 @@ public final class BookmarksPageModel {
     if !selected.contains(node.id) { select(node.id, command: false, shift: false) }
     let menu = NSMenu()
     let target = PageMenuTarget()
+    let scope = scopeGeneration
     func item(_ title: String, enabled: Bool = true, _ run: @escaping () -> Void) {
       let made = NSMenuItem(title: title, action: enabled ? #selector(PageMenuTarget.run(_:)) : nil, keyEquivalent: "")
       made.target = enabled ? target : nil
       made.isEnabled = enabled
-      made.representedObject = PageMenuAction(run)
+      made.representedObject = PageMenuAction { [weak self] in
+        guard self?.scopeGeneration == scope else { return }
+        run()
+      }
       menu.addItem(made)
     }
     let id = node.id
@@ -246,10 +336,14 @@ public final class BookmarksPageModel {
   func organizeMenu() {
     let menu = NSMenu()
     let target = PageMenuTarget()
+    let scope = scopeGeneration
     func item(_ title: String, _ run: @escaping () -> Void) {
       let made = NSMenuItem(title: title, action: #selector(PageMenuTarget.run(_:)), keyEquivalent: "")
       made.target = target
-      made.representedObject = PageMenuAction(run)
+      made.representedObject = PageMenuAction { [weak self] in
+        guard self?.scopeGeneration == scope else { return }
+        run()
+      }
       menu.addItem(made)
     }
     let parent = folderId
@@ -261,28 +355,33 @@ public final class BookmarksPageModel {
     PageMenuTarget.show(menu, in: nil, at: nil)
   }
 
-  public struct State: Decodable, Equatable, Sendable {
-    public var engineProfile: String
-    public var groupable: [String]
-    public var arcRestorable: [String]
-    public var bookmarkIcons: [String: String]
-    public var undoCount: Int?
-    public var profileId: String
-    public var dark: Bool
-    public var theme: [String: String]
-    public var panelShadowOpacity: Double?
-  }
-
   public func apply(snapshot: BookmarkSnapshot) {
     recoveryMessage = snapshot.recoveryMessage
     editsPaused = snapshot.editsPaused
     recoveryConflictCount = snapshot.recoveryConflictCount
     let next: [String: PageBookmark] = snapshot.ready ? snapshot.nodes.mapValues { node in
       PageBookmark(id: node.id, kind: node.kind, parentId: node.parentId, title: node.title,
-        url: node.url, favicon: bookmarkIcons[node.id], children: node.children)
+        url: node.url, favicon: node.favicon, children: node.children)
     } : [:]
     let nextRoots = snapshot.ready ? snapshot.roots.map { PageBookmarkRoots(bar: $0.bar, other: $0.other) } : nil
-    if nodes != next { nodes = next }
+    if nodes != next {
+      nodes = next
+      var groups: Set<String> = []
+      var examined: Set<String> = []
+      for node in next.values where !node.isFolder {
+        guard let url = node.url, url.hasPrefix("http:") || url.hasPrefix("https:") || url.hasPrefix("file:") else { continue }
+        var parent = node.parentId
+        while let id = parent, examined.insert(id).inserted {
+          groups.insert(id)
+          parent = next[id]?.parentId
+        }
+      }
+      groupable = groups
+      arcRestorable = Set((nextRoots.flatMap { next[$0.bar]?.children } ?? []).filter {
+        guard let node = next[$0], node.isFolder, node.title.hasSuffix(" (Arc)") else { return false }
+        return node.children?.contains(where: groups.contains) == true
+      })
+    }
     if roots != nextRoots {
       let previous = roots
       roots = nextRoots
@@ -309,25 +408,7 @@ public final class BookmarksPageModel {
     }
   }
 
-  public func apply(json: String) {
-    guard let data = json.data(using: .utf8), let state = try? JSONDecoder().decode(State.self, from: data) else { return }
-    let previous = seen
-    seen = state
-    let next = PageTheme(dark: state.dark, tokens: state.theme, panelShadowOpacity: state.panelShadowOpacity)
-    if theme != next { theme = next }
-    profileId = state.profileId
-    if bookmarkIcons != state.bookmarkIcons {
-      bookmarkIcons = state.bookmarkIcons
-      if previous?.engineProfile == state.engineProfile, let catalog { apply(snapshot: catalog.bookmarks(engineProfile: engineProfile)) }
-    }
-    if previous?.engineProfile != state.engineProfile {
-      engineProfile = state.engineProfile
-      observeBookmarks()
-    }
-    if previous?.groupable != state.groupable { groupable = Set(state.groupable) }
-    if previous?.arcRestorable != state.arcRestorable { arcRestorable = Set(state.arcRestorable) }
-    if undoCount != state.undoCount { undoCount = state.undoCount }
-  }
+
 }
 
 public struct BookmarksPageView: View {
@@ -424,7 +505,7 @@ struct BookmarksEmptyState: View {
 struct BookmarksList: View {
   let ids: [String]
   let model: BookmarksPageModel
-  @FocusState private var focused: Bool
+  @SwiftUI.FocusState private var focused: Bool
 
   var body: some View {
     let indicator: Int? = if case .at(_, let index) = model.drop { index } else { nil }

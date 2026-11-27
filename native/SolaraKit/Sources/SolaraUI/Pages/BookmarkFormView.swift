@@ -1,5 +1,6 @@
 import AppKit
 import Observation
+import SolaraEngine
 import SolaraOmnibox
 import SwiftUI
 
@@ -14,29 +15,19 @@ public enum BookmarkFormEvent: Equatable, Sendable {
 @MainActor
 @Observable
 public final class BookmarkFormModel {
-  public enum Kind: String, Decodable, Sendable {
+  public enum Kind: String, Sendable {
     case page, allTabs, editBookmark, addBookmark, renameFolder, newFolder
   }
 
-  public struct Placement: Decodable, Equatable, Sendable {
+  public struct Placement: Equatable, Sendable {
     public var top: Double
     public var left: Double?
     public var right: Double?
   }
 
-  public struct State: Decodable, Equatable, Sendable {
-    public var kind: Kind
-    public var key: String
-    public var name: String
-    public var url: String?
-    public var folderId: String?
-    public var tabCount: Int?
-    public var folders: [PageBookmark]
-    public var roots: PageBookmarkRoots?
-    public var placement: Placement?
-    public var select: String?
-    public var selectRev: Int?
-    public var dark: Bool
+  public static func placement(addressInSidebar: Bool) -> Placement {
+    if addressInSidebar { return Placement(top: 84, left: 6, right: nil) }
+    return Placement(top: Double(ShellMetrics.cardTop + ShellMetrics.toolbarHeight - 2), left: nil, right: Double(ShellMetrics.cardInset + 10))
   }
 
   public var kind: Kind = .page
@@ -51,7 +42,6 @@ public final class BookmarkFormModel {
   public var dark = false
   public var focusRequest = 0
   @ObservationIgnored public var onEvent: (BookmarkFormEvent) -> Void = { _ in }
-  @ObservationIgnored private var seen: State?
 
   public init() {}
 
@@ -108,29 +98,35 @@ public final class BookmarkFormModel {
     if isPopover { onEvent(.done(name: name, folderId: folderId)) } else { onEvent(.cancel) }
   }
 
-  public func apply(json: String) {
-    guard let data = json.data(using: .utf8), let state = try? JSONDecoder().decode(State.self, from: data) else { return }
-    let previous = seen
-    seen = state
-    dark = state.dark
-    placement = state.placement
-    if previous?.folders != state.folders { folders = Dictionary(state.folders.map { ($0.id, $0) }, uniquingKeysWith: { a, _ in a }) }
-    roots = state.roots
-    if previous?.key != state.key {
-      kind = state.kind
-      name = state.name
-      url = state.url ?? ""
-      folderId = state.folderId
-      tabCount = state.tabCount ?? 0
-      expanded = Set([state.roots?.bar, state.roots?.other].compactMap { $0 })
-      reveal(state.folderId)
-      focusRequest += 1
-    }
-    if let select = state.select, previous?.selectRev != state.selectRev {
-      folderId = select
-      reveal(select)
-    }
+  public func configure(kind: Kind, name: String = "", url: String = "", folder: String? = nil, tabCount: Int = 0) {
+    self.kind = kind
+    self.name = name
+    self.url = url
+    self.folderId = folder
+    self.tabCount = tabCount
+    focusRequest += 1
   }
+
+  public func apply(snapshot: BookmarkSnapshot) {
+    let sources = snapshot.nodes.values.filter(\.isFolder)
+    let next = Dictionary(uniqueKeysWithValues: sources.map { node in
+      (node.id, PageBookmark(id: node.id, kind: node.kind, parentId: node.parentId, title: node.title, url: nil,
+        favicon: nil, children: node.children?.filter { snapshot.nodes[$0]?.isFolder == true }))
+    })
+    if next != folders { folders = next }
+    let nextRoots = snapshot.roots.map { PageBookmarkRoots(bar: $0.bar, other: $0.other) }
+    if roots != nextRoots {
+      roots = nextRoots
+      expanded.formUnion([roots?.bar, roots?.other].compactMap { $0 })
+    }
+    reveal(folderId)
+  }
+
+  public func selectFolder(_ id: String) {
+    folderId = id
+    reveal(id)
+  }
+
 }
 
 public struct BookmarkFormView: View {

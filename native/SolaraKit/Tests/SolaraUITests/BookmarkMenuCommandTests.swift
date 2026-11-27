@@ -27,6 +27,21 @@ import Testing
   private func plan(_ arg: String = "same", _ s: BrowserState? = nil, _ view: BookmarkWriterSnapshot? = nil) -> BookmarkOpenPlan? {
     BookmarkMenuCommand.plan(command: "openBookmark", arg: arg, windowId: "w", state: s ?? state(), closing: [], snapshot: view ?? snapshot())
   }
+  @Test func aFormNeverFollowsFocusOrAcceptsAReboundProfile() throws {
+    var s = state()
+    s.profiles["work"] = Profile(id: "work", name: "Work", color: "blue", icon: nil, createdAt: 0)
+    s.windows["other"] = BrowserWindow(id: "other", profileId: "work", incognito: false, frame: nil, createdAt: 0)
+    let target = try #require(BookmarkFormTarget.resolve(windowId: "w", state: s, closing: []))
+    #expect(target.profileId == "default")
+    s.ui.focusedWindowId = "other"
+    #expect(target.isLive(in: s, closing: []))
+    #expect(!target.isLive(in: s, closing: ["w"]))
+    s.windows["w"]?.profileId = "work"
+    #expect(!target.isLive(in: s, closing: []))
+    s.windows["w"] = nil
+    #expect(BookmarkFormTarget.resolve(windowId: "w", state: s, closing: []) == nil)
+  }
+
   @Test func urlNavigatesABlankTargetFromAReadOnlyView() throws {
     let p = try #require(plan())
     #expect(p.urls == ["https://bookmark.example/"])

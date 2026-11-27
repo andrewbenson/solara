@@ -4,8 +4,6 @@ import { useState } from "react";
 import { View } from "react-native";
 import { CommandPanel } from "./components/CommandPanel";
 import { ContentCard } from "./components/ContentCard";
-import { BookmarkDialog } from "./components/bookmarks/BookmarkDialog";
-import { EditBookmarkDialog } from "./components/bookmarks/EditBookmarkDialog";
 import { requireNativeViewManager } from "expo-modules-core";
 import { DownloadMagnet, DownloadsPopover } from "./components/Downloads";
 import { OnboardingOverlay } from "./components/onboarding";
@@ -51,8 +49,6 @@ export function LegacyWindow() {
       <CommandPanel windowWidth={width} />
       <DownloadsPopover />
       <DownloadMagnet />
-      <BookmarkDialog />
-      <EditBookmarkDialog />
       <CreateProfileHost />
       <SidebarOverlays windowWidth={width} />
       <OnboardingOverlay />

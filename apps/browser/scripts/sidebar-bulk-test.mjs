@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { sidebarSession, assertSidebarPosition } from "./sidebar-position-test.mjs";
-import { readNativeWork, readSidebarRealization, validateWindowContract } from "./perf/native-work.mjs";
+import { readSidebarRealization, validateWindowContract } from "./perf/native-work.mjs";
 import { isDeepStrictEqual } from "node:util";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -77,8 +77,14 @@ try {
   const first = await app.snapshot({ windowId: "w1", fields: ["windows.shell"] });
   const initialContract = validateWindowContract(first.windows[0].shell.contract);
   assert.equal(initialContract.hostCounts.sidebar, 1, "one native sidebar host");
-  if (initialContract.nativeLayout) await readSidebarRealization(app, "w1");
-  else assert.ok((await readNativeWork(app)).rows.live >= ids.length, "native eager row census includes every fixture tab");
+  const checkRealization = async (tabIds, overflowing) => {
+    const { pages } = await readSidebarRealization(app, "w1");
+    const logical = pages.flatMap((page) => page.realization.logical).filter((row) => row.key.startsWith("t:"));
+    assert.deepEqual(logical.map((row) => row.key.slice(2)), tabIds, "the sidebar includes every fixture tab in order");
+    const bound = pages.flatMap((page) => page.realization.bound).filter((row) => row.key.startsWith("t:"));
+    assert.ok(bound.length > 0 && (!overflowing || bound.length < tabIds.length), "the sidebar binds visible rows and recycles offscreen rows");
+  };
+  await checkRealization(ids, false);
   const settled = async (what) => {
     await sleep(1200);
     let list, rows;
@@ -95,11 +101,7 @@ try {
     const selectedPage = initialContract.pageIdentities.find((page) => page.tabId === "t0");
     assert.ok(selectedPage, "selected pooled page identity is present");
     assert.deepEqual(contract.pageIdentities.find((page) => page.tabId === "t0"), selectedPage, "bulk changes preserve the selected pooled page identity");
-    if (contract.nativeLayout) {
-      const realization = await readSidebarRealization(app, "w1");
-      const bindings = realization.pages.flatMap((page) => page.realization.bound);
-      assert.ok(bindings.length > 0 && bindings.length < list.length, "bulk changes retain exactly the visible sidebar bindings");
-    } else assert.ok((await readNativeWork(app)).rows.live >= list.length, "native eager row census includes all remaining tabs");
+    await checkRealization(list, contract.nativeLayout || what === "open");
     assert.deepEqual(native.windows[0].tabIds, list, `${what}: native store order differs from the measured rows`);
     assert.deepEqual(native.tabs.map((tab) => tab.id).sort(), [...list].sort(), `${what}: native tab IDs differ from JS`);
     const shown = rows.filter((r) => r.f);

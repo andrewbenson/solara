@@ -42,7 +42,7 @@ const fixture = (count) => session(sidebarSession({
     return { id, profileId: work ? "work" : "default", url: `${origin}/${id}`, title: `Fixture ${id}`, customTitle: `Fixture ${id}` };
   }),
   groups: [{ id: "g1", name: "Fixture group", windowId: "w1", profileId: "default", color: "blue", collapsed: false, pinned: false, tabIds: ["t3", "t4", "t5"], createdAt: 1 }],
-  settings: { sidebarPosition, addressBar: "sidebar", tabLayout: "sidebar", warnBeforeClosingLastTab: false, warnBeforeClosingWindow: false },
+  settings: { sidebarPosition, addressBar: "sidebar", tabLayout: "sidebar", newTabPosition: "top", newTabButtonPosition: "top", warnBeforeClosingLastTab: false, warnBeforeClosingWindow: false },
 }));
 
 let app;
@@ -50,7 +50,7 @@ try {
   for (const count of [200, 2000]) {
     const data = join(scratch, `${count}-tabs`, "data");
     assert.ok(!existsSync(data), `fixture data already exists; choose a fresh --out: ${data}`);
-    app = await launch(resolve(appArg), { data, session: fixture(count), onboarded: true, probe: true, port: args.find((arg) => arg.startsWith("--port="))?.slice(7), ready: { timeout: 45000, test: "return !!ac.store" } });
+    app = await launch(resolve(appArg), { data, session: fixture(count), onboarded: true, probe: true, files: { ".new-tabs-top-0.4.1": "1" }, port: args.find((arg) => arg.startsWith("--port="))?.slice(7), ready: { timeout: 45000, test: "return !!ac.store" } });
     const result = { tabs: count, samples: [] };
     report.fixtures.push(result);
     const run = (body, timeout = 5000) => app.eval(body, { timeout });
@@ -192,7 +192,9 @@ try {
         });
         await rep.check("an edited row commits before scroll recycles its field", async () => {
           await scroll(0);
-          await run('ac.pages.setSidebarUi({ renaming: { windowId: "w1", kind: "tab", id: "t1" } }); return true;');
+          assert.equal(await run('return expo.modules.SolaraHosted.beginRename("w1", "tab", "t1");'), true, "native rename accepted");
+          const editor = () => run('const editing = ac.sidebarRows.useSidebarUi.getState().renaming; return editing?.windowId === "w1" ? editing.id : null;');
+          await until("rename editor opens", editor, (id) => id === "t1");
           await sleep(250);
           await run('return ac.shell.devTypeKeys("w1", "Recycled rename", 10);');
           await scroll(1480);
@@ -203,7 +205,7 @@ try {
           save();
           const after = await capture("rename-offscreen");
           assert.ok(!after.current.bound.some((row) => row.key === "t:t1"), "edited cell is released offscreen");
-          assert.equal(await run('return ac.sidebarRows.useSidebarUi.getState().renaming?.id ?? null;'), null, "field editor identity closes");
+          await until("field editor identity closes", editor, (id) => id === null);
           await assertLabels(after);
         });
         await rep.check("native offscreen selection and virtual accessibility reveal materialize the requested identity", async () => {

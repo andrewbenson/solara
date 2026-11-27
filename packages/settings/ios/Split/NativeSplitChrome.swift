@@ -534,9 +534,7 @@ final class NativePaneLayoutHost {
   private func placeBookmarks(_ snapshot: WindowLayoutSnapshot, state: BrowserState) {
     guard snapshot.input.split == nil, let id = snapshot.input.selectedTabId,
       let pane = snapshot.panes[id], let page = snapshot.pages[id], let bar = snapshot.toolbars[id],
-      state.windows[shell.windowId]?.incognito != true,
-      snapshot.input.bookmarksBar == "always" || snapshot.input.bookmarksBar == "newTab" && state.tabs[id]?.url.isEmpty == true,
-      snapshot.input.pageFacts[id]?.fullscreen != true else {
+      let height = snapshot.input.bookmarksBarHeights[id], height > 0 else {
       bookmarks?.view.removeFromSuperview()
       bookmarks = nil
       return
@@ -545,10 +543,10 @@ final class NativePaneLayoutHost {
     bookmarks = host
     if host.view.superview !== shell.card { shell.card.addSubview(host.view, positioned: .below, relativeTo: overlays) }
     let band = snapshot.input.pageFacts[id]?.band ?? 0
-    let top = min(max(bar.maxY, page.minY - band - 30), pane.maxY)
+    let top = min(max(bar.maxY, page.minY - band - height), pane.maxY)
     host.view.frame = CGRect(x: pane.minX - snapshot.frames.card.minX, y: top - snapshot.frames.card.minY,
-      width: pane.width, height: min(30, max(0, page.minY - band - top)))
-    host.updateNative(state, profileId: snapshot.input.profileId, theme: theme)
+      width: pane.width, height: min(height, max(0, page.minY - band - top)))
+    host.updateNative(state, theme: theme)
   }
 
   func setFrozen(_ next: [String: [String: Any]]) {

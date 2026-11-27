@@ -151,7 +151,27 @@ enum NativeBookmarkCommands {
 }
 
 extension NativeBookmarkCommands {
-  private static var filingGroups: Set<String> = []
+  private static let filing = BookmarkGroupFiling()
+
+  static func addFolderToSidebar(_ id: String, editing: NativeBookmarkEditing, snapshot: BookmarkWriterSnapshot) {
+    guard editing.live, SettingsDirectWrites.store === editing.store,
+      let draft = BookmarkGroupDraft.folder(id, nodes: snapshot.document["nodes"]?.object ?? [:]) else { return }
+    let store = editing.store
+    let state = store.state
+    let regular = { (id: String) in
+      state.windows[id].map { !$0.incognito && !$0.isSmall } == true && !store.memory.closingWindows.contains(id)
+    }
+    let windows = (state.ui.focusOrder + state.windowOrder).filter(regular)
+    let target = regular(editing.windowId) ? editing.windowId : windows.first { state.windows[$0]?.profileId == editing.profile } ?? windows.first
+    guard let windowId = target ?? SettingsDirectWrites.write(store, Command("createWindow", [["profileId": .string(editing.profile)]]))?.result?.string else { return }
+    let result = SettingsDirectWrites.write(store, Command("openDraftGroups", [.string(windowId), .string(editing.profile), [draft]]))?.result
+    NativeWorkspaceCommands.materializeChanges(before: state, after: store.state)
+    FrameUpdates.flush()
+    if let skipped = result?["skipped"]?.number, skipped > 0, let host = WindowHost.contentView(windowId) {
+      let count = Int(skipped).formatted(.number.locale(Locale(identifier: "en_US")))
+      LinkToast.show(in: host, title: "\(count) \(skipped == 1 ? "link" : "links") left out", message: "A folder brings up to 5,000 links.")
+    }
+  }
 
   static func fileTabs(_ ids: [String], folder: String, windowId: String, store: Store) {
     guard let window = store.state.windows[windowId] else { return }
@@ -193,24 +213,25 @@ extension NativeBookmarkCommands {
 
   static func fileGroup(_ id: String, windowId: String, store: Store) {
     let state = store.state
-    guard let window = state.windows[windowId], let group = state.groups[id], group.windowId == windowId,
-      let owner = NativeBookmarkOwner.writableCurrent, filingGroups.insert(id).inserted else { return }
-    let profile = state.bookmarkProfileId(window)
+    guard let editing = NativeBookmarkEditing(windowId: windowId), editing.store === store,
+      let group = state.groups[id], group.windowId == windowId, group.profileId == state.windows[windowId]?.profileId,
+      let owner = NativeBookmarkOwner.writableCurrent, let binding = try? owner.binding(profile: editing.profile) else { return }
     let original = groupTree(group, state: state)
-    Task { @MainActor in
-      defer { filingGroups.remove(id) }
+    let mutation = BookmarkMutation(method: "addBookmarkTree", args: [.string(editing.profile), [original.draft]])
+    Task {
       do {
-        guard WorkspaceWrites.store === store, NativeBookmarkOwner.writableCurrent === owner else { return }
-        let binding = try owner.binding(profile: profile)
-        let mutation = BookmarkMutation(method: "addBookmarkTree", args: [.string(profile), [original.draft]])
-        let receipt = try await owner.submitAsync(profile: profile, mutations: [mutation], binding: binding)
-        if WorkspaceWrites.store === store, let current = store.state.groups[id], current.windowId == windowId,
-          groupTree(current, state: store.state).members == original.members {
-          _ = try? store.dispatch(Command("closeGroup", [.string(id)]), origin: .native)
-          FrameUpdates.flush()
-        }
-        try await restoreIcons(original.icons, receipt: receipt, owner: owner, profile: profile, binding: binding)
-      } catch { failed(error, windowId: windowId) }
+        try await filing.run(id, save: {
+          guard NativeBookmarkOwner.writableCurrent === owner else { throw BookmarkWriterError.staleBinding }
+          return try await editing.write([mutation], binding: binding)
+        }, didSave: { receipt in
+          if editing.live, let current = store.state.groups[id], current.windowId == windowId, current.profileId == group.profileId,
+            groupTree(current, state: store.state).members == original.members {
+            _ = try? store.dispatch(Command("closeGroup", [.string(id)]), origin: .native)
+            FrameUpdates.flush()
+          }
+          try await restoreIcons(original.icons, receipt: receipt, owner: owner, profile: editing.profile, binding: binding)
+        })
+      } catch { editing.report(error) }
     }
   }
 

@@ -13,7 +13,6 @@ registerHooks({
 
 const sent = [];
 let result;
-let onDispatch;
 globalThis.__DEV__ = true;
 globalThis.acTestNativeModules = {
   SolaraStoreAdapter: {
@@ -21,8 +20,7 @@ globalThis.acTestNativeModules = {
     dispatch: (json, rev) => {
       const commands = [JSON.parse(json)].flat();
       sent.push(...commands);
-      commands.forEach((command) => onDispatch?.(command));
-      return JSON.stringify({ rev, patches: [], result: commands.some((command) => command.name === "openDraftGroups") ? { made: [], skipped: 0 } : result });
+      return JSON.stringify({ rev, patches: [], result });
     },
     catchUp: (rev) => JSON.stringify({ rev, patches: [] }),
     addListener: () => ({ remove() {} }),
@@ -31,7 +29,6 @@ globalThis.acTestNativeModules = {
 
 const { useBrowser } = await import("./browser.ts");
 const { attachReplica, nativeForwardedWrites, startNativeStore, withApplier } = await import("./nativeStore.ts");
-const { moveGroupToBookmarksBar } = await import("../lib/bookmarkGroups.ts");
 const { setWindowLayout } = await import("../components/onboarding/state.ts");
 const { pagesDrivers } = await import("../components/pages/devDrivers.ts");
 const S = () => useBrowser.getState();
@@ -39,7 +36,6 @@ S().hydrate({});
 const windowId = S().createWindow({ url: "https://home.example/" });
 const first = S().newTab(windowId, { index: S().windows[windowId].tabIds.length, url: "https://one.example/" });
 const second = S().newTab(windowId, { index: S().windows[windowId].tabIds.length, url: "https://two.example/" });
-const groupId = S().createGroup([first, second], { name: "Saved" });
 const baseline = S();
 startNativeStore();
 attachReplica(useBrowser);
@@ -48,21 +44,10 @@ beforeEach(() => {
   withApplier(() => useBrowser.setState({ ...baseline, ...Object.fromEntries(Object.entries(actions).filter(([, value]) => typeof value === "function")) }));
   sent.length = 0;
   result = undefined;
-  onDispatch = undefined;
 });
 afterEach(() => {
   assert.equal(nativeForwardedWrites(), 0);
   assert.equal(globalThis.__nativeStoreForwards?.length ?? 0, 0);
-});
-
-test("filing a group creates bookmarks before sending its close command", async () => {
-  let filed;
-  onDispatch = ({ name }) => {
-    if (name === "closeGroup") filed = Object.values(S().bookmarks.nodes).filter((node) => node.kind === "url").map((node) => node.url);
-  };
-  await moveGroupToBookmarksBar(groupId);
-  assert.deepEqual(sent.map((command) => command.name), ["closeGroup"]);
-  assert.deepEqual(filed, ["https://one.example/", "https://two.example/"]);
 });
 
 test("onboarding sets only the requested window layout through a command", () => {

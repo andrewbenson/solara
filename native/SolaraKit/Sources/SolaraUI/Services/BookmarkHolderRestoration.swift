@@ -68,27 +68,10 @@ public final class BookmarkHolderRestoration {
         var seen: Set<JSKey> = [JSKey(id)]
         var expected: JSONObject = [id: holder]
         var links: [String: String] = [:]
-        func draft(_ child: String, parent: String, depth: Int) -> JSONValue? {
-          guard depth < 63, seen.insert(JSKey(child)).inserted, let node = nodes[child],
-            node["parentId"] == .string(parent) else { return nil }
-          expected[child] = node
-          var value: JSONObject = ["id": .string(child), "title": .string(String(decoding: BookmarkString.units(node["title"]?.string ?? ""), as: UTF16.self))]
-          if node["kind"] == "url", let url = node["url"]?.string {
-            value["url"] = .string(String(decoding: BookmarkString.units(url), as: UTF16.self))
-            if ["http:", "https:", "file:"].contains(where: url.lowercased().hasPrefix) {
-              links[child] = url
-            }
-          } else if node["kind"] == "folder" {
-            value["children"] = .array((node["children"]?.array?.compactMap(\.string) ?? []).compactMap {
-              draft($0, parent: child, depth: depth + 1)
-            })
-          } else { return nil }
-          return .object(value)
-        }
         let drafts = (holder["children"]?.array?.compactMap(\.string) ?? []).compactMap { child -> JSONValue? in
-          guard nodes[child]?["kind"] == "folder" else { return nil }
+          guard nodes[child]?["kind"] == "folder", nodes[child]?["parentId"] == .string(id) else { return nil }
           let before = links.count
-          let folder = draft(child, parent: id, depth: 0)
+          let folder = BookmarkGroupDraft.build(child, nodes: nodes, depth: 1, seen: &seen, expected: &expected, links: &links)
           return links.count > before ? folder : nil
         }
         guard !drafts.isEmpty else { continue }

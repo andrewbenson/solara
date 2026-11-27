@@ -118,7 +118,7 @@ struct BookmarksBarLinkDropViewTests {
     let view = view()
     view.frame.origin = CGPoint(x: 0, y: 100)
     window.contentView?.addSubview(view)
-    view.resolveTab = { id in id == "tab" ? .init(url: "https://tab.test/", title: "Current tab") : .init(url: "file:///tmp/a", title: "Local file") }
+    view.resolveTab = { id, _ in id == "tab" ? .init(url: "https://tab.test/", title: "Current tab") : .init(url: "file:///tmp/a", title: "Local file") }
     var events: [(String, [String: Any])] = []
     view.onAction = { events.append(($0, $1)) }
     let zone = BookmarksBarTabDropZone(view: view)
@@ -150,7 +150,13 @@ struct BookmarksBarLinkDropViewTests {
     let view = view()
     view.frame.origin = CGPoint(x: 0, y: 100)
     content.addSubview(view)
-    view.resolveTab = { _ in .init(url: "https://tab.test/", title: "Current tab") }
+    view.windowId = "target"
+    var tabWindow = "source"
+    view.resolveTab = { _, source in
+      #expect(source == "source")
+      guard tabWindow == source else { return nil }
+      return .init(url: "https://tab.test/", title: "Current tab")
+    }
     var events: [String] = []
     view.onAction = { name, _ in events.append(name) }
     let zone = BookmarksBarTabDropZone(view: view)
@@ -170,6 +176,10 @@ struct BookmarksBarLinkDropViewTests {
     #expect(zone.aim(session, at: windowPoint) == .bookmarks)
     #expect(zone.drop(session, .bookmarks))
     #expect(events == ["dropLinks"])
+    #expect(zone.aim(session, at: windowPoint) == .bookmarks)
+    tabWindow = "another"
+    #expect(!zone.drop(session, .bookmarks))
+    #expect(events == ["dropLinks"])
   }
 
   @Test func tabZoneRejectsClippedPointsAndClearsThePreviousDestination() throws {
@@ -181,7 +191,7 @@ struct BookmarksBarLinkDropViewTests {
     window.contentView?.addSubview(clip)
     let view = view()
     clip.documentView = view
-    view.resolveTab = { _ in .init(url: "https://tab.test/", title: "Current tab") }
+    view.resolveTab = { _, _ in .init(url: "https://tab.test/", title: "Current tab") }
     let zone = BookmarksBarTabDropZone(view: view)
     defer { zone.clear() }
     let session = TabDragSession(tabIds: ["tab"], sourceWindow: "source")
@@ -207,7 +217,7 @@ struct BookmarksBarLinkDropViewTests {
     view.frame.origin = CGPoint(x: 220, y: 80)
     content.addSubview(view)
     view.layoutSubtreeIfNeeded()
-    view.resolveTab = { _ in .init(url: "https://tab.test/", title: "Current tab") }
+    view.resolveTab = { _, _ in .init(url: "https://tab.test/", title: "Current tab") }
     let descendant = try #require(view.subviews.compactMap { $0 as? BookmarksBarButton }.first { $0.controlId == "a" })
     let local = view.convert(CGPoint(x: descendant.bounds.midX, y: descendant.bounds.midY), from: descendant)
     let point = view.convert(local, to: nil)
@@ -224,7 +234,7 @@ struct BookmarksBarLinkDropViewTests {
   @Test func simulatedTabsKeepPayloadOrderAndRefusedInputsEmitNothing() {
     #if DEBUG
     let view = view()
-    view.resolveTab = { id in .init(url: "https://\(id).test/", title: id.uppercased()) }
+    view.resolveTab = { id, _ in .init(url: "https://\(id).test/", title: id.uppercased()) }
     var events: [(String, [String: Any])] = []
     view.onAction = { events.append(($0, $1)) }
     let tabs = view.devDrop(x: 8, folderId: nil, payload: #"{"tabIds":["b","a"]}"#)

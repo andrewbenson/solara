@@ -76,7 +76,8 @@ final class LegacyToolbarGeometryView: ExpoView {
   var windowId = ""
   var tabId = ""
   private var mounted: (windowId: String, tabId: String)?
-  private var lastFrame: (top: Double, viewport: Double, onFrame: Bool, strip: Bool)?
+  var bookmarksHeight: Double = 0
+  private var lastFrame: (top: Double, viewport: Double, onFrame: Bool, strip: Bool, bookmarksHeight: Double)?
 
   override func hitTest(_ point: NSPoint) -> NSView? { nil }
 
@@ -105,9 +106,9 @@ final class LegacyToolbarGeometryView: ExpoView {
   }
 
   func deliver(top: Double, viewport: Double, onFrame: Bool, strip: Bool) {
-    guard lastFrame?.top != top || lastFrame?.viewport != viewport || lastFrame?.onFrame != onFrame || lastFrame?.strip != strip else { return }
-    lastFrame = (top, viewport, onFrame, strip)
-    onToolbarFrame(["tabId": tabId, "top": top, "viewport": viewport, "onFrame": onFrame, "strip": strip])
+    guard lastFrame?.top != top || lastFrame?.viewport != viewport || lastFrame?.onFrame != onFrame || lastFrame?.strip != strip || lastFrame?.bookmarksHeight != bookmarksHeight else { return }
+    lastFrame = (top, viewport, onFrame, strip, bookmarksHeight)
+    onToolbarFrame(["tabId": tabId, "top": top, "viewport": viewport, "onFrame": onFrame, "strip": strip, "bookmarksHeight": bookmarksHeight])
   }
 }
 
@@ -341,6 +342,7 @@ enum AutoHideHost {
     if !NativeWindowShell.nativeLayoutActive(windowId) { window.legacyTops = present }
     for (id, mode) in snapshot.toolbarModes {
       guard let top = snapshot.shownTops[id] else { continue }
+      window.views[id]?.value?.bookmarksHeight = Double(snapshot.input.bookmarksBarHeights[id] ?? 0)
       let mountedToolbar = NativeToolbarHostView.toolbar(windowId: windowId, tabId: id)
       guard visible.contains(id), let toolbar = mountedToolbar,
         let toolbarState = toolbar.state, toolbarState.tabId == id, toolbar.window != nil,

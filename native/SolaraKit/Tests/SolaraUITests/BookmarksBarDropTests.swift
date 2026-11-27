@@ -1,5 +1,6 @@
 import Foundation
 import Testing
+import SolaraModel
 @testable import SolaraUI
 
 struct BookmarksBarDropTests {
@@ -15,6 +16,28 @@ struct BookmarksBarDropTests {
 
   private func target(_ id: String = "a", dx: CGFloat, pointerX: CGFloat = 500, edge: CGFloat? = nil) -> BookmarksBarDropTarget? {
     BookmarksBarDropTarget.resolve(id: id, items: items, visible: placements, deltaX: dx, pointerX: pointerX, sidebarEdge: edge)
+  }
+
+  @Test @MainActor func staleOrdersCannotReorderOrAppendLinks() {
+    let document: JSONValue = ["nodes": [
+      "bar": ["kind": "folder", "children": ["a", "folder", "b"]],
+      "folder": ["kind": "folder", "parentId": "bar", "children": []],
+      "a": ["kind": "url", "parentId": "bar"],
+    ]]
+    let plan = BookmarksBarEdits(profile: "p", bar: "bar", other: "other", document: document)
+    #expect(plan.move("a", into: nil, index: 1, listed: ["a", "b", "folder"]).isEmpty)
+    #expect(plan.move("a", into: "folder", index: nil, listed: ["a", "folder", "b"]).last?.method == "moveBookmark")
+    let links = [BookmarksBarDroppedLink(url: "https://example.test", title: "")]
+    let edits = plan.drop(links, parent: "bar", index: 2, listed: ["a", "folder", "b"])
+    #expect(edits.map(\.method) == ["expectChildren", "addBookmark"])
+    #expect(plan.drop(links, parent: "bar", index: 2, listed: ["a", "b", "folder"]).isEmpty)
+    #expect(plan.drop(links, parent: "another-window", index: nil, listed: nil).isEmpty)
+  }
+
+  @Test @MainActor func tabDropsRequireTheOriginalSourceWindowAndTheTargetProfile() {
+    #expect(BookmarksBarEdits.acceptsTab(sourceWindow: "first", targetProfile: "work", tabWindow: "first", tabProfile: "work"))
+    #expect(!BookmarksBarEdits.acceptsTab(sourceWindow: "first", targetProfile: "work", tabWindow: "second", tabProfile: "work"))
+    #expect(!BookmarksBarEdits.acceptsTab(sourceWindow: "first", targetProfile: "work", tabWindow: "first", tabProfile: "home"))
   }
 
   @Test func folderTargetUsesOnlyTheStrictMiddleHalf() {

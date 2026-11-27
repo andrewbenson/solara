@@ -6,7 +6,7 @@ public final class BookmarksBarView: NSView {
   public var onFocusPage: () -> Void = {}
   public var onAction: (_ name: String, _ payload: [String: Any]) -> Void = { _, _ in }
   public private(set) var snapshot: BookmarksBarSnapshot?
-  public var resolveTab: (String) -> BookmarksBarDroppedLink? = { _ in nil }
+  public var resolveTab: (_ id: String, _ sourceWindow: String) -> BookmarksBarDroppedLink? = { _, _ in nil }
   public var windowId = "" {
     didSet { registerTabDrops() }
   }
@@ -450,7 +450,7 @@ public final class BookmarksBarView: NSView {
   #if DEBUG
   public func devDrop(x: CGFloat, folderId: String?, payload: String) -> [String: Any] {
     layoutSubtreeIfNeeded()
-    let links = BookmarksBarLinkDrop.devLinks(payload, resolve: resolveTab)
+    let links = BookmarksBarLinkDrop.devLinks(payload) { resolveTab($0, windowId) }
     let rejected: [String: Any] = ["accepted": false, "parentId": NSNull(), "index": NSNull(), "items": []]
     var point = CGPoint(x: x, y: bounds.midY)
     if let folderId {
@@ -580,6 +580,9 @@ public final class BookmarksBarView: NSView {
     guard let snapshot else { return }
     var payload = payload
     payload["profileId"] = snapshot.profileId
+    if name == "move" || name == "folderToSidebar" || name == "dropLinks" && payload["parentId"] as? String == snapshot.barId {
+      payload["listed"] = snapshot.items.map(\.id)
+    }
     onAction(name, payload)
   }
 }

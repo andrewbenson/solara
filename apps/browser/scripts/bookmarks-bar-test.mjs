@@ -66,12 +66,12 @@ const coroutine = `const runSteps = (steps) => new Promise((resolve, reject) => 
   step("next");
 });`;
 const run = (body, timeout = 3000) => app.eval(/\bawait\s/.test(body) ? `${coroutine}\nreturn runSteps(function* () { ${helpers}\n${body.replace(/\bawait\s/g, "yield ")} });` : `${helpers}\n${body}`, { timeout });
-const until = async (what, body, accept = (value) => !!value, timeout = 8000) => {
+const until = async (what, body, accept = (value) => !!value, timeout = 8000, evalTimeout = 3000) => {
   const deadline = Date.now() + timeout;
   let last;
   while (Date.now() < deadline) {
     if (!app.alive) throw new Error(`${what}: app exited`);
-    last = await run(body);
+    last = await run(body, evalTimeout);
     if (accept(last)) return last;
     await sleep(80);
   }
@@ -378,11 +378,8 @@ try {
     const [arcFolder] = S().bookmarks.nodes[arc].children;
     const [arcLink] = S().bookmarks.nodes[arcFolder].children;
     const shell = globalThis.expo.modules.SolaraShell;
-    bmbar.prompt = shell.prompt;
     bmbar.confirm = shell.confirm;
-    bmbar.prompts = [];
     bmbar.confirms = [];
-    shell.prompt = (options) => { bmbar.prompts.push(options); return Promise.resolve("Menu folder"); };
     shell.confirm = (options) => { bmbar.confirms.push(options); return Promise.resolve({ confirmed: false, suppressed: false }); };
     return { empty, arc, arcFolder, arcLink, sidebar, copy, doomed, many, otherRoot: S().bookmarks.roots.default.other };
   `, 15000);
@@ -487,6 +484,7 @@ try {
       await until("bookmark editor closes", "return editorState().then((state) => state === null);");
     });
   }
+  assert.equal(await run('return act("w1", "alertSheets:1");'), "1", "use native sheets in the hidden instance");
   for (const [trigger, context] of [["item", ids.first], ["blank", null]]) {
     await rep.check(`native-menu-add-page-${trigger}`, async () => {
       const expectedIndex = context ? await run(`return barIds().indexOf(${JSON.stringify(context)}) + 1;`) : null;
@@ -500,18 +498,24 @@ try {
       await until("Add Page editor closes", "return editorState().then((state) => state === null);");
     });
     await rep.check(`native-menu-add-folder-${trigger}`, async () => {
-      const before = await run("return { children: [...barIds()], prompts: bmbar.prompts.length }; ");
+      const title = context ? "Menu folder beside item" : "Menu folder at end";
+      const before = await run("return [...barIds()];", 10000);
+      await until("previous folder sheet closed", 'return act("w1", "winfo").then(JSON.parse);', (value) => !value?.sheetWindow, 15000, 10000);
       await choose(trigger, context, context ? `addFolder:${context}` : "addFolder");
-      const children = await until("Add Folder prompt creates bookmark", "return barIds();", (value) => value.length === before.children.length + 1);
-      const created = children.find((id) => !before.children.includes(id));
-      const node = await run(`return S().bookmarks.nodes[${JSON.stringify(created)}];`);
-      assert.equal(node.kind, "folder");
-      assert.equal(node.title, "Menu folder");
-      assert.equal(node.parentId, ids.bar);
-      assert.equal(children.indexOf(created), context ? before.children.indexOf(context) + 1 : before.children.length);
-      assert.deepEqual(await run("return bmbar.prompts.at(-1);"), { title: "New Folder", placeholder: "Folder name", confirmTitle: "Create", windowId: "w1" });
-      assert.equal(await run("return bmbar.prompts.length;"), before.prompts + 1);
-      await run(`await ac.bookmarks.removeBookmark("default", ${JSON.stringify(created)}); return true;`);
+      const info = await until("Add Folder sheet", 'return act("w1", "winfo").then(JSON.parse);', (value) => !!value?.sheetWindow, 15000, 10000);
+      for (const text of ["New Folder", "Create", "Cancel"]) assert.ok(info.sheetText.includes(text), JSON.stringify(info.sheetText));
+      await run(`return C.devWindow(${info.sheetWindow}, ${JSON.stringify(`type:${title}`)});`, 10000);
+      await run(`return C.devWindow(${info.sheetWindow}, "keys:0:" + String.fromCharCode(13) + ":36");`, 10000);
+      const nodes = await until("Add Folder sheet creates bookmark", "return barIds().map((id) => S().bookmarks.nodes[id]);",
+        (value) => value.some((node) => node?.title === title && !before.includes(node.id)), 15000, 10000);
+      const index = nodes.findIndex((node) => node?.title === title && !before.includes(node.id));
+      const created = nodes[index];
+      assert.equal(created.kind, "folder");
+      assert.equal(created.parentId, ids.bar);
+      if (context) assert.equal(nodes[index - 1]?.id, context);
+      else assert.equal(index, nodes.length - 1);
+      await run(`await ac.bookmarks.removeBookmark("default", ${JSON.stringify(created.id)}); return true;`, 10000);
+      await until("folder cleanup published", `return !barIds().includes(${JSON.stringify(created.id)});`, Boolean, 15000, 10000);
     });
   }
   await rep.check("native-menu-delete", async () => {
@@ -523,9 +527,10 @@ try {
     await until("Manage opens internal page", 'return S().tabs[active()]?.url === "solara://bookmarks";');
   });
   await rep.check("native-menu-bar-modes", async () => {
-    await run('S().newTab("w1"); return true;');
+    const tabId = await run('return S().newTab("w1");');
+    await until("new tab is active", `return active() === ${JSON.stringify(tabId)};`);
     for (const mode of ["newTab", "always", "never"]) {
-      await choose("blank", null, `bar:${mode}`);
+      await until(`bar accepts ${mode}`, `return H.devBookmarksBarChoose("w1", "blank", null, "bar:${mode}").then(JSON.parse);`, (value) => value.accepted);
       await until("bar mode stored", `return S().settings.bookmarksBar === ${JSON.stringify(mode)};`);
       if (mode === "never") await until("Never hides bar", 'return H.devBookmarksBarLayout("w1").then(JSON.parse);', (value) => value === null);
       else await until("mode submenu checkmarks", 'return H.devBookmarksBarMenu("w1", "blank", null).then(JSON.parse);', (value) => Array.isArray(value) && value.at(-1)?.children?.find((item) => item.choiceId === `bar:${mode}`)?.checked);
@@ -718,7 +723,6 @@ try {
     await run(`
       const shell = globalThis.expo.modules.SolaraShell;
       if (globalThis.bmbar?.showMenu) shell.showMenu = bmbar.showMenu;
-      if (globalThis.bmbar?.prompt) shell.prompt = bmbar.prompt;
       if (globalThis.bmbar?.confirm) shell.confirm = bmbar.confirm;
       return true;
     `).catch(() => {});

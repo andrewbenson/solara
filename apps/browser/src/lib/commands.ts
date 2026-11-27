@@ -29,7 +29,6 @@ import { focusSettingsSearch } from "../components/settings/searchState";
 import { closePanelToHeroBar } from "../components/omnibox/barState";
 import { closeNewTabBar, toggleNewTabBar } from "../components/omnibox/newTabBar";
 import { NEW_TAB_BAR_POLICY } from "../store/newTabBar";
-import { addFolderToSidebar } from "./bookmarkGroups";
 import { bookmarkWriter, reportBookmarkFailure } from "./bookmarkWriter";
 import { webviews } from "./webviews";
 import { goBack, goForward } from "../components/layout/history";
@@ -64,7 +63,7 @@ export const commandHandlers = {
 };
 
 export function runCommand({ command, arg, windowId: requested }: CommandEvent) {
-  if (command === "restoreArcFolders" || command === "openBookmark" || command === "jumpToSelection" || ["copyUrl", "copyUrlAsMarkdown", "copyQuoteLink", "share", "openFile", "autofill", "searchTabs", "tabSwitcher", "focusCommandBar", "cast", "reload", "forceReload", "returnToPinnedUrl", "togglePageEngine", "openExtension", "addExtension", "pinExtensions", "manageExtensions", "showHistory", "manageBookmarks", "bookmarkPage", "bookmarkAllTabs"].includes(command)) return void nativeWorkspaceCommand(command, arg, requested);
+  if (command === "addFolderToSidebar" || command === "restoreArcFolders" || command === "openBookmark" || command === "jumpToSelection" || ["copyUrl", "copyUrlAsMarkdown", "copyQuoteLink", "share", "openFile", "autofill", "searchTabs", "tabSwitcher", "focusCommandBar", "cast", "reload", "forceReload", "returnToPinnedUrl", "togglePageEngine", "openExtension", "addExtension", "pinExtensions", "manageExtensions", "showHistory", "manageBookmarks", "bookmarkPage", "bookmarkAllTabs"].includes(command)) return void nativeWorkspaceCommand(command, arg, requested);
   if (nativeOwnsWorkspace() && nativeWorkspaceCommand(command, arg, requested)) return;
   if (__DEV__ && !commandHandlersEnabled) { commandHandlerBlocked++; return; }
   if (__DEV__) commandHandlerCalls++;
@@ -98,10 +97,7 @@ export function runCommand({ command, arg, windowId: requested }: CommandEvent) 
   }
   if (route.kind === "window") return runWindowCommand(command, arg, route.windowId);
   if (route.focusWindow) focus(route.focusWindow);
-  if (route.kind === "invoker") {
-    if (arg) addFolderToSidebar(arg, route.windowId);
-    return;
-  }
+  if (route.kind === "invoker") return;
   if (route.kind === "noWindow") {
     if (command === "newTab") openWindow({ newTabCommand: true });
     if (command === "reopenClosedTab" || command === "restoreClosed") {

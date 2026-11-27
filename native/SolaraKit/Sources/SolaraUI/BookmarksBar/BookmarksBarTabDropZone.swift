@@ -13,7 +13,7 @@ final class BookmarksBarTabDropZone: TabDropZone {
     guard view.visibleRect.contains(point),
       let hit = content.hitTest(view.convert(point, to: content.superview)),
       hit === view || hit.isDescendant(of: view) else { clear(); return nil }
-    let links = BookmarksBarLinkDrop.tabs(session.tabIds, resolve: view.resolveTab)
+    let links = BookmarksBarLinkDrop.tabs(session.tabIds) { view.resolveTab($0, session.sourceWindow) }
     let accepted = view.showLinkDrop(at: point, links: links)
     if accepted && !copying { NSCursor.dragCopy.push(); copying = true }
     if !accepted && copying { NSCursor.pop(); copying = false }
@@ -29,6 +29,7 @@ final class BookmarksBarTabDropZone: TabDropZone {
 
   func drop(_ session: TabDragSession, _ aim: TabDropAim) -> Bool {
     guard aim == .bookmarks, let view else { return false }
-    return view.performLinkDrop(BookmarksBarLinkDrop.tabs(session.tabIds, resolve: view.resolveTab))
+    let links = BookmarksBarLinkDrop.tabs(session.tabIds) { view.resolveTab($0, session.sourceWindow) }
+    return view.performLinkDrop(links)
   }
 }

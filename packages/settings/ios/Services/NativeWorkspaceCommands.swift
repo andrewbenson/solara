@@ -264,8 +264,26 @@ enum NativeWorkspaceCommands {
       }
       return true
     }
+    if command == "addFolderToSidebar" {
+      guard let store = SettingsDirectWrites.store, let arg else { return true }
+      if let windowId, store.state.windows[windowId] == nil, !CommandRoute.utilityWindowIds.contains(windowId) { return true }
+      if let target = CommandRoute.resolve(command, windowId: windowId, state: store.state, closing: store.memory.closingWindows).windowId,
+        let editing = NativeBookmarkEditing(windowId: target), let snapshot = editing.snapshot() {
+        NativeBookmarkCommands.addFolderToSidebar(arg, editing: editing, snapshot: snapshot)
+      }
+      return true
+    }
     if command == "restoreArcFolders" {
-      if let arg { Task { await NativeBookmarkHolderRestoration.restore(id: arg, windowId: windowId) } }
+      guard let arg else { return true }
+      if let windowId, SettingsDirectWrites.store != nil {
+        guard let editing = NativeBookmarkEditing(windowId: windowId) else { return true }
+        Task {
+          guard editing.live else { return }
+          await NativeBookmarkHolderRestoration.restore(id: arg, windowId: windowId)
+        }
+      } else {
+        Task { await NativeBookmarkHolderRestoration.restore(id: arg, windowId: windowId) }
+      }
       return true
     }
     if command == "cast" { return NativeCast.command(windowID: windowId) }

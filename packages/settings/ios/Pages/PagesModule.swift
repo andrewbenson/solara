@@ -395,7 +395,8 @@ final class NativePageView: ExpoView {
     case .open(let id, let mode): NativeBookmarkCommands.openItem(id, mode: mode.rawValue, windowId: windowId)
     case .openAll(let id, let newWindow): NativeBookmarkCommands.openItem(id, mode: newWindow ? "window" : "tabs", folder: true, windowId: windowId)
     case .edit(let id): NativeBookmarkForms.edit(windowId: windowId, id: id)
-    case .addGroup(let id): onPageEvent(["kind": "addGroup", "id": id, "windowId": windowId])
+    case .addGroup(let id):
+      if let snapshot = editing.snapshot() { NativeBookmarkCommands.addFolderToSidebar(id, editing: editing, snapshot: snapshot) }
     case .restoreArc(let id): _ = NativeWorkspaceCommands.perform("restoreArcFolders", arg: id, windowId: windowId)
     case .delete(let ids):
       writeBookmarks([.init(method: "removeBookmarks", args: [JSONValue(ids)])], editing: editing, onSuccess: { model, receipt in

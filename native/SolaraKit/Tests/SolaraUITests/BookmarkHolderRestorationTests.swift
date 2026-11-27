@@ -6,6 +6,25 @@ import Testing
 
 @MainActor
 @Suite struct BookmarkHolderRestorationTests {
+
+  @Test @MainActor func filingFailureKeepsTheSourceAndAllowsRetry() async throws {
+    let filing = BookmarkGroupFiling()
+    var closed = 0
+    var attempts = 0
+    enum Refusal: Error { case refused }
+    do {
+      try await filing.run("group", save: { () throws -> Bool in
+        attempts += 1
+        throw Refusal.refused
+      }, didSave: { _ in closed += 1 })
+      Issue.record("The writer refusal should reach the caller")
+    } catch Refusal.refused {}
+    #expect(closed == 0)
+    try await filing.run("group", save: { attempts += 1; return true }, didSave: { _ in closed += 1 })
+    #expect(attempts == 2)
+    #expect(closed == 1)
+  }
+
   private let document: JSONValue = ["nodes": [
     "bar@default": ["kind": "folder", "children": ["holder"]],
     "holder": ["kind": "folder", "parentId": "bar@default", "title": "Imported (Arc)", "children": ["folder"]],

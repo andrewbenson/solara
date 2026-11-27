@@ -67,6 +67,7 @@ enum NativeBookmarksBar {
     guard enabled else { return }
     HostedViews.register(kind) { windowId, state in
       let host = BookmarksBarHost(windowId: windowId)
+      host.observeStore()
       host.apply(state)
       #if DEBUG
       devHosts[windowId] = BookmarksBarDevHost(host)
@@ -85,19 +86,28 @@ final class BookmarksBarHost {
   let view: BookmarksBarView
   private var metadata: BookmarksBarSnapshot?
   private var bookmarkObserver: NSObjectProtocol?
+  private var storeListener: (Store, Int)?
+  private var theme = SplitChromeTheme.fallback
+  private var binding: BookmarkWriterBinding?
+  private var engine: String?
 
   init(windowId: String) {
     view = BookmarksBarView(favicons: PageNetwork.favicons)
     view.windowId = windowId
-    view.resolveTab = { id in
-      guard let tab = NativeStoreHandle.store?.state.tabs[id] else { return nil }
+    view.resolveTab = { id, sourceWindow in
+      guard let state = NativeStoreHandle.store?.state, let window = state.windows[windowId],
+        state.windows[sourceWindow]?.profileId == window.profileId, let tab = state.tabs[id],
+        BookmarksBarEdits.acceptsTab(sourceWindow: sourceWindow, targetProfile: window.profileId,
+          tabWindow: tab.windowId, tabProfile: tab.profileId) else { return nil }
       return BookmarksBarDroppedLink(url: tab.url, title: tab.title)
     }
     view.onFocusPage = {
-      HostedViews.send(NativeBookmarksBar.kind, windowId: windowId, "focusPage", [:])
+      guard let state = NativeStoreHandle.store?.state,
+        let tab = state.peeks[windowId]?.tabId ?? state.activeTabId(windowId) else { return }
+      _ = SidePanelFocus.focus(windowId: windowId, tabId: tab)
     }
-    view.onAction = { name, payload in
-      HostedViews.send(NativeBookmarksBar.kind, windowId: windowId, name, payload)
+    view.onAction = { [weak self] name, payload in
+      self?.perform(name, payload: payload)
     }
     bookmarkObserver = NotificationCenter.default.addObserver(forName: NativeBookmarkOwner.projectionChanged, object: nil, queue: .main) { [weak self] _ in
       MainActor.assumeIsolated { self?.refresh() }
@@ -105,35 +115,155 @@ final class BookmarksBarHost {
     NativeBookmarksBar.registerScaleHost(self, windowId: windowId)
   }
 
-  func updateNative(_ state: BrowserState, profileId: String, theme: SplitChromeTheme) {
-    metadata = BookmarksBarSnapshot(profileId: profileId, items: [], hasOther: false,
+  func observeStore() {
+    guard let store = NativeStoreHandle.store else { return }
+    let windowId = view.windowId
+    let token = store.subscribe { [weak self] commit in
+      let changes = commit.changes
+      guard changes.settings || changes.windows.upserted.contains(windowId) || changes.windows.removed.contains(windowId) || !changes.profiles.isEmpty else { return }
+      DispatchQueue.main.async { [weak self] in
+        guard let self, let state = NativeStoreHandle.store?.state else { return }
+        updateNative(state, theme: theme)
+      }
+    }
+    storeListener = (store, token)
+  }
+
+  func updateNative(_ state: BrowserState, theme: SplitChromeTheme) {
+    self.theme = theme
+    guard let window = state.windows[view.windowId] else { return }
+    let sidebarEdge = window.sidebarOpen && (window.tabLayout ?? state.settings.string("tabLayout")) != "top"
+      ? CGFloat(window.effectiveSidebarWidth(state.settings)) : nil
+    let profile = state.bookmarkProfileId(window)
+    let engine = state.engineProfile(profile)
+    let next = BookmarksBarSnapshot(profileId: profile, items: [], hasOther: false,
       hideBookmarksBarImport: state.settings.bool("hideBookmarksBarImport"), theme: theme.tokens, dark: theme.dark,
-      bookmarksBar: state.settings.string("bookmarksBar") ?? "newTab")
+      sidebarEdge: sidebarEdge, bookmarksBar: state.settings.string("bookmarksBar") ?? "newTab")
+    guard next != metadata || engine != self.engine else { return }
+    self.engine = engine
+    metadata = next
     refresh()
   }
 
   func apply(_ json: String) {
-    guard let data = json.data(using: .utf8),
-      let snapshot = try? JSONDecoder().decode(BookmarksBarSnapshot.self, from: data) else { return }
-    if let state = try? JSONSerialization.jsonObject(with: data) as? [String: Any], state["nativeSource"] as? Bool == true {
-      metadata = snapshot
-      refresh()
-    } else {
-      metadata = nil
-      view.update(snapshot)
-    }
+    guard let tokens = try? JSONSerialization.jsonObject(with: Data(json.utf8)) as? [String: Any],
+      let state = NativeStoreHandle.store?.state else { return }
+    updateNative(state, theme: SplitChromeTheme(tokens))
   }
 
   private func refresh() {
     guard let metadata else { return }
-    guard let owner = NativeBookmarkOwner.displayCurrent, let snapshot = try? owner.snapshot(profile: metadata.profileId) else {
+    guard let owner = NativeBookmarkOwner.displayCurrent, let snapshot = try? owner.snapshot(profile: metadata.profileId),
+      snapshot.binding.engine == engine, snapshot.hasView else {
+      binding = nil
       view.update(metadata)
       return
     }
-    view.update(snapshot.hasView ? metadata.reading(snapshot.document, engine: snapshot.binding.engine) : metadata)
+    binding = snapshot.binding
+    view.update(metadata.reading(snapshot.document, engine: snapshot.binding.engine))
   }
 
-  isolated deinit { if let bookmarkObserver { NotificationCenter.default.removeObserver(bookmarkObserver) } }
+  private func perform(_ name: String, payload: [String: Any]) {
+    let windowId = view.windowId
+    guard !NativeStoreHandle.frozen, view.window != nil, !view.isHiddenOrHasHiddenAncestor,
+      let editing = NativeBookmarkEditing(windowId: windowId), editing.profile == payload["profileId"] as? String else { return }
+    let action = payload["action"] as? String ?? ""
+    let id = payload["id"] as? String
+    if name == "importPress" { NativeImportWindow.open(); return }
+    if action == "manage" {
+      _ = NativeWorkspaceCommands.perform("openLibraryPage", arg: #"{"page":"bookmarks"}"#, windowId: windowId)
+      return
+    }
+    if action == "hide" || action == "bar" {
+      let patch: JSONValue
+      if action == "hide" { patch = ["hideBookmarksBarImport": true] }
+      else if let id, ["always", "newTab", "never"].contains(id) { patch = ["bookmarksBar": .string(id)] }
+      else { return }
+      _ = SettingsDirectWrites.write(editing.store, Command("updateSettings", [patch]))
+      FrameUpdates.flush()
+      return
+    }
+
+    guard let snapshot = editing.snapshot(), snapshot.binding == binding else { return }
+    let roots = BookmarkFlat.roots(snapshot.binding.engine)
+    let bar = snapshot.document["roots"]?[editing.profile]?["bar"]?.string ?? roots.bar
+    let other = snapshot.document["roots"]?[editing.profile]?["other"]?.string ?? roots.other
+    let edits = BookmarksBarEdits(profile: editing.profile, bar: bar, other: other, document: snapshot.document)
+    let listed = payload["listed"] as? [String]
+    if name == "move", let id, let listed {
+      submit(edits.move(id, into: payload["into"] as? String, index: payload["index"] as? Int, listed: listed), editing, snapshot.binding)
+      return
+    }
+    if name == "dropLinks", let parent = payload["parentId"] as? String, let items = payload["items"] as? [[String: String]] {
+      let links = items.compactMap { item in item["url"].map { BookmarksBarDroppedLink(url: $0, title: item["title"] ?? "") } }
+      submit(edits.drop(links, parent: parent, index: payload["index"] as? Int, listed: listed), editing, snapshot.binding)
+      return
+    }
+    if let id, !edits.contains(id) { return }
+    if name == "press", let id {
+      let shift = payload["shiftKey"] as? Bool == true
+      let background = payload["metaKey"] as? Bool == true || payload["middle"] as? Bool == true
+      let split = payload["altKey"] as? Bool == true
+      let mode = background ? (shift ? "foreground" : "background") : (split ? "split" : (shift ? "window" : "current"))
+      NativeBookmarkCommands.openItem(id, mode: mode, windowId: windowId)
+      return
+    }
+    if name == "folderToSidebar", let id, let listed, edits.children(bar) == listed, listed.contains(id) {
+      NativeBookmarkCommands.addFolderToSidebar(id, editing: editing, snapshot: snapshot)
+      return
+    }
+    guard name == "menuChoice" else { return }
+    let itemModes = ["open": "current", "tab": "foreground", "window": "window", "incognito": "incognito", "split": "split"]
+    let folderModes = ["openAll": "tabs", "openAllWindow": "window", "openAllIncognito": "incognito"]
+    if let id, let mode = itemModes[action] ?? folderModes[action] {
+      NativeBookmarkCommands.openItem(id, mode: mode, folder: folderModes[action] != nil, windowId: windowId)
+      return
+    }
+    switch action {
+    case "addGroup":
+      if let id { NativeBookmarkCommands.addFolderToSidebar(id, editing: editing, snapshot: snapshot) }
+    case "restoreArc":
+      if let id { _ = NativeWorkspaceCommands.perform("restoreArcFolders", arg: id, windowId: windowId) }
+    case "edit", "rename":
+      if let id { NativeBookmarkForms.edit(windowId: windowId, id: id) }
+    case "delete":
+      if let id, let node = edits.nodes[id], node["parentId"]?.string != nil {
+        submit([.init(method: "expectBookmarkNodes", args: [[id: node]]), .init(method: "removeBookmark", args: [.string(id)])], editing, snapshot.binding)
+      }
+    case "addPage", "addFolder":
+      let parent = id.flatMap { edits.nodes[$0]?["parentId"]?.string } ?? bar
+      let index = id.flatMap { edits.children(parent).firstIndex(of: $0) }.map { $0 + 1 }
+      if action == "addPage" {
+        NativeBookmarkForms.edit(windowId: windowId, id: nil, parent: parent, index: index)
+      } else if edits.nodes[parent]?["kind"] == "folder" {
+        let binding = snapshot.binding
+        NativeWorkspaceRename.prompt("New Folder", value: "", placeholder: "Folder name", windowId: windowId,
+          store: editing.store, confirmTitle: "Create") { [weak self] title in
+          guard let current = editing.snapshot(), current.binding == binding,
+            let children = current.document["nodes"]?[parent]?["children"]?.array?.compactMap(\.string) else { return }
+          let position = id.flatMap { children.firstIndex(of: $0) }
+          guard id == nil || position != nil else { return }
+          self?.submit([.init(method: "expectChildren", args: [.string(editing.profile), .string(parent), JSONValue(children)]),
+            .init(method: "addBookmarkFolder", args: [["profileId": .string(editing.profile),
+              "title": .string(title), "parentId": .string(parent), "index": position.map { JSONValue($0 + 1) } ?? .null]])], editing, binding)
+        }
+      }
+    default: break
+    }
+  }
+
+  private func submit(_ mutations: [BookmarkMutation], _ editing: NativeBookmarkEditing, _ binding: BookmarkWriterBinding) {
+    guard !mutations.isEmpty else { return }
+    Task {
+      do { _ = try await editing.write(mutations, binding: binding) }
+      catch { editing.report(error) }
+    }
+  }
+
+  isolated deinit {
+    if let bookmarkObserver { NotificationCenter.default.removeObserver(bookmarkObserver) }
+    if let (store, token) = storeListener { store.unsubscribe(token) }
+  }
 }
 
 #if DEBUG

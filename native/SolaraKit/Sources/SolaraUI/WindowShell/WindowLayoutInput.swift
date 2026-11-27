@@ -41,7 +41,7 @@ public struct WindowLayoutInput: Equatable, Sendable {
   public let shownTops: [String: CGFloat]
   public let showSidebarButton: Bool
   public let hideToolbarWhileScrolling: Bool
-  public let bookmarksBar: String
+  public let bookmarksBarHeights: [String: CGFloat]
   public let layout: DockedLayoutInput
   public let presentation: DockedLayoutInput
   public let pageFacts: [String: WindowLayoutPageFacts]
@@ -80,25 +80,29 @@ public struct WindowLayoutInput: Equatable, Sendable {
     self.toolbarHolds = toolbarHolds.intersection(visible)
     showSidebarButton = state.settings["showSidebarButton"]?.bool ?? true
     hideToolbarWhileScrolling = state.settings.bool("hideToolbarWhileScrolling")
-    bookmarksBar = state.settings.string("bookmarksBar") ?? "newTab"
+    let bookmarksBar = state.settings.string("bookmarksBar") ?? "newTab"
     let topTabs = (window.tabLayout ?? state.settings.string("tabLayout") ?? "sidebar") == "top"
     let rail = !topTabs && SidebarRail.contains(width: SidebarRail.effectiveWidth(window, state.settings))
     let address = !topTabs && (!rail || !window.sidebarOpen) && state.settings.string("addressBar") == "sidebar"
     let fullscreen = fullscreenTabId != nil
     var modes: [String: ToolbarAutoHideMode] = [:]
     var tops: [String: CGFloat] = [:]
+    var bookmarkHeights: [String: CGFloat] = [:]
     for id in visible {
       let hidden = address || id == fullscreenTabId
       let hasPage = state.tabs[id]?.url.isEmpty == false
       let needsBar = state.windowUi[windowId]?.panelOpen == true || state.find[id]?.json["open"]?.truthy == true || self.toolbarHolds.contains(id)
       modes[id] = ToolbarAutoHideInput(enabled: hideToolbarWhileScrolling && !hidden, hasPage: hasPage,
         scrolledDown: self.pageFacts[id]?.scrolledDown == true, peek: self.pageFacts[id]?.peek == true, needsBar: needsBar).mode
-      let bookmarks = id != fullscreenTabId && split == nil && !window.incognito
+      let bookmarks = id != fullscreenTabId && split == nil && !window.incognito && !window.isSmall
         && (bookmarksBar == "always" || bookmarksBar == "newTab" && !hasPage)
-      tops[id] = (hidden ? 0 : ShellMetrics.toolbarHeight) + (bookmarks ? 30 : 0)
+      let height: CGFloat = bookmarks ? 30 : 0
+      bookmarkHeights[id] = height
+      tops[id] = (hidden ? 0 : ShellMetrics.toolbarHeight) + height
     }
     toolbarModes = modes
     shownTops = tops
+    bookmarksBarHeights = bookmarkHeights
     layout = DockedLayoutInput(
       size: self.bounds.size, dock: window.sidebarOpen ? 1 : 0,
       sidebarWidth: rail ? CGFloat(SidebarRail.width) : CGFloat(window.effectiveSidebarWidth(state.settings)),
@@ -140,7 +144,7 @@ public struct WindowLayoutInput: Equatable, Sendable {
       && peekTabId == other.peekTabId && fullscreenTabId == other.fullscreenTabId
       && toolbarHolds == other.toolbarHolds && toolbarModes == other.toolbarModes && shownTops == other.shownTops
       && showSidebarButton == other.showSidebarButton
-      && hideToolbarWhileScrolling == other.hideToolbarWhileScrolling && bookmarksBar == other.bookmarksBar
+      && hideToolbarWhileScrolling == other.hideToolbarWhileScrolling && bookmarksBarHeights == other.bookmarksBarHeights
       && layout == other.layout && presentation == other.presentation && pageFacts == other.pageFacts
       && sidebarHeaderHeight == other.sidebarHeaderHeight && sidebarFooterHeight == other.sidebarFooterHeight
       && stripControlsWidth == other.stripControlsWidth && stripProfileSlotWidth == other.stripProfileSlotWidth

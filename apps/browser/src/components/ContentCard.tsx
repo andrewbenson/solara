@@ -6,7 +6,6 @@ import { useActiveTabId, useWindowId } from "../store/hooks";
 import { wake } from "../store/model";
 import { needsPage } from "../store/pageSession";
 import { splitOf } from "../store/splits";
-import { NativeBookmarksBarFeed } from "./bookmarks/NativeBookmarksBar";
 import { toolbarGeometry } from "./layout/geometry";
 import { useNativePanePromptsTheme } from "./layout/nativePaneOverlays";
 import { useFormColors } from "./settings/controls";
@@ -50,7 +49,6 @@ function NativeContentGuests() {
   }, [tabIds]);
   return (
     <>
-      <NativeBookmarksBarFeed windowId={windowId} />
       {tabIds.map((tabId) => (
         <NativePaneFallback key={tabId} windowId={windowId} tabId={tabId} target={fallbacks[tabId]}>
           <PaneContent windowId={windowId} tabId={tabId} shown nativeFallback />

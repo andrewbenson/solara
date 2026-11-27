@@ -23,7 +23,6 @@ import { needsPage } from "../store/pageSession";
 import { removeTabs } from "../store/tabs";
 import { splitOf } from "../store/splits";
 import type { SplitView, Tab } from "../store/types";
-import { BOOKMARKS_BAR_HEIGHT, bookmarksBarShown, useBookmarksBarMode, type BookmarksBarMode } from "./bookmarks/bookmarksBarPolicy";
 import { NativeBookmarksBar } from "./bookmarks/NativeBookmarksBar";
 import { POPOVER_MARGIN } from "./layout/controls";
 import { NO_TOOLBAR, splitGeometry, toolbarGeometry, type Rect, type ToolbarGeometry } from "./layout/geometry";
@@ -68,7 +67,7 @@ export function LegacyContentCard() {
   const addressInSidebar = useAddressBarInSidebar();
   const small = useBrowser((s) => isSmallWindow(s.windows[windowId]));
   const showSidebarButton = useToolbarSidebarToggle(windowId);
-  const barMode = useBookmarksBarMode(windowId);
+  const [frozenBar, setFrozenBar] = useState<{ tabId: string; height: number } | null>(null);
   const [size, setSize] = useState({ width: 0, height: 0 });
   const [measuredOrigin, setOrigin] = useState<{ x: number; y: number } | null>(null);
   const nativeAnchors = useNativeWindowAnchors(windowId);
@@ -289,7 +288,7 @@ export function LegacyContentCard() {
               small={small}
               mounted={mountedIds.has(tabId)}
               warm={warmPanes[tabId]}
-              barMode={barMode}
+              setFrozenBar={setFrozenBar}
               windowToolbar={windowToolbar}
               popovers={tabId !== popoversOverCard}
               peekShown={!!peekId}
@@ -303,7 +302,7 @@ export function LegacyContentCard() {
         <WindowToolbar windowId={windowId} tabId={activeId} geometry={geometryFor(panes[activeId])} />
       )}
       {size.width > 0 && !split && !fullscreenTab && (
-        <FrozenPage windowId={windowId} tabId={activeId} top={(!addressInSidebar && !small ? layout.toolbarHeight : 0) + (barMode === "always" && !small ? BOOKMARKS_BAR_HEIGHT : 0)} />
+        <FrozenPage windowId={windowId} tabId={activeId} top={(!addressInSidebar && !small ? layout.toolbarHeight : 0) + (frozenBar?.tabId === activeId ? frozenBar?.height ?? 0 : 0)} />
       )}
       {shell && nativeSplitPanes && split && size.width > 0 &&
         split.tabIds.map((tabId) => <SplitToolbarFeed key={tabId} tabId={tabId} windowId={windowId} geometry={geometryFor(panes[tabId])} focused={tabId === activeId} />)}
@@ -351,7 +350,7 @@ const TabPane = memo(function TabPane({
   small,
   mounted,
   warm,
-  barMode,
+  setFrozenBar,
   windowToolbar,
   popovers,
   peekShown,
@@ -374,7 +373,7 @@ const TabPane = memo(function TabPane({
   small: boolean;
   mounted: boolean;
   warm: Rect | undefined;
-  barMode: BookmarksBarMode;
+  setFrozenBar: (update: (old: { tabId: string; height: number } | null) => { tabId: string; height: number }) => void;
   windowToolbar: boolean;
   popovers: boolean;
   peekShown: boolean;
@@ -398,13 +397,15 @@ const TabPane = memo(function TabPane({
     if (visible && isNewTab && !mounted) patchPage(tabId, { wasNewTab: true });
   }, [visible, isNewTab, mounted]);
   const prewarmed = usePrewarm(!pooled && visible && isNewTab && !emptyCard && !mounted && !small && !inSplit);
-  const bookmarksBar = bookmarksBarShown(barMode, own.exists ? own : undefined) && !fullscreen && !inSplit && !small;
-  const bookmarksHeight = bookmarksBar ? BOOKMARKS_BAR_HEIGHT : 0;
   const toolbarVisible = toolbar && !fullscreen;
   const [presentation, setPresentation] = useState<LegacyToolbarFrame | null>(null);
+  const bookmarkFrame = presentation?.tabId === tabId && !covered && !fullscreen && !inSplit && !small;
+  const bookmarksHeight = bookmarkFrame ? presentation.bookmarksHeight : 0;
+  useLayoutEffect(() => {
+    if (visible && focused) setFrozenBar((old) => old?.tabId === tabId && old.height === bookmarksHeight ? old : { tabId, height: bookmarksHeight });
+  }, [visible, focused, tabId, bookmarksHeight, setFrozenBar]);
   const shownTop = (toolbarVisible ? layout.toolbarHeight : 0) + bookmarksHeight;
-  const frameSource = toolbarVisible && visible && !covered;
-  const current = frameSource && presentation?.tabId === tabId ? presentation : { top: shownTop, viewport: shownTop, onFrame: false, strip: false };
+  const current = toolbarVisible && visible && !covered && presentation?.tabId === tabId ? presentation : { top: shownTop, viewport: shownTop, onFrame: false, strip: false };
   const statusStyle = current.top === current.viewport ? undefined : { transform: [{ translateY: current.viewport - current.top }] };
   const nativeRailChrome = current.onFrame;
   useLayoutEffect(() => {
@@ -448,7 +449,7 @@ const TabPane = memo(function TabPane({
       )}
       {visible && <LegacyToolbarGeometry windowId={windowId} tabId={tabId} onToolbarFrame={(e) => setPresentation(e.nativeEvent)} style={geometryFeedFrame} />}
       <View pointerEvents={pooled ? "box-none" : "auto"} style={[pageGroupFrame, { top: current.top - bookmarksHeight }, windowToolbar && nativeRailChrome && visible && !nativePane && !pooled ? { backgroundColor: theme.card, borderRadius: layout.cardRadius } : null]}>
-        {bookmarksBar && <NativeBookmarksBar placeholder={!visible} />}
+        {bookmarksHeight > 0 && (visible ? <NativeBookmarksBar windowId={windowId} height={bookmarksHeight} /> : <View style={{ height: bookmarksHeight }} />)}
         <View pointerEvents={pooled ? "box-none" : "auto"} style={{ height: Math.max(0, frame.height - current.viewport) }}>
           {visible && !fullscreen && <ShareBar tabId={tabId} />}
           <View pointerEvents={pooled ? "box-none" : "auto"} style={{ flex: 1 }}>
@@ -480,7 +481,7 @@ const TabPane = memo(function TabPane({
 const pageGroupFrame = { position: "absolute", left: 0, right: 0 } as const;
 const toolbarFrame = { ...pageGroupFrame, top: 0, height: layout.toolbarHeight };
 const geometryFeedFrame = { position: "absolute", width: 0, height: 0 } as const;
-type LegacyToolbarFrame = { tabId: string; top: number; viewport: number; onFrame: boolean; strip: boolean };
+type LegacyToolbarFrame = { tabId: string; top: number; viewport: number; onFrame: boolean; strip: boolean; bookmarksHeight: number };
 const LegacyToolbarGeometry = requireNativeViewManager<ViewProps & {
   windowId: string;
   tabId: string;

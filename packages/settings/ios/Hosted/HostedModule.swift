@@ -32,7 +32,6 @@ public class HostedModule: Module {
       DispatchQueue.main.async { themeFeed.stop() }
     }
 
-    Function("bookmarkNativeSourceVersion") { 1 }
 
     OnCreate {
       HostedViews.declare(NativeExtensionSidePanel.kind)
@@ -159,10 +158,6 @@ public class HostedModule: Module {
           environment["SOLARA_BACKGROUND"] == "1", environment["SOLARA_DATA_DIR"]?.isEmpty == false else { return "null" }
         return NativeBookmarksBar.scaleJSON(windowId: windowId, operation: operation, value: value)
       }
-    }.runOnQueue(.main)
-
-    AsyncFunction("focusPageIfUnclaimed") { (windowId: String, tabId: String) -> Bool in
-      FrameUpdates.readOnMain { SidePanelFocus.focus(windowId: windowId, tabId: tabId) }
     }.runOnQueue(.main)
 
     Function("kinds") { () -> [String] in

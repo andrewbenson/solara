@@ -134,10 +134,8 @@ test("a second bookmark toggle while the first is pending is the same toggle, no
   assert.equal(owner.submitted.length, 2, "a toggle after the first lands is a new one");
 });
 
-test("a refused write from Bookmark Tabs or the bar menu is reported", async () => {
-  const { handleBookmarksBarMenuChoice } = await import("./bookmarksBarActions.ts");
+test("a refused write from Bookmark Tabs is reported", async () => {
   const owner = own();
-  const id = await bookmarkWriter.addBookmark({ profileId: "default", title: "Page", url: "https://page.example/" });
   owner.refuse = new Error("journal write failed");
   const warned = [];
   const warn = console.warn;
@@ -146,11 +144,10 @@ test("a refused write from Bookmark Tabs or the bar menu is reported", async () 
     const tabId = S().windows[windowId].activeTabIds.default;
     S().navigate(tabId, "https://tab.example/");
     await bookmarkTabs(windowId, [tabId], "bar");
-    await handleBookmarksBarMenuChoice(windowId, "default", "delete", id);
   } finally {
     console.warn = warn;
   }
-  assert.equal(warned.length, 2);
+  assert.equal(warned.length, 1);
 });
 
 test("Bookmark Tabs passes a native folder id through before its JS replica arrives", async () => {

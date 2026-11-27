@@ -8,8 +8,6 @@ type HostedEvent = { kind: string; windowId: string; name: string; payload: Reco
 
 type HostedModule = {
   kinds(): string[];
-  bookmarkNativeSourceVersion?(): number;
-  focusPageIfUnclaimed?(windowId: string, tabId: string): Promise<boolean>;
   addListener?(name: "onHostedEvent", listener: (event: HostedEvent) => void): { remove(): void };
   takeSwitcherPress?(windowId: string): number;
   devHost(kind: string, windowId: string, on: boolean): Promise<Record<string, string>>;
@@ -21,7 +19,6 @@ type HostedModule = {
 
 const native = requireOptionalNativeModule<HostedModule>("SolaraHosted");
 
-export const nativeBookmarksBarSourceAvailable = () => native?.bookmarkNativeSourceVersion?.() === 1;
 
 export function hostedKinds(): string[] {
   try {
@@ -61,10 +58,6 @@ export function onHostedEvent(
     if (event.kind === kind && (windowId === null || event.windowId === windowId)) listener(event.name, event.payload, event.windowId);
   });
   return () => subscription?.remove();
-}
-
-export function focusPageIfUnclaimed(windowId: string, tabId: string): Promise<boolean> {
-  return native?.focusPageIfUnclaimed?.(windowId, tabId) ?? Promise.resolve(false);
 }
 
 export function hostedSidebarShell(windowId: string): Promise<string> {

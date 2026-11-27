@@ -1,9 +1,6 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { test } from "node:test";
-const { useBrowser } = await import("../../store/browser.ts");
-const { noteScroll, revealToolbar, setToolbarPeek, toolbarMode, useToolbarAutoHide } = await import("./toolbarAutoHide.ts");
-
 const script = readFileSync(new URL("../../../../../packages/solaracore/ios/page_script.js", import.meta.url), "utf8");
 const source = script.match(/const scrollDirection = (\(\) => \{[\s\S]*?\n {2}\});\n/)?.[1];
 assert.ok(source, "page_script.js defines scrollDirection");
@@ -121,44 +118,4 @@ test("one jump (End, Space) counts", () => {
   const p = page();
   p.to(1200);
   assert.deepEqual(p.sent, ["down"]);
-});
-
-test("the mode: shown unless the page scrolled down and nothing needs the bar", () => {
-  const base = { enabled: true, hasPage: true, scrolledDown: true, peek: false, needsBar: false };
-  assert.equal(toolbarMode(base), "collapsed");
-  assert.equal(toolbarMode({ ...base, peek: true }), "peek");
-  assert.equal(toolbarMode({ ...base, enabled: false }), "shown");
-  assert.equal(toolbarMode({ ...base, hasPage: false }), "shown");
-  assert.equal(toolbarMode({ ...base, scrolledDown: false }), "shown");
-  assert.equal(toolbarMode({ ...base, needsBar: true }), "shown");
-  assert.equal(toolbarMode({ ...base, needsBar: true, peek: true }), "shown");
-});
-
-test("page reports, reveals and peeks", () => {
-  useBrowser.getState().hydrate({});
-  const w = useBrowser.getState().createWindow({ url: "https://a.com" });
-  const tabId = useBrowser.getState().newTab(w, { url: "https://example.com" });
-  const st = () => useToolbarAutoHide.getState();
-  noteScroll(tabId, { state: "down" });
-  assert.equal(st().scrolledDown[tabId], true);
-  noteScroll(tabId, { state: "sideways" });
-  noteScroll(tabId, null);
-  assert.equal(st().scrolledDown[tabId], true);
-  setToolbarPeek(tabId, true);
-  assert.equal(st().peek[tabId], true);
-  noteScroll(tabId, { state: "down" });
-  assert.equal(st().peek[tabId], undefined);
-  noteScroll(tabId, { state: "up" });
-  assert.equal(st().scrolledDown[tabId], undefined);
-  noteScroll(tabId, { state: "down" });
-  noteScroll(tabId, { state: "top" });
-  assert.equal(st().scrolledDown[tabId], undefined);
-  noteScroll(tabId, { state: "down" });
-  setToolbarPeek(tabId, true);
-  revealToolbar(tabId);
-  assert.equal(st().scrolledDown[tabId], undefined);
-  assert.equal(st().peek[tabId], undefined);
-  noteScroll(tabId, { state: "down" });
-  useBrowser.getState().closeTab(tabId);
-  assert.equal(st().scrolledDown[tabId], undefined);
 });

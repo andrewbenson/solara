@@ -106,6 +106,8 @@ public struct ToolbarState: Codable, Equatable, Sendable {
   public var inSplit: Bool? = nil
   public var windowToolbar: Bool? = nil
   public var newTabShown: Bool? = nil
+  public var autoHideCard: String? = nil
+  public var autoHideHeld: Bool? = nil
 
   public static func decode(_ json: String) -> ToolbarState? {
     guard let data = json.data(using: .utf8) else { return nil }

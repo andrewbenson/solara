@@ -484,8 +484,8 @@ try {
         const tops = [];
         const page = () => ${prompts} ? Promise.resolve(tops.push(ac.store.getState().tabs[shown()] ? 0 : -1)) : measure(acPerf.findFibers("TabWebView", 50).find((f) => !!f.child && f.memoizedProps.tabId === shown())).then((r) => tops.push(r[1]));
         const sample = (until) => performance.now() >= until ? Promise.resolve() : first("media.cliPill").then((r) => { out.push(r.frame); return settle(8); }).then(() => sample(until));
-        return page().then(() => { ac.toolbarAutoHide.noteScroll(shown(), { state: "down" }); return sample(performance.now() + 700); }).then(page)
-          .then(() => { ac.toolbarAutoHide.noteScroll(shown(), { state: "up" }); return sample(performance.now() + 700); }).then(page).then(() => ({ frames: out, tops }));`, 10000);
+        return page().then(() => { expo.modules.SolaraAutoHide.devScroll(shown(), "down"); return sample(performance.now() + 700); }).then(page)
+          .then(() => { expo.modules.SolaraAutoHide.devScroll(shown(), "up"); return sample(performance.now() + 700); }).then(page).then(() => ({ frames: out, tops }));`, 10000);
       if (!prompts && (!(tops[1] < tops[0]) || tops[2] !== tops[0])) throw new Error(`the toolbar never hid and came back: page tops ${JSON.stringify(tops)}`);
       const off = frames.filter((f) => !nearRect(f, rest));
       if (off.length) throw new Error(`the pill moved off ${JSON.stringify(rest)} while the toolbar slid: ${JSON.stringify(off.slice(0, 5))}`);

@@ -1,7 +1,8 @@
 import { WebView, type PageEngine } from "@solara/solaracore";
 import { littleSolaraShellActive, nativeToolbarAvailable, tabPool, windowPaneRootsActive, windowShellActive } from "@solara/settings";
 import { memo, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
-import { Animated, StyleSheet, View } from "react-native";
+import { StyleSheet, View, type NativeSyntheticEvent, type ViewProps } from "react-native";
+import { requireNativeViewManager } from "expo-modules-core";
 import { useShallow } from "zustand/react/shallow";
 import { isQuitting } from "../lib/native";
 import { layout, useTheme } from "../lib/theme";
@@ -14,11 +15,10 @@ import { persistEngine } from "../lib/engines";
 import { tabEngine } from "../store/engines";
 import { webviewRef } from "../lib/webviews";
 import { useBrowser } from "../store/browser";
-import { nativeSidebarRailSupported, sidebarIconsOnlyOf } from "../store/sidebarRail";
 import { setPageProgress } from "../store/pageProgress";
 import { shallowEqual, useProfilesValue, useStoreWhile, useTabValue } from "../store/tabWatch";
 import { useActiveTabId, useWindowId } from "../store/hooks";
-import { activeTabId, engineProfile, isIncognitoProfile, tabLayoutOf, wake } from "../store/model";
+import { activeTabId, engineProfile, isIncognitoProfile, wake } from "../store/model";
 import { needsPage } from "../store/pageSession";
 import { removeTabs } from "../store/tabs";
 import { splitOf } from "../store/splits";
@@ -35,13 +35,13 @@ import { DropTargets, SplitDividers, SplitToast } from "./layout/SplitChrome";
 import { SplitEmptyState } from "./layout/SplitEmptyState";
 import { useWindowShell } from "./layout/ShellBackdrop";
 import { dropPaneStatusStyle, dropPopoversOverCard, publishPaneStatusStyle, publishPopoversOverCard, usePaneRootDrawn } from "./layout/paneFeed";
-import { nativeSplitPanes, useNativePageTops, useNativeSplitChrome } from "./layout/nativeSplitChrome";
+import { nativeSplitPanes, useNativeSplitChrome } from "./layout/nativeSplitChrome";
 import { SplitToolbarFeed } from "./layout/NativeSplitToolbars";
 import { pagerFor } from "./layout/profilePager";
 import { dockMoving, useDockMotion, usePeekEdge } from "./layout/dockMotion";
 import { FrozenPage } from "./layout/frozenPage";
 import { holderOf } from "../store/pinShare";
-import { setCardAnchor, setUrlAnchor, useCardAnchors, useNativePopoverAnchors, useAddressBarInSidebar, useTabLayout, useToolbarExtensionsWidths } from "./layout/windowLayout";
+import { setCardAnchor, setUrlAnchor, useCardAnchors, useNativePopoverAnchors, useAddressBarInSidebar, useToolbarExtensionsWidths } from "./layout/windowLayout";
 import { notePageEventHandled, acceptPageReport, currentPageContext, followNavigation, newPageSession, pageEventHandlers, releasePageSession } from "./pageEvents";
 import { NewTabPage } from "./NewTabPage";
 import { EmptyCard } from "./EmptyCard";
@@ -49,11 +49,8 @@ import { SmallWindowCard } from "./SmallWindowCard";
 import { InternalPage } from "./pages";
 import { ShareBar } from "./media/ShareBar";
 import { Toolbar, ToolbarBackdrop, urlFieldRight } from "./Toolbar";
-import { AutoHideBackdrop, AutoHideToolbar, useToolbarMode, useToolbarMotion } from "./AutoHideToolbar";
-import { NativeAutoHide } from "./NativeAutoHide";
-import { publishPaneChrome, WindowToolbar } from "./WindowToolbar";
-import { revealToolbar } from "./layout/toolbarAutoHide";
-import { railToolbarOnFrame } from "./layout/toolbarColors";
+import { WindowToolbar } from "./WindowToolbar";
+import { useToolbarSidebarToggle } from "./layout/nativeToolbarPresentation";
 import { isSmallWindow } from "../store/small";
 import { useNativeWindowAnchors } from "./layout/shellLayout";
 import { NativePeekMount } from "./peek/NativePeekMount";
@@ -69,11 +66,9 @@ export function LegacyContentCard() {
   const activeId = useActiveTabId();
   const split = useBrowser((s) => splitOf(s, activeId));
   const fullscreenTab = useFullscreenTab(windowId);
-  const tabLayout = useTabLayout();
   const addressInSidebar = useAddressBarInSidebar();
   const small = useBrowser((s) => isSmallWindow(s.windows[windowId]));
-  const hideWhileScrolling = useBrowser((s) => s.settings.hideToolbarWhileScrolling);
-  const showSidebarButton = useBrowser((s) => s.settings.showSidebarButton !== false);
+  const showSidebarButton = useToolbarSidebarToggle(windowId);
   const barMode = useBookmarksBarMode(windowId);
   const [size, setSize] = useState({ width: 0, height: 0 });
   const [measuredOrigin, setOrigin] = useState<{ x: number; y: number } | null>(null);
@@ -90,7 +85,7 @@ export function LegacyContentCard() {
   const [pooled] = useState(() => pagesPooledIn(windowId));
   const cardTheme = useTheme();
   useNativePanePromptsTheme(true, windowId, cardTheme, useFormColors());
-  useNativeSplitChrome(windowId, shell, cardTheme, fullscreenTab ?? null, !!peekId, !addressInSidebar && !small && !hideWhileScrolling, small);
+  useNativeSplitChrome(windowId, shell, cardTheme, fullscreenTab ?? null, !!peekId, !addressInSidebar && !small, small);
   useEffect(() => {
     if (fullscreenTab && peekId && !peekFullscreen) dismissPeek(windowId);
   }, [fullscreenTab, peekId, peekFullscreen, windowId]);
@@ -210,7 +205,7 @@ export function LegacyContentCard() {
   const geometryFor = (rect: Rect | undefined): ToolbarGeometry => {
     if (addressInSidebar || small) return NO_TOOLBAR;
     const leading = !!rect && rect.x === 0 && rect.y === 0;
-    return toolbarGeometry({ sidebarButton: leading && tabLayout === "sidebar" && showSidebarButton });
+    return toolbarGeometry({ sidebarButton: leading && showSidebarButton });
   };
 
   const focusedRect = activeId ? panes[activeId] : undefined;
@@ -227,7 +222,7 @@ export function LegacyContentCard() {
     return useToolbarExtensionsWidths.subscribe((w, prev) => {
       if (w[windowId] !== prev[windowId]) place(w[windowId]);
     });
-  }, [nativeAnchors, origin, focusedRect?.x, focusedRect?.y, focusedRect?.width, tabLayout, addressInSidebar, !!split, showSidebarButton]);
+  }, [nativeAnchors, origin, focusedRect?.x, focusedRect?.y, focusedRect?.width, addressInSidebar, !!split, showSidebarButton]);
 
   useEffect(() => {
     if (!nativeAnchors && origin && size.width > 0) setCardAnchor(windowId, { left: origin.x, top: origin.y, width: size.width, height: size.height });
@@ -250,21 +245,6 @@ export function LegacyContentCard() {
   );
 
   const windowToolbar = !split && !fullscreenTab && !addressInSidebar && !small;
-  const pageTops = useBrowser(
-    useShallow((s) => {
-      const tops: Record<string, number> = {};
-      if (!shell) return tops;
-      const autoLayout = hideWhileScrolling && !addressInSidebar && !small;
-      for (const tabId of Object.keys(panes)) {
-        const fullscreen = tabId === fullscreenTab;
-        const inSplit = !!split?.tabIds.includes(tabId);
-        const bar = bookmarksBarShown(barMode, s.tabs[tabId]) && !fullscreen && !inSplit && !small;
-        tops[tabId] = (!addressInSidebar && !small && !fullscreen && !autoLayout ? layout.toolbarHeight : 0) + (!autoLayout && bar ? BOOKMARKS_BAR_HEIGHT : 0);
-      }
-      return tops;
-    }),
-  );
-  useNativePageTops(windowId, shell, pageTops);
   const peekEdge = usePeekEdge(windowId);
   const activeRect = activeId ? panes[activeId] : undefined;
   const popoversOverCard = peekEdge !== undefined && addressInSidebar && !small && !fullscreenTab && origin && activeRect ? activeId : undefined;
@@ -305,7 +285,6 @@ export function LegacyContentCard() {
               covered={!!fullscreenTab && tabId !== fullscreenTab}
               geometry={geometryFor(rect)}
               toolbar={!addressInSidebar && !small}
-              autoHide={hideWhileScrolling && !addressInSidebar && !small}
               small={small}
               mounted={mountedIds.has(tabId)}
               warm={warmPanes[tabId]}
@@ -320,10 +299,10 @@ export function LegacyContentCard() {
           );
         })}
       {size.width > 0 && windowToolbar && activeId && panes[activeId] && (
-        <WindowToolbar windowId={windowId} tabId={activeId} geometry={geometryFor(panes[activeId])} autoHide={hideWhileScrolling} />
+        <WindowToolbar windowId={windowId} tabId={activeId} geometry={geometryFor(panes[activeId])} />
       )}
       {size.width > 0 && !split && !fullscreenTab && (
-        <FrozenPage windowId={windowId} tabId={activeId} top={(!addressInSidebar && !small && !hideWhileScrolling ? layout.toolbarHeight : 0) + (barMode === "always" && !small && !hideWhileScrolling ? BOOKMARKS_BAR_HEIGHT : 0)} />
+        <FrozenPage windowId={windowId} tabId={activeId} top={(!addressInSidebar && !small ? layout.toolbarHeight : 0) + (barMode === "always" && !small ? BOOKMARKS_BAR_HEIGHT : 0)} />
       )}
       {shell && nativeSplitPanes && split && size.width > 0 &&
         split.tabIds.map((tabId) => <SplitToolbarFeed key={tabId} tabId={tabId} windowId={windowId} geometry={geometryFor(panes[tabId])} focused={tabId === activeId} />)}
@@ -368,7 +347,6 @@ const TabPane = memo(function TabPane({
   covered,
   geometry,
   toolbar,
-  autoHide,
   small,
   mounted,
   warm,
@@ -392,7 +370,6 @@ const TabPane = memo(function TabPane({
   covered: boolean;
   geometry: ToolbarGeometry;
   toolbar: boolean;
-  autoHide: boolean;
   small: boolean;
   mounted: boolean;
   warm: Rect | undefined;
@@ -420,23 +397,18 @@ const TabPane = memo(function TabPane({
     if (visible && isNewTab && !mounted) patchPage(tabId, { wasNewTab: true });
   }, [visible, isNewTab, mounted]);
   const prewarmed = usePrewarm(!pooled && visible && isNewTab && !emptyCard && !mounted && !small && !inSplit);
-  const hideBar = autoHide && visible && !fullscreen;
-  const mode = useToolbarMode(tabId, windowId, hideBar);
   const bookmarksBar = bookmarksBarShown(barMode, own.exists ? own : undefined) && !fullscreen && !inSplit && !small;
-  const doc = pageKey(own.url);
-  const autoLayout = autoHide && toolbar && !fullscreen;
-  const motion = useToolbarMotion({ enabled: autoLayout, mode, height: frame.height, extra: bookmarksBar ? BOOKMARKS_BAR_HEIGHT : 0, doc });
-  useEffect(() => {
-    if (visible) revealToolbar(tabId);
-  }, [visible]);
-  const chromeInWindow = hideBar && windowToolbar;
-  const nativeRailChrome = useBrowser((s) => railToolbarOnFrame(nativeSidebarRailSupported && sidebarIconsOnlyOf(s.windows[windowId], s.settings), focused || !inSplit, tabLayoutOf(s, windowId) === "top", fullscreen, s.windows[windowId]?.sidebarOpen ?? true)) && windowShellActive(windowId);
+  const bookmarksHeight = bookmarksBar ? BOOKMARKS_BAR_HEIGHT : 0;
+  const toolbarVisible = toolbar && !fullscreen;
+  const [presentation, setPresentation] = useState<LegacyToolbarFrame | null>(null);
+  const shownTop = (toolbarVisible ? layout.toolbarHeight : 0) + bookmarksHeight;
+  const frameSource = toolbarVisible && visible && !covered;
+  const current = frameSource && presentation?.tabId === tabId ? presentation : { top: shownTop, viewport: shownTop, onFrame: false, strip: false };
+  const statusStyle = current.top === current.viewport ? undefined : { transform: [{ translateY: current.viewport - current.top }] };
+  const nativeRailChrome = current.onFrame;
   useLayoutEffect(() => {
-    if (chromeInWindow) publishPaneChrome(windowId, { tabId, mode, bar: motion.bar, fade: motion.fade });
-  });
-  useLayoutEffect(() => {
-    if (paneRoots) publishPaneStatusStyle(tabId, feedOwner, autoLayout ? motion.bottomStyle : undefined);
-  });
+    if (paneRoots) publishPaneStatusStyle(tabId, feedOwner, statusStyle);
+  }, [paneRoots, tabId, feedOwner, current.top, current.viewport]);
   useEffect(() => () => dropPaneStatusStyle(tabId, feedOwner), [tabId]);
 
   const [nativeSmall] = useState(() => small && littleSolaraShellActive(windowId));
@@ -463,20 +435,20 @@ const TabPane = memo(function TabPane({
         backgroundColor: nativeSmall ? undefined : cardFill,
       }}
     >
-      {!toolbar || fullscreen || autoLayout ? null : nativePane ? (
-        <View pointerEvents="none" style={{ height: layout.toolbarHeight }} />
-      ) : visible && !windowToolbar ? (
-        <Toolbar tabId={tabId} geometry={geometry} windowId={windowId} inSplit={inSplit} focused={focused || !inSplit} />
-      ) : visible && !nativeRailChrome ? (
-        windowToolbar && windowShellActive(windowId) && nativeToolbarAvailable() ? <View pointerEvents="none" style={{ height: layout.toolbarHeight }} /> : <ToolbarBackdrop tabId={tabId} windowId={windowId} />
-      ) : (
-        <View style={{ height: layout.toolbarHeight }} />
+      {toolbarVisible && visible && !nativePane && !windowToolbar && (
+        <View pointerEvents="box-none" style={toolbarFrame}>
+          <Toolbar tabId={tabId} geometry={geometry} windowId={windowId} inSplit={inSplit} focused={focused || !inSplit} />
+        </View>
       )}
-      {windowToolbar && nativeRailChrome && visible && !nativePane && !pooled && !autoLayout && <View pointerEvents="none" style={{ position: "absolute", left: 0, right: 0, bottom: 0, top: layout.toolbarHeight, backgroundColor: theme.card, borderRadius: layout.cardRadius }} />}
-      {!autoLayout && bookmarksBar && <NativeBookmarksBar placeholder={!visible} />}
-      <Animated.View pointerEvents={pooled ? "box-none" : "auto"} style={[autoLayout ? motion.groupStyle : { flex: 1 }, windowToolbar && nativeRailChrome && visible && !nativePane && !pooled && autoLayout ? { backgroundColor: theme.card, borderRadius: layout.cardRadius } : null]}>
-        {autoLayout && bookmarksBar && <NativeBookmarksBar placeholder={!visible} />}
-        <View pointerEvents={pooled ? "box-none" : "auto"} style={autoLayout ? { height: motion.pageHeight } : { flex: 1 }}>
+      {toolbarVisible && visible && !nativePane && windowToolbar && !windowShellActive(windowId) && !current.strip && (
+        <View pointerEvents="none" style={toolbarFrame}>
+          <ToolbarBackdrop tabId={tabId} windowId={windowId} />
+        </View>
+      )}
+      {visible && <LegacyToolbarGeometry windowId={windowId} tabId={tabId} onToolbarFrame={(e) => setPresentation(e.nativeEvent)} style={geometryFeedFrame} />}
+      <View pointerEvents={pooled ? "box-none" : "auto"} style={[pageGroupFrame, { top: current.top - bookmarksHeight }, windowToolbar && nativeRailChrome && visible && !nativePane && !pooled ? { backgroundColor: theme.card, borderRadius: layout.cardRadius } : null]}>
+        {bookmarksBar && <NativeBookmarksBar placeholder={!visible} />}
+        <View pointerEvents={pooled ? "box-none" : "auto"} style={{ height: Math.max(0, frame.height - current.viewport) }}>
           {visible && !fullscreen && <ShareBar tabId={tabId} />}
           <View pointerEvents={pooled ? "box-none" : "auto"} style={{ flex: 1 }}>
             {pooled && tabPool && <PooledPageProps pool={tabPool} tabId={tabId} />}
@@ -492,23 +464,27 @@ const TabPane = memo(function TabPane({
                 toolbar={toolbar}
                 fullscreen={fullscreen}
                 newTabShown={newTabShown}
-                statusStyle={autoLayout ? motion.bottomStyle : undefined}
+                statusStyle={statusStyle}
                 popovers={popovers}
                 cliPill={!peekShown && (fullscreen || focused || !inSplit)}
               />
             )}
           </View>
         </View>
-      </Animated.View>
-      {hideBar && (windowShellActive(windowId) && nativeToolbarAvailable() ? (
-        <NativeAutoHide windowId={windowId} tabId={tabId} mode={mode} pane={frame} extra={bookmarksBar ? BOOKMARKS_BAR_HEIGHT : 0} focused={focused || !inSplit} />
-      ) : (
-        <AutoHideBackdrop windowId={windowId} tabId={tabId} mode={mode} motion={motion} onFrame={nativeRailChrome} />
-      ))}
-      {hideBar && !windowToolbar && <AutoHideToolbar tabId={tabId} geometry={geometry} windowId={windowId} inSplit={inSplit} focused={focused || !inSplit} mode={mode} motion={motion} />}
+      </View>
     </SmallWindowCard>
   );
 });
+
+const pageGroupFrame = { position: "absolute", left: 0, right: 0 } as const;
+const toolbarFrame = { ...pageGroupFrame, top: 0, height: layout.toolbarHeight };
+const geometryFeedFrame = { position: "absolute", width: 0, height: 0 } as const;
+type LegacyToolbarFrame = { tabId: string; top: number; viewport: number; onFrame: boolean; strip: boolean };
+const LegacyToolbarGeometry = requireNativeViewManager<ViewProps & {
+  windowId: string;
+  tabId: string;
+  onToolbarFrame(e: NativeSyntheticEvent<LegacyToolbarFrame>): void;
+}>("SolaraAutoHide");
 
 function PeekPage({ tabId, sourceId, windowId, width, fullscreen, pooled }: { tabId: string; sourceId: string; windowId: string; width: number; fullscreen: boolean; pooled: boolean }) {
   return (
@@ -522,7 +498,6 @@ function PeekPage({ tabId, sourceId, windowId, width, fullscreen, pooled }: { ta
 const NO_TABS: string[] = [];
 const webViewTab = (t: Tab | undefined) => ({ navigation: t?.navigation, adoptId: t?.adoptId, profileId: t?.profileId ?? "", shownUrl: t?.url ?? "" });
 
-const pageKey = (url: string) => url.replace(/#.*$/, "");
 
 type TabWebViewProps = { tabId: string; visible: boolean; warm: boolean; peekOf?: string };
 

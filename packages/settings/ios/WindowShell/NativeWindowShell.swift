@@ -180,13 +180,10 @@ final class ShellHost {
   private var layoutController: WindowLayoutController?
   private var layoutChrome: NativeLayoutChrome?
   private var paneLayout: NativePaneLayoutHost?
-  private var toolbarPresentation: ToolbarAutoHideController?
+  private var toolbarPresentation: ToolbarAutoHideController { AutoHideHost.controller(shell.windowId) }
   private var fullscreenObservers: [NSObjectProtocol] = []
   private var spacesFullscreen: Bool?
   private var spacesTransitioning = false
-  private var presentedTabIds = Set<String>()
-  private var presentationURLs: [String: String] = [:]
-  private var toolbarHolds = Set<String>()
   private var commandHold: String?
   private var commandHoldGeneration: UInt64 = 0
   private let legacyLayoutAnchors: WindowAnchors
@@ -286,7 +283,6 @@ final class ShellHost {
       layoutChrome = NativeLayoutChrome(windowId: windowId, shell: shell, generation: generation)
       NativeSidebarShell.column(windowId)?.host.view.onLayoutAnchorsChange = { [weak self] in self?.layoutGeometryChanged() }
       paneLayout = NativeSplitChrome.adopt(shell: shell, generation: generation)
-      toolbarPresentation = ToolbarAutoHideController(windowId: windowId, windowGeneration: generation)
       let controller = WindowLayoutController(shell: shell, generation: generation, store: store)
       layoutController = controller
       controller.onState = { [weak self] state, revision in
@@ -348,8 +344,6 @@ final class ShellHost {
     NativeTabPickers.windowEnded(shell.windowId, in: shell.overlay)
     NativeSidebarHoverCard.windowEnded(shell.windowId)
     SidebarAddressBars.shared.removeNavigationView(shell.windowId)
-    toolbarPresentation?.stop()
-    toolbarPresentation = nil
     AutoHideHost.windowEnded(shell.windowId)
     for observer in fullscreenObservers { NotificationCenter.default.removeObserver(observer) }
     fullscreenObservers = []
@@ -472,65 +466,12 @@ final class ShellHost {
 }
 
 extension ShellHost {
-  func setToolbarHold(_ tabId: String, held: Bool) {
-    guard !layoutStopped else { return }
-    let changed = held ? toolbarHolds.insert(tabId).inserted : toolbarHolds.remove(tabId) != nil
-    if changed { scheduleLayoutProjection() }
-  }
-
-  var presentationFacts: [String: WindowLayoutPageFacts] { toolbarPresentation?.facts ?? [:] }
-
   private func rendererOwnsFullscreen(_ window: NSWindow) -> Bool {
     let selector = NSSelectorFromString("windowFullScreenIsForPage:")
     guard let host = NSClassFromString("ACChromeWindowHost") as? NSObject.Type,
       (host as AnyObject).responds(to: selector), let call = (host as AnyObject).method(for: selector) else { return false }
     typealias Call = @convention(c) (AnyObject, Selector, NSWindow) -> ObjCBool
     return unsafeBitCast(call, to: Call.self)(host, selector, window).boolValue
-  }
-
-  func receivePresentation(_ registration: PageRegistration, name: String, payload: [String: Any]) {
-    guard !layoutStopped, ownsNativeLayout, let toolbarPresentation else { return }
-    let previous = toolbarPresentation.facts[registration.tabID]
-    toolbarPresentation.register(registration)
-    if name == "onNavigationChange", let url = payload["url"] as? String {
-      let key = String(url.prefix { $0 != "#" })
-      if let previous = presentationURLs[registration.tabID], previous != key { toolbarPresentation.reveal(tabId: registration.tabID) }
-      presentationURLs[registration.tabID] = key
-    }
-    if name == "onPageMessage", payload["kind"] as? String == "scroll",
-      let state = (payload["data"] as? [String: Any])?["state"] as? String {
-      _ = toolbarPresentation.noteScroll(registration, state: state)
-    } else if name == "onFullscreen", let on = payload["fullscreen"] as? Bool {
-      _ = toolbarPresentation.setFullscreen(registration, on: on)
-    } else if name == "onCrashed" || name == "onDiscarded" {
-      _ = toolbarPresentation.setFullscreen(registration, on: false)
-      toolbarPresentation.reveal(tabId: registration.tabID)
-    }
-    if previous != toolbarPresentation.facts[registration.tabID] { scheduleLayoutProjection() }
-  }
-
-  func retirePresentation(_ registration: PageRegistration) {
-    guard !layoutStopped, ownsNativeLayout,
-      toolbarPresentation?.facts[registration.tabID]?.registration == String(registration.registrationGeneration) else { return }
-    toolbarPresentation?.retire(registration)
-    presentationURLs[registration.tabID] = nil
-    AutoHideHost.remove(windowId: shell.windowId, tabId: registration.tabID)
-    scheduleLayoutProjection()
-  }
-
-  func toolbarPresentationEvent(_ tabId: String, _ event: AutoHideStripEvent) {
-    guard !layoutStopped, let toolbarPresentation, let registration = TabPoolHost.shared.presentationRegistration(tabId) else { return }
-    toolbarPresentation.register(registration)
-    switch event {
-    case .reveal: toolbarPresentation.reveal(tabId: tabId)
-    case .peek(let on): _ = toolbarPresentation.setPeek(registration, on: on)
-    }
-    scheduleLayoutProjection()
-  }
-
-  func nativeShownTop(_ tabId: String) -> Double? {
-    guard ownsNativeLayout, let input = makeLayoutInput() else { return nil }
-    return WindowLayoutSnapshot.of(input, generation: layoutGeneration).shownTops[tabId].map(Double.init)
   }
 
   func admitsPagePlacement(_ state: BrowserState, revision: Int) -> Bool {
@@ -594,7 +535,8 @@ extension ShellHost {
   }
 
   func makeLayoutInput() -> WindowLayoutInput? {
-    guard !layoutStopped, let state = layoutState, let window = shell.window, !shell.bounds.isEmpty else { return nil }
+    guard !layoutStopped, var state = layoutState, let window = shell.window, !shell.bounds.isEmpty else { return nil }
+    if !NativeBookmarksBar.enabled { state.settings["bookmarksBar"] = "never" }
     let update = NativeSidebarShell.column(shell.windowId)?.chrome.state?.update
     let updateHeight: CGFloat = update == nil ? 0 : shell.railFraction > 0 ? SidebarUpdatePillMetrics.railBand : SidebarUpdatePillMetrics.band
     guard let base = WindowLayoutInput(state: state, windowId: shell.windowId, windowGeneration: windowGeneration,
@@ -607,16 +549,12 @@ extension ShellHost {
       if current != held || state.windowUi[shell.windowId]?.panelOpen == true || state.find[held]?.json["open"]?.truthy == true { commandHold = nil }
     }
     let alive = Set(state.tabs.values.filter { $0.windowId == shell.windowId }.map(\.id))
-    toolbarPresentation?.retain(tabIds: alive)
-    toolbarHolds.formIntersection(alive)
-    presentationURLs = presentationURLs.filter { alive.contains($0.key) }
-    let presented = Set(ids)
-    for id in presented.subtracting(presentedTabIds) { toolbarPresentation?.reveal(tabId: id) }
-    presentedTabIds = presented
+    toolbarPresentation.retain(tabIds: alive)
+    AutoHideHost.present(windowId: shell.windowId, tabIds: Set(ids))
     var facts: [String: WindowLayoutPageFacts] = [:]
     for id in ids {
-      if let registration = TabPoolHost.shared.presentationRegistration(id) { toolbarPresentation?.register(registration) }
-      let fact = toolbarPresentation?.facts[id]
+      if let registration = PageIssuer.shared?.binding(tabId: id)?.registration { toolbarPresentation.register(registration) }
+      let fact = toolbarPresentation.facts[id]
       facts[id] = WindowLayoutPageFacts(registration: fact?.registration ?? "", fullscreen: fact?.fullscreen ?? false,
         top: base.hideToolbarWhileScrolling && !base.layout.addressBarInSidebar
           ? AutoHideHost.layoutTop(windowId: shell.windowId, tabId: id) : nil,
@@ -626,9 +564,7 @@ extension ShellHost {
     return WindowLayoutInput(state: state, windowId: shell.windowId, windowGeneration: windowGeneration,
       storeRevision: layoutRevision, bounds: shell.bounds, backingScale: window.backingScaleFactor, presentation: shell.input,
       sidebarUpdateHeight: updateHeight, sidebarPositionAllowed: ownsNativeLayout, pageFacts: facts, windowFullscreen: spacesFullscreen, windowTransitioning: spacesTransitioning,
-      toolbarHolds: toolbarHolds.union(commandHold.map { [$0] } ?? []).union(ids.filter {
-        NativeToolbarHostView.toolbar(windowId: shell.windowId, tabId: $0)?.state?.url?.developer?.editing == true
-      }))
+      toolbarHolds: AutoHideHost.holds(windowId: shell.windowId, tabIds: ids).union(commandHold.map { [$0] } ?? []))
   }
 
   private func refreshLayoutProjection() {

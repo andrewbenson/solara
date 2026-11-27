@@ -70,9 +70,7 @@ export function startDevHarness() {
     get sidebarHover(): typeof import("../components/sidebar/hover") & typeof import("../components/sidebar/hoverMotion") {
       return { ...require("../components/sidebar/hover"), ...require("../components/sidebar/hoverMotion") };
     },
-    get toolbarAutoHide(): typeof import("../components/layout/toolbarAutoHide") {
-      return require("../components/layout/toolbarAutoHide");
-    },
+
     get hoverShift(): typeof import("./hoverShift") {
       return require("./hoverShift");
     },

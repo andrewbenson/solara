@@ -42,9 +42,8 @@ const fixture = session({
 const HELPERS = `
 const S = () => ac.store.getState();
 const roots = () => globalThis.expo.modules.SolaraWindowShell.describe("w1").then(JSON.parse).then((d) => ({ native: (d && d.paneRoots) || {}, mounted: globalThis.acPaneRoots ? globalThis.acPaneRoots.count : -1 }));
-const setFullscreen = (id, on) => globalThis.expo.modules.SolaraWindowShell.describe("w1").then(JSON.parse).then(shell => {
-  if (shell.nativeLayout) return globalThis.expo.modules.SolaraTabPool.devPageEvent(id,"onFullscreen",{fullscreen:on}).then(accepted => { if (!accepted) throw new Error("fullscreen fact rejected for " + id); });
-  acLayout.pages.setState((s) => ({ pages: { ...s.pages, [id]: { ...s.pages[id], fullscreen: on } } }));
+const setFullscreen = (id, on) => globalThis.expo.modules.SolaraTabPool.devPageEvent(id, "onFullscreen", { fullscreen: on }).then(accepted => {
+  if (!accepted) throw new Error("fullscreen fact rejected for " + id);
 });
 `;
 let app = null;
@@ -207,7 +206,7 @@ try {
       if (bubbles !== 1) throw new Error("the new pane must own exactly one status bubble");
       shifts = shifts.map(value => value - collapsed.split.overlays.c.window[1]);
     } else {
-      await run(`acLayout.pages.setState((s) => ({ pages: { ...s.pages, c: { ...(s.pages.c || {}), status: "https://example.com/c" } } })); ac.toolbarAutoHide.noteScroll("c", { state: "down" }); return true;`);
+      await run(`acLayout.pages.setState((s) => ({ pages: { ...s.pages, c: { ...(s.pages.c || {}), status: "https://example.com/c" } } })); expo.modules.SolaraAutoHide.devScroll("c", "down"); return true;`);
       await sleep(1200);
       shifts = await run(`
         const frame = () => new Promise((r) => requestAnimationFrame(() => r()));
@@ -219,7 +218,7 @@ try {
           return !inPane ? "not-in-pane" : t === undefined || t === null ? null : typeof t === "number" ? t : t.__getValue();
         };
         const out = [];
-        ac.toolbarAutoHide.noteScroll("c", { state: "up" });
+        expo.modules.SolaraAutoHide.devScroll("c", "up");
         const sample = (n) => n ? frame().then(() => { out.push(shift()); return sample(n - 1); }) : Promise.resolve(out);
         return sample(40);`);
     }

@@ -14,8 +14,6 @@ import { useNativeSplitChrome } from "./layout/nativeSplitChrome";
 import { SplitToolbarFeed } from "./layout/NativeSplitToolbars";
 import { FrozenPage } from "./layout/frozenPage";
 import { holderOf } from "../store/pinShare";
-import { useTabLayout } from "./layout/windowLayout";
-import { NativeAutoHideStyleFeed } from "./NativeAutoHide";
 import { NativePeekMount } from "./peek/NativePeekMount";
 import { NativePaneFallback, useNativePaneFallbacks } from "./layout/NativePaneFallback";
 import { useContentServices } from "./ContentServices";
@@ -58,21 +56,9 @@ function NativeContentGuests() {
           <PaneContent windowId={windowId} tabId={tabId} shown nativeFallback />
         </NativePaneFallback>
       ))}
-      {tabIds.map((tabId) => <NativePaneChromeFeed key={tabId} windowId={windowId} tabId={tabId} inSplit={!!split} leading={tabId === tabIds[0]} focused={tabId === activeId} />)}
+      {tabIds.map((tabId) => <SplitToolbarFeed key={tabId} windowId={windowId} tabId={tabId} geometry={toolbarGeometry({ sidebarButton: false })} focused={tabId === activeId} inSplit={!!split} />)}
       {tabIds.map((tabId) => <FrozenPage key={tabId} windowId={windowId} tabId={tabId} headless />)}
       <NativePeekMount windowId={windowId} origin={null} fullscreen={false} />
-    </>
-  );
-}
-
-function NativePaneChromeFeed({ windowId, tabId, inSplit, leading, focused }: { windowId: string; tabId: string; inSplit: boolean; leading: boolean; focused: boolean }) {
-  const tabLayout = useTabLayout();
-  const showSidebarButton = useBrowser((s) => s.settings.showSidebarButton !== false);
-  const geometry = toolbarGeometry({ sidebarButton: leading && tabLayout === "sidebar" && showSidebarButton });
-  return (
-    <>
-      <SplitToolbarFeed tabId={tabId} windowId={windowId} geometry={geometry} focused={focused} inSplit={inSplit} />
-      <NativeAutoHideStyleFeed windowId={windowId} tabId={tabId} />
     </>
   );
 }

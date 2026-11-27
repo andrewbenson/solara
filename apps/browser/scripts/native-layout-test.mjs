@@ -7,6 +7,7 @@ import { validateWindowContract } from "./perf/native-work.mjs";
 
 const appPath = process.argv[2];
 if (!appPath) throw new Error("usage: node native-layout-test.mjs <Debug app>");
+const nativeLayout = process.env.SOLARA_NATIVE_WINDOW_LAYOUT !== "0";
 const scratch = mkdtempSync(join(tmpdir(), "ac-native-layout-"));
 const fixture = session({
   windows: [{ id: "w1", frame: [80, 80, 1280, 800], activeTabIds: { default: "a" } }],
@@ -14,22 +15,22 @@ const fixture = session({
   settings: { warnBeforeClosingWindow: false, warnBeforeClosingLastTab: false, sleepInactiveTabs: false },
 });
 const app = await launch(resolve(appPath), { data: join(scratch, "data"), session: fixture, onboarded: true, probe: true,
-  env: { SOLARA_NATIVE_WINDOW_LAYOUT: "1" }, ready: "return !!ac.store.getState().windows.w1" });
+  env: { SOLARA_NATIVE_WINDOW_LAYOUT: nativeLayout ? "1" : "0" }, ready: "return !!ac.store.getState().windows.w1" });
 const samples = [];
 const registrations = () => app.eval('return globalThis.expo.modules.SolaraTabPool.livePages().then(pages => pages.map(({tabId,sessionGeneration,registrationGeneration}) => ({tabId,sessionGeneration,registrationGeneration})).sort((a,b)=>a.tabId.localeCompare(b.tabId)));');
 const browserIdentities = () => app.eval('return globalThis.expo.modules.SolaraTabPool.livePages().then(pages=>pages.filter(page=>["a","b"].includes(page.tabId)).map(page=>({tabId:page.tabId,browserId:page.ready?.browserId??null})).sort((a,b)=>a.tabId.localeCompare(b.tabId)));');
 const read = () => app.eval('return globalThis.expo.modules.SolaraWindowShell.describe("w1").then(JSON.parse);');
-async function settled() {
+async function settled(accept = () => true) {
   const end = Date.now() + 10000;
   let shell;
   while (Date.now() < end) {
     assert.ok(app.alive, "instance exited");
     shell = await read();
-    if (shell?.nativeLayout && shell.nativeLayoutChrome && shell.layout?.current) return shell;
+    if (shell?.nativeLayout === nativeLayout && (!nativeLayout || shell.nativeLayoutChrome) && shell.layout?.current && accept(shell.layout)) return shell;
     await sleep(100);
   }
   samples.push(shell);
-  throw new Error("native layout did not settle");
+  throw new Error("window layout did not settle");
 }
 function verify(shell, baseline) {
   assert.equal(shell.layoutControllerSubscriptions, 1);
@@ -39,7 +40,7 @@ function verify(shell, baseline) {
   if (baseline) for (const key of ["owner", "column", "dockedStrip", "floatingStrip", "generation"]) assert.equal(shell.nativeLayoutChrome[key], baseline.nativeLayoutChrome[key], key);
   samples.push(shell);
 }
-try {
+async function nativeChecks() {
   const before = await settled();
   verify(before);
   assert.equal(before.nativeLayoutChrome.sidebarRealized, true);
@@ -188,6 +189,29 @@ try {
   verify(await settled(), before);
   assert.deepEqual(await registrations(), pageRegistrations);
   console.log("PASS native owner/subscriptions, stable chrome and page identities, factory fences, retained last window");
+}
+
+async function legacyChecks() {
+  const before = await settled();
+  assert.equal(before.layoutControllerSubscriptions, 0);
+  assert.match(before.legacyLayoutReason, /disabled|unavailable/);
+  assert.equal(before.layout.selectedTabId, "a");
+  assert.equal(before.layout.toolbarModes.a, "shown");
+  assert.equal(await app.eval('return acPerf.findFibers("LegacyContentCard",10).length;'), 1);
+  const split = await app.eval('const s=ac.store.getState();return s.createSplit(["a","b"]);');
+  const paired = await settled(layout => layout.panes.a && layout.panes.b);
+  assert.deepEqual(Object.keys(paired.layout.panes).sort(), ["a", "b"]);
+  await app.eval(`const s=ac.store.getState();s.separateSplit(${JSON.stringify(split)});s.activate("b");return true;`);
+  const after = await settled(layout => layout.selectedTabId === "b" && !layout.panes.a);
+  assert.deepEqual(Object.keys(after.layout.panes), ["b"]);
+  assert.equal(after.layout.toolbarModes.b, "shown");
+  samples.push(before, paired, after);
+  console.log("PASS legacy layout override, split and selected toolbar");
+}
+
+try {
+  if (nativeLayout) await nativeChecks();
+  else await legacyChecks();
 } finally {
   writeFileSync(join(scratch, "samples.json"), JSON.stringify(samples, null, 2));
   await app.quit();

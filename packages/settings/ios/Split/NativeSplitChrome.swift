@@ -94,10 +94,10 @@ enum NativeSplitChrome {
     overlay.setBand(clip, tabId: tabId)
   }
 
-  static func setLiveTop(_ top: CGFloat?, windowId: String, tabId: String) {
+  static func setLiveTop(_ top: CGFloat?, viewport: CGFloat?, windowId: String, tabId: String) {
     if owners[windowId] != nil { NativeWindowShell.host(windowId)?.scheduleLayoutProjection(); return }
     guard let view = panes[windowId], view.superview != nil else { return }
-    view.setLiveTop(top, tabId: tabId)
+    view.setLiveTop(top, viewport: viewport, tabId: tabId)
   }
 
   private static func panesView(_ windowId: String, shell supplied: WindowShellView? = nil) -> SplitPanesView? {
@@ -223,7 +223,6 @@ enum NativeSplitChrome {
       if let overlay = overlays[windowId] {
         overlay.toolbarHeight = entry["toolbar"] as? Bool ?? true ? ShellMetrics.toolbarHeight : 0
         overlay.setFullscreenTab(fullscreenTab)
-        overlay.pageTops = (entry["pageTops"] as? [String: NSNumber] ?? [:]).mapValues { CGFloat($0.doubleValue) }
       }
       guard let panes = panesView(windowId) else { continue }
       panes.theme = theme
@@ -395,7 +394,7 @@ enum NativeSplitChrome {
             if toolbars[windowId]?.isEmpty == true { toolbars[windowId] = nil }
             if let view = panes[windowId] {
               view.setToolbarStates(toolbars[windowId] ?? [:])
-              if state != nil && owners[windowId] != nil {
+              if state != nil {
                 AutoHideHost.toolbarReady(windowId: windowId, tabId: tabId, toolbar: view.toolbar(tabId))
               }
             }

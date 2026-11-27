@@ -7,10 +7,14 @@ import SolaraUI
 @MainActor
 final class NativeToolbarPresenter {
   private static let live = NSHashTable<NativeToolbarPresenter>.weakObjects()
+  private static let shortcutCommands = [
+    "sidebar": "toggleSidebar", "back": "back", "forward": "forward", "reload": "reload",
+    "bookmark": "bookmarkPage", "split": "openSplitPane",
+  ]
+  private static var shortcutProjection: (overrides: JSONValue?, profiles: [String], hints: [String: String])?
   private let host = UUID().uuidString
   private let deliver: (ToolbarState?, SidebarAddressBarState?) -> Void
   private var input: ToolbarPresenter.Input?
-  private var fallback: JSONValue?
   private var rawInput: String?
   private var fullscreen: Bool?
   private weak var store: Store?
@@ -48,8 +52,6 @@ final class NativeToolbarPresenter {
     }
     rawInput = json
     input = next
-    let values = try? JSONValue.parse(Data(json.utf8))
-    fallback = values?["fallback"]
     if lifecycle == nil {
       lifecycle = NativeStoreHandle.subscribeLifecycle { [weak self] in self?.reconcileStore() }
     } else {
@@ -66,7 +68,6 @@ final class NativeToolbarPresenter {
     observedStore = nil
     if input != nil { releaseExtensionHost() }
     input = nil
-    fallback = nil
     rawInput = nil
     fullscreen = nil
     resetTarget()
@@ -147,8 +148,8 @@ final class NativeToolbarPresenter {
   }
 
   private func refresh() {
-    guard let input, !invalidated, !NativeStoreHandle.frozen,
-      let state = store?.state ?? fallbackState(input) else {
+    guard var input, !invalidated, !NativeStoreHandle.frozen,
+      let state = store?.state else {
       observeBookmarks(nil)
       publish(nil, nil)
       return
@@ -178,8 +179,8 @@ final class NativeToolbarPresenter {
       Task { @MainActor in _ = await SettingsAdapters.js("toolbar.endEdit", tabId, input.editRequest) }
     }
     let engine = state.engineProfile(page.bookmarkProfile)
-    observeBookmarks(store == nil ? nil : engine)
-    let bookmarked = store == nil ? fallback?["bookmarked"]?.bool == true : bookmarkMembership(page.tab.url, engine: engine)
+    observeBookmarks(engine)
+    let bookmarked = bookmarkMembership(page.tab.url, engine: engine)
     let extensionInput: JSONValue = [
       "host": .string(host), "windowId": .string(windowId), "tabId": .string(tabId),
       "limit": input.extensionLimit.map { .number(Double($0)) } ?? .null,
@@ -191,6 +192,7 @@ final class NativeToolbarPresenter {
       let data = projection["buttons"].flatMap { try? JSONSerialization.data(withJSONObject: $0.foundation) }
       extensionButtons = data.flatMap { try? JSONDecoder().decode([ToolbarButtonState].self, from: $0) } ?? []
     }
+    input.hints = Self.shortcutHints(state)
     let toolbar = ToolbarPresenter.present(input, state: state, page: page, shell: NativeWindowShell.active(windowId),
       fullscreen: fullscreen ?? ToolbarPresenter.fullscreen(input, state: state),
       engineBack: NativeEngineCommands.hasBack(page.tab.pageIn ?? tabId), bookmarked: bookmarked, extensions: extensionButtons,
@@ -198,6 +200,17 @@ final class NativeToolbarPresenter {
       translation: NativeTranslation.shared.toolbar(tabId: tabId, windowId: windowId))
     if input.sidebar != nil { publish(nil, ToolbarPresenter.sidebar(input, state: state, toolbar: toolbar)) }
     else { publish(toolbar, nil) }
+  }
+
+  private static func shortcutHints(_ state: BrowserState) -> [String: String] {
+    let overrides = state.settings["shortcuts"]
+    if let projection = shortcutProjection, projection.overrides == overrides, projection.profiles == state.profileOrder {
+      return projection.hints
+    }
+    let bindings = CommandShortcutSnapshot().hints(state: state)
+    let hints = shortcutCommands.compactMapValues { bindings[JSKey($0)] }
+    shortcutProjection = (overrides, state.profileOrder, hints)
+    return hints
   }
 
   private func resetTarget() {
@@ -219,22 +232,6 @@ final class NativeToolbarPresenter {
     let found = snapshot.nodes.values.contains { $0.kind == "url" && $0.url?.utf16.elementsEqual(url.utf16) == true }
     bookmarkLookup = (engine, snapshot.revision, url, found)
     return found
-  }
-
-  private func fallbackState(_ input: ToolbarPresenter.Input) -> BrowserState? {
-    guard !NativeStoreHandle.ownedWorkspaceAtLaunch,
-      let fallback, let rawWindow = fallback["window"]?.object,
-      let window = try? BrowserWindow(json: rawWindow), window.id == input.windowId else { return nil }
-    var state = BrowserState(settings: Settings.hydrated(from: fallback["settings"]))
-    state.windows[window.id] = window
-    if let rawTab = fallback["tab"]?.object, let tab = try? Tab(json: rawTab), tab.id == input.tabId {
-      state.tabs[tab.id] = tab
-      if let live = fallback["live"]?.object { state.live[tab.id] = try? PageLiveFacts(json: live) }
-      if let holder = tab.pageIn, let live = fallback["holderLive"]?.object { state.live[holder] = try? PageLiveFacts(json: live) }
-    }
-    if let rawOpener = fallback["opener"]?.object, let opener = try? Tab(json: rawOpener) { state.tabs[opener.id] = opener }
-    if let rawSplit = fallback["split"]?.object, let split = try? SplitView(json: rawSplit) { state.splits[split.id] = split }
-    return state
   }
 
 }

@@ -6,6 +6,30 @@ public enum AutoHideStripEvent: Equatable, Sendable {
   case peek(Bool)
 }
 
+struct ToolbarAutoHideHover {
+  private(set) var deadline: TimeInterval?
+  private var event: AutoHideStripEvent?
+
+  mutating func update(mode: ToolbarAutoHideMode, inside: Bool, at now: TimeInterval) {
+    let next: AutoHideStripEvent?
+    switch (mode, inside) {
+    case (.collapsed, true): next = .peek(true)
+    case (.peek, false): next = .peek(false)
+    default: next = nil
+    }
+    guard event != next else { return }
+    event = next
+    deadline = next.map { now + ($0 == .peek(true) ? ToolbarAutoHideMetrics.peekDelay : ToolbarAutoHideMetrics.unpeekDelay) }
+  }
+
+  mutating func take(at now: TimeInterval) -> AutoHideStripEvent? {
+    guard let deadline, now >= deadline else { return nil }
+    let result = event
+    self = Self()
+    return result
+  }
+}
+
 public struct AutoHideStripStyle: Equatable, Sendable {
   public var card: CSSColor
   public var band: CSSColor?
@@ -67,6 +91,7 @@ public final class AutoHideStripView: NSView {
   private var stallTimer: Timer?
   private var lastTick: CFTimeInterval = 0
   private var peekTimer: Timer?
+  private var hover = ToolbarAutoHideHover()
   private var tracking: NSTrackingArea?
   private var pinnedReduceMotion: Bool?
   public var reduceMotion: Bool {
@@ -103,6 +128,19 @@ public final class AutoHideStripView: NSView {
 
   public var restingTop: Double {
     ToolbarAutoHideCurves.liveTop(laid: laid, page: page.to, collapsed: mode != .shown, shownTop: shownTop)
+  }
+
+  public var viewportTop: Double {
+    mode == .shown && presentationTop >= shownTop ? shownTop : Double(ToolbarAutoHideMetrics.stripHeight)
+  }
+
+  public func retire() {
+    resetHover()
+    stopLink()
+    onEvent = { _ in }
+    onFrame = { _ in }
+    onMotion = { _ in }
+    removeFromSuperview()
   }
 
   public var bandShown: CGColor? { bandColor }
@@ -169,8 +207,7 @@ public final class AutoHideStripView: NSView {
   public var showsToolTip: Bool { label.toolTip != nil }
 
   private func setMode(_ next: ToolbarAutoHideMode) {
-    peekTimer?.invalidate()
-    peekTimer = nil
+    resetHover()
     mode = next
     label.toolTip = next == .collapsed ? "Show Toolbar" : nil
   }
@@ -296,24 +333,38 @@ public final class AutoHideStripView: NSView {
   }
 
   public override func mouseMoved(with event: NSEvent) {
-    if mode == .collapsed {
-      if inStrip(event) { peekLater(true, ToolbarAutoHideMetrics.peekDelay) } else { peekTimer?.invalidate() }
-    }
+    updateHover(inside: mode == .peek || inStrip(event))
   }
 
   public override func mouseEntered(with event: NSEvent) {
-    if mode == .peek { peekTimer?.invalidate() } else { mouseMoved(with: event) }
+    mouseMoved(with: event)
   }
 
   public override func mouseExited(with event: NSEvent) {
-    if mode == .peek { peekLater(false, ToolbarAutoHideMetrics.unpeekDelay) } else if mode == .collapsed { peekTimer?.invalidate() }
+    updateHover(inside: false)
   }
 
-  private func peekLater(_ on: Bool, _ delay: TimeInterval) {
+  private func resetHover() {
     peekTimer?.invalidate()
-    peekTimer = Timer.scheduledTimer(withTimeInterval: delay, repeats: false) { [weak self] _ in
-      MainActor.assumeIsolated { self?.onEvent(.peek(on)) }
+    peekTimer = nil
+    hover = ToolbarAutoHideHover()
+  }
+
+  private func updateHover(inside: Bool) {
+    let before = hover.deadline
+    let now = CACurrentMediaTime()
+    hover.update(mode: mode, inside: inside, at: now)
+    guard before != hover.deadline else { return }
+    peekTimer?.invalidate()
+    guard let deadline = hover.deadline else { return }
+    let timer = Timer(timeInterval: max(0, deadline - now), repeats: false) { [weak self] _ in
+      MainActor.assumeIsolated {
+        guard let self, let event = self.hover.take(at: max(deadline, CACurrentMediaTime())) else { return }
+        self.onEvent(event)
+      }
     }
+    peekTimer = timer
+    RunLoop.main.add(timer, forMode: .common)
   }
 
   public override func hitTest(_ point: NSPoint) -> NSView? {
@@ -324,7 +375,7 @@ public final class AutoHideStripView: NSView {
 
   public override func mouseUp(with event: NSEvent) {
     guard mode == .collapsed, inStrip(event) else { return }
-    peekTimer?.invalidate()
+    resetHover()
     onEvent(.reveal)
   }
 
@@ -342,7 +393,7 @@ public final class AutoHideStripView: NSView {
     super.viewWillMove(toWindow: newWindow)
     if newWindow == nil {
       stopLink()
-      peekTimer?.invalidate()
+      resetHover()
     }
   }
 }

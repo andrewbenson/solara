@@ -310,6 +310,7 @@ final class NativeTabDrag {
     do {
       if let over {
         let moved = (try store.dispatch(Command("moveTabsToWindow", [JSONValue(tabIds), JSONValue(over)]), origin: .native)).result?.string
+        if store.state.windows[source] == nil { WindowHost.closeBrowserWindow(source) }
         FrameUpdates.flush()
         endPreview(preview)
         guard moved == over, open(over) else { return }

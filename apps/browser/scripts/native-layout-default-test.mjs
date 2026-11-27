@@ -9,7 +9,7 @@ assert.ok(appArg && outputArg, "usage: node native-layout-default-test.mjs <Debu
 const appPath = resolve(appArg);
 const output = resolve(outputArg);
 assert.equal(execFileSync("/usr/libexec/PlistBuddy", ["-c", "Print CFBundleIdentifier", join(appPath, "Contents/Info.plist")], { encoding: "utf8" }).trim(), "network.benson.solara.dev");
-assert.ok(process.env.SOLARA_NATIVE_WINDOW_LAYOUT === undefined || process.env.SOLARA_NATIVE_WINDOW_LAYOUT === "1", "native opt-in acceptance sets SOLARA_NATIVE_WINDOW_LAYOUT=1; inherited override must be 1");
+const nativeLayout = process.env.SOLARA_NATIVE_WINDOW_LAYOUT === "1";
 for (const key of ["SOLARA_NATIVE_SHELL", "SOLARA_SHELL_PANES", "SOLARA_NATIVE_PAGES_POOL", "SOLARA_SHELL_MAIN_TOP", "SOLARA_NATIVE_TOP_STRIP", "SOLARA_TAB_POOL"]) {
   assert.equal(process.env[key], undefined, `native opt-in acceptance requires no ${key} override`);
 }
@@ -18,9 +18,8 @@ let app;
 try {
   app = await launch(appPath, {
     data: join(output, "data"), fresh: true, onboarded: true, probe: true, keepData: true,
-    env: { SOLARA_NATIVE_WINDOW_LAYOUT: "1" },
     session: session({ windows: [{ id: "w1", activeTabIds: { default: "a" } }], tabs: [{ id: "a", url: "about:blank", title: "Default layout" }] }),
-    ready: 'return !!globalThis.acPerf && globalThis.expo.modules.SolaraWindowShell.describe("w1").then(JSON.parse).then(s=>s?.nativeLayout && s.layout?.current);',
+    ready: `return !!globalThis.acPerf && globalThis.expo.modules.SolaraWindowShell.describe("w1").then(JSON.parse).then(s=>s?.nativeLayout===${nativeLayout} && s.layout?.current);`,
   });
   const inspect = () => app.eval(`
     const W = globalThis.expo.modules.SolaraWindowShell;
@@ -42,30 +41,36 @@ try {
       value = await inspect();
       native = await app.snapshot({ windowId: "w1" }, { timeout: 1000 });
       ready = value.shell.layout?.current && Array.isArray(value.shell.topStrip) === (layout === "top")
-        && native.consistent && Object.values(value.mounted).every(count => count === 0) && value.blockers.length === 0;
+        && native.consistent && (nativeLayout
+          ? Object.values(value.mounted).every(count => count === 0) && value.blockers.length === 0
+          : value.mounted.LegacyContentCard === 1);
       if (ready) break;
       await sleep(50);
     }
     assert.ok(ready, `layout did not settle before the deadline: ${JSON.stringify(value)}`);
     evidence.push({ layout, ...value, native });
-    assert.equal(value.shell.nativeLayout, true);
+    assert.equal(value.shell.nativeLayout, nativeLayout);
     assert.equal(Array.isArray(value.shell.topStrip), layout === "top", "requested native layout is applied");
-    assert.equal(value.shell.legacyLayoutReason, null);
-    assert.equal(value.shell.layoutControllerSubscriptions, 1);
-    assert.equal(value.shell.layout.maxError <= 0.5, true);
-    assert.deepEqual(Object.values(value.mounted), Array(Object.keys(value.mounted).length).fill(0));
-    assert.deepEqual(value.blockers, [], "no empty RN pointer blocker on the opt-in path");
+    assert.equal(value.shell.layoutControllerSubscriptions, nativeLayout ? 1 : 0);
+    if (nativeLayout) {
+      assert.equal(value.shell.legacyLayoutReason, null);
+      assert.equal(value.shell.layout.maxError <= 0.5, true);
+      assert.deepEqual(Object.values(value.mounted), Array(Object.keys(value.mounted).length).fill(0));
+      assert.deepEqual(value.blockers, [], "no empty RN pointer blocker on the native path");
+    } else {
+      assert.match(value.shell.legacyLayoutReason, /disabled|unavailable/);
+    }
     const contract = native.windows.find(window => window.id === "w1")?.shell?.contract;
     assert.ok(contract, "native ownership probe is required");
-    assert.equal(contract.nativeLayout, true);
+    assert.equal(contract.nativeLayout, nativeLayout);
     assert.equal(contract.ownerCount, 1);
-    assert.equal(contract.hostCounts.WindowLayoutController, 1);
-    assert.equal(contract.legacyLayoutStoreSubscriptions, 0);
+    assert.equal(contract.hostCounts.WindowLayoutController, nativeLayout ? 1 : 0);
+    assert.equal(contract.legacyLayoutStoreSubscriptions, nativeLayout ? 0 : 1);
     assert.equal(contract.childStoreSubscriptions, 0);
     assert.ok(contract.pageIdentities.some(page => page.tabId === "a"), "default page is owned by the native pool");
   }
   writeFileSync(join(output, "evidence.json"), JSON.stringify(evidence, null, 2));
-  console.log("PASS opt-in native owner, pooled page, no RN layout/gesture hosts or empty pointer blockers");
+  console.log(nativeLayout ? "PASS selected native owner, pooled page, no RN layout/gesture hosts or empty pointer blockers" : "PASS legacy layout keeps the legacy window owner and pooled page");
 } finally {
   if (app) await app.quit();
 }

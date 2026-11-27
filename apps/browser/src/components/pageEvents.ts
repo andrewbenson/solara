@@ -21,7 +21,6 @@ import { patchPage, pageOf, setBrowserId, setPopover, usePages } from "./layout/
 import { openFromPage } from "./layout/openFromPage";
 import { closeFolderPanelIn } from "./sidebar/tileFolderUi";
 import { requestDisplayMedia } from "./media/SharePicker";
-import { noteScroll, revealToolbar } from "./layout/toolbarAutoHide";
 import { closeLittleSolaraOnEscape } from "./littleSolara/actions";
 import { answerExternalApp } from "./site/ExternalAppPrompt";
 import { showAutofillPrompt, showPasswordPrompt } from "./site/Prompts";
@@ -290,7 +289,6 @@ export function pageEventHandlers(session: PageSession): PageEventHandlers {
         setPopover(tabId, null);
         if (pageOf(tabId).externalApp && hostOf(url) !== hostOf(lastPage)) answerExternalApp(tabId, false);
         patchPage(tabId, { passwordPrompt: null, crashed: null, status: "" });
-        revealToolbar(tabId);
       }
       session.lastPage = pageKey(url);
       patchPage(tabId, { themeColorSource: themeColorSource ?? null });
@@ -363,9 +361,7 @@ export function pageEventHandlers(session: PageSession): PageEventHandlers {
       else if (command === "escape" && usePages.getState().popover[tabId]) setPopover(tabId, null);
       else if (command === "escape" && !closeFolderPanelIn(tab()?.windowId) && !closePeekOnEscape(tabId)) closeLittleSolaraOnEscape(tabId);
     },
-    onPageMessage: (kind, data) => {
-      if (kind === "scroll") noteScroll(tabId, data);
-    },
+    onPageMessage: () => {},
     onDiscarded: (url) => {
       session.pending = url;
       session.fromNewTab = false;

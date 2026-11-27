@@ -1,7 +1,7 @@
 import { dropTabReveals, revealOffered, revealTab } from "@solara/solaracore";
 import { useMedia } from "../components/media/state";
 import { pageOf } from "../components/layout/pageState";
-import { useToolbarAutoHide } from "../components/layout/toolbarAutoHide";
+import { toolbarScrolledDown } from "../components/layout/nativeToolbarPresentation";
 import { useBrowser, type BrowserState } from "../store/browser";
 import { activeTabId } from "../store/model";
 import { hasPage } from "../store/pageSession";
@@ -30,7 +30,7 @@ function revealFor(s: BrowserState, prev: BrowserState, windowId: string, next: 
   const had = prev.tabs[next];
   if (!hasWebPage(tab) || tab.windowId !== windowId) return null;
   if (hasWebPage(had)) return had.windowId === windowId && was.tabIds.includes(next) ? { tabId: next, over: before } : null;
-  if (!had && tab.adoptId && OFFERED.test(tab.adoptId) && hasWebPage(prev.tabs[before]) && !useToolbarAutoHide.getState().scrolledDown[before])
+  if (!had && tab.adoptId && OFFERED.test(tab.adoptId) && hasWebPage(prev.tabs[before]) && !toolbarScrolledDown(before))
     return { tabId: next, offered: tab.adoptId, over: before };
   return null;
 }

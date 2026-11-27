@@ -202,13 +202,13 @@ try {
     await rep.check(`${panes}-auto-hide`, async () => {
       await run(`S().updateSettings({ hideToolbarWhileScrolling: true }); return true;`);
       await sleep(800);
-      await run(`ac.toolbarAutoHide.noteScroll("a", { state: "down" }); return true;`);
+      await run(`expo.modules.SolaraAutoHide.devScroll("a", "down"); return true;`);
       await sleep(1200);
       await run(`patchA({ status: "https://example.com/a-link" }); return true;`);
       await sleep(600);
       g["auto-hide"] = {};
       await snap("auto-hide");
-      const shifts = await run(`const out = []; ac.toolbarAutoHide.noteScroll("a", { state: "up" }); const sample = (n) => n ? frame().then(() => { out.push(statusShift()); return sample(n - 1); }) : Promise.resolve(out); return sample(40);`);
+      const shifts = await run(`const out = []; expo.modules.SolaraAutoHide.devScroll("a", "up"); const sample = (n) => n ? frame().then(() => { out.push(statusShift()); return sample(n - 1); }) : Promise.resolve(out); return sample(40);`);
       g["auto-hide"].shifts = shifts;
       await run(`patchA({ status: null }); S().updateSettings({ hideToolbarWhileScrolling: false }); return true;`);
       await sleep(800);

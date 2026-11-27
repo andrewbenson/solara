@@ -130,7 +130,14 @@ const newTabModule = {
   forgetWindow: async (_windowId: string) => {},
 };
 
-const nativeModules: Record<string, object> = { ...shellNativeModules, ...solaraCoreNativeModules, SolaraSettings: settingsModule, SolaraNewTab: newTabModule };
+export const toolbarScroll = new Set<string>();
+const autoHideModule = {
+  scrolledDown: (tabId: string) => toolbarScroll.has(tabId),
+  sidebarToggleVisible: () => true,
+  addListener: () => ({ remove: () => {} }),
+};
+
+const nativeModules: Record<string, object> = { ...shellNativeModules, ...solaraCoreNativeModules, SolaraAutoHide: autoHideModule, SolaraSettings: settingsModule, SolaraNewTab: newTabModule };
 const optionalNativeModules: Record<string, () => object | null> = { ...shellOptionalNativeModules, ...solaraCoreOptionalNativeModules };
 const testModules = () => (globalThis as { acTestNativeModules?: Record<string, object> }).acTestNativeModules;
 

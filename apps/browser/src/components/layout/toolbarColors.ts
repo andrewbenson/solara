@@ -33,7 +33,6 @@ export function luminance(color: string): number {
 
 const LIGHT_SITE_DIVIDER = "rgba(0,0,0,0.05)";
 const DARK_SITE_DIVIDER = "rgba(255,255,255,0.025)";
-export const TOOLBAR_DIVIDER_THICKNESS = 1;
 
 export function railToolbarOnFrame(iconsOnly: boolean, focused: boolean, topTabs: boolean, fullscreen: boolean, sidebarVisible = true): boolean {
   return iconsOnly && focused && !topTabs && !fullscreen && sidebarVisible;

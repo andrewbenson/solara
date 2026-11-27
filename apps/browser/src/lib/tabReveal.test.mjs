@@ -140,10 +140,9 @@ test("a page Chrome opened in front (a link's new tab, DevTools, an extension) i
 });
 
 test("a new tab isn't shown over a page whose toolbar is scrolled away (its page is taller than the new tab's)", async () => {
-  const { useToolbarAutoHide } = await import("../components/layout/toolbarAutoHide.ts");
+  stub.toolbarScroll.add("a");
   setup(["a"], "a");
-  useToolbarAutoHide.setState({ scrolledDown: { a: true } });
   S().newTab("w1", { url: "https://made.example/", adoptId: "tab:8" });
   assert.deepEqual(revealed(), ["drop over a"]);
-  useToolbarAutoHide.setState({ scrolledDown: {} });
+  stub.toolbarScroll.clear();
 });

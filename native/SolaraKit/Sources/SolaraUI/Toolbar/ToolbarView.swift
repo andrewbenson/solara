@@ -39,6 +39,7 @@ public final class ToolbarView: NSView {
   static let updatePillGap: CGFloat = 6
   static let urlRoomBesideUpdate: CGFloat = 300
   static let urlRoomBesideShortUpdate: CGFloat = 120
+  private var autoHideBackdrop = false
   private var bandColor: CGColor?
   private var shownProgress: Double?
   private var interactive = true
@@ -129,9 +130,16 @@ public final class ToolbarView: NSView {
     progress.removeAllAnimations()
     progress.isHidden = true
     shownProgress = nil
+    autoHideBackdrop = false
     setAutoHide(opacity: 1, scale: 1, lift: 0, interactive: true)
     isHidden = true
     needsLayout = true
+  }
+
+  public func setAutoHideBackdrop(_ enabled: Bool) {
+    guard autoHideBackdrop != enabled else { return }
+    autoHideBackdrop = enabled
+    applySurface(animated: false)
   }
 
   public func setAutoHide(opacity: CGFloat, scale: CGFloat, lift: CGFloat, interactive: Bool) {
@@ -247,11 +255,11 @@ public final class ToolbarView: NSView {
   private func applySurface(animated: Bool) {
     guard let state else { return }
     let frame = sitsOnWindowFrame
-    let shown = !state.bare && !frame
+    let shown = !state.bare && !frame && !autoHideBackdrop
     CATransaction.begin()
     CATransaction.setDisableActions(true)
-    under.backgroundColor = frame ? nil : underColor
-    hairline.isHidden = frame || !state.hairline
+    under.backgroundColor = frame || autoHideBackdrop ? nil : underColor
+    hairline.isHidden = frame || autoHideBackdrop || !state.hairline
     hairline.backgroundColor = frame ? nil : toolbarColor(state.palette.divider)?.cgColor
     if frame { band.removeAnimation(forKey: "backgroundColor") }
     CATransaction.commit()

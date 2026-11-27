@@ -6,6 +6,43 @@ import Testing
 @MainActor
 @Suite(.serialized)
 struct ToolbarAutoHideControllerTests {
+  @Test(arguments: [false, true])
+  func hoverTimelineRejectsRetiredPresentation(nativeLayout: Bool) throws {
+    let controller = ToolbarAutoHideController(windowId: "w", windowGeneration: nativeLayout ? 2 : 1)
+    let page = PageRegistration(tabID: "a", registrationGeneration: 1)
+    controller.register(page)
+    controller.present(["a"])
+    #expect(controller.noteScroll(page, state: "down"))
+    let target = try #require(controller.actionTarget("a"))
+    #expect(controller.apply(.peek(true), from: target))
+    #expect(controller.facts["a"]?.peek == true)
+    controller.present(["b"])
+    controller.present(["a"])
+    #expect(!controller.apply(.reveal, from: target))
+    #expect(controller.facts["a"]?.scrolledDown == false)
+    let replacement = PageRegistration(tabID: "a", registrationGeneration: 2)
+    let previous = try #require(controller.actionTarget("a"))
+    controller.register(replacement)
+    #expect(!controller.apply(.peek(true), from: previous))
+    let final = try #require(controller.actionTarget("a"))
+    controller.stop()
+    #expect(!controller.apply(.reveal, from: final))
+  }
+
+  @Test func pointerDeadlinesKeepTheFirstEntryAndCancelOnExit() {
+    var hover = ToolbarAutoHideHover()
+    hover.update(mode: .collapsed, inside: true, at: 0)
+    hover.update(mode: .collapsed, inside: true, at: 0.1)
+    #expect(hover.take(at: 0.149) == nil)
+    #expect(hover.take(at: 0.15) == .peek(true))
+    hover.update(mode: .peek, inside: false, at: 1)
+    hover.update(mode: .peek, inside: true, at: 1.2)
+    #expect(hover.take(at: 1.25) == nil)
+    hover.update(mode: .peek, inside: false, at: 2)
+    #expect(hover.take(at: 2.249) == nil)
+    #expect(hover.take(at: 2.25) == .peek(false))
+  }
+
   @Test func modePreservesTheExistingTruthTable() {
     let base = ToolbarAutoHideInput(enabled: true, hasPage: true, scrolledDown: true, peek: false, needsBar: false)
     #expect(base.mode == .collapsed)

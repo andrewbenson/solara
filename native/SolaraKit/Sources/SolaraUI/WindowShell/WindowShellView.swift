@@ -848,7 +848,7 @@ public final class WindowShellView: FrameLayoutView {
     let caption = captionTop(in: card)
     let requestedTop = railFraction > 0 ? top : vertical.minY
     let actualTop = caption > 0 ? max(caption, requestedTop) : requestedTop
-    let bottom = railFraction > 0 ? page.maxY : vertical.maxY
+    let bottom = vertical.maxY + (railFraction > 0 ? max(0, page.maxY - vertical.maxY) : 0)
     let frame = input.alignFrame(CGRect(
       x: page.minX, y: actualTop, width: page.width,
       height: max(0, bottom - actualTop)))

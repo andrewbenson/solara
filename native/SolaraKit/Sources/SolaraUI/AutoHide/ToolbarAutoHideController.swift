@@ -6,7 +6,39 @@ public final class ToolbarAutoHideController {
   public let windowGeneration: UInt64
   public private(set) var facts: [String: WindowLayoutPageFacts] = [:]
   private var registrations: [String: PageRegistration] = [:]
+  private var presented: [String: UUID] = [:]
   private var stopped = false
+
+  public struct ActionTarget: Equatable, Sendable {
+    fileprivate let presentation: UUID
+    fileprivate let registration: PageRegistration
+  }
+
+  public func present(_ tabIds: Set<String>) {
+    guard !stopped else { return }
+    presented = presented.filter { tabIds.contains($0.key) }
+    for id in tabIds where presented[id] == nil {
+      presented[id] = UUID()
+      reveal(tabId: id)
+    }
+  }
+
+  public func actionTarget(_ tabId: String) -> ActionTarget? {
+    guard let presentation = presented[tabId], let registration = registrations[tabId] else { return nil }
+    return ActionTarget(presentation: presentation, registration: registration)
+  }
+
+  @discardableResult
+  public func apply(_ event: AutoHideStripEvent, from target: ActionTarget) -> Bool {
+    guard actionTarget(target.registration.tabID) == target else { return false }
+    switch event {
+    case .reveal:
+      reveal(tabId: target.registration.tabID)
+      return true
+    case .peek(let on):
+      return setPeek(target.registration, on: on)
+    }
+  }
 
   public init(windowId: String, windowGeneration: UInt64) {
     self.windowId = windowId
@@ -65,6 +97,7 @@ public final class ToolbarAutoHideController {
     stopped = true
     registrations = [:]
     facts = [:]
+    presented = [:]
   }
 
   private func current(_ registration: PageRegistration) -> Bool {

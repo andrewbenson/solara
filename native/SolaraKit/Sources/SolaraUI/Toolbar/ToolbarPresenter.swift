@@ -30,6 +30,8 @@ public struct ToolbarPresenter {
     public var newTabShown: Bool
     public var backToNewTab: Bool
     public var historyKnown: Bool
+    public var historyHeld: Bool?
+    public var card: String?
 
     public struct Geometry: Decodable, Sendable {
       var sidebarButton: Double?
@@ -155,7 +157,8 @@ public struct ToolbarPresenter {
       right: right, rightInset: 8, extensions: extensions, extensionsRight: inSplit ? 68 : 8,
       update: top && !sidebar && focused ? input.update : nil,
       hairline: hasPage && !input.bare && !frame, progress: page.loading ? input.progress : nil, stripes: stripes,
-      inSplit: inSplit, windowToolbar: input.windowToolbar, newTabShown: input.newTabShown)
+      inSplit: inSplit, windowToolbar: input.windowToolbar, newTabShown: input.newTabShown,
+      autoHideCard: input.card, autoHideHeld: input.popover != nil || input.historyHeld == true || input.editing)
   }
 
   public static func sidebar(_ input: Input, state: BrowserState, toolbar: ToolbarState?) -> SidebarAddressBarState? {

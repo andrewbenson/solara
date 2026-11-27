@@ -19,7 +19,8 @@ const server = createServer((req, res) => {
 });
 await new Promise((done) => server.listen(0, "127.0.0.1", done));
 const base = `http://127.0.0.1:${server.address().port}`;
-const evidence = { checks: [], samples: [] };
+const evidence = { checks: [], failures: [], samples: [] };
+const nativeLayout = process.env.SOLARA_NATIVE_WINDOW_LAYOUT !== "0";
 let app;
 let windowNumber;
 const connections = [];
@@ -37,21 +38,29 @@ async function until(label, readValue, accepts, timeout = 20000) {
   throw new Error(`${label}: deadline; last ${JSON.stringify(last)}`);
 }
 async function sample(label, accepts = () => true) {
-  const shell = await until(label, read, (shell) => shell?.nativeLayout && shell.layout?.current && accepts(shell.layout));
-  assert.ok(shell.layout.maxError <= 0.5, `${label}: native endpoints ${JSON.stringify(shell.layout.errors)}`);
-  assert.deepEqual((shell.layout.missing ?? []).filter(name=>name.startsWith("page:")||name.startsWith("pane:")), [], `${label}: every native page/pane endpoint exists`);
-  for (const [id, leaf] of Object.entries(shell.split?.leaves ?? {})) {
-    const overlay = shell.split.overlays?.[id];
-    if (!overlay || overlay.hidden) continue;
-    assert.ok(leaf.window.every((v, i) => Math.abs(v - overlay.window[i]) <= 0.5), `${label}: ${id} page/overlay endpoints`);
+  const shell = await until(label, read, (shell) => shell?.nativeLayout === nativeLayout && shell.layout?.current && accepts(shell.layout));
+  if (nativeLayout) {
+    assert.ok(shell.layout.maxError <= 0.5, `${label}: native endpoints ${JSON.stringify(shell.layout.errors)}`);
+    assert.deepEqual((shell.layout.missing ?? []).filter(name=>name.startsWith("page:")||name.startsWith("pane:")), [], `${label}: every native page/pane endpoint exists`);
+    for (const [id, leaf] of Object.entries(shell.split?.leaves ?? {})) {
+      const overlay = shell.split.overlays?.[id];
+      if (!overlay || overlay.hidden) continue;
+      assert.ok(leaf.window.every((v, i) => Math.abs(v - overlay.window[i]) <= 0.5), `${label}: ${id} page/overlay endpoints`);
+    }
   }
   evidence.samples.push({ label, shell });
   return shell.layout;
 }
 async function check(label, body) {
-  await body();
-  evidence.checks.push(label);
-  console.log(`PASS ${label}`);
+  try {
+    await body();
+    evidence.checks.push(label);
+    console.log(`PASS ${label}`);
+  } catch (error) {
+    evidence.failures.push({ label, error: String(error.stack ?? error) });
+    process.exitCode = 1;
+    console.error(`FAIL ${label}: ${error.message}`);
+  }
 }
 const registrations = () => run('return globalThis.expo.modules.SolaraTabPool.livePages().then(pages=>pages.map(({tabId,sessionGeneration,registrationGeneration,ready})=>({tabId,sessionGeneration,registrationGeneration,browserId:ready?.browserId??null})).sort((a,b)=>a.tabId.localeCompare(b.tabId)));');
 async function page(path) {
@@ -103,7 +112,7 @@ try {
     session: session({ windows: [{ id: "w1", frame: [80, 80, 1280, 800], activeTabIds: { default: "a" } }],
       tabs: [{ id: "a", url: `${base}/a`, title: "A" }, { id: "b", url: `${base}/b`, title: "B" }],
       settings: { hideToolbarWhileScrolling: true, bookmarksBar: "always", warnBeforeClosingWindow: false, warnBeforeClosingLastTab: false, sleepInactiveTabs: false } }),
-    env: { SOLARA_NATIVE_WINDOW_LAYOUT: "1", SOLARA_FAKE_FULLSCREEN_MS: "400" },
+    env: { SOLARA_NATIVE_WINDOW_LAYOUT: nativeLayout ? "1" : "0", SOLARA_FAKE_FULLSCREEN_MS: "400" },
     ready: 'return !!ac.store.getState().windows.w1 && !!globalThis.expo.modules.SolaraWindowShell',
   });
   await run('ac.store.getState().updateSettings({hideToolbarWhileScrolling:true,bookmarksBar:"always"});return true;');
@@ -229,11 +238,10 @@ try {
       assert.equal(layout.toolbarModes.a, "shown");
     }
   });
-  await check("native path mounts no React toolbar auto-hide or page layout decision hosts", async () => {
+  await check("auto-hide mounts no React policy hosts", async () => {
     const mounts = await run('return Object.fromEntries(["NativeAutoHide","AutoHideToolbar","LegacyContentCard","TabPane","WindowToolbar"].map(name=>[name,acPerf.findFibers(name,50).length]));');
-    assert.ok(Object.values(mounts).every((count) => count === 0), JSON.stringify(mounts));
-    const appearanceOnly = await run('return acPerf.findFibers("NativeAutoHideStyleFeed",50).every(fiber=>fiber.child===null);');
-    assert.equal(appearanceOnly, true, "remaining auto-hide feeds provide appearance without layout children");
+    assert.equal(mounts.NativeAutoHide + mounts.AutoHideToolbar, 0, JSON.stringify(mounts));
+    if (nativeLayout) assert.ok(Object.values(mounts).every((count) => count === 0), JSON.stringify(mounts));
     await sample("final coherent native layout");
   });
 } catch (error) {

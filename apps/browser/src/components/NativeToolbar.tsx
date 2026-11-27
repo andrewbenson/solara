@@ -4,48 +4,25 @@ import { WindowDragRegion } from "@solara/shell";
 import { useEffect, useRef } from "react";
 import { useShallow } from "zustand/react/shallow";
 import { findNodeHandle, Image, StyleSheet, View } from "react-native";
-import { useShortcutHint } from "../lib/commandShortcuts";
-import { runCommand } from "../lib/commands";
-import { withLivePage } from "../lib/livePage";
 import { layout, useTheme } from "../lib/theme";
 import { webviews } from "../lib/webviews";
-import { useBrowser } from "../store/browser";
-import { bookmarkProfileId } from "../store/model";
-import { isBookmarked } from "../store/bookmarks";
-import { nativeOwnsWorkspace } from "../store/nativeStore";
-import { splitOf } from "../store/splits";
-import { toggleBookmarkFromUI } from "../lib/bookmarkWriter";
 import { usePageProgress } from "../store/pageProgress";
-import { openModeFor, openUrl } from "./bookmarks/actions";
-import { showNativePanelNow } from "./CommandPanel";
 import { type ToolbarGeometry } from "./layout/geometry";
-import { closeHistoryMenu, goBack, goForward, historyItems, openHistoryMenu, useHistoryMenu } from "./layout/history";
-import { setPopover, usePage, usePages } from "./layout/pageState";
-import { closePane, openSplitPane, showSplitMenu } from "./layout/splitActions";
+import { closeHistoryMenu, goBack, goForward, openHistoryMenu, useHistoryMenu } from "./layout/history";
+import { usePage, usePages } from "./layout/pageState";
 import { toolbarPalette } from "./layout/toolbarColors";
 import { setToolbarExtensionsWidth } from "./layout/windowLayout";
-import { showUrlBarMenu } from "./omnibox/paste";
-import { runOmniboxFallback } from "./omnibox/nativeActions";
-import { endUrlEdit, startUrlEdit, submitUrlEdit, tabInDeveloperMode, useUrlEdit } from "./site/developerMode";
-import { developerReload, showDeveloperReloadMenu } from "./site/DeveloperButtons";
+import { endUrlEdit, useUrlEdit } from "./site/developerMode";
 import { claimFocusTag, urlEditFocus } from "../lib/focusClaims";
 import { insecureLevel } from "./Toolbar";
-import { installUpdateNow, UPDATE_PILL_SHORT_TEXT, UPDATE_PILL_TEXT, updatePillTooltip, usePendingUpdate } from "../lib/pendingUpdate";
+import { UPDATE_PILL_SHORT_TEXT, UPDATE_PILL_TEXT, updatePillTooltip, usePendingUpdate } from "../lib/pendingUpdate";
 
 
 
 const LIGHT_STRIPES = require("../../assets/developer-stripes-light.png");
 const DARK_STRIPES = require("../../assets/developer-stripes-dark.png");
-export const stripesUri = (palette: { text: string }) => {
-  const m = /^#([0-9a-f]{2})([0-9a-f]{2})([0-9a-f]{2})/i.exec(palette.text);
-  const onDark = !m || 0.2126 * parseInt(m[1]!, 16) + 0.7152 * parseInt(m[2]!, 16) + 0.0722 * parseInt(m[3]!, 16) > 128;
-  return Image.resolveAssetSource(onDark ? LIGHT_STRIPES : DARK_STRIPES)?.uri ?? null;
-};
 const usePopupCounts = create<Record<string, number>>(() => popupCounts());
 onPopupCountsChanged((counts) => usePopupCounts.setState(counts, true));
-
-const togglePopover = (tabId: string, name: "siteControls" | "zoom" | "popups") =>
-  setPopover(tabId, (usePages.getState().popover[tabId] ?? null) === name ? null : name);
 
 type NativeToolbarProps = {
   tabId: string;
@@ -80,17 +57,7 @@ export function NativeToolbar(props: NativeToolbarProps) {
 export function useNativeToolbarModel({ tabId, geometry, windowId, focused, bare, windowToolbar, sidebar }: NativeToolbarProps, focusHandle: () => number | null) {
   const theme = useTheme();
   const fullscreenTabs = usePages(useShallow((s) => Object.keys(s.pages).filter((id) => s.pages[id]?.fullscreen)));
-  const fallback = useBrowser(useShallow((s) => {
-    if (nativeOwnsWorkspace()) return undefined;
-    const tab = s.tabs[tabId];
-    const window = s.windows[windowId];
-    const holder = tab?.pageIn ?? tabId;
-    return {
-      window, tab, opener: tab?.openerId ? s.tabs[tab.openerId] : undefined, split: splitOf(s, tabId),
-      live: s.live[tabId], holderLive: s.live[holder], settings: s.settings,
-      bookmarked: !!tab && isBookmarked(s.bookmarks, bookmarkProfileId(s, window), tab.url),
-    };
-  }));
+  const historyHeld = useHistoryMenu((s) => s.menu?.tabId === tabId);
   const pending = usePendingUpdate();
   const insecure = usePage(tabId, insecureLevel);
   const editing = useUrlEdit((u) => u.tabId === tabId);
@@ -103,41 +70,25 @@ export function useNativeToolbarModel({ tabId, geometry, windowId, focused, bare
   const historyKnown = usePage(tabId, (p) => p.historyKnown);
   const popover = usePages((p) => p.popover[tabId] ?? null);
   const progress = usePageProgress(tabId);
-  const hints = {
-    sidebar: useShortcutHint("toggleSidebar"),
-    back: useShortcutHint("back"),
-    forward: useShortcutHint("forward"),
-    reload: useShortcutHint("reload"),
-    bookmark: useShortcutHint("bookmarkPage"),
-    split: useShortcutHint("openSplitPane"),
-  };
   const json = JSON.stringify({
-    windowId, tabId, geometry, bare: !!bare, windowToolbar: !!windowToolbar, fullscreenTabs, fallback,
+    windowId, tabId, geometry, bare: !!bare, windowToolbar: !!windowToolbar, fullscreenTabs, historyHeld, card: theme.card,
     palette: toolbarPalette(theme, null), accent: theme.accent, dark: !!theme.dark,
     lightStripes: Image.resolveAssetSource(LIGHT_STRIPES)?.uri ?? null,
     darkStripes: Image.resolveAssetSource(DARK_STRIPES)?.uri ?? null,
     sidebar: sidebar?.look, extensionLimit: sidebar?.extensionLimit,
-    hints, insecure, editing, editRequest, popups, capture, popover, progress,
+    hints: {}, insecure, editing, editRequest, popups, capture, popover, progress,
     newTabShown, backToNewTab, historyKnown,
     update: pending ? { text: UPDATE_PILL_TEXT, short: UPDATE_PILL_SHORT_TEXT, tooltip: updatePillTooltip(pending) } : null,
   });
 
   const onClick = async (c: ToolbarClick) => {
     if (c.tabId !== undefined && c.tabId !== tabId) return;
-    const state = nativeOwnsWorkspace() ? undefined : useBrowser.getState();
-    const tab = state?.tabs[tabId];
-    if (state) {
-      if (!tab || tab.windowId !== windowId || tab.profileId !== state.windows[windowId]?.profileId) return;
-      if (!focused) state.activate(tabId);
-    }
     if (c.id === "urlEdit") {
       if (c.kind === "focus") return claimFocusTag(windowId, urlEditFocus(tabId), focusHandle);
-      if (c.kind === "submit") runOmniboxFallback("developerSubmit", c, () => submitUrlEdit(tabId, c.text ?? ""));
-      else endUrlEdit(tabId);
+      endUrlEdit(tabId);
       if (c.kind !== "blur") void webviews.get(tabId)?.focus();
       return;
     }
-    const m = { metaKey: c.meta, altKey: c.alt, shiftKey: c.shift };
     if (c.id === "back" || c.id === "forward") {
       const direction = c.id === "back" ? -1 : 1;
       if (c.kind === "menu") {
@@ -146,53 +97,8 @@ export function useNativeToolbarModel({ tabId, geometry, windowId, focused, bare
         return void openHistoryMenu(tabId, direction);
       }
       closeHistoryMenu();
-      const mode = openModeFor({ ...m, middle: c.kind === "middle" });
-      if (mode === "current" || mode === "split") return direction < 0 ? goBack(tabId) : goForward(tabId);
-      const tab = useBrowser.getState().tabs[tabId];
-      const [target] = await historyItems(tabId, direction, 1);
-      const current = useBrowser.getState().tabs[tabId];
-      if (target?.url && current?.windowId === windowId && current.profileId === tab?.profileId && current.navigation?.seq === tab?.navigation?.seq)
-        openUrl(target.url, windowId, mode);
+      if (!c.meta && c.kind !== "middle" && !c.shift) return direction < 0 ? goBack(tabId) : goForward(tabId);
       return;
-    }
-    if (!state || !tab) return;
-    const developer = tabInDeveloperMode(tabId);
-    switch (c.id) {
-      case "sidebar":
-        return runCommand({ command: "toggleSidebar", arg: null, windowId });
-      case "reload":
-        if (c.kind === "menu") return void showDeveloperReloadMenu(tabId);
-        if (state.live[tabId]?.isLoading) return void webviews.get(tabId)?.stopLoading();
-        if (m.metaKey) return void state.newTab(tab.windowId, { url: tab.url, background: true, openerId: tab.id });
-        if (developer && !m.shiftKey) return developerReload(tabId);
-        return void withLivePage(tabId, (page) => (m.shiftKey ? page.forceReload() : page.reload()));
-      case "url":
-        if (c.kind === "menu") return void showUrlBarMenu(tab);
-        if (developer) return useUrlEdit.getState().tabId === tabId ? undefined : startUrlEdit(tabId);
-        showNativePanelNow(windowId, tab.url);
-        return state.openPanel(windowId, tab.url);
-      case "lock":
-      case "capture":
-      case "siteControls":
-        return togglePopover(tabId, "siteControls");
-      case "bookmark":
-        return void toggleBookmarkFromUI(bookmarkProfileId(state, state.windows[windowId]), { url: tab.url, title: tab.title, favicon: tab.favicon });
-      case "split":
-        return openSplitPane(windowId, { anchorTabId: tabId });
-      case "zoom":
-        return togglePopover(tabId, "zoom");
-      case "popups":
-        return togglePopover(tabId, "popups");
-      case "dev:console":
-      case "dev:network":
-      case "dev:elements":
-        return void webviews.get(tabId)?.showDevTools(`toggle:${c.id.slice(4)}`);
-      case "splitMenu":
-        return showSplitMenu(tabId);
-      case "closePane":
-        return closePane(tabId);
-      case "update":
-        return installUpdateNow();
     }
   };
 

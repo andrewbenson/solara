@@ -39,9 +39,9 @@ const HELPERS = `
 const S = () => ac.store.getState();
 const shell = () => globalThis.expo.modules.SolaraWindowShell.describe("w1").then(JSON.parse);
 const split = () => shell().then((d) => (d && d.split) || {});
-const setFullscreen = (id, on) => shell().then((owner) => owner.nativeLayout
-  ? globalThis.expo.modules.SolaraTabPool.devPageEvent(id, "onFullscreen", { fullscreen: on })
-  : acLayout.pages.setState((s) => ({ pages: { ...s.pages, [id]: { ...s.pages[id], fullscreen: on } } })));
+const setFullscreen = (id, on) => globalThis.expo.modules.SolaraTabPool.devPageEvent(id, "onFullscreen", { fullscreen: on }).then(accepted => {
+  if (!accepted) throw new Error("fullscreen fact rejected for " + id);
+});
 `;
 let app = null;
 const run = (body, timeout = 20000) => app.eval(`${HELPERS}\n${body}`, { timeout });

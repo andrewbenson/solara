@@ -1,6 +1,6 @@
 import { isPageCurrent, nativePageFacts, onTabSleepRunningChanged, pageReport, registerKeepAliveRuntime, type PageIdentity } from "@solara/store";
 import { pageOf, patchPage, usePages } from "../components/layout/pageState";
-import { revealToolbar, useToolbarAutoHide } from "../components/layout/toolbarAutoHide";
+import { onToolbarScrollChanged, toolbarScrolledDown } from "../components/layout/nativeToolbarPresentation";
 import { useMedia } from "../components/media/state";
 import { useBrowser, type BrowserState } from "../store/browser";
 import { changedIds } from "../store/changes";
@@ -11,7 +11,6 @@ import { applyHeldReports } from "./nativeEvents";
 
 function clearTransientFacts(id: string) {
   patchPage(id, { mediaAccess: null, crashed: null, unresponsive: false, fullscreen: false, newTabShown: null });
-  revealToolbar(id);
   useMedia.setState((media) => {
     const keys = ["displayRequests", "tabShares"] as const;
     return Object.fromEntries(keys.map((key) => [key, Object.fromEntries(Object.entries(media[key]).filter(([tabId, value]) => tabId !== id && (key !== "tabShares" || (value as { capturedTabId?: string }).capturedTabId !== id)))]));
@@ -60,7 +59,7 @@ export function startNativeKeepAlive() {
         fullscreen: page.fullscreen,
         crashed: !!page.crashed,
         unresponsive: page.unresponsive,
-        scrolledDown: !!useToolbarAutoHide.getState().scrolledDown[tab.id],
+        scrolledDown: toolbarScrolledDown(tab.id),
         sharing: !!media.tabShares[tab.id] || Object.values(media.tabShares).some((share) => share.capturedTabId === tab.id),
       },
     };
@@ -106,14 +105,11 @@ export function startNativeKeepAlive() {
     const shares = (all: typeof s.tabShares) => Object.entries(all).flatMap(([id, share]) => [id, (share as { capturedTabId?: string }).capturedTabId ?? ""]);
     if (tracked(shares(s.tabShares)) || tracked(shares(prev.tabShares))) feed.changed();
   };
-  const toolbarChanged = (s: ReturnType<typeof useToolbarAutoHide.getState>, prev: ReturnType<typeof useToolbarAutoHide.getState>) => {
-    if (s.scrolledDown === prev.scrolledDown) return;
-    for (const id of identities.keys()) if (s.scrolledDown[id] !== prev.scrolledDown[id]) return feed.changed();
-  };
   let listening: (() => void)[] = [];
   const listen = () => {
     if (listening.length || !identities.size) return;
-    listening = [useMedia.subscribe(mediaChanged), useToolbarAutoHide.subscribe(toolbarChanged)];
+    const scroll = onToolbarScrollChanged((tabId) => { if (identities.has(tabId)) feed.changed(); });
+    listening = [useMedia.subscribe(mediaChanged), () => scroll?.remove()];
   };
   const unlisten = () => {
     if (identities.size) return;

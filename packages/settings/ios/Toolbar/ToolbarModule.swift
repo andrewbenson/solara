@@ -199,6 +199,7 @@ final class NativeToolbarHostView: ExpoView {
   let onToolbarAnchors = EventDispatcher()
   let toolbar = ToolbarView(frame: .zero)
   private var input = ""
+  private var inputWindowId: String?
   private lazy var presenter = NativeToolbarPresenter { [weak self] state, _ in self?.apply(state) }
   private weak var toolbarShell: WindowShellView?
   private static let live = NSHashTable<NativeToolbarHostView>.weakObjects()
@@ -246,7 +247,7 @@ final class NativeToolbarHostView: ExpoView {
   static func host(windowId: String, tabId: String) -> NativeToolbarHostView? {
     let tabWindow = NativeStoreHandle.store?.state.tabs[tabId]?.windowId
     guard tabWindow == nil || tabWindow == windowId else { return nil }
-    let hosts = live.allObjects.filter { $0.window != nil && $0.toolbar.state?.tabId == tabId }
+    let hosts = live.allObjects.filter { $0.window != nil && $0.inputWindowId == windowId && $0.toolbar.state?.tabId == tabId }
     return hosts.first { !$0.isHiddenOrHasHiddenAncestor } ?? hosts.first
   }
 
@@ -257,7 +258,7 @@ final class NativeToolbarHostView: ExpoView {
     toolbar.autoresizingMask = [.width, .height]
     toolbar.frame = bounds
     toolbar.onGeometryChange = { [weak self] in
-      guard let self, let tabId = toolbar.state?.tabId, let windowId = toolbarShell?.windowId else { return }
+      guard let self, let tabId = toolbar.state?.tabId, let windowId = inputWindowId else { return }
       AutoHideHost.toolbarReady(windowId: windowId, tabId: tabId, toolbar: toolbar)
     }
     toolbar.onLayoutAnchorsChange = { [weak self] in
@@ -316,6 +317,7 @@ final class NativeToolbarHostView: ExpoView {
   func setInput(_ next: String) {
     guard next != input else { return }
     input = next
+    inputWindowId = (try? JSONValue.parse(Data(next.utf8)))?["windowId"]?.string
     if window != nil { presenter.update(next) }
   }
 
@@ -328,7 +330,7 @@ final class NativeToolbarHostView: ExpoView {
     toolbar.update(state)
     toolbar.isHidden = false
     syncToolbarShell()
-    AutoHideHost.toolbarReady(tabId: state.tabId)
+    if let inputWindowId { AutoHideHost.toolbarReady(windowId: inputWindowId, tabId: state.tabId, toolbar: toolbar) }
   }
 
   private func syncToolbarShell() {

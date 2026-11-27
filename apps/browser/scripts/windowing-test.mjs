@@ -345,11 +345,11 @@ try {
     while (held >= 2 && !(diff(crops[held], crops[held - 1]) <= 4 && diff(crops[held], crops[held - 2]) <= 4)) held--;
     const was = crops[held];
     const between = crops.filter((c, i) => i > held && diff(c, was) > 4 && mean(c) > 3);
-    if (between.length > 1) {
+    if (between.length > 0) {
       rep.log(`w2's place, frame by frame (levels from w2 as it was at the drop, mean): ${crops.map((c) => `${diff(c, was).toFixed(0)}/${mean(c).toFixed(0)}`).join(" ")}`);
       dump("emptied-window", [was, ...between], r);
     }
-    assert.ok(between.length <= 1, `${between.length} frames of w2 neither as it was nor gone`);
+    assert.equal(between.length, 0, `${between.length} frames of w2 neither as it was nor gone`);
     const page = regionOf(w1, H, { left: 200, top: 56, right: 16, bottom: 16 });
     const pages = frames.map((f) => crop(f, page));
     const blank = pages.filter((c) => sd(c) < 3);

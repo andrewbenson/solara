@@ -50,7 +50,17 @@ function fixture(running = true, hasPage = () => true) {
   const producer = load("./nativeKeepAlive.ts", {
     "@solara/store": { isPageCurrent: (value) => { nativeReads.push(["current", value.tabId]); return value.sessionGeneration === authority.sessionGeneration && value.registrationGeneration === authority.registrationGeneration; }, nativePageFacts: (id) => { nativeReads.push(["facts", id]); return { generation, protectionKnown }; }, pageReport: (id, report) => sent.push(JSON.parse(JSON.stringify({ id, ...report }))), registerKeepAliveRuntime: () => ++epoch, onTabSleepRunningChanged: (listener) => { runnerListener = listener; return () => {}; } },
     "../components/layout/pageState": { usePages: pages, pageOf: (id) => pages.getState().pages[id], patchPage: (id, patch) => pages.setState((s) => ({ pages: { ...s.pages, [id]: { ...s.pages[id], ...patch } } })) },
-    "../components/layout/toolbarAutoHide": { useToolbarAutoHide: toolbar, revealToolbar: (id) => toolbar.setState((s) => ({ scrolledDown: Object.fromEntries(Object.entries(s.scrolledDown).filter(([key]) => key !== id)) })) },
+    "../components/layout/nativeToolbarPresentation": {
+      toolbarScrolledDown: (id) => !!toolbar.getState().scrolledDown[id],
+      onToolbarScrollChanged: (listener) => {
+        const stop = toolbar.subscribe((next, previous) => {
+          for (const id of new Set([...Object.keys(next.scrolledDown), ...Object.keys(previous.scrolledDown)])) {
+            if (next.scrolledDown[id] !== previous.scrolledDown[id]) listener(id);
+          }
+        });
+        return { remove: stop };
+      },
+    },
     "../components/media/state": { useMedia: media },
     "../store/browser": { useBrowser: browser },
     "../store/changes": changes,

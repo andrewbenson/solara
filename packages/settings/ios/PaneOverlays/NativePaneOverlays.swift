@@ -716,6 +716,8 @@ final class PaneOverlayHost {
     }
   }
 
+  func holdsToolbar(_ tabId: String) -> Bool { navigationSwipes[tabId]?.hasMenu == true }
+
   func openNavigationMenu(_ tabId: String, direction: SwipeCapsuleDirection) {
     relayout()
     navigationSwipes[tabId]?.openMenu(direction)
@@ -860,6 +862,7 @@ private final class NativeNavigationSwipe {
   private var configurationPresentationRevision: UInt64?
   private var stopped = false
   private var menu: PanePopover<HistoryPanelView>?
+  var hasMenu: Bool { menu != nil }
   private var menuSequence = 0
 
   init(windowId: String, generation: UInt64, registration: PageRegistration, compatibilityURL: String) {
@@ -975,11 +978,12 @@ private final class NativeNavigationSwipe {
       guard let self, self.current, self.menuSequence == sequence, targetCurrent(), !items.isEmpty else { return }
       self.dismissMenu()
       let menu = PanePopover(HistoryPanelView(frame: .zero))
-      self.menu = menu
       let theme = self.controller.theme
       let state: [String: Any] = ["items": items.map { ["title": $0.title, "url": $0.url, "newTab": $0.newTab] }, "profileId": self.controller.profileId,
         "dark": theme.dark, "theme": ["textPrimary": theme.textPrimary, "textSecondary": theme.textSecondary, "icon": theme.textSecondary]]
       guard let data = try? JSONSerialization.data(withJSONObject: state), let decoded = try? JSONDecoder().decode(HistoryPanelState.self, from: data) else { return }
+      self.menu = menu
+      AutoHideHost.holdsChanged(self.windowId)
       menu.body.favicons.loader = { request in try await NativeSidebar.favicon(request) }
       menu.body.onHeight = { [weak menu] in menu?.setHeight($0) }
       menu.popover.onDismiss = { [weak self] in self?.dismissMenu() }
@@ -1016,8 +1020,10 @@ private final class NativeNavigationSwipe {
 
   func dismissMenu() {
     menuSequence += 1
-    menu?.wrap.removeFromSuperview()
-    menu = nil
+    guard let menu else { return }
+    self.menu = nil
+    menu.wrap.removeFromSuperview()
+    AutoHideHost.holdsChanged(windowId)
   }
 
   private func navigate(_ action: NavigationSwipeAction) {

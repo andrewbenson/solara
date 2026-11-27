@@ -153,6 +153,7 @@ enum NativeExtensionActionPopup {
     let host = ExtensionActionPopupHost(intent: intent, window: window, root: root)
     current = host
     publishedWindow.withLock { $0 = windowId }
+    AutoHideHost.holdsChanged(windowId)
     emit?("onExtensionPopupChanged", ["windowId": windowId, "extensionId": extensionId, "tabId": source.tabId as Any? ?? NSNull()])
     NativeExtensionCatalog.refreshActions()
     if current === host { host.open() }
@@ -250,6 +251,7 @@ enum NativeExtensionActionPopup {
   private static func closeHost(_ host: ExtensionActionPopupHost, restoreFocus: Bool = true, focusPage: Bool = false, reason: CloseReason = .dismissal) {
     current = nil
     publishedWindow.withLock { $0 = nil }
+    AutoHideHost.holdsChanged(host.intent.windowId)
     NativeExtensionSheets.reconcile()
     host.end(restoreFocus: restoreFocus, focusPage: focusPage)
     settleHeldFieldBlurs(window: host.window)

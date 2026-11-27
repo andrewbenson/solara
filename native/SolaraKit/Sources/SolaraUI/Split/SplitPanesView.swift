@@ -76,6 +76,7 @@ public final class SplitPanesView: FrameLayoutView {
   private var toolbars: [String: ToolbarState] = [:]
   private var panes: [String: SplitLeafView] = [:]
   private var liveTops: [String: CGFloat] = [:]
+  private var viewportTops: [String: CGFloat] = [:]
   private var installed: WindowLayoutSnapshot?
   private var stopped = false
   private var singlePage: NSView?
@@ -216,10 +217,17 @@ public final class SplitPanesView: FrameLayoutView {
     for (tabId, pane) in panes { pane.setToolbar(next[tabId]) }
   }
 
-  public func setLiveTop(_ top: CGFloat?, tabId: String) {
-    guard liveTops[tabId] != top else { return }
+  public func setLiveTop(_ top: CGFloat?, viewport: CGFloat?, tabId: String) {
+    guard liveTops[tabId] != top || viewportTops[tabId] != viewport else { return }
     liveTops[tabId] = top
-    panes[tabId]?.liveTop = top
+    viewportTops[tabId] = viewport
+    guard let pane = panes[tabId] else { return }
+    let scale = 1 - pane.railFraction
+    pane.performPlacement(deferred: true) {
+      pane.liveTop = top.map { $0 * scale }
+      pane.viewportTop = viewport.map { $0 * scale }
+    }
+    pane.layoutNativeContentIfNeeded()
   }
 
   public func container(_ tabId: String) -> NSView? { panes[tabId]?.page }
@@ -235,7 +243,7 @@ public final class SplitPanesView: FrameLayoutView {
       let viewport = pane.page.frame
       let left = max(pane.bounds.minX, viewport.minX)
       let top = max(pane.bounds.minY, viewport.minY)
-      let visible = installed == nil ? viewport : CGRect(x: left, y: top,
+      let visible = CGRect(x: left, y: top,
         width: max(0, min(pane.bounds.maxX, viewport.maxX) - left), height: max(0, min(pane.bounds.maxY, viewport.maxY) - top))
       let page = pane.convert(visible, to: nil)
       let renderer = pane.page.convert(pane.page.bounds, to: nil)
@@ -279,6 +287,7 @@ public final class SplitPanesView: FrameLayoutView {
       let fullscreen = tabId == fullscreenTab
       let barHeight = installed?.toolbars[tabId]?.height ?? (fullscreen ? 0 : toolbarHeight * (1 - rail))
       let top = liveTops[tabId].map { $0 * (1 - rail) }
+      let viewportTop = viewportTops[tabId].map { $0 * (1 - rail) }
       let band = fullscreen ? 0 : bandHeights[tabId] ?? 0
       let page = installed?.pageViewports[tabId]?.offsetBy(dx: -origin.x - rect.minX, dy: -origin.y - rect.minY)
       let bar = installed?.toolbars[tabId]?.offsetBy(dx: -origin.x - rect.minX, dy: -origin.y - rect.minY)
@@ -290,7 +299,7 @@ public final class SplitPanesView: FrameLayoutView {
         toolbarParentChanged = pane.toolbar.superview !== (liftedToolbar ? self : pane)
       }
       let placementChanged = installed == nil || pane.frame != rect || pane.fullscreen != fullscreen || pane.railFraction != rail
-        || pane.toolbarHeight != barHeight || pane.liveTop != top || pane.band != band
+        || pane.toolbarHeight != barHeight || pane.liveTop != top || pane.viewportTop != viewportTop || pane.band != band
         || pane.installedPage != page || pane.installedToolbar != bar || toolbarParentChanged
       if placementChanged {
         pane.performPlacement(deferred: installed != nil) {
@@ -300,6 +309,7 @@ public final class SplitPanesView: FrameLayoutView {
           pane.railFraction = rail
           pane.toolbarHeight = barHeight
           pane.liveTop = top
+          pane.viewportTop = viewportTop
           pane.band = band
           pane.installedPage = page
           pane.installedToolbar = bar
@@ -433,6 +443,10 @@ final class SplitLeafView: FrameLayoutView {
       if !installingPlacement { layoutNativeContentIfNeeded() }
     }
   }
+  var viewportTop: CGFloat? {
+    didSet { if viewportTop != oldValue { needsLayout = true } }
+  }
+
   var liveTop: CGFloat? {
     didSet {
       guard liveTop != oldValue else { return }
@@ -520,8 +534,9 @@ final class SplitLeafView: FrameLayoutView {
     }
     let caption = fullscreen ? 0 : windowShell?.captionTop(in: self) ?? 0
     let pageTop = min(max(caption, liveTop.map { min(max(0, $0), bounds.height) } ?? toolbarHeight) + max(0, band), bounds.height)
-    page.frame = installedPage ?? CGRect(x: 0, y: pageTop, width: bounds.width, height: max(0, bounds.height - pageTop))
-    empty?.frame = page.frame
+    let physicalTop = min(max(caption, viewportTop ?? pageTop - max(0, band)) + max(0, band), bounds.height)
+    page.frame = installedPage ?? CGRect(x: 0, y: pageTop, width: bounds.width, height: max(0, bounds.height - physicalTop))
+    empty?.frame = CGRect(x: 0, y: pageTop, width: bounds.width, height: max(0, bounds.height - pageTop))
   }
 }
 

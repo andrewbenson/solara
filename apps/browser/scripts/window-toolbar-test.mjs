@@ -176,15 +176,8 @@ async function nativeChecks() {
   check("native scrolling collapses the shown toolbar", collapsed.layout.toolbarModes.c === "collapsed");
   const stripHost = () => ac('return expo.modules.SolaraAutoHide.devStripHost("w1","c");');
   check("collapsed strip shows the original host", await stripHost() === "example.com");
-  await ac(`
-    const module = expo.modules.SolaraAutoHide;
-    globalThis.originalAutoHideStyle = module.setStyle;
-    const suppress = () => Promise.resolve();
-    module.setStyle = suppress;
-    if (module.setStyle !== suppress) throw new Error("could not suppress JS auto-hide styling");
-    return true;
-  `);
-  try {
+  check("native strip has no JavaScript style input", await ac('return typeof expo.modules.SolaraAutoHide.setStyle === "undefined";'));
+  {
     const url = "https://example.net/c";
     const report = await ac(`
       const state = ac.store.getState();
@@ -198,9 +191,7 @@ async function nativeChecks() {
     await untilSnapshot("navigation committed with the new collapsed strip host", async (value) =>
       value.tabs.some((tab) => tab.id === "c" && tab.url === url) && await stripHost() === "example.net");
     await waitShell("strip stayed collapsed after the navigation report", (layout) => layout.toolbarModes.c === "collapsed");
-    check("collapsed strip updates after navigation with JS styling suppressed", true);
-  } finally {
-    await ac('expo.modules.SolaraAutoHide.setStyle = globalThis.originalAutoHideStyle; delete globalThis.originalAutoHideStyle; return true;');
+    check("collapsed strip updates after native navigation", true);
   }
   await activate("d");
   check("native next tab has a shown toolbar", (await snapshot("native next tab", ["d"], "d")).shell.layout.toolbarModes.d === "shown");
@@ -238,26 +229,27 @@ try {
       frames: (n) => new Promise((r) => { let k = n || 3; const step = () => (k-- > 0 ? requestAnimationFrame(step) : r()); step(); }),
       fibers: (name) => acPerf.findFibers(name, 500).filter((f) => f.memoizedProps),
       inPane: (f) => { for (let p = f.return; p; p = p.return) if (p.type?.type?.name === "TabPane" || p.type?.name === "TabPane" || p.elementType?.type?.name === "TabPane") return p.memoizedProps.tabId; return null; },
-      state: () => {
+      state: () => expo.modules.SolaraWindowShell.describe("w1").then((payload) => {
         const toolbars = wt.fibers("Toolbar").map((f) => ({ tabId: f.memoizedProps.tabId, bare: !!f.memoizedProps.bare, windowToolbar: !!f.memoizedProps.windowToolbar, pane: wt.inPane(f) }));
-        const auto = wt.fibers("AutoHideToolbar").map((f) => ({ tabId: f.memoizedProps.tabId, mode: f.memoizedProps.mode, pane: wt.inPane(f) }));
-        const backdrops = [...wt.fibers("AutoHideBackdrop"), ...wt.fibers("ToolbarBackdrop"), ...wt.fibers("NativeAutoHide")].map((f) => ({ tabId: f.memoizedProps.tabId, pane: wt.inPane(f) }));
+        const shell = JSON.parse(payload);
+        const auto = Object.entries(shell.layout?.toolbarModes || {}).map(([tabId, mode]) => ({ tabId, mode, pane: !!ac.store.getState().tabs[tabId] && Object.values(ac.store.getState().splits).some(s => s.tabIds.includes(tabId)) }));
+        const strips = auto.map(({ tabId }) => expo.modules.SolaraAutoHide.devStripHost("w1", tabId).then(host => ({ tabId, host })));
         const native = JSON.parse(expo.modules.SolaraToolbar.devToolbarStates("w1"));
         const hosts = [...wt.fibers("UrlField").map((f) => f.memoizedProps.tab?.url), ...native.filter((n) => n.url?.host).map((n) => ac.store.getState().tabs[n.tabId]?.url)];
         const w = ac.store.getState().windows.w1;
-        return { active: w.activeTabIds[w.profileId], hideToolbarWhileScrolling: ac.store.getState().settings.hideToolbarWhileScrolling, toolbars, auto, backdrops, hosts,
+        return Promise.all(strips).then(backdrops => ({ active: w.activeTabIds[w.profileId], hideToolbarWhileScrolling: ac.store.getState().settings.hideToolbarWhileScrolling, toolbars, auto, backdrops, hosts,
           tabIds: [...w.tabIds], tabUrls: Object.fromEntries(w.tabIds.map((id) => [id, ac.store.getState().tabs[id]?.url])),
-          nativeToolbars: native.map((n) => ({ tabId: n.tabId, bare: !!n.bare, windowToolbar: !!n.windowToolbar, background: n.palette.background ?? null, hairline: n.hairline, stripes: n.stripes ?? null, urlHost: n.url?.host ?? null })) };
-      },
+          nativeToolbars: native.map((n) => ({ tabId: n.tabId, bare: !!n.bare, windowToolbar: !!n.windowToolbar, background: n.palette.background ?? null, hairline: n.hairline, stripes: n.stripes ?? null, urlHost: n.url?.host ?? null })) }));
+      }),
       until: (test, ms) => new Promise((r) => { const end = Date.now() + (ms || 15000); const poll = () => (test() ? r(true) : Date.now() > end ? r(false) : setTimeout(poll, 50)); poll(); }),
     };
     return true;`);
   const S = "const S = () => ac.store.getState();";
   const switchTo = async (id) => {
-    const state = await ac(`${S} acPerf.reset(); S().activate(${JSON.stringify(id)}); return wt.frames(4).then(() => ({ ...wt.state(), mounted: acPerf.read().mounts.Toolbar ?? 0 }));`);
+    const state = await ac(`${S} acPerf.reset(); S().activate(${JSON.stringify(id)}); return wt.frames(4).then(wt.state).then(st => ({ ...st, mounted: acPerf.read().mounts.Toolbar ?? 0 }));`);
     const current = await nativeState(state);
     if (id === "a" || id === "b") {
-      return ac(`${S} const id = ${JSON.stringify(id)}, tab = S().tabs[id], facts = ac.nativePages.facts(id); ac.nativePages.report(id, { type: "navigation", generation: facts.generation, url: tab.url, title: tab.title, isLoading: false, canGoBack: false, canGoForward: false, themeColor: id === "a" ? "#C0392B" : "#2471A3", eventSeq: facts.newestEventSeq + 1 }); return wt.frames(4).then(() => ({ ...wt.state(), mounted: ${state.mounted} }));`);
+      return ac(`${S} const id = ${JSON.stringify(id)}, tab = S().tabs[id], facts = ac.nativePages.facts(id); ac.nativePages.report(id, { type: "navigation", generation: facts.generation, url: tab.url, title: tab.title, isLoading: false, canGoBack: false, canGoForward: false, themeColor: id === "a" ? "#C0392B" : "#2471A3", eventSeq: facts.newestEventSeq + 1 }); return wt.frames(4).then(wt.state).then(st => ({ ...st, mounted: ${state.mounted} }));`);
     }
     return current;
   };
@@ -269,14 +261,13 @@ try {
     for (const id of ["b", "c", "d", "a"]) {
       const st = await switchTo(id);
       const windowBars = st.toolbars.filter((t) => !t.pane);
-      const nativeStatic = mode === "always shown" && windowBars[0]?.windowToolbar === true;
-      const surface = nativeStatic ? !windowBars[0].bare && st.nativeToolbars.some((n) => n.tabId === id && n.windowToolbar && !n.bare && n.hairline === true && (id !== "a" && id !== "b" || n.background === (id === "a" ? "#C0392B" : "#2471A3"))) : windowBars[0]?.bare;
-      const selectedMode = st.hideToolbarWhileScrolling === autoHide && (autoHide ? st.auto.length === 1 && st.auto[0].tabId === id && !st.auto[0].pane && st.auto[0].mode === "shown" : st.auto.length === 0);
+      const surface = st.nativeToolbars.some((n) => n.tabId === id && n.windowToolbar && !n.bare && n.hairline === true && (id !== "a" && id !== "b" || n.background === (id === "a" ? "#C0392B" : "#2471A3")));
+      const selectedMode = st.hideToolbarWhileScrolling === autoHide && st.auto.length === 1 && st.auto[0].tabId === id && !st.auto[0].pane && st.auto[0].mode === "shown";
       check(`${mode}: switching to ${id}, the window's one toolbar shows ${id}`, selectedMode && windowBars.length === 1 && windowBars[0].tabId === id && st.toolbars.length === 1 && surface, JSON.stringify({ hideToolbarWhileScrolling: st.hideToolbarWhileScrolling, auto: st.auto, toolbars: st.toolbars }));
       check(`${mode}: switching to ${id}, the toolbar is kept, not mounted again`, st.mounted === 0, `Toolbar mounts ${st.mounted}`);
       const url = st.tabUrls[id];
       check(`${mode}: switching to ${id}, the address field shows ${id}'s address`, st.hosts.length === 1 && st.hosts[0] === url, JSON.stringify({ hosts: st.hosts, expected: url }));
-      const backdrop = autoHide ? st.backdrops.length === 1 && st.backdrops[0].tabId === id && st.backdrops[0].pane === id : st.backdrops.length === 0;
+      const backdrop = st.backdrops.length === 1 && st.backdrops[0].tabId === id && (st.backdrops[0].host !== null) === autoHide;
       check(`${mode}: switching to ${id}, the band belongs to ${id}'s toolbar`, backdrop, JSON.stringify(st.backdrops));
     }
   }
@@ -296,7 +287,7 @@ try {
   await ac(`${S} S().updateSettings({ hideToolbarWhileScrolling: true }); return wt.frames(4).then(() => true);`);
 
   await switchTo("c");
-  const collapsed = await ac(`${S} ac.toolbarAutoHide.noteScroll("c", { state: "down" }); return wt.frames(4).then(() => wt.state());`);
+  const collapsed = await ac(`${S} return expo.modules.SolaraAutoHide.devScroll("c", "down").then(() => wt.frames(4)).then(wt.state);`);
   await nativeState(collapsed);
   check("auto-hide: scrolling down collapses the window's bar for the shown tab", collapsed.auto.length === 1 && collapsed.auto[0].tabId === "c" && collapsed.auto[0].mode === "collapsed", JSON.stringify(collapsed.auto));
   const other = await switchTo("d");
@@ -304,7 +295,7 @@ try {
   const back = await switchTo("c");
   check("auto-hide: back on the scrolled tab, its bar is revealed", back.auto[0]?.tabId === "c" && back.auto[0]?.mode === "shown", JSON.stringify(back.auto));
 
-  const opened = await ac(`${S} const id = S().newTab("w1"); return wt.frames(6).then(() => ({ id, ...wt.state() }));`);
+  const opened = await ac(`${S} const id = S().newTab("w1"); return wt.frames(6).then(wt.state).then(st => ({ id, ...st }));`);
   await nativeState(opened);
   check("a new tab: the window's toolbar follows it", opened.toolbars.length === 1 && opened.toolbars[0].tabId === opened.id && opened.active === opened.id, JSON.stringify(opened.toolbars));
   const closed = await ac(`${S} S().closeTab(${JSON.stringify(opened.id)}); return wt.frames(6).then(() => wt.state());`);

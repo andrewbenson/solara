@@ -69,7 +69,6 @@ final class TabPoolHost {
     pool.onReplace = { [weak self] tabId in
       guard let entry = self?.pages[tabId] else { return }
       if let binding = entry.token.binding {
-        if let registration = binding.registration, let windowId = self?.windowOf(tabId) { NativeWindowShell.host(windowId)?.retirePresentation(registration) }
         PageIssuer.shared?.retire(binding)
       }
       entry.page.discard()
@@ -389,11 +388,11 @@ final class TabPoolHost {
     closing.mapValues { $0.window?.windowNumber ?? -1 }
   }
 
-  private func followCardPages() {
+  func followCardPages() {
     guard let state else { return }
     var seen: Set<String> = []
     for windowId in NativeWindowShell.activeWindowIds {
-      guard let shell = NativeWindowShell.host(windowId)?.shell, let window = state.windows[windowId] else { continue }
+      guard !NativeWindowShell.nativeLayoutActive(windowId), let shell = NativeWindowShell.host(windowId)?.shell, let window = state.windows[windowId] else { continue }
       seen.insert(windowId)
       let active = window.activeTabIds[window.profileId]
       let slot = active.flatMap { PaneOverlays.shared.container(windowId: windowId, tabId: $0, layer: .native)?.superview }
@@ -407,7 +406,14 @@ final class TabPoolHost {
           cardPageFollows[windowId] = (slot, observer)
         }
       }
-      shell.cardPageFrame = slot.flatMap { $0.superview == nil ? nil : $0.convert($0.bounds, to: shell.card) }
+      shell.cardPageFrame = slot.flatMap {
+        guard $0.superview != nil else { return nil }
+        var frame = $0.convert($0.bounds, to: shell.card)
+        if let active {
+          frame.size.height += AutoHideHost.viewportExtra(windowId: windowId, tabId: active) * (1 - shell.railFraction)
+        }
+        return frame
+      }
     }
     for (windowId, follow) in cardPageFollows where !seen.contains(windowId) {
       NotificationCenter.default.removeObserver(follow.observer)
@@ -489,7 +495,6 @@ final class TabPoolHost {
       let entry = PoolPage(page: page, token: token) { [weak self, weak token] in
         guard let token else { return }
         if let binding = token.binding {
-          if let registration = binding.registration, let windowId = self?.windowOf(tabId) { NativeWindowShell.host(windowId)?.retirePresentation(registration) }
           issuer.retire(binding)
         }
         guard let self, self.pages[tabId]?.token === token else { return }
@@ -543,9 +548,6 @@ final class TabPoolHost {
       }
       guard let data = try? JSONSerialization.data(withJSONObject: payload), let value = try? JSONValue.parse(data),
         let sequence = issuer.reserveEvent(binding, name: name, payload: value) else { return false }
-      if let registration = binding.registration, let windowId = issuer.store.state.tabs[tabId]?.windowId {
-        NativeWindowShell.host(windowId)?.receivePresentation(registration, name: name, payload: payload)
-      }
       issuer.afterIngress { [weak self] in self?.emitEvent(binding, name: name, payload: payload, eventSeq: sequence) }
       return true
     }

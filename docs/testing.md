@@ -522,8 +522,7 @@ styling reference, not a measured reference for right-side placement.
 
 ## Native toolbar and fullscreen presentation (layout Patch 7)
 
-With the same isolated-development capability, current pooled-page registrations supply scroll and renderer
-fullscreen facts directly to the window owner. Native state resolves toolbar modes, bookmark room and command/find
+Current page registrations supply scroll and renderer fullscreen facts directly to the auto-hide controller in both layouts. Native state resolves toolbar modes, bookmark room and command/find
 holds; animation samples install page and overlay tops together. A separate physical viewport resizes once per
 hide/show while its visible clip and overlays move. Renderer fullscreen covers a pane while retaining
 its siblings. Window Spaces fullscreen and its transition are separate native inputs.
@@ -533,7 +532,7 @@ close and stop, command/find races, either split pane and Peek fullscreen, and r
 `AutoHideStripTests` checks height changes, first motion samples and retired hover timers. Existing
 `TabViewPoolHoldTests` verifies that a delayed incoming draw cannot take a newer field's focus.
 
-Run `native-presentation-test.mjs <Debug app> <output directory>` for renderer scroll/fullscreen input, native
+Run `native-presentation-test.mjs <Debug app> <output directory>` with `SOLARA_NATIVE_WINDOW_LAYOUT=0` and `1` for renderer scroll/fullscreen input, native
 snapshots, command focus races, split/Peek close recovery, registration identity and acted Spaces resize. Run
 window-toolbar, pane-overlays, pane-roots-placement, focus-hold, main-top and shortcuts matrix/presses/precedence
 with `SOLARA_NATIVE_WINDOW_LAYOUT=1`, plus SolaraCore acceptance's `fullscreen-transition-picture`.

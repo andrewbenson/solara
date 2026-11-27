@@ -11,7 +11,6 @@ import { hex, inkedTokens, inkIsLight, profileAccent, profileNameColor, profileT
 import { useBrowser } from "../../store/browser";
 import { commitSidebarWidth, setSidebarIconsOnly, sidebarWidthOf, sidebarUsesIconRail } from "../../store/sidebarRail";
 import { engineMark, ENGINE_SYMBOLS } from "../../store/engines";
-import { useSettings } from "../../store/hooks";
 import { isIncognitoProfile } from "../../store/model";
 import { cleanedTabsFor } from "../../store/organize";
 import { canTidyPins } from "../../store/tidyPins";
@@ -281,15 +280,11 @@ export const NativeSidebar = memo(function NativeSidebar({ windowId, profileId, 
   useEffect(() => installNativeDragProbe(windowId), [windowId]);
   const theme = useTheme();
   const glow = useSelectedTabGlow();
-  const selection = useBrowser((s) => s.selection[windowId] ?? NONE);
   const loading = useBrowser((s) => chromeLiveIds(s, windowId, "isLoading", nativeOwnsWorkspace()));
   const playing = useBrowser((s) => chromeLiveIds(s, windowId, "playingAudio", nativeOwnsWorkspace()));
   const sleeping = useLifecycle(useShallow((l) => chromeSleeping(l.discarded, nativeOwnsWorkspace())));
   const renaming = useSidebarUi((u) => (u.renaming?.windowId === windowId && (u.renaming.kind === "tab" || u.renaming.kind === "group") ? `${u.renaming.kind}:${u.renaming.id}` : null));
-  const clear = useSettings((s) => s.showClearButton);
   const tidy = useBrowser((s) => canTidyPins(s, windowId, profileId));
-  const newTabAtTop = useSettings((s) => s.newTabButtonPosition === "top");
-  const iconRing = useSettings((s) => !s.classicPinnedTabs);
   const adjustInk = useAdjustedInk();
   const cleaned = useBrowser((s) => cleanedTabsFor(s, windowId).length);
   const upsell = useCleanUpUpsellCount(windowId, true);
@@ -322,7 +317,6 @@ export const NativeSidebar = memo(function NativeSidebar({ windowId, profileId, 
       theme: themeTokens(theme, adjustInk),
       border: theme.tabSelectedBorder.map(hex),
       glow: { color: glow.shadowColor, opacity: glow.shadowOpacity, radius: glow.shadowRadius },
-      selection,
       ownsLive: nativeOwnsWorkspace(),
       live: { loading: split(loading), playing: split(playing), sleeping },
       closeHint,
@@ -330,10 +324,6 @@ export const NativeSidebar = memo(function NativeSidebar({ windowId, profileId, 
       renaming,
       addressBar,
       tidy,
-      clear,
-      iconRing,
-      newTabAtTop,
-      incognito: isIncognitoProfile(profileId),
       cleaned,
       upsell: upsell || null,
       product: PRODUCT,
@@ -343,7 +333,7 @@ export const NativeSidebar = memo(function NativeSidebar({ windowId, profileId, 
       pages,
       badge: [tokens.badge, tokens.badgeGlyph],
     }));
-  }, [tokens.badge, tokens.badgeGlyph, pages, theme, glow.shadowColor, glow.shadowOpacity, glow.shadowRadius, profileId, selection, loading, playing, sleeping, closeHint, renaming, addressBar, tidy, clear, iconRing, newTabAtTop, cleaned, upsell, engines, developer, adjustInk]);
+  }, [tokens.badge, tokens.badgeGlyph, pages, theme, glow.shadowColor, glow.shadowOpacity, glow.shadowRadius, profileId, loading, playing, sleeping, closeHint, renaming, addressBar, tidy, cleaned, upsell, engines, developer, adjustInk]);
 
   const chrome = useShellChrome(windowId, addressBar, theme);
   if (headless) return <NativeSidebarFeed windowId={windowId} state={state} chrome={chrome} addressBar={addressBar} />;

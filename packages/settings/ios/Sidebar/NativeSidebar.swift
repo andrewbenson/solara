@@ -211,6 +211,7 @@ final class SidebarHost {
     self.state = state
     if let renaming = NativeWorkspaceRename.override(windowId) { host.renaming = renaming }
     if !fedByShell, let window = state.windows[windowId] {
+      host.applyRowPreferences(state: state, windowId: windowId)
       let stacked = NativeMediaStack.players(state: state, windowId: windowId,
         look: NativeLayoutAppearance(state: state, profileId: window.profileId, incognito: window.incognito))
       host.player = stacked.first
@@ -247,7 +248,7 @@ final class SidebarHost {
       if WorkspaceActionRouter.ownedClick(windowId: windowId, tabId: tabId, mods: mods) {
         FrameUpdates.flush()
         call("handled", tabId)
-      } else if mods.none, hostState?.selection.isEmpty == true, activate(tabId) {
+      } else if mods.none, activateWithoutSelection(tabId) {
         call("clicked", tabId)
       } else {
         NSLog("[sidebar] click refused: native store unavailable, dispatch failed or target stale")
@@ -332,8 +333,9 @@ final class SidebarHost {
     }
   }
 
-  private func activate(_ tabId: String) -> Bool {
-    guard let store = WorkspaceWrites.store else { return false }
+  private func activateWithoutSelection(_ tabId: String) -> Bool {
+    guard let store = WorkspaceWrites.store,
+      store.state.selection[windowId]?.ids.isEmpty != false else { return false }
     do {
       _ = try store.dispatch(Command("activate", [.string(tabId)]), origin: .native)
       FrameUpdates.flush()

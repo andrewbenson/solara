@@ -1,5 +1,6 @@
 import AppKit
 import Foundation
+import SolaraModel
 
 public struct SidebarGlow: Decodable, Equatable, Sendable {
   public var color: String
@@ -28,12 +29,17 @@ public struct SidebarPageLook: Decodable, Equatable, Sendable {
 }
 
 public struct SidebarHostState: Decodable, Equatable, Sendable {
+  private enum CodingKeys: String, CodingKey {
+    case profileId, dark, theme, border, glow, loading, playing, sleeping, closeHint, backHint, renaming
+    case addressBar, tidy, cleaned, engines, newTabMark, developer, pages, player, stack, pip, capture, badge, upsell, product
+  }
+
   public var profileId: String
   public var dark: Bool
   public var theme: [String: String]
   public var border: [String]
   public var glow: SidebarGlow
-  public var selection: [String]
+  public var selection: [String] = []
   public var loading: [String]
   public var playing: [String]
   public var sleeping: [String]
@@ -42,10 +48,10 @@ public struct SidebarHostState: Decodable, Equatable, Sendable {
   public var renaming: String?
   public var addressBar: Bool
   public var tidy: Bool
-  public var clear: Bool
-  public var iconRing: Bool
-  public var newTabAtTop: Bool
-  public var incognito: Bool
+  public var clear: Bool = false
+  public var iconRing: Bool = false
+  public var newTabAtTop: Bool = false
+  public var incognito: Bool = false
   public var cleaned: Int
   public var engines: [String: String]
   public var newTabMark: String?
@@ -65,19 +71,22 @@ public struct SidebarHostState: Decodable, Equatable, Sendable {
     theme = [:]
     border = []
     glow = SidebarGlow(color: "#FFFFFF26", opacity: 1, radius: 15)
-    selection = []
     loading = []
     playing = []
     sleeping = []
     addressBar = false
     tidy = false
-    clear = false
-    iconRing = false
-    newTabAtTop = false
-    incognito = false
     cleaned = 0
     engines = [:]
     developer = []
+  }
+
+  public mutating func applyRowPreferences(state: BrowserState, windowId: String) {
+    selection = state.selection[windowId]?.ids ?? []
+    clear = state.settings["showClearButton"]?.bool ?? true
+    iconRing = !state.settings.bool("classicPinnedTabs")
+    newTabAtTop = state.settings.string("newTabButtonPosition") == "top"
+    incognito = state.windows[windowId]?.incognito ?? false
   }
 
   public func page(_ look: SidebarPageLook) -> SidebarHostState {

@@ -28,7 +28,6 @@ export type SidebarHostProps = {
   theme: Record<string, string>;
   border: string[];
   glow: Glow;
-  selection: readonly string[];
   loading: string[];
   playing: string[];
   sleeping: string[];
@@ -37,10 +36,6 @@ export type SidebarHostProps = {
   renaming: string | null;
   addressBar: boolean;
   tidy: boolean;
-  clear: boolean;
-  iconRing: boolean;
-  newTabAtTop: boolean;
-  incognito: boolean;
   cleaned: number;
   upsell: number | null;
   product: string;

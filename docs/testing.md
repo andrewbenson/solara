@@ -813,3 +813,11 @@ sidebar-parity, Pages and Bookmarks Bar in layouts 0 and 1. Import E2E presses t
 Restore Arc Folders as Groups button with local AppKit events, closes Import before
 placement in one run, and checks the native workspace and bookmark catalog after
 relaunch for both the cancelled and completed restores.
+
+## Sidebar row preferences
+
+Run `SidebarRowPreferencesTests` with `-Xswiftc -DSOLARA_PROBES` for feed decoding,
+window-specific selection and privacy, and changes to Clear, pinned icons and New
+Tab placement. Run sidebar-chrome, sidebar-rail, window-toolbar, windowing,
+sidebar-click, close-selection and sidebar-close with matching native API and JS
+in window layouts 0 and 1.

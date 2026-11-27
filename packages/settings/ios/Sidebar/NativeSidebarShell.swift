@@ -743,15 +743,11 @@ final class NativeLayoutChrome {
     sidebar.border = look.border
     sidebar.glow = look.glow
     sidebar.addressBar = input.layout.addressBarInSidebar
-    sidebar.selection = state.selection[shell.windowId]?.ids ?? []
-    sidebar.clear = state.settings["showClearButton"]?.bool ?? true
-    sidebar.iconRing = !state.settings.bool("classicPinnedTabs")
-    sidebar.newTabAtTop = state.settings.string("newTabButtonPosition") == "top"
+    sidebar.applyRowPreferences(state: state, windowId: shell.windowId)
     sidebar.pages = window.incognito ? nil : state.profileOrder.map { id in
       let page = NativeLayoutAppearance(state: state, profileId: id, incognito: false)
       return SidebarPageLook(profileId: id, dark: page.dark, theme: page.tokens, border: page.border, glow: page.glow, tidy: false, incognito: false)
     }
-    sidebar.incognito = window.incognito
     sidebar.tidy = CommandContext(state: state, windowId: shell.windowId).canTidyPins
     sidebar.cleaned = state.cleanedTabs.filter { $0.windowId == shell.windowId }.count
     sidebar.pip = window.tabIds.filter { NowPlayingStore.shared.pictureInPicture[$0] != nil }

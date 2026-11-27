@@ -8,7 +8,10 @@ const swift = (path) => readFileSync(new URL(`../../../../native/SolaraKit/Sourc
 function requiredKeys(source, struct) {
   const body = source.match(new RegExp(`public struct ${struct}: Decodable[^{]*\\{\\n([\\s\\S]*?)\\n\\}`))?.[1];
   assert.ok(body, `${struct} is a Decodable struct`);
-  const keys = [...body.matchAll(/^ {2}public var (\w+): ([^=\n]+?)\s*(?:=.*)?$/gm)].filter(([, , type]) => !type.endsWith("?")).map(([, name]) => name);
+  const codingKeys = body.match(/private enum CodingKeys[^\n]*\n([\s\S]*?)\n {2}\}/)?.[1];
+  const encoded = codingKeys && new Set(codingKeys.trim().split(/\s*\n\s*/).flatMap((line) => line.replace(/^case /, "").split(/,\s*/)));
+  const keys = [...body.matchAll(/^ {2}public var (\w+): ([^=\n]+?)\s*(?:=.*)?$/gm)]
+    .filter(([, name, type]) => !type.endsWith("?") && (!encoded || encoded.has(name))).map(([, name]) => name);
   assert.ok(keys.length > 5, `${struct} declares its fields`);
   return keys;
 }
@@ -24,8 +27,8 @@ const strip = (ownsLive) =>
 
 const sidebar = (ownsLive) =>
   sidebarHostProps({
-    profileId: "default", dark: true, theme: {}, border: [], glow, selection: [], closeHint: null, backHint: null, renaming: null,
-    addressBar: false, tidy: false, clear: false, iconRing: false, newTabAtTop: false, incognito: false, cleaned: 0, upsell: null,
+    profileId: "default", dark: true, theme: {}, border: [], glow, closeHint: null, backHint: null, renaming: null,
+    addressBar: false, tidy: false, cleaned: 0, upsell: null,
     product: "Solara", engines: {}, developer: [], newTabMark: null, pages: [], pip: [], capture: {}, badge: [], ownsLive, live,
   });
 

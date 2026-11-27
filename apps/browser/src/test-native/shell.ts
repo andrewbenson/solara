@@ -101,7 +101,7 @@ const shell: Modules["SolaraShell"] = {
 
 const appEvents = nativeEvents();
 const app: Modules["SolaraApp"] & { apiVersion: number } = {
-  apiVersion: 96,
+  apiVersion: 97,
   waitForLaunchIdle: () => Promise.resolve(false),
   cancelLaunchIdle: () => Promise.resolve(),
   launchChromeCommittedAt: () => Promise.resolve(null),

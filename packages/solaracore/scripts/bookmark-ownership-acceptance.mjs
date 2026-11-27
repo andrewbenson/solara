@@ -122,20 +122,34 @@ export function bookmarkOwnershipAcceptance(host) {
 
     ownerRemap: () => withReady(async () => {
       const original = await snapshot();
-      const { alias, other } = await evalApp(`const s = ac.store.getState(); return {
-        alias: s.createProfile({name:"Bookmark shared alias",shareWith:"default"}),
-        other: s.createProfile({name:"Bookmark independent engine"})
-      }`);
+      const { alias, other, windowId, previousProfile } = await evalApp(`const s = ac.store.getState();
+        const windowId = s.windowOrder[0];
+        return {
+          alias: s.createProfile({name:"Bookmark shared alias",shareWith:"default"}),
+          other: s.createProfile({name:"Bookmark independent engine"}),
+          windowId,
+          previousProfile: s.windows[windowId].profileId
+        };`);
       let id;
       try {
         const shared = await ready(alias);
         assert.equal(shared.engine, original.engine);
         id = await add("Shared engine native edit", alias);
         await chromeHas(id, shared.engine);
-        const same = await snapshot();
-        assert.ok(same.document.nodes[id]);
-        assert.equal((await snapshot(alias)).revision, same.revision);
-        await evalApp(`ac.store.getState().updateProfile(${JSON.stringify(alias)}, {dataId:${JSON.stringify(other)}}); return true`);
+        const same = await until("stable shared bookmark revision", async () => {
+          const before = await snapshot();
+          const shared = await snapshot(alias);
+          const after = await snapshot();
+          return before.revision === after.revision ? { original: after, alias: shared } : null;
+        });
+        assert.ok(same.original.document.nodes[id]);
+        assert.equal(same.alias.engine, same.original.engine);
+        assert.equal(same.alias.revision, same.original.revision);
+        assert.deepEqual(same.alias.document.nodes[id], same.original.document.nodes[id]);
+        await evalApp(`const s = ac.store.getState();
+          s.updateProfile(${JSON.stringify(alias)}, {dataId:${JSON.stringify(other)}});
+          s.switchProfile(${JSON.stringify(windowId)}, ${JSON.stringify(alias)});
+          return true;`);
         const moved = await until("alias moved to independent engine", async () => {
           try { const value = await snapshot(alias); return value.engine === other && (value.readyForSync ?? value.ready) ? value : null; }
           catch { return null; }
@@ -151,13 +165,19 @@ export function bookmarkOwnershipAcceptance(host) {
           .then(() => ${native}.submitBookmarkMutations(${JSON.stringify(alias)}, '[]', ${JSON.stringify(shared.engine)}, ${JSON.stringify(shared.generation)}, "old-remap-binding"))
           .then(() => false, () => true)`);
         assert.equal(stale, true, "A to B to A refuses an old route binding");
-        await evalApp(`ac.store.getState().deleteProfile(${JSON.stringify(alias)}); return true`);
+        await evalApp(`const s = ac.store.getState();
+          s.switchProfile(${JSON.stringify(windowId)}, ${JSON.stringify(previousProfile)});
+          s.deleteProfile(${JSON.stringify(alias)});
+          return true;`);
         await until("deleted alias root removed", () => evalApp(`return !ac.store.getState().bookmarks.roots[${JSON.stringify(alias)}]`));
         assert.ok((await snapshot()).document.nodes[id], "remaining alias preserves shared engine bookmarks");
         return { sharedEngine: shared.engine, revokedGeneration: shared.generation, returnedGeneration: returned.generation, staleRefused: stale };
       } finally {
         if (id) await remove(id).catch(() => null);
-        await evalApp(`const s=ac.store.getState(); for(const id of ${JSON.stringify([alias,other])}) if(s.profiles[id]) s.deleteProfile(id); return true`).catch(() => null);
+        await evalApp(`const s = ac.store.getState();
+          s.switchProfile(${JSON.stringify(windowId)}, ${JSON.stringify(previousProfile)});
+          for (const id of ${JSON.stringify([alias, other])}) if (s.profiles[id]) s.deleteProfile(id);
+          return true;`).catch(() => null);
       }
     }),
 

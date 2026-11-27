@@ -47,30 +47,47 @@ class Folder {
 
 async function fixture(name: string) {
   expect(bookmarkWriterState().state === "owned", "Production native owner is required");
-  const profile = useBrowser.getState().createProfile({ name: `Bookmark sync ${name}` });
-  await ready(profile);
-  let link = `acceptance-${profile}`;
-  const links = async () => expect(await setBookmarkSyncLinks({ [profile]: link }), "Native sync link checkpoint refused");
-  await links();
-  const id = await bookmarkWriter.addBookmark({ profileId: profile, title: "Base", url: `https://bookmark-sync-acceptance.example/${profile}` });
-  const key = `bm:${id}`;
-  const device = "native-acceptance";
-  const adapter = () => bookmarksAdapter(profile, { device, link: () => link });
-  const folder = new Folder();
-  const state = emptyScope();
-  const clock = new Clock(device);
-  const cycle = (next = adapter(), current: ScopeState = state) => syncScope({ scope: "bookmark-acceptance", state: current, transport: folder.transport, adapters: [next], clock, device });
-  await cycle();
-  expect(!snapshot(profile).facts[key], "Baseline publication must clear its actual native fact");
-  expect(state.records[key]?.v != null, "Baseline did not publish through the real adapter");
-  return {
-    profile, id, key, device, adapter, folder, state, cycle,
-    async changeLink(next: string) { link = next; await links(); },
-    async nativeLink(next: string) { expect(await setBookmarkSyncLinks({ [profile]: next }), "Native link change refused"); },
-    link: () => link,
-    async edit(title: string) { await bookmarkWriter.updateBookmark(profile, id, { title }); return snapshot(profile); },
-    async cleanup() { await setBookmarkSyncLinks({}); useBrowser.getState().deleteProfile(profile); },
+  const stateBefore = useBrowser.getState();
+  const window = stateBefore.windows[stateBefore.windowOrder[0] ?? ""];
+  if (!window || window.incognito || window.kind === "small") throw new Error("A regular window is required for bookmark sync acceptance");
+  const profile = stateBefore.createProfile({ name: `Bookmark sync ${name}` });
+  const cleanup = async () => {
+    try { await setBookmarkSyncLinks({}); }
+    finally {
+      const current = useBrowser.getState();
+      current.switchProfile(window.id, window.profileId);
+      current.deleteProfile(profile);
+    }
   };
+  try {
+    useBrowser.getState().switchProfile(window.id, profile);
+    await ready(profile);
+    let link = `acceptance-${profile}`;
+    const links = async () => expect(await setBookmarkSyncLinks({ [profile]: link }), "Native sync link checkpoint refused");
+    await links();
+    const id = await bookmarkWriter.addBookmark({ profileId: profile, title: "Base", url: `https://bookmark-sync-acceptance.example/${profile}` });
+    const key = `bm:${id}`;
+    const device = "native-acceptance";
+    const adapter = () => bookmarksAdapter(profile, { device, link: () => link });
+    const folder = new Folder();
+    const state = emptyScope();
+    const clock = new Clock(device);
+    const cycle = (next = adapter(), current: ScopeState = state) => syncScope({ scope: "bookmark-acceptance", state: current, transport: folder.transport, adapters: [next], clock, device });
+    await cycle();
+    expect(!snapshot(profile).facts[key], "Baseline publication must clear its actual native fact");
+    expect(state.records[key]?.v != null, "Baseline did not publish through the real adapter");
+    return {
+      profile, id, key, device, adapter, folder, state, cycle,
+      async changeLink(next: string) { link = next; await links(); },
+      async nativeLink(next: string) { expect(await setBookmarkSyncLinks({ [profile]: next }), "Native link change refused"); },
+      link: () => link,
+      async edit(title: string) { await bookmarkWriter.updateBookmark(profile, id, { title }); return snapshot(profile); },
+      cleanup,
+    };
+  } catch (error) {
+    await cleanup();
+    throw error;
+  }
 }
 
 async function failedAckAtSameMillisecond() {

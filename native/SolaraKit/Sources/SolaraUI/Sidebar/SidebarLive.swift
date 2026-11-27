@@ -83,7 +83,8 @@ public struct SidebarLive: Sendable, Equatable {
     let shown = Set(items.map(\.id))
     let hidden = Set((state.hidden[folderId] ?? []).map(\.id))
     let profile = profileId
-    let viewTabs = (browser.windows[windowId]?.tabIds ?? []).filter { browser.tabs[$0]?.profileId == profile }
+    let grouped = browser.groupedTabIds(windowId)
+    let viewTabs = (browser.windows[windowId]?.tabIds ?? []).filter { browser.tabs[$0]?.profileId == profile && !grouped.contains($0) }
     var tabOfItem: [String: String] = [:]
     var strays: [String] = []
     for id in viewTabs {
@@ -93,7 +94,7 @@ public struct SidebarLive: Sendable, Equatable {
     }
     var activeTab: String?
     var activeItem: String?
-    if let window = browser.windows[windowId], let id = window.activeTabIds[profile], let tab = browser.tabs[id], tab.windowId == windowId,
+    if let window = browser.windows[windowId], let id = window.activeTabIds[profile], !grouped.contains(id), let tab = browser.tabs[id], tab.windowId == windowId,
       let ref = Self.liveRef(tab), ref.folderId == folderId, LiveRows.liveTabPlace(ref.itemId, shown: shown, hidden: hidden) != .hidden
     {
       activeTab = id

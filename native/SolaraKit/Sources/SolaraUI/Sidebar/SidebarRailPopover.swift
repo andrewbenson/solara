@@ -37,7 +37,8 @@ struct SidebarRailPopoverRow {
   static func live(_ id: String, context: SidebarContext) -> [Self] {
     guard let live = context.live?.live, let folder = live.state.folders[id] else { return [] }
     let unread = Set(live.state.unread[id] ?? [])
-    let tabs = (context.state.windows[context.windowId]?.tabIds ?? []).compactMap { context.state.tabs[$0] }
+    let grouped = context.state.groupedTabIds(context.windowId)
+    let tabs = (context.state.windows[context.windowId]?.tabIds ?? []).filter { !grouped.contains($0) }.compactMap { context.state.tabs[$0] }
     return (live.state.items[id] ?? []).map { item in
       let tab = tabs.first { $0.profileId == folder.profileId && SidebarLive.liveRef($0).map { $0.folderId == id && $0.itemId == item.id } == true }
       let remote = item.icon.map { $0.hasPrefix("http:") || $0.hasPrefix("https:") } ?? false

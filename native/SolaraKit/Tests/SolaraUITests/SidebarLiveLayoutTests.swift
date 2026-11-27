@@ -82,6 +82,48 @@ private func layout(_ state: BrowserState, _ liveState: LiveState) -> SidebarPag
     #expect(shut.item("lf:f1")?.frame.height == 35)
   }
 
+  @Test func aGroupedLiveTabHasOnlyItsGroupRow() throws {
+    var state = try browser(
+      [tab("keep"), tab("moved", #", "liveItem": {"folderId": "f1", "itemId": "gone"}"#),
+       tab("stays", #", "liveItem": {"folderId": "f1", "itemId": "also-gone"}"#)].joined(separator: ","),
+      ids: ["keep", "moved", "stays"], active: "moved")
+    state.groups["g1"] = TabGroup(
+      id: "g1", windowId: "w1", profileId: "p", name: "Group", icon: nil, color: nil, collapsed: false, pinned: false,
+      tabIds: ["keep", "moved"], createdAt: 0)
+    let out = layout(state, live(items: []))
+    #expect(out.items.filter { $0.key == "t:moved" }.map(\.groups) == [["g1"]])
+    let folder = try #require(out.item("lf:f1"))
+    let stays = try #require(out.item("t:stays"))
+    #expect(folder.frame.contains(stays.frame))
+  }
+
+  @Test func aLiveTabAloneInAGroupStaysInTheGroup() throws {
+    var state = try browser(
+      [tab("keep"), tab("moved", #", "liveItem": {"folderId": "f1", "itemId": "gone"}"#)].joined(separator: ","),
+      ids: ["keep", "moved"], active: "keep")
+    state.groups["g1"] = TabGroup(
+      id: "g1", windowId: "w1", profileId: "p", name: "Group", icon: nil, color: nil, collapsed: false, pinned: false,
+      tabIds: ["moved"], createdAt: 0)
+    let out = layout(state, live(items: []))
+    #expect(out.items.filter { $0.key == "t:moved" }.map(\.groups) == [["g1"]])
+    #expect(out.item("gh:g1") != nil)
+  }
+
+  @Test func aGroupedTabOfAListedItemLeavesTheItemUnopened() throws {
+    var state = try browser(
+      [tab("keep"), tab("moved", #", "liveItem": {"folderId": "f1", "itemId": "pr1"}"#)].joined(separator: ","),
+      ids: ["keep", "moved"], active: "moved")
+    state.groups["g1"] = TabGroup(
+      id: "g1", windowId: "w1", profileId: "p", name: "Group", icon: nil, color: nil, collapsed: false, pinned: false,
+      tabIds: ["keep", "moved"], createdAt: 0)
+    let out = layout(state, live(items: [item(1)], collapsed: true))
+    #expect(out.items.filter { $0.key == "t:moved" }.map(\.groups) == [["g1"]])
+    #expect(out.item("live|f1|pr1") == nil)
+    let block = try #require(SidebarLive(state: live(items: [item(1)])).block("f1", browser: state, windowId: "w1", profileId: "p"))
+    let specs = block.entries.flatMap(\.rows).compactMap { if case .item(let spec) = $0.kind { spec } else { nil } }
+    #expect(specs.map(\.tabId) == [nil])
+  }
+
   @Test func foldersFollowTheirAnchor() throws {
     let state = try browser(
       [tab("p1", #", "pinned": true, "pinnedAsRow": true"#), tab("p2", #", "pinned": true, "pinnedAsRow": true"#)].joined(separator: ","),

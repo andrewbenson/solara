@@ -35,11 +35,13 @@ function computeEntries(s: BrowserState, windowId: string, profileId?: string): 
   const list: string[] = [];
   const groupOf = new Map<string, string>();
   for (const g of Object.values(s.groups)) if (g.windowId === windowId && !g.parentId) g.tabIds.forEach((id) => groupOf.set(id, g.id));
+  const grouped = new Set<string>();
+  for (const g of Object.values(s.groups)) if (g.windowId === windowId) g.tabIds.forEach((id) => grouped.add(id));
   const splits = splitIndex(s.splits);
   const seen = new Set<string>();
   for (const id of viewTabIds(s, windowId, profileId)) {
     const tab = s.tabs[id]!;
-    if ((tab.liveItem && !tab.pinned) || hiddenEmptyCard(s, tab)) continue;
+    if ((tab.liveItem && !tab.pinned && !grouped.has(id)) || hiddenEmptyCard(s, tab)) continue;
     if (tab.pinned) {
       if (!tab.pinnedAsRow) tiles.push(id);
       else {

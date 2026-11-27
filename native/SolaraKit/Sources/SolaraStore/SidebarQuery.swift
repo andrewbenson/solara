@@ -55,11 +55,12 @@ public struct SidebarQuery {
     var out = SidebarEntries()
     var groupOf: [String: String] = [:]
     for g in state.groups.values where g.windowId == windowId && g.parentId == nil { for id in g.tabIds { groupOf[id] = g.id } }
+    let grouped = state.groupedTabIds(windowId)
     var seen = Set<String>()
     let opensBar = state.settings.string("newTabOpens") == "commandBar"
     for id in state.viewTabIds(windowId, profileId) {
       guard let tab = state.tabs[id] else { continue }
-      if (truthy(tab.liveItem) && !tab.pinned) || tab.newTabPlaceholder == true || (!tab.pinned && opensBar && session.isUnopenedEmptyTab(state, tab)) { continue }
+      if (truthy(tab.liveItem) && !tab.pinned && !grouped.contains(id)) || tab.newTabPlaceholder == true || (!tab.pinned && opensBar && session.isUnopenedEmptyTab(state, tab)) { continue }
       if tab.pinned {
         if tab.pinnedAsRow != true {
           out.tiles.append(id)

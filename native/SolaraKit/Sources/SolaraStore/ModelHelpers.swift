@@ -54,6 +54,12 @@ public extension BrowserState {
     return ids
   }
 
+  func groupedTabIds(_ windowId: String) -> Set<String> {
+    var ids = Set<String>()
+    for g in groups.values where g.windowId == windowId { ids.formUnion(g.tabIds) }
+    return ids
+  }
+
   func inPinnedContainer(_ id: String) -> Bool {
     guard let tab = tabs[id] else { return false }
     if tab.pinned { return true }

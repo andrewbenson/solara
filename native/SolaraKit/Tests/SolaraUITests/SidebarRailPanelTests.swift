@@ -1,4 +1,5 @@
 import AppKit
+import SolaraLive
 import SolaraModel
 import Testing
 
@@ -183,16 +184,28 @@ import Testing
     #expect(abs(contentScreen.maxY - iconScreen.maxY) < 1)
   }
 
-  @Test func liveRefreshUnreadCloseAndMenuMatchFullWidthRows() throws {
-    let context = try context()
-    let live = try #require(SidebarLive.decode(#"""
+  private func liveDocuments() throws -> LiveState {
+    try #require(SidebarLive.decode(#"""
       {"folders":{"f":{"id":"f","profileId":"p","kind":"documents","name":"Documents","collapsed":true,
         "sources":["notion"],"filters":{"authored":true,"reviewRequests":true},"groupStacks":false,"showCompleted":false,"createdAt":1}},
        "folderOrder":["f"],"unread":{"f":["a"]},"items":{"f":[
         {"id":"a","source":"notion","url":"https://two.example/","title":"Unread document","subtitle":"","updatedAt":1},
         {"id":"b","source":"notion","url":"https://three.example/","title":"Read document","subtitle":"","updatedAt":1}]}}
       """#))
-    context.live = SidebarLiveBlocks(SidebarLive(state: live), state: context.state, windowId: "w", profileId: "p")
+  }
+
+  @Test func aGroupedLiveTabIsNotItsItemsOpenTab() throws {
+    let context = try context()
+    context.live = SidebarLiveBlocks(SidebarLive(state: try liveDocuments()), state: context.state, windowId: "w", profileId: "p")
+    let rows = SidebarRailPopoverRow.live("f", context: context)
+    #expect(rows.count == 2)
+    #expect(rows.allSatisfy { $0.closeAction == nil })
+  }
+
+  @Test func liveRefreshUnreadCloseAndMenuMatchFullWidthRows() throws {
+    let context = try context()
+    context.state.groups["g"]?.tabIds = ["t3"]
+    context.live = SidebarLiveBlocks(SidebarLive(state: try liveDocuments()), state: context.state, windowId: "w", profileId: "p")
     let (window, group) = mount(context)
     let row = RailLiveFolderView(frame: group.frame)
     window.contentView?.addSubview(row)

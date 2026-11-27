@@ -301,7 +301,7 @@ enum NativeWorkspaceCommands {
     let before = store.state
     let focusWindow = before.resolveWindowId(windowId)
     let opensPanel = command == "newTab" && plan.commands.first?.name == "openPanel"
-    let closesPanel = command == "newTab" && plan.commands.first?.name == "closePanel"
+    let closesPanel = plan.commands.first?.name == "closePanel"
     if command == "newTab", let focusWindow {
       if let previous = newTabFocus.removeValue(forKey: focusWindow), let generation = previous.generation {
         WindowHost.cancelCommandFocus(generation, restoring: false)
@@ -310,7 +310,7 @@ enum NativeWorkspaceCommands {
         WindowHost.cancelCommandFocus(previous.generation, restoring: false)
       }
     }
-    let focusGeneration = closesPanel ? nil : focusWindow.flatMap { WindowHost.beginCommandFocus(command, windowId: $0) }
+    let focusGeneration = focusWindow.flatMap { WindowHost.beginCommandFocus(closesPanel ? "closePanel" : command, windowId: $0) }
     if opensPanel, let focusWindow, let focusGeneration {
       requestPanelFocus(windowId: focusWindow, tabId: before.activeTabId(focusWindow), generation: focusGeneration)
     }
@@ -348,9 +348,12 @@ enum NativeWorkspaceCommands {
         ShellScripting.showWindow(target)
       }
       FrameUpdates.flush()
-      if closesPanel, let focusWindow, let active = store.state.activeTabId(focusWindow),
-        store.state.tabs[active]?.url.isEmpty == false {
-        restoreContentFocus(windowId: focusWindow, store: store, tabId: active)
+      if closesPanel, let focusWindow {
+        if let focusGeneration {
+          claimContentFocus(focusGeneration, windowId: focusWindow, store: store)
+        } else if command == "newTab", let active = store.state.activeTabId(focusWindow), store.state.tabs[active]?.url.isEmpty == false {
+          restoreContentFocus(windowId: focusWindow, store: store, tabId: active)
+        }
       }
       if command == "closeTab", let targetWindow = before.resolveWindowId(windowId) {
         if commands.first?.name == "closePeek" {
@@ -466,6 +469,21 @@ enum NativeWorkspaceCommands {
     TabPoolHost.shared.prepareCommandFocus()
     if tab.url.isEmpty { requestHeroFocus(target, windowId: windowId, generation: nil) }
     else { focusPage(target, stopFinding: stopFinding) }
+  }
+
+  private static func claimContentFocus(_ generation: Int, windowId: String, store: Store) {
+    guard WindowHost.commandFocusCurrent(generation) else { return }
+    guard let target = store.state.peeks[windowId]?.tabId ?? store.state.activeTabId(windowId),
+      let tab = store.state.tabs[target], tab.windowId == windowId else {
+      return WindowHost.cancelCommandFocus(generation, restoring: false)
+    }
+    TabPoolHost.shared.prepareCommandFocus()
+    if tab.url.isEmpty {
+      requestHeroFocus(target, windowId: windowId, generation: generation)
+    } else if !TabPoolHost.shared.claimFocusPage(generation, tabId: target), WindowHost.commandFocusCurrent(generation) {
+      WindowHost.cancelCommandFocus(generation, restoring: false)
+      focusPage(target)
+    }
   }
 
   private static func findNewTab(in view: NSView) {

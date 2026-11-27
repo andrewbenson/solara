@@ -163,6 +163,7 @@ final class FakeHeroField: HeroFieldControl {
   }
   func focusField() { focused += 1 }
   func releaseFocus() {}
+  func releaseFocusAfterCommit() {}
   var hasFocus: Bool { false }
   var fieldSelection: TextSelection { selection }
   var fieldValue: String { value }
@@ -588,6 +589,26 @@ struct OmniboxPanelModelTests {
     currentModel.didBlur(session: currentSession)
     #expect(cancelled == [endedSession, currentSession])
     #expect(!currentModel.editing)
+  }
+
+  @Test func releasingTheFieldForDismissalDoesNotMarkANavigationCommit() {
+    _ = NSApplication.shared
+    let (model, _, _) = make(.panel)
+    let field = HeroTextField(frame: .zero)
+    let window = NSWindow(contentRect: .zero, styleMask: [.titled], backing: .buffered, defer: true)
+    window.contentView?.addSubview(field)
+    let coordinator = HeroFieldCoordinator(model: model)
+    coordinator.field = field
+    var commits = 0
+    let observer = NotificationCenter.default.addObserver(forName: Notification.Name("SolaraBarCommitted"), object: window, queue: nil) { _ in
+      MainActor.assumeIsolated { commits += 1 }
+    }
+    defer { NotificationCenter.default.removeObserver(observer) }
+    coordinator.releaseFocus()
+    #expect(commits == 0)
+    model.field = coordinator
+    model.go("https://example.com/")
+    #expect(commits == 1)
   }
 
   @Test func escapeClosesThePanelAndLeavesAScopeFirst() {

@@ -255,17 +255,17 @@ try {
     console.log(`OBSERVED a held ⌘L re-sent at the cap: ${JSON.stringify(observed.releaseOrder)}`);
     const released = releaseTrace.findIndex((line) => /release \d+ to the page/.test(line));
     assert.ok(released >= 0, `the held keys went back to the page: ${JSON.stringify(observed.releaseOrder)}`);
-    assert.ok(!releaseTrace.slice(released + 1).some((line) => /hold for/.test(line)), `re-sending the held ⌘L opens no second hold: ${JSON.stringify(releaseTrace)}`);
+    assert.ok(releaseTrace.slice(released + 1).some((line) => /hold for reposted focusCommandBar/.test(line)), `the reposted ⌘L protects the letters after it: ${JSON.stringify(releaseTrace)}`);
     const fieldAfter = await responder("w1");
     observed.releaseOrder.responder = fieldAfter;
     assert.ok(replaySeen.includes("a"), `the letter before the released ⌘L reaches the page: ${JSON.stringify(replaySeen)}`);
     assert.ok(releaseTrace.some((line) => /commandBar .* claim DeveloperUrlField/.test(line)) && isField(fieldAfter), `the released ⌘L focuses the developer URL field of this 127.0.0.1 page, as it did before: ${fieldAfter} ${JSON.stringify(releaseTrace)}`);
-    assert.ok(!replaySeen.includes("c") && !replaySeen.includes("d"), `later letters stay out of the page: ${JSON.stringify(replaySeen)}`);
+    assert.ok(!["b", "c", "d"].some((letter) => replaySeen.includes(letter)), `letters after the released ⌘L stay out of the page: ${JSON.stringify(replaySeen)}`);
     await press("w1", keys.escape, { wait: 150 });
     await press("w1", keys.escape, { wait: 150 });
     if (find(await nativeState(), "a").open) await closeFind("w1", "a", isField(await responder("w1")));
     handlerBaseline = await run("ac.commandHandlers.setEnabled(false); return ac.commandHandlers.stats();");
-    pass("held keys re-sent at the cap, including a held ⌘L, open no second hold and keep their order", observed.releaseOrder);
+    pass("held keys re-sent at the cap go to the page before ⌘L and to the address field after it", observed.releaseOrder);
 
     await run('ac.store.getState().activate("b"); return true;');
     await until("tab b is loaded for the switch leg", (s) => s.windows.w1.activeTabIds[s.windows.w1.profileId] === "b" && s.tabs.b?.title === "Page /b");

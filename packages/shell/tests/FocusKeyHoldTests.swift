@@ -43,6 +43,14 @@ import Testing
     #expect(hold.held == FocusKeyHold.capacity)
   }
 
+  @Test func aRepostedShortcutGetsAFullHoldFromRedispatch() {
+    var hold = FocusKeyHold(command: "focusCommandBar", pressedAt: 10, dispatchedAt: 10.16)
+    #expect(hold.pressedAt == 10)
+    #expect(hold.keyDown(command: false, at: 10.01) == .hold)
+    #expect(hold.keyDown(command: false, at: 10.17) == .hold)
+    #expect(hold.keyDown(command: false, at: 10.32) == .release)
+  }
+
   @Test func millisecondsAreMeasuredFromThePress() {
     let hold = FocusKeyHold(command: "focusCommandBar", pressedAt: 100)
     #expect(hold.milliseconds(at: 100.0424) == 42)

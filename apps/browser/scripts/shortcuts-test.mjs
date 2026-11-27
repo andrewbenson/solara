@@ -10,8 +10,8 @@ import { shortcutPage } from "../../../scripts/lib/fixture-html.mjs";
 
 const [appArg, part, port] = process.argv.slice(2);
 const appPath = appArg && resolve(appArg);
-if (!appPath || !["matrix", "presses", "precedence"].includes(part)) {
-  console.error("usage: node shortcuts-test.mjs <Debug Solara.app> matrix|presses|precedence [cdpPort]");
+if (!appPath || !["matrix", "presses", "precedence", "first-input"].includes(part)) {
+  console.error("usage: node shortcuts-test.mjs <Debug Solara.app> matrix|presses|precedence|first-input [cdpPort]");
   process.exit(2);
 }
 const startedAt = Date.now();
@@ -533,6 +533,120 @@ if (part === "precedence") {
   await finish(rep.summary() && !failures ? 0 : 1);
 }
 
+const devWindow = async (action) => {
+  const result = await ac(`const f = ac.store.getState().windows.w1.frame, C = globalThis.expo.modules.SolaraCEF;
+    return C.chromeWindows().then((ws) => ws.filter((w) => w.hasRoot).find((w) => {
+      const r = w.frame.match(/[-\\d.]+/g).map(Number); return Math.abs(r[0] - f[0]) < 2 && Math.abs(r[2] - f[2]) < 2; }))
+      .then((w) => C.devWindow(w.window, ${JSON.stringify(action)}));`);
+  if (action === "responder") {
+    const role = result.split(" ")[0];
+    const native = await untilSnapshot("native first responder", (s) => (nativeWindow(s)?.firstResponder ?? "nil") === role);
+    assert.equal(nativeWindow(native).firstResponder ?? "nil", role);
+  }
+  return result;
+};
+const postKeys = async (presses) => {
+  const times = await ac(`return globalThis.expo.modules.SolaraApp.devPostKeys("w1", ${JSON.stringify(presses)});`);
+  const native = await untilSnapshot("native posted key timestamps", (s) => isDeepStrictEqual(nativeWindow(s)?.shortcuts.postTimes, times));
+  assert.deepEqual(nativeWindow(native).shortcuts.postTimes, times);
+  return times;
+};
+const keyPress = (key, keyCode, after = 0, modifiers = ["command"]) => ({ key, keyCode, modifiers, after });
+const post = (key, keyCode, modifiers = ["command"]) => ac(`return globalThis.expo.modules.SolaraApp.devPostKey("w1", ${JSON.stringify(key)}, ${keyCode}, ${JSON.stringify(modifiers)});`);
+const clipboard = {
+  set: (text) => ac(`globalThis.nativeModuleProxy.Clipboard.setString(${JSON.stringify(text)}); return 1;`),
+  get: () => ac(`return globalThis.nativeModuleProxy.Clipboard.getString();`),
+};
+const busyJsOnce = (ms) => ac(`const off = ac.store.subscribe(() => { off(); const t = Date.now(); while (Date.now() - t < ${ms}); }); return 1;`);
+const fieldInAx = async (text) => {
+  const value = (await devWindow("ax")).split("\n").some((l) => /AXTextField|AXTextArea/.test(l) && l.includes(text));
+  const native = await untilSnapshot("native shortcut destination text field", (s) => nativeWindow(s)?.shortcutFields.some((f) => `${f.role}: ${f.label} | ${f.value}`.includes(text)) === value);
+  assert.equal(nativeWindow(native).shortcutFields.some((f) => `${f.role}: ${f.label} | ${f.value}`.includes(text)), value);
+  return value;
+};
+const barValue = async () => {
+  const value = await ac(`const bar = ac.omnibox.get("w1:panel") ?? ac.omnibox.get("w1:sidebar"); return String(bar?.state().value ?? "");`);
+  const s = await app.snapshot({ windowId: "w1", shortcuts: true, fields: SHORTCUT_FIELDS });
+  const bar = nativeWindow(s)?.omnibox;
+  const native = await untilSnapshot("native command bar text", (s) => {
+    const w = nativeWindow(s);
+    return bar ? w?.omnibox?.value === value : w?.shortcutFields.some((f) => f.value === value);
+  });
+  if (bar) assert.equal(nativeWindow(native).omnibox.value, value);
+  else assert.ok(nativeWindow(native).shortcutFields.some((f) => f.value === value));
+  return value;
+};
+const pageField = (expr) => cdp("?t3", `(f => ${expr})(document.getElementById('f'))`);
+const resetToPageField = async (value, selection) => {
+  await ac(`const s = ac.store.getState(), w = s.windows.w1; s.closePanel("w1");
+    for (const id of w.tabIds) if (!${JSON.stringify(ids)}.includes(id)) s.closeTab(id);
+    s.setFind("t3", { open: false }); s.activate("t3"); return 1;`);
+  await sleep(500);
+  await ac(`return ac.shell.devClick("w1", { in: "page", x: 60, y: 135, wait: 150 });`);
+  await pageField(`(f.value = ${JSON.stringify(value)}, f.focus(), f.setSelectionRange(${selection[0]}, ${selection[1]}), true)`);
+  await sleep(100);
+};
+const countPastes = () => Promise.all(ids.map((id) => cdp(`?${id}`, "(window.pastes ??= (addEventListener('paste', () => window.pastes.n++, true), { n: 0 })).n = 0, true")));
+const pastesIn = (id) => cdp(`?${id}`, "window.pastes?.n ?? 0");
+const pastesElsewhere = async (except) => (await Promise.all(ids.filter((id) => id !== except).map(pastesIn))).reduce((a, n) => a + (n ?? 0), 0);
+const activeId = async () => {
+  const value = await ac(`const s = ac.store.getState(), w = s.windows.w1; return w.activeTabIds[w.profileId];`);
+  const s = await untilSnapshot("native active tab", (s) => nativeWindow(s)?.selectedTabId === value);
+  assert.equal(nativeWindow(s).selectedTabId, value);
+  return value;
+};
+if (part === "first-input") {
+  await devWindow("fakeActiveClicks");
+  const readBar = (names) => ac(`return JSON.stringify(${JSON.stringify(names)}.map((name) => ac.omnibox.get("w1:" + name)?.state().value ?? null));`).then(JSON.parse);
+  const trace = () => ac("return globalThis.expo.modules.SolaraApp.devFocusHandoffTrace();");
+  const typed = [keyPress("q", 12, 0, []), keyPress("z", 6, 15, []), keyPress("x", 7, 15, [])];
+  for (const [label, lead, bars, expectedPage] of [
+    ["⌘L → typing", [keyPress("l", 37)], ["panel", "sidebar"], ""],
+    ["⌘T → typing", [keyPress("t", 17)], ["hero", "panel"], ""],
+    ["Released ⌘L → typing", [keyPress("f", 3), keyPress("a", 0, 0, []), keyPress("l", 37)], ["panel", "sidebar"], "a"],
+  ]) {
+    for (let trial = 1; trial <= 10; trial++) {
+      await resetToPageField("", [0, 0]);
+      if (expectedPage) {
+        assert.equal(await pageField(`(window.keepFind ??= ((event) => {
+          if (event.metaKey && event.key === "f") event.preventDefault();
+        }), addEventListener("keydown", window.keepFind, true), true)`), true);
+      }
+      const digit = trial % 10;
+      const text = `qzx${digit}`;
+      const posted = await postKeys([...lead, ...typed, keyPress(String(digit), [29, 18, 19, 20, 21, 23, 22, 26, 28, 25][digit], 15, [])]);
+      await sleep(650);
+      const values = await readBar(bars);
+      const inPage = await pageField("f.value");
+      const snapshot = await app.snapshot({ windowId: "w1", shortcuts: true, fields: SHORTCUT_FIELDS });
+      const window = nativeWindow(snapshot);
+      const focused = /NSTextView|NSTextField/.test(window?.firstResponder ?? "");
+      const displayed = window?.omnibox?.value === text || window?.shortcutFields.some((f) => f.value === text);
+      const ok = values.includes(text) && inPage === expectedPage && focused && displayed;
+      check(`${label} (${trial}/10)`, ok,
+        `bars ${JSON.stringify(values)}, old page ${JSON.stringify(inPage)}, responder ${window?.firstResponder}, first gap ${(posted[lead.length] - posted[lead.length - 1]).toFixed(1)} ms${ok ? "" : `; ${(await trace()).slice(-12).join(" / ")}`}`);
+    }
+  }
+  for (let trial = 1; trial <= 10; trial++) {
+    await resetToPageField("", [0, 0]);
+    await countPastes();
+    const text = `first-paste-${trial}`;
+    await clipboard.set(text);
+    await postKeys([keyPress("l", 37), keyPress("w", 13, 300), keyPress("v", 9)]);
+    await sleep(650);
+    const active = await activeId();
+    const first = await pastesIn(active);
+    const strays = await pastesElsewhere(active);
+    const pasted = await pageField("f.value");
+    const after = await state();
+    const responder = await devWindow("responder");
+    const ok = active === "t3" && !after.panel && first === 1 && strays === 0 && pasted === text && responder.startsWith("RenderWidgetHostViewCocoa");
+    check(`⌘L → ⌘W → ⌘V (${trial}/10)`, ok,
+      `active ${active}, pastes ${first}, elsewhere ${strays}, field ${JSON.stringify(pasted)}, panel ${after.panel}, responder ${responder.split(" ")[0]}${ok ? "" : `; ${(await trace()).slice(-12).join(" / ")}`}`);
+  }
+  await finish(rep.summary() && !failures ? 0 : 1);
+}
+
 await real("⌘1 in the sidebar", cmd("1", 18), sidebar, "pin1");
 await real("⌘2 in the sidebar", cmd("2", 19), sidebar, "pin2");
 await real("⌘9 in the sidebar", cmd("9", 25), sidebar, "t9");
@@ -618,60 +732,7 @@ await press(cmd("a", 0), page);
 const selection = await cdp("?t3", "(f => [f.selectionStart, f.selectionEnd, f.value.length].join())(document.getElementById('f'))");
 check("⌘A selects all of a page's text field", selection === "0,11,11", selection);
 
-const devWindow = async (action) => {
-  const result = await ac(`const f = ac.store.getState().windows.w1.frame, C = globalThis.expo.modules.SolaraCEF;
-    return C.chromeWindows().then((ws) => ws.filter((w) => w.hasRoot).find((w) => {
-      const r = w.frame.match(/[-\\d.]+/g).map(Number); return Math.abs(r[0] - f[0]) < 2 && Math.abs(r[2] - f[2]) < 2; }))
-      .then((w) => C.devWindow(w.window, ${JSON.stringify(action)}));`);
-  if (action === "responder") {
-    const role = result.split(" ")[0];
-    const native = await untilSnapshot("native first responder", (s) => (nativeWindow(s)?.firstResponder ?? "nil") === role);
-    assert.equal(nativeWindow(native).firstResponder ?? "nil", role);
-  }
-  return result;
-};
-const postKeys = async (presses) => {
-  const times = await ac(`return globalThis.expo.modules.SolaraApp.devPostKeys("w1", ${JSON.stringify(presses)});`);
-  const native = await untilSnapshot("native posted key timestamps", (s) => isDeepStrictEqual(nativeWindow(s)?.shortcuts.postTimes, times));
-  assert.deepEqual(nativeWindow(native).shortcuts.postTimes, times);
-  return times;
-};
-const keyPress = (key, keyCode, after = 0, modifiers = ["command"]) => ({ key, keyCode, modifiers, after });
-const post = (key, keyCode, modifiers = ["command"]) => ac(`return globalThis.expo.modules.SolaraApp.devPostKey("w1", ${JSON.stringify(key)}, ${keyCode}, ${JSON.stringify(modifiers)});`);
-const clipboard = {
-  set: (text) => ac(`globalThis.nativeModuleProxy.Clipboard.setString(${JSON.stringify(text)}); return 1;`),
-  get: () => ac(`return globalThis.nativeModuleProxy.Clipboard.getString();`),
-};
-const busyJsOnce = (ms) => ac(`const off = ac.store.subscribe(() => { off(); const t = Date.now(); while (Date.now() - t < ${ms}); }); return 1;`);
-const fieldInAx = async (text) => {
-  const value = (await devWindow("ax")).split("\n").some((l) => /AXTextField|AXTextArea/.test(l) && l.includes(text));
-  const native = await untilSnapshot("native shortcut destination text field", (s) => nativeWindow(s)?.shortcutFields.some((f) => `${f.role}: ${f.label} | ${f.value}`.includes(text)) === value);
-  assert.equal(nativeWindow(native).shortcutFields.some((f) => `${f.role}: ${f.label} | ${f.value}`.includes(text)), value);
-  return value;
-};
-const barValue = async () => {
-  const value = await ac(`const bar = ac.omnibox.get("w1:panel") ?? ac.omnibox.get("w1:sidebar"); return String(bar?.state().value ?? "");`);
-  const s = await app.snapshot({ windowId: "w1", shortcuts: true, fields: SHORTCUT_FIELDS });
-  const bar = nativeWindow(s)?.omnibox;
-  const native = await untilSnapshot("native command bar text", (s) => {
-    const w = nativeWindow(s);
-    return bar ? w?.omnibox?.value === value : w?.shortcutFields.some((f) => f.value === value);
-  });
-  if (bar) assert.equal(nativeWindow(native).omnibox.value, value);
-  else assert.ok(nativeWindow(native).shortcutFields.some((f) => f.value === value));
-  return value;
-};
-const pageField = (expr) => cdp("?t3", `(f => ${expr})(document.getElementById('f'))`);
 await devWindow("fakeActiveClicks");
-const resetToPageField = async (value, selection) => {
-  await ac(`const s = ac.store.getState(), w = s.windows.w1; s.closePanel("w1");
-    for (const id of w.tabIds) if (!${JSON.stringify(ids)}.includes(id)) s.closeTab(id);
-    s.setFind("t3", { open: false }); s.activate("t3"); return 1;`);
-  await sleep(500);
-  await ac(`return ac.shell.devClick("w1", { in: "page", x: 60, y: 135, wait: 150 });`);
-  await pageField(`(f.value = ${JSON.stringify(value)}, f.focus(), f.setSelectionRange(${selection[0]}, ${selection[1]}), true)`);
-  await sleep(100);
-};
 const sidebarOpen = async () => {
   const value = await ac(`return ac.store.getState().windows.w1.sidebarOpen;`);
   const s = await untilSnapshot("native sidebar visibility", (s) => nativeWindow(s)?.sidebarOpen === value);
@@ -855,21 +916,12 @@ for (const busy of [0, 120]) {
   const [downs, ups] = [await cdp("?t3", "window.nextDowns"), await cdp("?t3", "window.nextUps")];
   check("a key whose release was never seen doesn't swallow the keyUp of its next ordinary press", downs === 1 && ups === 1, `q keydowns ${downs}, keyups ${ups}`);
 }
-const countPastes = () => Promise.all(ids.map((id) => cdp(`?${id}`, "(window.pastes ??= (addEventListener('paste', () => window.pastes.n++, true), { n: 0 })).n = 0, true")));
-const pastesIn = (id) => cdp(`?${id}`, "window.pastes?.n ?? 0");
-const pastesElsewhere = async (except) => (await Promise.all(ids.filter((id) => id !== except).map(pastesIn))).reduce((a, n) => a + (n ?? 0), 0);
-const activeId = async () => {
-  const value = await ac(`const s = ac.store.getState(), w = s.windows.w1; return w.activeTabIds[w.profileId];`);
-  const s = await untilSnapshot("native active tab", (s) => nativeWindow(s)?.selectedTabId === value);
-  assert.equal(nativeWindow(s).selectedTabId, value);
-  return value;
-};
 const handoffEnds = [
-  ["⌘L ⌘W before the bar mounts", [keyPress("l", 37), keyPress("w", 13, 30), keyPress("v", 9, 30)], 150, 0],
+  ["⌘L ⌘W at 30 ms, JS busy 150 ms", [keyPress("l", 37), keyPress("w", 13, 30), keyPress("v", 9, 30)], 150, 1],
   ["⌘L, the bar shown, ⌘W", [keyPress("l", 37), keyPress("w", 13, 300), keyPress("v", 9, 30)], 0, 1],
   ["⌘F, Find shown, Esc", [keyPress("f", 3), keyPress("\u001b", 53, 300, []), keyPress("v", 9, 30)], 0, 1],
   ["⌘T ⌘W", [keyPress("t", 17), keyPress("w", 13), keyPress("v", 9, 30)], 0, 1],
-  ["⌘L, ⌘W at 300 ms, JS busy 450 ms", [keyPress("l", 37), keyPress("w", 13, 300), keyPress("v", 9, 30)], 450, 0],
+  ["⌘L, ⌘W at 300 ms, JS busy 450 ms", [keyPress("l", 37), keyPress("w", 13, 300), keyPress("v", 9, 30)], 450, 1],
   ["⌘L ⌘V, JS busy 500 ms", [keyPress("l", 37), keyPress("v", 9)], 500, 0],
 ];
 for (const [name, keys, busy, firstExpected] of handoffEnds) {

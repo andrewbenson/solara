@@ -66,6 +66,7 @@ public protocol HeroFieldControl: AnyObject {
   func show(value: String, selection: TextSelection)
   func focusField()
   func releaseFocus()
+  func releaseFocusAfterCommit()
   var hasFocus: Bool { get }
   var fieldSelection: TextSelection { get }
   var fieldValue: String { get }
@@ -534,7 +535,7 @@ public final class HeroBarModel {
     guard !url.isEmpty else { return }
     if disposition == .current { events.journey(.navigate) }
     events.open(url, disposition)
-    if disposition != .current { dismiss() } else if !hero { field?.releaseFocus() }
+    if disposition != .current { dismiss() } else if !hero { field?.releaseFocusAfterCommit() }
   }
 
   func choose(_ s: SolaraOmnibox.Suggestion?, _ disposition: Disposition, byEnter: Bool) {
@@ -565,7 +566,7 @@ public final class HeroBarModel {
       if let tabId, !tabId.isEmpty, !(opensTab && disposition == .newTab) {
         events.switchTo(tabId, url, disposition)
         if hero && disposition == .current { reset() }
-        if !hero && disposition == .current { field?.releaseFocus() }
+        if !hero && disposition == .current { field?.releaseFocusAfterCommit() }
         return
       }
       go(url, disposition)

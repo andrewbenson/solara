@@ -187,9 +187,15 @@ final class HeroFieldCoordinator: NSObject, NSTextFieldDelegate, HeroFieldContro
 
   func releaseFocus() {
     guard let field, let window = field.window else { return }
-    NotificationCenter.default.post(name: Notification.Name("SolaraBarCommitted"), object: window)
     let responder = window.firstResponder as? NSView
     if holdsFocus || (responder.map { $0 === field || $0.isDescendant(of: field) } ?? false) { window.makeFirstResponder(nil) }
+  }
+
+  func releaseFocusAfterCommit() {
+    if let window = field?.window {
+      NotificationCenter.default.post(name: Notification.Name("SolaraBarCommitted"), object: window)
+    }
+    releaseFocus()
   }
 
   func focusField() {

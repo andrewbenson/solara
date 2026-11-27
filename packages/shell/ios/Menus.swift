@@ -1033,12 +1033,13 @@ enum MainMenu {
 
   private static var commandItemCache: (commands: Set<String>, refs: [CommandItemRef])?
 
-  static func command(for event: NSEvent, among commands: Set<String>) -> String? {
+  static func command(for event: NSEvent, among commands: Set<String>, solaraFirst: Bool = false) -> String? {
     guard let key = event.charactersIgnoringModifiers?.lowercased(), !key.isEmpty else { return nil }
     let combo = comboKey(key, event.modifierFlags)
     return commandItems(among: commands).first { item in
       !item.keyEquivalent.isEmpty && (!item.isHidden || item.allowsKeyEquivalentWhenHidden)
         && comboKey(item.keyEquivalent, item.keyEquivalentModifierMask) == combo
+        && (!solaraFirst || (precedence(of: item) == .solara && MenuTarget.shared.validateMenuItem(item)))
     }?.command
   }
 

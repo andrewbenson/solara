@@ -10,9 +10,10 @@ public enum WindowHost {
     defer {
       NotificationCenter.default.post(name: Notification.Name("SolaraCommandWillDispatch"), object: window, userInfo: ["command": command])
     }
-    guard command == "newTab" || command == "findInPage" || command == "focusCommandBar" else { return nil }
+    let closesPanel = command == "closePanel"
+    guard closesPanel || command == "newTab" || command == "findInPage" || command == "focusCommandBar" else { return nil }
     _ = FocusHandoff.shared.takeBegun()
-    let generation = FocusHandoff.shared.begin(in: window, allowUnfocused: command == "focusCommandBar")
+    let generation = FocusHandoff.shared.begin(in: window, allowUnfocused: closesPanel || command == "focusCommandBar", allowTextField: closesPanel)
     _ = FocusHandoff.shared.takeBegun()
     return generation
   }
@@ -1305,13 +1306,15 @@ final class FocusHandoff {
   private final class Pending {
     weak var window: NSWindow?
     weak var page: NSView?
+    let acceptsRepostedInput: Bool
     var hold: FocusKeyHold
     var held: [Held] = []
     var stream: [NSEvent] = []
-    init(_ window: NSWindow, page: NSView?, _ hold: FocusKeyHold) {
+    init(_ window: NSWindow, page: NSView?, _ hold: FocusKeyHold, acceptsRepostedInput: Bool) {
       self.window = window
       self.page = page
       self.hold = hold
+      self.acceptsRepostedInput = acceptsRepostedInput
     }
   }
 
@@ -1375,14 +1378,16 @@ final class FocusHandoff {
   var gatesKeyWindow: Bool { NSApp.keyWindow.map { gates[ObjectIdentifier($0)] != nil } ?? false }
 
   @discardableResult
-  func begin(in window: NSWindow, allowUnfocused: Bool = false) -> Int? {
+  func begin(in window: NSWindow, allowUnfocused: Bool = false, allowTextField: Bool = false) -> Int? {
     guard window.isKeyWindow, WindowManager.shared.id(of: window) != nil else { return nil }
     let focused = window.firstResponder
     let existing = gates[ObjectIdentifier(window)]
-    guard existing != nil || Self.isPage(focused) || (allowUnfocused && Self.unfocused(window)) else { return nil }
-    if Self.isPage(focused), let input = focused as? NSTextInputClient, input.hasMarkedText() { return nil }
+    let pageFocused = Self.isPage(focused)
+    guard existing != nil || pageFocused || (allowUnfocused && Self.unfocused(window))
+      || (allowTextField && MainMenu.editsText(focused)) else { return nil }
+    if (pageFocused || allowTextField), let input = focused as? NSTextInputClient, input.hasMarkedText() { return nil }
     let gate = existing ?? open(in: window)
-    if let page = focused as? NSView, Self.isPage(page) {
+    if pageFocused, let page = focused as? NSView {
       NotificationCenter.default.post(name: Self.outgoingFocus, object: page)
       gate.resigned = page
       resignedPages.setObject(page, forKey: NSNumber(value: window.windowNumber))
@@ -1514,10 +1519,13 @@ final class FocusHandoff {
     guard monitor == nil else { return }
     monitor = NSEvent.addLocalMonitorForEvents(matching: [.keyDown, .keyUp, .flagsChanged, .leftMouseDown, .rightMouseDown]) { [weak self] event in
       guard let self, let window = event.window else { return event }
-      let gate = self.gates[ObjectIdentifier(window)]
+      let key = ObjectIdentifier(window)
+      let gate = self.gates[key]
       let replayed = self.reposted.remove(Self.repostKey(event)) != nil
+      let pending = self.pendings[key]
+      let canHold = !self.resending && (!replayed || pending?.acceptsRepostedInput == true)
       if event.type == .flagsChanged {
-        guard !replayed, !self.resending, let pending = self.pendings[ObjectIdentifier(window)], !pending.held.isEmpty else { return event }
+        guard canHold, let pending, !pending.held.isEmpty else { return event }
         pending.stream.append(event)
         return nil
       }
@@ -1534,10 +1542,8 @@ final class FocusHandoff {
         self.editKeys.setObject([window.windowNumber, self.epochs[window.windowNumber] ?? 0] as NSArray, forKey: event)
       }
       if event.type == .keyUp { return self.releases(event, in: gate) ? nil : event }
-      if !self.resending, !replayed {
-        if self.holdsPending(event, in: window) { return nil }
-        if gate == nil { self.openPending(event, in: window) }
-      }
+      if canHold, self.holdsPending(event, in: window) { return nil }
+      if !self.resending, gate == nil { self.openPending(event, in: window, reposted: replayed) }
       if gate == nil, !event.modifierFlags.contains(.command) { self.noteTyped(event, in: window) }
       guard let gate, !event.modifierFlags.contains(.command), self.live(gate), !gate.generations.isEmpty else {
         if !event.isARepeat { self.releases[event.keyCode] = nil }
@@ -1607,17 +1613,20 @@ final class FocusHandoff {
     }
   }
 
-  private func openPending(_ event: NSEvent, in window: NSWindow) {
+  private func openPending(_ event: NSEvent, in window: NSWindow, reposted: Bool) {
     guard event.type == .keyDown, event.modifierFlags.contains(.command), window.isKeyWindow, WindowManager.shared.id(of: window) != nil else { return }
     let focused = window.firstResponder
     let marked = (focused as? NSTextInputClient)?.hasMarkedText() ?? false
     let key = ObjectIdentifier(window)
+    let commands = reposted ? ["focusCommandBar"] : MenuTarget.focusMovingCommands
     guard FocusKeyHold.opens(focusMoving: true, pageFocused: Self.isPage(focused), markedText: marked, gateOpen: gates[key] != nil,
       holding: pendings[key] != nil, isRepeat: event.isARepeat),
-      let command = MainMenu.command(for: event, among: MenuTarget.focusMovingCommands) else { return }
-    let pending = Pending(window, page: focused as? NSView, FocusKeyHold(command: command, pressedAt: event.timestamp))
+      let command = MainMenu.command(for: event, among: commands, solaraFirst: reposted) else { return }
+    let hold = FocusKeyHold(command: command, pressedAt: event.timestamp,
+      dispatchedAt: reposted ? ProcessInfo.processInfo.systemUptime : nil)
+    let pending = Pending(window, page: focused as? NSView, hold, acceptsRepostedInput: reposted)
     pendings[key] = pending
-    note("hold for \(command)")
+    note(reposted ? "hold for reposted \(command)" : "hold for \(command)")
     DispatchQueue.main.asyncAfter(deadline: .now() + FocusKeyHold.cap) { [weak self, weak pending, weak window] in
       guard let self, let pending, let window, self.pendings[ObjectIdentifier(window)] === pending else { return }
       self.releasePending(in: window, reason: "cap")

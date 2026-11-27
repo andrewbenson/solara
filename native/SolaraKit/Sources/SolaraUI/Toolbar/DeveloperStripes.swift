@@ -107,3 +107,36 @@ final class DeveloperStripes {
     return context.makeImage()
   }
 }
+
+@MainActor
+public final class DeveloperStripesView: NSView {
+  private let stripes = DeveloperStripes()
+
+  public override init(frame frameRect: NSRect) {
+    super.init(frame: frameRect)
+    wantsLayer = true
+    layer?.masksToBounds = true
+    layer?.addSublayer(stripes.layer)
+  }
+
+  public required init?(coder: NSCoder) { nil }
+
+  public override var isFlipped: Bool { true }
+
+  public func show(_ uri: String?) {
+    stripes.show(uri)
+    needsLayout = true
+  }
+
+  public override func layout() {
+    super.layout()
+    stripes.fit(bounds, scale: window?.backingScaleFactor ?? 2)
+  }
+
+  public override func viewDidChangeBackingProperties() {
+    super.viewDidChangeBackingProperties()
+    needsLayout = true
+  }
+
+  public override func hitTest(_ point: NSPoint) -> NSView? { nil }
+}

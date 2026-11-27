@@ -48,6 +48,7 @@ public class HostedModule: Module {
       HostedViews.declare(HostedFavicon.kind)
       HostedViews.declare(HostedAreaRecovery.kind)
       HostedViews.declare(HostedToolbarBackdrop.kind)
+      HostedViews.declare("developerStripes")
       HostedViews.declare(HostedSmallWindowCard.kind)
       HostedViews.declare(HostedGroupPanel.kind)
       HostedViews.declare(NativeDownloadsPanel.kind)
@@ -66,6 +67,12 @@ public class HostedModule: Module {
           HostedFavicon.register()
           HostedAreaRecovery.register()
           HostedToolbarBackdrop.register()
+          HostedViews.register("developerStripes") { _ in
+            let view = DeveloperStripesView(frame: .zero)
+            return HostedContent(view: view, takesFocus: false) { [weak view] state in
+              view?.show(state.isEmpty ? nil : state)
+            }
+          }
           HostedSmallWindowCard.register()
           HostedGroupPanel.register()
           NativeDownloadsPanel.register()

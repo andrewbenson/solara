@@ -23,7 +23,7 @@ the active native request, 300 wide 8 points below the pane's top, and Don't All
 page and moves on to the next; a request goes when the page navigates. Device chooser: Chrome's Bluetooth chooser
 (the DEBUG hook) draws natively at 340 wide, Cancel closes it in the engine and the store, and the unauthorized
 chooser shows its notice. Engine offer: a protected-video page message brings the 320-wide WebKit offer 8 points
-below the pane's top, and Stay on Page takes it down in JS and natively. --defaults runs at the app's own switch
+below the pane's top, and Stay on Page retires the native offer. --defaults runs at the app's own switch
 defaults, with no switch env.`);
   process.exit(2);
 }
@@ -60,7 +60,7 @@ const native = (w = "w1") => M.describePaneOverlays(w).then(JSON.parse);
 const promptIn = (w, kind) => native(w).then((d) => { const p = d && d.tabs && d.tabs.a && d.tabs.a[kind]; return p && !p.hidden ? p : null; });
 const rnDrawn = (name) => acPerf.findFibers(name, 5).filter((f) => !!f.child).length;
 const rnPrompt = () => rnDrawn("PasswordPrompt");
-const pageEvent = (name, payload) => ["onPageMessage", "onAutofillPrompt"].includes(name) ? globalThis.expo.modules.SolaraTabPool.devPageEvent("a", name, payload) : M.devPromptFixture("a", name, payload);
+const pageEvent = (name, payload) => name === "onAutofillPrompt" ? globalThis.expo.modules.SolaraTabPool.devPageEvent("a", name, payload) : M.devPromptFixture("a", name, payload);
 `;
 let app = null;
 const run = (body, timeout = 20000) => app.eval(`${HELPERS}\n${body}`, { timeout });
@@ -283,8 +283,18 @@ try {
       return { card: shown.card };
     });
 
-    if (!inline) await rep.check(`${tag}-engine-offer`, async () => {
-      await run(`return pageEvent("onPageMessage", { kind: "drm", data: { keySystem: "com.widevine.alpha" } });`);
+    await rep.check(`${tag}-engine-offer`, async () => {
+      const drm = `return pageEvent("onPageMessage", { kind: "drm", data: { keySystem: "com.widevine.alpha" } });`;
+      if (!await run(drm)) throw new Error("the native page rejected the DRM fixture");
+      const original = await until("the first offer receipt", `return prompts().then((p) => p.engineOffer ?? null);`);
+      const replacement = `${base}/other?engine-replacement`;
+      await run(`ac.store.getState().navigate("a", ${JSON.stringify(replacement)}, { userInitiated: true }); return true;`);
+      await until("the replacement document", `return ac.store.getState().tabs.a?.url === ${JSON.stringify(replacement)} && !ac.store.getState().live.a?.isLoading || null;`);
+      await until("the old offer retires", `return prompts().then((p) => !p.engineOffer || null);`);
+      if (!await run(drm)) throw new Error("the replacement page rejected the DRM fixture");
+      const current = await until("a fresh offer receipt", `return prompts().then((p) => p.engineOffer ?? null);`);
+      if (current.id === original.id || await run(`return M.devPromptAnswer("a", "engineOffer", ${JSON.stringify(original.id)}, "stay", "");`))
+        throw new Error("the replacement page accepted the old offer receipt");
       const shown = await until("the native offer", `return native().then((d) => d && d.tabs.a && d.tabs.a.engineOffer && !d.tabs.a.engineOffer.hidden && d.tabs.a.engineOffer.controls["Stay on Page"] ? d.tabs.a.engineOffer : null);`, 6000);
       await crossPrompt("w1", "engineOffer", shown);
       if (await run(`return rnDrawn("EngineOfferPrompt");`)) throw new Error("RN still draws the engine offer");
@@ -300,6 +310,7 @@ try {
       await run(`return pageEvent("onPageMessage", { kind: "drm", data: { keySystem: "com.widevine.alpha" } });`);
       await sleep(600);
       if (await run(`return native().then((d) => !!(d && d.tabs.a && d.tabs.a.engineOffer));`)) throw new Error("the declined site was offered again");
+      await run(`ac.store.getState().navigate("a", ${JSON.stringify(`${base}/other`)}, { userInitiated: true }); return true;`);
       return { card: shown.card };
     });
 

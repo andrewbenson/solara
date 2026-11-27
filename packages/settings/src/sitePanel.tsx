@@ -1,18 +1,10 @@
 import { requireNativeViewManager } from "expo-modules-core";
 import type { ComponentType } from "react";
-import type { NativeSyntheticEvent, ViewProps } from "react-native";
-
-export type NativeSitePanelEvent =
-  | { kind: "press"; id: string; rect: [number, number, number, number]; clickAt: number }
-  | { kind: "menu"; id: string; rect: [number, number, number, number] }
-  | { kind: "toggle"; id: string; value: boolean }
-  | { kind: "zoom"; id: string; step: number };
+import type { ViewProps } from "react-native";
 
 export type NativeSitePanelProps = ViewProps & {
   request: string;
-  onSitePanelDismiss?(): void;
   onSitePanelClosed?(): void;
-  onSitePanelEvent?(e: NativeSyntheticEvent<NativeSitePanelEvent>): void;
 };
 
 let View: ComponentType<NativeSitePanelProps> | null = null;

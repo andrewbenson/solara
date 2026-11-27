@@ -3,7 +3,6 @@ import { useBookmarkDialog } from "../bookmarks/actions";
 import { useBookmarkEditor } from "../bookmarks/edit";
 import { useMeetingAlert } from "../../live/alerts";
 import { useCalendar } from "../../live/calendar";
-import { useEngineOffers } from "../../lib/engines";
 import { measureRow, setSidebarUi } from "../sidebar/state";
 import { useFolderPanel } from "../sidebar/tileFolderUi";
 import { newTileFolder } from "../../store/tileFolders";
@@ -29,7 +28,6 @@ export const pagesDrivers = {
   clearDataRequest: useClearDataRequest,
   meetingAlert: useMeetingAlert,
   calendar: useCalendar,
-  engineOffers: useEngineOffers,
   setSidebarUi,
   tileFolders: { make: makeTileFolder, panel: useFolderPanel, measure: measureRow },
 };

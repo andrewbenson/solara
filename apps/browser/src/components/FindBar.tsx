@@ -8,7 +8,7 @@ import { webviews } from "../lib/webviews";
 import { useBrowser } from "../store/browser";
 import { useFind } from "../store/hooks";
 import type { FindState } from "../store/types";
-import { replaceInField } from "./site/selection";
+import { replacePageField } from "@solara/settings";
 import { NativeFindBarView, type NativeFindEvent } from "@solara/settings";
 
 export const FindBar = memo(function FindBar({ tabId }: { tabId: string }) {
@@ -47,7 +47,7 @@ function FindBarPanel({ tabId, find }: { tabId: string; find: FindState }) {
   }, [note]);
   const replace = async (all: boolean) => {
     if (!find.query) return;
-    const { field, count } = await replaceInField(tabId, find.query, replacement, all);
+    const { field, count } = await replacePageField(tabId, find.query, replacement, all);
     if (!field) return setNote({ text: "Not in a text field", error: true });
     if (all || !count) setNote({ text: count ? `${count} replaced` : "No matches", error: !count });
     run(false, find.query, false);

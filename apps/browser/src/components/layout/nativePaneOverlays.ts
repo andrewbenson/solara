@@ -8,7 +8,6 @@ import { addNativeSettingsHandlers } from "../settings/nativeSettings";
 import { pageOf, patchPage } from "./pageState";
 import { cliCommand, cliProduct, useCliIndicator } from "../../lib/cliControl";
 import { mediaTheme } from "../media/nativeMedia";
-import { acceptEngineOffer, stayOnPage } from "../../lib/engines";
 
 const VERSION = 1;
 const passwordPromptKey = (prompt: { origin: string; username: string; state: string }) => `${prompt.origin}|${prompt.username}|${prompt.state === "update" ? "update" : "save"}`;
@@ -62,10 +61,6 @@ addNativeSettingsHandlers({
   "pane.externalApp": (_windowId: string, tabId: string, id: string, open: boolean, remember: boolean) => {
     if (pageOf(tabId).externalApp?.id === id) patchPage(tabId, { externalApp: null });
     void resolveExternalApp(id, open, remember);
-  },
-  "pane.engineOffer": (_windowId: string, tabId: string, action: string, remember: boolean) => {
-    if (action === "webkit") void acceptEngineOffer(tabId);
-    else stayOnPage(tabId, action === "stay" && remember);
   },
 });
 

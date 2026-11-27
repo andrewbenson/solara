@@ -22,11 +22,41 @@ enum NativeEngineCommands {
   private static var lifecycle: Int?
   private static var storeIdentity: Store?
   private static var storeObserver: Int?
+  private static var visits = WebKitVisitRecorder()
+  private static var watchingPages = false
+  private static var reportedAddresses: [String: (PageIdentity, String)] = [:]
   private static var cancellations: [String: @MainActor () -> Void] = [:]
   private static var validityChecks: [UUID: @MainActor () -> Void] = [:]
   static func start() {
     if lifecycle == nil { lifecycle = NativeStoreHandle.subscribeLifecycle { resetForStore(); backChanged?() } }
     resetForStore()
+    if !watchingPages {
+      watchingPages = true
+      PageIssuer.lifecycleObservers.append { issuer, binding, name, payload in
+        guard issuer.store === storeIdentity else { return }
+        let id = binding.tabId
+        if ["onPagePhysicalReplaced", "onDiscarded", "onCrashed"].contains(name) {
+          reportedAddresses[id] = nil
+          return
+        }
+        guard name == "onNavigationChange", let url = payload["url"]?.string,
+          let scope = pageScope(id), scope.tab.url == url else { return }
+        if binding.engine == .webKit { noteWebKitVisit(scope, payload: payload, store: issuer.store) }
+        let previous = reportedAddresses.updateValue((scope.identity, url), forKey: id)
+        let source = binding.engine.rawValue
+        guard let previous, previous.0 == scope.identity, EngineCommand.differentSite(from: previous.1, to: url),
+          issuer.store.state.peeks[scope.tab.windowId]?.tabId != id,
+          let chosen = issuer.store.chosenPageEngine(for: url, in: issuer.store.state), chosen != source,
+          let plan = EngineCommand.plan(tab: scope.tab, currentEngine: source, destination: chosen) else { return }
+        DispatchQueue.main.async {
+          guard let current = pageScope(id), current.identity == scope.identity,
+            reportedAddresses[id]?.0 == scope.identity, reportedAddresses[id]?.1 == url,
+            storeIdentity === issuer.store,
+            plan.current(tab: current.tab, engine: issuer.store.pageEngine(id, in: issuer.store.state)) else { return }
+          request(tabId: id, action: "follow", options: ["url": .string(url), "previousUrl": .string(previous.1)]) { _ in }
+        }
+      }
+    }
     guard observer == nil, let issuer = PageIssuer.shared else { return }
     observer = issuer.registry.observe { event in
       switch event {
@@ -39,6 +69,9 @@ enum NativeEngineCommands {
           else { back.identity = binding.identity; backs[descriptor.tabID] = back }
         }
       case .retired(let registration):
+        if reportedAddresses[registration.tabID]?.0.registrationGeneration == registration.registrationGeneration {
+          reportedAddresses[registration.tabID] = nil
+        }
         if backs[registration.tabID]?.identity?.registrationGeneration == registration.registrationGeneration { backs[registration.tabID] = nil }
       }
     }
@@ -50,23 +83,79 @@ enum NativeEngineCommands {
     if let storeObserver { storeIdentity?.unsubscribe(storeObserver) }
     storeIdentity = store
     storeObserver = store?.subscribe { _ in
-      Task { @MainActor in if !backs.isEmpty { backChanged?() } }
+      Task { @MainActor in
+        if let store = storeIdentity {
+          let finished = visits.closeMissing(known: Set(store.state.tabs.keys))
+          for visit in finished { recordWebKitVisit(visit) }
+        }
+        for id in trackedSiteMoves where storeIdentity?.state.tabs[id] == nil {
+          siteMoves.remove(tabId: id)
+          trackedSiteMoves.remove(id)
+        }
+        if !backs.isEmpty { backChanged?() }
+      }
     }
     let cancel = Array(cancellations.values)
     cancellations = [:]
     requests = [:]
     backs = [:]
-    siteMoves = [:]
+    siteMoves = EngineOfferThrottle()
+    trackedSiteMoves = []
+    reportedAddresses = [:]
+    visits = WebKitVisitRecorder()
     for action in cancel { action() }
   }
 
   private static var requests: [String: UUID] = [:]
-  private static var siteMoves: [String: TimeInterval] = [:]
+  private static var siteMoves = EngineOfferThrottle()
+  private static var trackedSiteMoves: Set<String> = []
   private static var backs: [String: Back] = [:] { didSet { backChanged?() } }
   #if DEBUG
   static var consent: Bool?
   static var confirmations = 0
   #endif
+
+  private static func noteWebKitVisit(_ scope: PageActionScope, payload: JSONValue, store: Store) {
+    guard !store.config.safeMode else { return }
+    let tab = scope.tab
+    let profile = Ids.isIncognitoProfile(tab.profileId) ? nil : store.state.engineProfile(tab.profileId)
+    let result = visits.note(tabId: tab.id, profile: profile, url: tab.url, committedURL: payload["committedUrl"]?.string,
+      title: payload["title"]?.string ?? "", loading: payload["isLoading"]?.bool == true, now: Date().timeIntervalSince1970 * 1000)
+    for visit in result.writes { recordWebKitVisit(visit) }
+    guard let timer = result.timer else { return }
+    DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
+      if let visit = visits.settle(tabId: tab.id, timer: timer) { recordWebKitVisit(visit) }
+    }
+  }
+
+  private static func recordWebKitVisit(_ visit: WebKitVisitRecorder.Visit) {
+    guard let store = storeIdentity, !store.config.safeMode else { return }
+    let generation = NativeStoreHandle.ownershipGeneration
+    Task {
+      guard NativeStoreHandle.store === store, NativeStoreHandle.ownershipGeneration == generation,
+        store.state.profiles.keys.contains(where: { store.state.engineProfile($0) == visit.profile }) else { return }
+      _ = try? await NativeHistoryCatalog.command(kind: "addHistoryVisits", engineProfile: visit.profile,
+        payload: ["pages": [["url": visit.url, "title": visit.title, "visitTimes": [visit.time]]], "toleranceMs": 1000])
+    }
+  }
+
+  static func pageScope(_ tabId: String) -> PageActionScope? {
+    guard NativeStoreHandle.ownsWorkspace, !NativeStoreHandle.frozen, let store = NativeStoreHandle.store,
+      let issuer = PageIssuer.shared, issuer.store === store else { return nil }
+    return store.sequence {
+      guard let tab = store.state.tabs[tabId], let window = store.state.windows[tab.windowId],
+        window.keptOnClose != true, !store.memory.closingWindows.contains(tab.windowId),
+        let binding = issuer.binding(tabId: tabId), issuer.isCurrent(binding) else { return nil }
+      return PageActionScope(identity: binding.identity, documentRevision: binding.documentRevision, tab: tab)
+    }
+  }
+
+  static func remember(_ rule: JSONValue, url: String, store: Store) throws {
+    guard let site = EngineCommand.site(url) else { return }
+    var rules = store.state.settings["websiteEngines"]?.object ?? [:]
+    if rule.isNull { rules[site] = nil } else if ["webkit", "chromium"].contains(rule.string ?? "") { rules[site] = rule }
+    try store.dispatch(Command("updateSettings", [.object(["websiteEngines": .object(rules)])]), origin: .native)
+  }
 
   static func hasBack(_ tabId: String) -> Bool {
     guard let store = NativeStoreHandle.store, let tab = store.state.tabs[tabId], let back = backs[tabId],
@@ -96,7 +185,7 @@ enum NativeEngineCommands {
     FocusMoves.trace("engine \(tabId) request action=\(action)")
     #endif
     start()
-    guard NativeStoreHandle.ownsWorkspace, let store = NativeStoreHandle.store, let tab = store.state.tabs[tabId],
+    guard NativeStoreHandle.ownsWorkspace, !NativeStoreHandle.frozen, let store = NativeStoreHandle.store, let tab = store.state.tabs[tabId],
       !store.memory.closingWindows.contains(tab.windowId), let issuer = PageIssuer.shared else { completion(false); return }
     let source = store.pageEngine(tabId, in: store.state)
     if action == "persist" {
@@ -105,16 +194,17 @@ enum NativeEngineCommands {
       catch { completion(false) }
       return
     }
+    PanePrompts.clearEngineOffer(tabId)
     let back = action == "back" && hasBack(tabId) ? backs[tabId] : nil
     if action == "back", back == nil { completion(false); return }
     var destination = back?.engine ?? options["engine"]?.string ?? (source == "webkit" ? "chromium" : "webkit")
     if action == "follow" {
       guard tab.openerId?.isEmpty != false, tab.url == options["url"]?.string,
         let previous = options["previousUrl"]?.string, EngineCommand.differentSite(from: previous, to: tab.url),
-        Date().timeIntervalSince1970 - (siteMoves[tabId] ?? 0) >= 10,
-        let chosen = store.chosenPageEngine(for: tab.url, in: store.state), chosen != source else { completion(false); return }
+        let chosen = store.chosenPageEngine(for: tab.url, in: store.state), chosen != source,
+        siteMoves.begin(tabId: tabId, now: ProcessInfo.processInfo.systemUptime) else { completion(false); return }
       destination = chosen
-      siteMoves[tabId] = Date().timeIntervalSince1970
+      trackedSiteMoves.insert(tabId)
     }
     #if DEBUG
     FocusMoves.trace("engine \(tabId) source=\(source) destination=\(destination) holder=\(store.state.sharedPageHolder(tabId)?.id ?? "nil")")
@@ -127,7 +217,7 @@ enum NativeEngineCommands {
       return
     }
     let ownership = NativeStoreHandle.ownershipGeneration
-    let identity: PageIdentity? = issuer.store.sequence {
+    let scope: PageActionScope? = issuer.store.sequence {
       guard let binding = issuer.binding(tabId: tabId), issuer.ensurePageEstablished(binding), issuer.isCurrent(binding) else {
         #if DEBUG
         let binding = issuer.binding(tabId: tabId)
@@ -135,8 +225,9 @@ enum NativeEngineCommands {
         #endif
         return nil
       }
-      return binding.identity
+      return PageActionScope(identity: binding.identity, documentRevision: binding.documentRevision, tab: tab)
     }
+    let identity = scope?.identity
     if var receipt = back, let identity {
       if let expected = receipt.identity, expected != identity { backs[tabId] = nil; completion(false); return }
       receipt.identity = identity
@@ -165,7 +256,7 @@ enum NativeEngineCommands {
       completion(value)
     }
     @MainActor func current() -> Bool {
-      guard !completed, requests[tabId] == token, NativeStoreHandle.ownsWorkspace, NativeStoreHandle.store === store,
+      guard !completed, requests[tabId] == token, NativeStoreHandle.ownsWorkspace, !NativeStoreHandle.frozen, NativeStoreHandle.store === store,
         NativeStoreHandle.ownershipGeneration == ownership, !store.memory.closingWindows.contains(tab.windowId),
         store.state.windows[tab.windowId]?.profileId == profile, store.state.activeTabId(tab.windowId) == selected,
         store.state.sharedPageHolder(tabId) == nil,
@@ -173,7 +264,7 @@ enum NativeEngineCommands {
       return issuer.store.sequence {
         guard let identity else { return issuer.binding(tabId: tabId) == nil }
         guard let binding = issuer.binding(tabId: tabId), binding.identity == identity else { return false }
-        return issuer.isCurrent(binding)
+        return issuer.isCurrent(binding) && binding.documentRevision == scope?.documentRevision
       }
     }
     cancellations[tabId] = { finish(false) }
@@ -186,12 +277,8 @@ enum NativeEngineCommands {
     @MainActor func replace() {
       guard current() else { finish(false); return }
       do {
-        if let rule = options["rule"], plan.canRemember, let url = URL(string: plan.url), let host = url.host, let scheme = url.scheme,
-          scheme == "http" || scheme == "https" {
-          let site = "\(scheme)://\(host)\(url.port.map { ":\($0)" } ?? "")".lowercased()
-          var rules = store.state.settings["websiteEngines"]?.object ?? [:]
-          if rule.isNull { rules[site] = nil } else if ["webkit", "chromium"].contains(rule.string ?? "") { rules[site] = rule }
-          try store.dispatch(Command("updateSettings", [.object(["websiteEngines": .object(rules)])]), origin: .native)
+        if let rule = options["rule"], plan.canRemember {
+          try remember(rule, url: plan.url, store: store)
         }
         guard current() else { finish(false); return }
         if plan.replacesPage || back != nil {
@@ -231,6 +318,10 @@ enum NativeEngineCommands {
     @MainActor func consent(_ unsaved: Bool) {
       guard current() else { finish(false); return }
       guard unsaved else { carry(); return }
+      if options["automatic"]?.bool == true, NativePaneOverlays.promptSlot(tab.windowId, tabId) == nil {
+        finish(false)
+        return
+      }
       let name = destination == "webkit" ? "WebKit" : "Chromium"
       #if DEBUG
       confirmations += 1

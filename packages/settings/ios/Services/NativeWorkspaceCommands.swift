@@ -251,6 +251,7 @@ enum NativeWorkspaceCommands {
     }
     if command == "cast" { return NativeCast.command(windowID: windowId) }
     if command == "togglePageEngine" { return NativeEngineCommands.perform(command, arg: arg, windowId: windowId) }
+    if command == "toggleDeveloperMode" { return NativeSiteControls.toggleDeveloperMode(windowId: windowId) }
     if NativeExtensionCommands.perform(command, arg: arg, windowId: windowId) { return true }
     if PinnedPageCommand.commands.contains(command) { return NativePinnedPageCommands.perform(command, arg: arg, windowId: windowId) }
     if TabFocusCommand.commands.contains(command) { return NativeTabFocusCommands.perform(command, arg: arg, windowId: windowId) }

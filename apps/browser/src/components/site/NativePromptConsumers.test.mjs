@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { registerHooks } from "node:module";
 import { after, beforeEach, test } from "node:test";
 
-const urls = new Set(["Prompts", "EnginePrompt", "NativePromptBody"].map((name) => new URL(`./${name}.tsx`, import.meta.url).href));
+const urls = new Set(["Prompts", "NativePromptBody"].map((name) => new URL(`./${name}.tsx`, import.meta.url).href));
 const bodyURL = new URL("./NativePromptBody.tsx", import.meta.url).href;
 const f = globalThis.nativePromptConsumersTest = {};
 const fake = (source) => ({ url: `data:text/javascript,${encodeURIComponent(source)}`, shortCircuit: true });
@@ -25,7 +25,6 @@ const sources = {
     resolvePasswordPrompt: (...args) => globalThis.nativePromptConsumersTest.actions.push(["password", ...args]),
     resolveAutofillPrompt: (...args) => globalThis.nativePromptConsumersTest.actions.push(["autofill", ...args]),
   }]]);`,
-  "../../lib/engines": `export const useEngineOffers = select => select({a:globalThis.nativePromptConsumersTest.offer}); export const stayOnPage = (...args) => globalThis.nativePromptConsumersTest.actions.push(["stay", ...args]); export const acceptEngineOffer = (...args) => globalThis.nativePromptConsumersTest.actions.push(["webkit", ...args]);`,
   "../primitives": `export const useHover = () => ({hovered:false,hoverProps:{}});`,
   "../settings/controls": `export const Checkbox = "Checkbox", useFormColors = () => ({accent:"accent",control:"control",controlBorder:"border"});`,
   "../layout/controls": `export const PANEL = {}, Popover = "RNPopover", PromptButton = "RNButton", PanelCloseButton = "RNClose", PopoverRow = "RNRow", PopoverSeparator = "RNSeparator";`,
@@ -42,7 +41,6 @@ const hooks = registerHooks({ resolve(specifier, context, next) {
   return specifier in sources ? fake(sources[specifier]) : next(specifier, context);
 } });
 const prompts = await import("./Prompts.tsx");
-const { EngineOfferPrompt } = await import("./EnginePrompt.tsx");
 const nativeBody = await import(bodyURL);
 after(() => { hooks.deregister(); delete globalThis.nativePromptConsumersTest; });
 const render = (fn, props = {}) => { f.index = 0; return fn({tabId:"a",left:12,right:8,top:8,...props}); };
@@ -54,7 +52,6 @@ const promptChild = (element) => {
 beforeEach(() => Object.assign(f, {
   index:0, states:[], actions:[], allow:true, placement:null, page:{},
   theme:{dark:false,textPrimary:"ink",textSecondary:"dim",toolbarHover:"hover",rowHover:"row",icon:"icon",accent:"accent",goButton:"go",goButtonText:"goText"},
-  offer:{site:"video.test",host:"video.test",canRemember:true},
 }));
 
 test("native password updates retain the selected username and dismissal behavior", () => {
@@ -75,17 +72,6 @@ test("native autofill prompts forward the prompt id and answer", () => {
   assert.equal(f.page.autofillPrompt,null);
 });
 
-test("engine offer native controls preserve remember, stay, open and close actions", () => {
-  const offer = render(EngineOfferPrompt);
-  let body = promptChild(render(offer.type,offer.props));
-  body.onToggle(true);
-  body = promptChild(render(offer.type,offer.props));
-  body.onButton("stay");
-  body.onButton("webkit");
-  body.onClose();
-  assert.deepEqual(f.actions,[["stay","a",true],["webkit","a"],["stay","a"]]);
-});
-
 test("prompt placement always supplies the native frame independently of other surface capabilities", () => {
   const host = nativeBody.PromptPopover({width:340,top:8,left:12,modal:false,children:"body"});
   assert.equal(host.type,"PlacementProvider");
@@ -94,12 +80,12 @@ test("prompt placement always supplies the native frame independently of other s
 
 test("native prompt body forwards all native events and retains protection and placement state", () => {
   f.placement = {placement:{width:300,top:8,left:12,right:null,modal:false},onDismiss:()=>f.actions.push(["dismiss"])};
-  const props = {spec:{icons:["bell"],title:"Allow?",inputProtectionKey:"request-1",buttons:[{id:"accept",title:"Allow"}]},onButton:id=>f.actions.push(["button",id]),onChoice:id=>f.actions.push(["choice",id]),onToggle:value=>f.actions.push(["toggle",value]),onClose:()=>f.actions.push(["close"]),onRow:id=>f.actions.push(["row",id])};
+  const props = {spec:{icons:["bell"],title:"Allow?",inputProtectionKey:"request-1",buttons:[{id:"accept",title:"Allow"}]},onButton:id=>f.actions.push(["button",id]),onChoice:id=>f.actions.push(["choice",id]),onToggle:value=>f.actions.push(["toggle",value]),onClose:()=>f.actions.push(["close"])};
   const host = render(nativeBody.NativePromptBody,props);
   assert.equal(host.type,"NativePromptView");
   const state = JSON.parse(host.props.state);
   assert.equal(state.inputProtectionKey,"request-1");
   assert.deepEqual(state.popover,f.placement.placement);
-  for (const event of [{kind:"button",id:"accept"},{kind:"choice",id:"Ada"},{kind:"toggle",value:true},{kind:"row",id:"one"},{kind:"close"},{kind:"dismiss"}]) host.props.onPromptEvent({nativeEvent:event});
-  assert.deepEqual(f.actions,[["button","accept"],["choice","Ada"],["toggle",true],["row","one"],["close"],["dismiss"]]);
+  for (const event of [{kind:"button",id:"accept"},{kind:"choice",id:"Ada"},{kind:"toggle",value:true},{kind:"close"},{kind:"dismiss"}]) host.props.onPromptEvent({nativeEvent:event});
+  assert.deepEqual(f.actions,[["button","accept"],["choice","Ada"],["toggle",true],["close"],["dismiss"]]);
 });

@@ -67,7 +67,7 @@ enum NativeSplitChrome {
     for (id, view) in views where owners[id] == nil {
       if view.superview == nil {
         views[id] = nil
-        shownToasts[id] = nil
+        if let toast = shownToasts.removeValue(forKey: id) { nativeToastActions[toast] = nil }
         if let zone = dropZones.removeValue(forKey: id) { TabDragSession.unregister(zone) }
       } else {
         view.update(state: state)
@@ -174,7 +174,10 @@ enum NativeSplitChrome {
       shell?.coverChanged()
       toastHidden(id, windowId: windowId)
     }
-    view.onToastAction = { id in Task { @MainActor in _ = await SettingsAdapters.js("split.toast", windowId, id, "action") } }
+    view.onToastAction = { id in
+      if id < 0 { nativeToastActions.removeValue(forKey: id)?() }
+      else { Task { @MainActor in _ = await SettingsAdapters.js("split.toast", windowId, id, "action") } }
+    }
     shell.mount(.splitChrome, view)
     let zone = SplitDropZone(windowId: windowId, chrome: view)
     zone.state = { NativeStoreHandle.store?.state }
@@ -251,7 +254,7 @@ enum NativeSplitChrome {
     if owners[id] === owner { owners[id] = nil }
     if views[id] === owner.chrome {
       views[id] = nil
-      shownToasts[id] = nil
+      if let toast = shownToasts.removeValue(forKey: id) { nativeToastActions[toast] = nil }
     }
     if panes[id] === owner.panes { panes[id] = nil }
     if overlays[id] === owner.overlays { overlays[id] = nil }
@@ -329,14 +332,18 @@ enum NativeSplitChrome {
     if owners[windowId] == nil { view(windowId)?.setDrag(SplitDragFrame(o)) }
   }
 
+  private static var nativeToastActions: [Int: () -> Void] = [:]
+
   private static func toastHidden(_ id: Int, windowId: String) {
+    nativeToastActions[id] = nil
     if shownToasts[windowId] == id { shownToasts[windowId] = nil }
     if id >= 0 { Task { @MainActor in _ = await SettingsAdapters.js("split.toast", windowId, id, "hidden") } }
   }
 
-  static func showNativeToast(_ toast: SplitToastSpec, windowId: String) {
+  static func showNativeToast(_ toast: SplitToastSpec, windowId: String, action: (() -> Void)? = nil) {
     if let prior = shownToasts[windowId], prior >= 0 { toastHidden(prior, windowId: windowId) }
     setToast(toast, windowId: windowId)
+    if shownToasts[windowId] == toast.id { nativeToastActions[toast.id] = action }
   }
 
   static func hideNativeToast(_ id: Int, windowId: String) {
@@ -346,6 +353,7 @@ enum NativeSplitChrome {
 
   private static func setToast(_ toast: SplitToastSpec?, windowId: String) {
     guard let view = view(windowId) else { return }
+    if let previous = shownToasts[windowId], previous != toast?.id { nativeToastActions[previous] = nil }
     shownToasts[windowId] = toast?.id
     view.setToast(toast)
     NativeWindowShell.host(windowId)?.shell.coverChanged()

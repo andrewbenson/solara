@@ -100,14 +100,19 @@ enum NativeToolbarActions {
         NativePinnedPageCommands.request(choice, tabId: tabId)
       }
       if click.kind == .menu {
+        let scope = NativeEngineCommands.pageScope(tabId)
         ShellMenus.choose([
           ["id": "reload", "title": "Refresh page", "checked": mode == "reload"],
           ["id": "forceReload", "title": "Refresh (Ignore Cache)", "checked": mode == "forceReload"],
           ["id": "clearCookies", "title": "Clear Cookies and Refresh"],
         ]) { choice in
-          guard let choice, current() else { return }
+          guard let choice, current(), NativeEngineCommands.pageScope(tabId) == scope else { return }
           if choice == "clearCookies" {
-            issue(.clearSiteData, tabId: tabId) { _ in if current() { reload("reload") } }
+            guard scope != nil else { return }
+            issue(.clearSiteData, tabId: tabId) { result in
+              guard case .success = result, current(), NativeEngineCommands.pageScope(tabId) == scope else { return }
+              reload("reload")
+            }
           } else {
             if !action.privateWindow, choice != mode {
               var updated = store.state.settings["developerMode"]?.object ?? [:]

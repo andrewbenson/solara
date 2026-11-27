@@ -2,14 +2,23 @@ import AppKit
 import ExpoModulesCore
 import Foundation
 import SolaraModel
+import SolaraCore
 import SolaraUI
 
 public class SitePanelModule: Module {
   public func definition() -> ModuleDefinition {
     Name("SolaraSitePanel")
 
+    #if DEBUG
+    Function("devPanels") { (windowId: String) -> String in
+      guard SolaraCoreTestHooksAllowed() else { return "[]" }
+      if Thread.isMainThread { return MainActor.assumeIsolated { NativeSiteControls.shared.describe(windowId: windowId) } }
+      return DispatchQueue.main.sync { MainActor.assumeIsolated { NativeSiteControls.shared.describe(windowId: windowId) } }
+    }
+    #endif
+
     View(NativeSitePanelView.self) {
-      Events("onSitePanelEvent", "onSitePanelDismiss", "onSitePanelClosed")
+      Events("onSitePanelClosed")
 
       Prop("request") { (view: NativeSitePanelView, v: String) in MainActor.assumeIsolated { view.setRequest(v) } }
     }
@@ -17,10 +26,14 @@ public class SitePanelModule: Module {
 }
 
 final class NativeSitePanelView: ExpoView {
-  let onSitePanelEvent = EventDispatcher()
-  let onSitePanelDismiss = EventDispatcher()
   let onSitePanelClosed = EventDispatcher()
   private var siteMenu: NativeSiteMenu?
+  private var pendingRequest: JSONValue?
+
+  private var mountedMenu: NativeSiteMenu? {
+    guard let siteMenu, siteMenu.popover.superview === self else { return nil }
+    return siteMenu
+  }
 
   override var isFlipped: Bool { true }
 
@@ -31,44 +44,57 @@ final class NativeSitePanelView: ExpoView {
   func setRequest(_ json: String) {
     guard let data = json.data(using: .utf8), let request = try? JSONValue.parse(data) else { return }
     if request["open"]?.bool != true {
-      siteMenu?.close()
+      pendingRequest = nil
+      mountedMenu?.close()
       return
     }
-    if let siteMenu, !siteMenu.popover.isClosing {
-      siteMenu.update(request)
+    pendingRequest = request
+    applyRequest()
+  }
+
+  private func applyRequest() {
+    guard let request = pendingRequest, let window, !bounds.isEmpty, let tabId = request["tabId"]?.string else { return }
+    pendingRequest = nil
+    if let menu = mountedMenu, !menu.popover.isClosing, menu.tabId == tabId {
+      menu.update(request)
+      menu.popover.layoutSubtreeIfNeeded()
       return
     }
-    siteMenu?.popover.removeFromSuperview()
-    let next = NativeSiteMenu(input: request)
+    mountedMenu?.popover.removeFromSuperview()
+    let controls = NativeSiteControls.shared
+    let reused = controls.reusableMenu(tabId: tabId, window: window)
+    let next = reused ?? NativeSiteMenu(input: request)
     siteMenu = next
-    next.onDismiss = { [weak self] in self?.onSitePanelDismiss([:]) }
     next.onClosed = { [weak self, weak next] in
-      guard let self, let next, self.siteMenu === next else { return }
+      guard let self, let next, self.mountedMenu === next else { return }
       next.popover.removeFromSuperview()
       self.siteMenu = nil
       self.onSitePanelClosed([:])
     }
-    next.onContribution = { [weak self] event in self?.contribution(event) }
-    next.popover.frame = bounds
+    next.popover.autoresizingMask = [.width, .height]
     addSubview(next.popover)
-    next.refresh()
+    next.popover.frame = bounds
+    if reused == nil { controls.register(next); next.refresh() } else { next.update(request) }
+    next.popover.layoutSubtreeIfNeeded()
   }
 
-  private func contribution(_ event: SitePanelEvent) {
-    func rect(_ r: CGRect) -> [Double] { [r.minX, r.minY, r.width, r.height] }
-    let clickAt = NSApp.currentEvent.map { $0.type == .leftMouseUp ? $0.timestamp * 1000 : 0 } ?? 0
-    switch event {
-    case .press(let id, let r): onSitePanelEvent(["kind": "press", "id": id, "rect": rect(r), "clickAt": clickAt])
-    case .menu(let id, let r): onSitePanelEvent(["kind": "menu", "id": id, "rect": rect(r)])
-    case .toggle(let id, let value): onSitePanelEvent(["kind": "toggle", "id": id, "value": value])
-    case .zoom(let id, let step): onSitePanelEvent(["kind": "zoom", "id": id, "step": step])
-    }
+  override func hitTest(_ point: NSPoint) -> NSView? { mountedMenu?.popover.hitTest(point) }
+
+  override func setFrameSize(_ newSize: NSSize) {
+    super.setFrameSize(newSize)
+    applyRequest()
   }
 
-  override func hitTest(_ point: NSPoint) -> NSView? { siteMenu?.popover.hitTest(point) }
+  override func viewDidMoveToWindow() {
+    super.viewDidMoveToWindow()
+    applyRequest()
+  }
 
   override func viewWillMove(toWindow newWindow: NSWindow?) {
+    if newWindow == nil, let menu = mountedMenu {
+      if let window, NativeSiteControls.shared.park(menu, anchor: self, window: window) { siteMenu = nil }
+      else { menu.close() }
+    }
     super.viewWillMove(toWindow: newWindow)
-    if newWindow == nil { siteMenu?.close() }
   }
 }

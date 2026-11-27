@@ -69,6 +69,7 @@ public final class PageHostBinding {
   public fileprivate(set) var executedNavigationSeq: Int?
   public fileprivate(set) var retired = false
   public fileprivate(set) var eventSeq = 0
+  public fileprivate(set) var documentRevision = 0
   fileprivate var firstDeliveryRuntimeID: UUID?
   fileprivate var protectionHistoryLost = false
   public fileprivate(set) var navigation: JSONValue?
@@ -429,6 +430,11 @@ public final class PageIssuer {
       }
       return nil
     }
+    if ["onDocumentCommitted", "onDiscarded", "onCrashed"].contains(name) {
+      store.sequence {
+        if currentInScope(binding, requirePage: true) { binding.documentRevision &+= 1 }
+      }
+    }
     if Self.consumePromptEvent?(self, binding, name, payload) == true { return nil }
     let sequence = reserveEventInScope(binding, name: name, payload: payload)
     if !mediaEnded, sequence != nil, name == "onMediaAccess" {
@@ -499,6 +505,7 @@ public final class PageIssuer {
       binding.associatedNativePage = true
       nativeExecutions[key] = NativeExecution(page: page, binding: binding)
       if replaced {
+        binding.documentRevision &+= 1
         for observer in Self.lifecycleObservers { observer(self, binding, "onPagePhysicalReplaced", .null) }
       }
     }

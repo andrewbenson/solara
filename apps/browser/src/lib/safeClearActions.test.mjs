@@ -18,6 +18,8 @@ function compile(path, modules) {
 function fixture(mode) {
   const effects = [];
   const state = {
+    windows: { w: { profileId: "work" } },
+    tabs: { tab: { id: "tab", windowId: "w", profileId: "work", url: "https://example.test" } },
     history: { work: [{ url: "https://example.test", lastVisit: 42 }] },
     clearHistory(profile, since) { this.history[profile] = []; effects.push(["history", profile, since]); },
   };
@@ -94,13 +96,17 @@ for (const mode of ["option", "failedLaunches", null]) {
     const effects = [];
     const page = { clearSiteData: async () => { effects.push("clear"); return { cookies: 2, storage: true }; }, reload: () => effects.push("reload") };
     let handlers;
-    f.modules["../../lib/webviews"] = { webviews: new Map([["tab", page]]) };
+    const mount = {};
+    const source = { url: "https://example.test", windowId: "w", profileId: "work", navigationSeq: null, mount: 1 };
+    f.modules["../../lib/webviews"] = { webviewMount: () => mount, webviews: new Map([["tab", page]]) };
     f.modules["../settings/nativeSettings"] = { addNativeSettingsHandlers: (value) => { handlers = value; } };
-    compile("apps/browser/src/components/site/NativeSiteControls.tsx", f.modules);
-    assert.deepEqual(await handlers["site.page"]("tab", "clearSiteData", []), { cookies: 2, storage: true });
-    handlers["site.page"]("tab", "reload", []);
+    f.modules["../../store/nativeStore"] = { nativeOwnsWorkspace: () => false };
+    compile("apps/browser/src/components/site/SitePanelHost.tsx", f.modules);
+    assert.deepEqual(await handlers["site.page"]("tab", "clearSiteData", [], source), { cookies: 2, storage: true });
+    handlers["site.page"]("tab", "reload", [], source);
     assert.deepEqual(effects, ["clear", "reload"]);
-    assert.equal(handlers["site.page"]("gone", "clearSiteData", []), undefined);
+    assert.equal(handlers["site.page"]("gone", "clearSiteData", [], source), undefined);
+    assert.equal(handlers["site.page"]("tab", "clearSiteData", [], { ...source, mount: 2 }), undefined);
     assert.deepEqual(effects, ["clear", "reload"]);
   });
 }

@@ -503,7 +503,7 @@ const TabPane = memo(function TabPane({
       {hideBar && (windowShellActive(windowId) && nativeToolbarAvailable() ? (
         <NativeAutoHide windowId={windowId} tabId={tabId} mode={mode} pane={frame} extra={bookmarksBar ? BOOKMARKS_BAR_HEIGHT : 0} focused={focused || !inSplit} />
       ) : (
-        <AutoHideBackdrop tabId={tabId} mode={mode} motion={motion} onFrame={nativeRailChrome} />
+        <AutoHideBackdrop windowId={windowId} tabId={tabId} mode={mode} motion={motion} onFrame={nativeRailChrome} />
       ))}
       {hideBar && !windowToolbar && <AutoHideToolbar tabId={tabId} geometry={geometry} windowId={windowId} inSplit={inSplit} focused={focused || !inSplit} mode={mode} motion={motion} />}
     </SmallWindowCard>

@@ -10,7 +10,6 @@ import { restoredThemeColor } from "../lib/launchLook";
 import { takeStartedNavigation } from "../lib/earlyNavigate";
 import { isQuitting } from "../lib/native";
 import { noteDiscarded, noteReady } from "../lib/tabLifecycle";
-import { clearEngineOffer, followSiteChoice, noteWebKitPage, offerWebKit } from "../lib/engines";
 import { noteIssued, webviews } from "../lib/webviews";
 import { handoffLoaded } from "../lib/pageHandoff";
 import { useBrowser } from "../store/browser";
@@ -257,7 +256,7 @@ export function pageEventHandlers(session: PageSession): PageEventHandlers {
       noteReady(tabId, session.factsOwner);
       if (tab()?.muted) void webviews.get(tabId)?.setMuted(true);
     },
-    onNavigationChange: ({ url: reported, title, canGoBack, canGoForward, isLoading, themeColor, themeColorSource, initialDocumentAccessed, committedInitial, committedUrl }) => {
+    onNavigationChange: ({ url: reported, title, canGoBack, canGoForward, isLoading, themeColor, themeColorSource, initialDocumentAccessed, committedInitial }) => {
       adoptIconPage(tabId);
       const url = initialDocumentAccessed && committedInitial ? "about:blank" : reported;
       const untouched = committedInitial === undefined ? reported === "" && !(tab()?.openerId && session.adoptId) : committedInitial && !initialDocumentAccessed;
@@ -286,15 +285,12 @@ export function pageEventHandlers(session: PageSession): PageEventHandlers {
       if (session.fromNewTab && url && !isBlank(url)) patchPage(tabId, { backToNewTab: true });
       if (session.factsOwner === "js") store().navigated(tabId, { url, title }, { isLoading, canGoBack, canGoForward, themeColor: shownTheme });
       dropOutlivedFavicon(tabId, url, isLoading);
-      if (engine === "webkit") noteWebKitPage(tabId, { url, title, isLoading, committedUrl: committedUrl ?? "" });
       const lastPage = session.lastPage;
       if (lastPage !== null && pageKey(url) !== lastPage) {
         setPopover(tabId, null);
-        clearEngineOffer(tabId);
         if (pageOf(tabId).externalApp && hostOf(url) !== hostOf(lastPage)) answerExternalApp(tabId, false);
         patchPage(tabId, { passwordPrompt: null, crashed: null, status: "" });
         revealToolbar(tabId);
-        if (session.peekOf === undefined) followSiteChoice(tabId, engine, url, lastPage);
       }
       session.lastPage = pageKey(url);
       patchPage(tabId, { themeColorSource: themeColorSource ?? null });
@@ -369,7 +365,6 @@ export function pageEventHandlers(session: PageSession): PageEventHandlers {
     },
     onPageMessage: (kind, data) => {
       if (kind === "scroll") noteScroll(tabId, data);
-      else if (kind === "drm") offerWebKit(tabId, data);
     },
     onDiscarded: (url) => {
       session.pending = url;

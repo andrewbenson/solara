@@ -43,7 +43,6 @@ function fixture() {
     "../store/browser": { useBrowser },
     "../../store/hooks": { useTab: (id) => state.tabs[id], useWindowId: () => "w" },
     "./NativeToolbar": { NativeToolbar: "NativeToolbar" },
-    "./NativeSiteControls": { NativeSiteControls: "NativeSiteControls", useNativeSiteControlsShown: (open) => ({ shown: open, onClosed: () => {} }) },
     "../primitives": { NEW_TAB_MARK: "mark" },
     "./controls": { PANEL: { inset: 16, iconSlot: 20 }, POPOVER_MARGIN: 8, Popover: "Popover" },
     "../layout/controls": { PANEL: {}, Popover: "Popover" },
@@ -63,15 +62,7 @@ function fixture() {
   return f;
 }
 
-test("toolbar and site panel keep their native controls when toolbar capability is unavailable", () => {
-  const f = fixture();
-  const { Toolbar } = compile("apps/browser/src/components/Toolbar.tsx", f.modules);
-  const props = { tabId: "a", windowId: "w", geometry: {}, inSplit: false, focused: true };
-  assert.equal(Toolbar(props).type, "NativeToolbar");
-  const { SiteControls } = compile("apps/browser/src/components/site/SiteControls.tsx", f.modules);
-  assert.equal(SiteControls({ tabId: "a", open: true, top: 8 }).type, "NativeSiteControls");
-  assert.equal(SiteControls({ tabId: "a", open: false, top: 8 }), null);
-});
+
 
 test("inline zoom supplies theme and placement to the native lifecycle owner", () => {
   const f = fixture();

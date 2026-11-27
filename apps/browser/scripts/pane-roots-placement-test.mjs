@@ -103,7 +103,7 @@ const hostOf = (fiber) => { let f = fiber; while (f && !(f.stateNode && f.stateN
 const measure = (fiber) => new Promise((r) => { const n = hostOf(fiber); return n ? n.measureInWindow((x, y, w, h) => r([x, y, w, h])) : r(null); });
 const first = (name) => { const f = acPerf.findFibers(name, 50).find((f) => !!f.child); return f ? measure(f) : Promise.resolve(null); };
 const patchA = (p) => acLayout.pages.setState((s) => ({ pages: { ...s.pages, a: { ...(s.pages.a || {}), ...p } } }));
-const openControls = () => acPerf.findFibers("SiteControls", 50).filter((f) => f.memoizedProps && f.memoizedProps.open).length;
+const openControls = () => JSON.parse(expo.modules.SolaraSitePanel.devPanels("w1")).filter((menu) => menu.tabId === "a" && Math.abs(menu.card[2] - 288) < 0.5).length;
 const shot = (p) => ac.shell.devSnapshotWindow("w1", p);
 const pillFrame = () => globalThis.expo.modules.SolaraMedia.probe("media.cliPill", "w1").then(JSON.parse).then((rows) => rows.find((row) => row.opacity > 0.99)?.frame ?? null);
 const statusShift = () => {

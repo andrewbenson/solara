@@ -145,7 +145,6 @@ test("RN native facts still issue one load and UI callbacks", async () => {
   h.emit("onNavigationChange", navigation("https://c.test/"));
   assert.equal(h.calls.filter(({ name }) => name === "nativeLoad").length, 1);
   assert.equal(h.calls.filter(({ name }) => name === "jsLoad").length, 0);
-  assert.ok(h.calls.some(({ name }) => name === "clearEngineOffer"));
 });
 
 test("pooled native facts issue no JS load or semantic writes", async () => {

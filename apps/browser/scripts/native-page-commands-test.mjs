@@ -282,6 +282,21 @@ try {
       await bridge("togglePageEngine");
       await until("native engine return", state => state.tabs[engineTab].engine === "chromium");
       await handledNatively("engine switch menu and bridge");
+      const alternateOrigin = base.replace("127.0.0.1", "localhost");
+      const alternate = `${alternateOrigin}/engine-rule`;
+      await run(`ac.store.getState().updateSettings({ websiteEngines: { [${JSON.stringify(alternateOrigin)}]: "webkit" } }); return true;`);
+      await until("the native website rule is set", state => state.settings.websiteEngines?.[alternateOrigin] === "webkit");
+      await until("the Chromium page returns", async state =>
+        state.tabs[engineTab]?.url === engineUrl && !!(await app.pageTarget(engineUrl)));
+      page.close();
+      page = await app.page(t => t.url === engineUrl);
+      await page.eval(`setTimeout(() => location.href = ${JSON.stringify(alternate)}, 0); true`);
+      await until("cross-site rule follows in Swift", async state => state.tabs[engineTab]?.engine === "webkit" && state.tabs[engineTab]?.url === alternate
+        && await run(`return expo.modules.SolaraSettings.engineBackAvailable(${JSON.stringify(engineTab)});`));
+      assert.equal(await run(`return expo.modules.SolaraSettings.engineCommand(${JSON.stringify(engineTab)}, "back", "{}");`), true);
+      await until("Back restores the source engine and page", state => state.tabs[engineTab]?.engine === "chromium" && state.tabs[engineTab]?.url === engineUrl);
+      await handledNatively("cross-site engine rule and Back");
+      pass("cross-site engine rule and Back run in Swift");
     } catch (error) {
       evidence.push({ label: "engine consent diagnostics", error: String(error), tabId: engineTab, state: await nativeState(),
         trace: (await run('return expo.modules.SolaraApp.devFocusHandoffTrace();')).filter(line => /engine/.test(line)) });

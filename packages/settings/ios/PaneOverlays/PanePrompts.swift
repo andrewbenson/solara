@@ -39,7 +39,20 @@ enum PanePrompts {
   private static var windows: [String: [String: Any]] = [:]
   private static var browsers = PaneBrowsers()
   private static var windowOfTab: [String: String] = [:]
-  private static var engineRemember: [String: (site: String, on: Bool)] = [:]
+  private struct EngineOffer {
+    let id = UUID().uuidString
+    let scope: PageActionScope
+    let site: String
+    let host: String
+    var remember = false
+    var canRemember: Bool { !Ids.isIncognitoProfile(scope.tab.profileId) }
+  }
+
+  private static var engineOffers: [String: EngineOffer] = [:]
+  private static var declinedSites: [String: Set<String>] = [:]
+  private static var automaticMoves: [String: EngineOffer] = [:]
+  private static var movedToasts: [String: (id: Int, window: String, site: String, profile: String)] = [:]
+  private static var nextMoveToast = -1_000_000
   private static var cliShown: [String: Bool] = [:]
   private static var cliRevealed: Set<String> = []
   private static var cliHideUntil: [String: TimeInterval] = [:]
@@ -61,6 +74,10 @@ enum PanePrompts {
     }
     PageIssuer.consumePromptEvent = receive
     PageIssuer.lifecycleObservers.append { issuer, binding, name, payload in
+      if name == "onPageMessage", payload["kind"] == "drm", issuer.store === observedStore {
+        offerWebKit(binding)
+        return
+      }
       guard ["onReady", "onNavigationChange", "onDiscarded", "onCrashed", "onUnresponsive", "onResponsive", "onWindowClose", "onPagePhysicalReplaced"].contains(name),
         issuer.store === observedStore else { return }
       if name == "onWindowClose" || name == "onPagePhysicalReplaced" { retire(binding.tabId); return }
@@ -130,6 +147,10 @@ enum PanePrompts {
     guard observedStore !== next else { return }
     if let storeSubscription { observedStore?.unsubscribe(storeSubscription) }
     observedStore = nil
+    automaticMoves = [:]
+    declinedSites = [:]
+    for id in Array(movedToasts.keys) { hideMoveToast(id) }
+    for tabId in Array(engineOffers.keys) { clearEngineOffer(tabId) }
     for tabId in Array(bindings.keys) { retire(tabId) }
     let orphaned = browsers.drain()
     for request in orphaned { SolaraCorePromptAnswers.permission(request.id, result: "dismiss", remember: false) }
@@ -143,6 +164,7 @@ enum PanePrompts {
   private static func receive(_ issuer: PageIssuer, _ binding: PageHostBinding, _ name: String, _ payload: JSONValue) -> Bool {
     switch name {
     case "onPopupBlocked", "onDocumentCommitted":
+      if name == "onDocumentCommitted" { DispatchQueue.main.async { NativeSiteControls.shared.refresh() } }
       if issuer.store === observedStore, current(binding.tabId) === binding {
         pageEvent(binding, name, PageValue(json: payload).foundation as? [String: Any] ?? [:])
       }
@@ -166,12 +188,24 @@ enum PanePrompts {
   static func draws(_ windowId: String) -> Bool {
     if holds(windowId) || !selections(in: windowId).isEmpty { return true }
     guard let window = windows[windowId] else { return false }
-    let panes = window["panes"] as? [String: [String: Any]] ?? [:]
-    if panes.values.contains(where: { $0["engineOffer"] is [String: Any] }) { return true }
+    if engineOffers.values.contains(where: { $0.scope.tab.windowId == windowId }) { return true }
     return ((window["theme"] as? [String: Any])?["cli"] as? [String: Any])?["shown"] as? Bool == true || (cliHideUntil[windowId] ?? 0) > ProcessInfo.processInfo.systemUptime
   }
 
   private static func tabsMoved() {
+    for (id, offer) in engineOffers where NativeEngineCommands.pageScope(id) != offer.scope || !profileIsShown(id, offer.scope.tab.windowId) {
+      clearEngineOffer(id)
+    }
+    for id in automaticMoves.keys where observedStore?.state.tabs[id] == nil { automaticMoves[id] = nil }
+    for (id, toast) in movedToasts {
+      guard let tab = observedStore?.state.tabs[id], tab.windowId == toast.window, tab.profileId == toast.profile, profileIsShown(id, toast.window),
+        EngineCommand.site(tab.url) == toast.site else { hideMoveToast(id); continue }
+    }
+    if let state = observedStore?.state {
+      for profile in declinedSites.keys where Ids.isIncognitoProfile(profile) && !state.windows.values.contains(where: { $0.profileId == profile }) {
+        declinedSites[profile] = nil
+      }
+    }
     for tabId in Array(bindings.keys) {
       guard active(tabId) != nil else { retire(tabId); continue }
       let now = TabPoolHost.shared.windowOf(tabId)
@@ -187,7 +221,7 @@ enum PanePrompts {
     bindings[tabId] = nil
     documentRevisions[tabId] = nil
     browsers.gone(tabId)
-    engineRemember[tabId] = nil
+    clearEngineOffer(tabId)
     if let windowId = windowOfTab.removeValue(forKey: tabId) { refresh(windowId) }
     if let old {
       cancelRemoved(old, leaving: PanePromptPage())
@@ -216,7 +250,12 @@ enum PanePrompts {
         if page.chooserEvent(chooser) { update(tabId, page) }
       }
     }
-    if ["onDocumentCommitted", "onDiscarded", "onCrashed"].contains(name) { documentRevisions[tabId] = UUID() }
+    if ["onDocumentCommitted", "onDiscarded", "onCrashed"].contains(name) {
+      documentRevisions[tabId] = UUID()
+      clearEngineOffer(tabId)
+    } else if let offer = engineOffers[tabId], NativeEngineCommands.pageScope(tabId) != offer.scope {
+      clearEngineOffer(tabId)
+    }
     var page = pages[tabId] ?? PanePromptPage()
     let previous = page
     guard page.take(name, payload) else { return }
@@ -383,12 +422,67 @@ enum PanePrompts {
     return encode(object).flatMap(SadTabState.decode)
   }
 
+  static func clearEngineOffer(_ tabId: String) {
+    if let offer = engineOffers.removeValue(forKey: tabId) { refresh(offer.scope.tab.windowId) }
+  }
+
+  private static func offerWebKit(_ binding: PageHostBinding) {
+    let id = binding.tabId
+    guard binding.engine == .chromium, let scope = NativeEngineCommands.pageScope(id), scope.identity == binding.identity,
+      profileIsShown(id, scope.tab.windowId), let store = observedStore, let site = EngineCommand.site(scope.tab.url),
+      let hostname = URL(string: site)?.host, declinedSites[scope.tab.profileId]?.contains(site) != true,
+      automaticMoves[id]?.scope != scope else { return }
+    let host = hostname.hasPrefix("www.") ? String(hostname.dropFirst(4)) : hostname
+    let offer = EngineOffer(scope: scope, site: site, host: host)
+    switch store.chosenPageEngine(for: scope.tab.url, in: store.state) {
+    case "chromium": return
+    case "webkit":
+      automaticMoves[id] = offer
+      DispatchQueue.main.async {
+        guard automaticMoves[id]?.id == offer.id else { return }
+        guard NativeEngineCommands.pageScope(id) == scope else { automaticMoves[id] = nil; return }
+        NativeEngineCommands.request(tabId: id, action: "open", options: ["engine": "webkit", "automatic": true]) { moved in
+          guard automaticMoves[id]?.id == offer.id else { return }
+          automaticMoves[id] = nil
+          if moved { showMoveToast(offer) }
+          else if NativeEngineCommands.pageScope(id) == scope { declinedSites[scope.tab.profileId, default: []].insert(site) }
+        }
+      }
+    default:
+      guard engineOffers[id]?.scope != scope else { return }
+      engineOffers[id] = offer
+      refresh(scope.tab.windowId)
+    }
+  }
+
+  private static func showMoveToast(_ offer: EngineOffer) {
+    let tab = offer.scope.tab
+    hideMoveToast(tab.id)
+    nextMoveToast -= 1
+    let id = nextMoveToast
+    movedToasts[tab.id] = (id, tab.windowId, offer.site, tab.profileId)
+    NativeSplitChrome.showNativeToast(.init(id: id, title: "Opened in WebKit for protected video",
+      message: "\(offer.host) plays here with FairPlay. WebKit keeps its own sign-ins.", icon: "play.rectangle", action: "Move Back"),
+      windowId: tab.windowId) {
+        guard movedToasts[tab.id]?.id == id, let current = NativeEngineCommands.pageScope(tab.id),
+          current.tab.windowId == tab.windowId, current.tab.profileId == tab.profileId,
+          EngineCommand.site(current.tab.url) == offer.site, profileIsShown(tab.id, tab.windowId) else { return }
+        hideMoveToast(tab.id)
+        NativeEngineCommands.request(tabId: tab.id, action: "open", options: ["engine": "chromium", "rule": "chromium"]) { _ in }
+      }
+  }
+
+  private static func hideMoveToast(_ tabId: String) {
+    guard let toast = movedToasts.removeValue(forKey: tabId) else { return }
+    NativeSplitChrome.hideNativeToast(toast.id, windowId: toast.window)
+  }
+
   static func prompts(in windowId: String, paneWidth: (String) -> Double?) -> [Shown] {
     guard let window = windows[windowId], let look = (window["theme"] as? [String: Any])?["prompt"] as? [String: Any] else { return [] }
     let panes = window["panes"] as? [String: [String: Any]] ?? [:]
     var shown: [Shown] = []
     let asking = Set(tabs(in: windowId, where: { $0.password != nil || $0.autofill != nil || $0.externalApp != nil || $0.permission != nil || !$0.popups.isEmpty }))
-    for tabId in asking.union(panes.compactMap { $0.value["engineOffer"] is [String: Any] ? $0.key : nil }).sorted() {
+    for tabId in asking.union(engineOffers.compactMap { $0.value.scope.tab.windowId == windowId ? $0.key : nil }).sorted() {
       guard let binding = current(tabId) else { continue }
       let page = active(tabId) === binding ? pages[tabId] ?? PanePromptPage() : PanePromptPage()
       let pane = panes[tabId] ?? [:]
@@ -414,10 +508,10 @@ enum PanePrompts {
         let popups = PanePromptSpecs.popups(["side": pane["popupSide"] ?? "right", "list": page.popups.map(\.payload)]) {
         add(.popups, first.id, popups.spec)
       }
-      if owns(tabId), let offer = pane["engineOffer"] as? [String: Any], let site = offer["site"] as? String, !newTabShown {
-        let remember = engineRemember[tabId].map { $0.site == site && $0.on } ?? false
-        let spec = PanePromptSpecs.engineOffer(host: offer["host"] as? String ?? site, canRemember: offer["canRemember"] as? Bool == true, remember: remember, product: Bundle.main.productName, left: left(PanePromptSpecs.externalAppWidth))
-        add(.engineOffer, site, spec)
+      if let offer = engineOffers[tabId], NativeEngineCommands.pageScope(tabId) == offer.scope, profileIsShown(tabId, windowId), !newTabShown {
+        let spec = PanePromptSpecs.engineOffer(host: offer.host, canRemember: offer.canRemember, remember: offer.remember,
+          product: Bundle.main.productName, left: left(PanePromptSpecs.externalAppWidth))
+        add(.engineOffer, offer.id, spec)
       }
     }
     return shown
@@ -439,15 +533,24 @@ enum PanePrompts {
   static func promptEvent(_ windowId: String, _ tabId: String, _ kind: PanePromptKind, _ shown: String, _ event: PromptEvent) {
     guard let binding = current(tabId), profileIsShown(tabId, windowId) else { return }
     if kind == .engineOffer {
-      let panes = windows[windowId]?["panes"] as? [String: [String: Any]]
-      guard let site = (panes?[tabId]?["engineOffer"] as? [String: Any])?["site"] as? String,
-        shown == receipt(binding, site) else { return }
+      guard var offer = engineOffers[tabId], shown == receipt(binding, offer.id),
+        NativeEngineCommands.pageScope(tabId) == offer.scope,
+        NativePaneOverlays.promptSlot(windowId, tabId) != nil else { return }
       switch event {
       case .toggle(let on):
-        engineRemember[tabId] = (site, on)
-        changed(tabId)
-      case .button(let id): js("pane.engineOffer", windowId, tabId, id, engineRemember[tabId].map { $0.site == site && $0.on } ?? false)
-      case .close: js("pane.engineOffer", windowId, tabId, "dismiss", false)
+        guard offer.canRemember else { return }
+        offer.remember = on
+        engineOffers[tabId] = offer
+        refresh(windowId)
+      case .button("webkit"):
+        clearEngineOffer(tabId)
+        NativeEngineCommands.request(tabId: tabId, action: "open", options: ["engine": "webkit", "rule": "webkit"]) { _ in }
+      case .button("stay"), .close:
+        declinedSites[offer.scope.tab.profileId, default: []].insert(offer.site)
+        if case .button("stay") = event, offer.remember, offer.canRemember, let store = observedStore {
+          try? NativeEngineCommands.remember("chromium", url: offer.site, store: store)
+        }
+        clearEngineOffer(tabId)
       default: break
       }
       return
@@ -565,23 +668,33 @@ enum PanePrompts {
 
   #if DEBUG
   static func devFixture(_ tabId: String, name: String, payload: [String: Any]) -> Bool {
-    guard let binding = current(tabId),
-      ["onExternalApp", "onPopupBlocked", "onDocumentCommitted"].contains(name) else { return false }
+    guard let binding = current(tabId) else { return false }
+    if name == "onPageMessage", payload["kind"] as? String == "drm", let issuer = PageIssuer.shared,
+      let data = try? JSONSerialization.data(withJSONObject: payload), let value = try? JSONValue.parse(data) {
+      return issuer.reserveEvent(binding, name: name, payload: value) != nil
+    }
+    guard ["onExternalApp", "onPopupBlocked", "onDocumentCommitted"].contains(name) else { return false }
     pageEvent(binding, name, payload)
     return true
   }
 
   static func devState(_ tabId: String) -> String {
-    guard active(tabId) != nil, let page = pages[tabId] else { return "{}" }
-    var data: [String: Any] = ["popups": page.popups.map(\.payload)]
-    if owns(tabId), let prompt = page.externalApp {
+    let offer = engineOffers[tabId].flatMap { offer in NativeEngineCommands.pageScope(tabId) == offer.scope ? offer : nil }
+    let page = active(tabId) == nil ? nil : pages[tabId]
+    guard page != nil || offer != nil else { return "{}" }
+    let pageState = page ?? PanePromptPage()
+    var data: [String: Any] = ["popups": pageState.popups.map(\.payload)]
+    if let offer {
+      data["engineOffer"] = ["id": offer.id, "canRemember": offer.canRemember]
+    }
+    if owns(tabId), let prompt = pageState.externalApp {
       data["externalApp"] = ["id": prompt.id, "app": prompt.app as Any? ?? NSNull(), "remember": prompt.remember as Any? ?? NSNull(),
         "origin": prompt.origin as Any? ?? NSNull(), "hasIcon": prompt.icon != nil]
     }
-    if let prompt = page.permission {
+    if let prompt = pageState.permission {
       data["permission"] = ["id": prompt.id, "origin": prompt.origin, "permissions": prompt.permissions, "browserId": prompt.browserId]
     }
-    if owns(tabId), let chooser = page.chooser {
+    if owns(tabId), let chooser = pageState.chooser {
       data["deviceChooser"] = ["id": chooser.id, "title": chooser.title, "unauthorized": chooser.unauthorized,
         "optionCount": chooser.options.count]
     }
@@ -589,6 +702,12 @@ enum PanePrompts {
   }
 
   static func devAnswer(_ tabId: String, kind: String, id: String, action: String, option: String) -> Bool {
+    if kind == "engineOffer" {
+      guard let offer = engineOffers[tabId], offer.id == id, let binding = current(tabId),
+        NativeEngineCommands.pageScope(tabId) == offer.scope else { return false }
+      promptEvent(offer.scope.tab.windowId, tabId, .engineOffer, receipt(binding, offer.id), .button(action))
+      return engineOffers[tabId]?.id != id
+    }
     guard let binding = active(tabId), let page = pages[tabId], let windowId = TabPoolHost.shared.windowOf(tabId),
       profileIsShown(tabId, windowId) else { return false }
     if kind == "deviceChooser" {

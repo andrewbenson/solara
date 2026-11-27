@@ -1,5 +1,5 @@
 import { breadcrumb } from "@solara/core";
-import { nativeToolbarAvailable, windowShellActive, useNativeExtensionPopupShown } from "@solara/settings";
+import { SolaraHostedView, nativeToolbarAvailable, windowShellActive, useNativeExtensionPopupShown } from "@solara/settings";
 import { Hairline } from "@solara/shell";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { AccessibilityInfo, Animated, Easing, Pressable, StyleSheet, Text, View, type ViewStyle } from "react-native";
@@ -14,7 +14,7 @@ import { useHistoryMenu } from "./layout/history";
 import { useFullscreenTab, usePages } from "./layout/pageState";
 import { needsBar, revealToolbar, setToolbarPeek, STRIP_HEIGHT, toolbarMode, useToolbarAutoHide, type ToolbarMode } from "./layout/toolbarAutoHide";
 import { Toolbar } from "./Toolbar";
-import { DeveloperStripes } from "./site/DeveloperStripes";
+import { stripesUri } from "./NativeToolbar";
 import { useTabDeveloperMode, useToolbarSiteColor } from "./site/developerMode";
 
 const HIDE_MS = 150;
@@ -144,7 +144,7 @@ export function useToolbarMotion({
   };
 }
 
-export function AutoHideBackdrop({ tabId, mode, motion, onFrame = false }: { tabId: string; mode: ToolbarMode; motion: Pick<ToolbarMotion, "bar">; onFrame?: boolean }) {
+export function AutoHideBackdrop({ windowId, tabId, mode, motion, onFrame = false }: { windowId: string; tabId: string; mode: ToolbarMode; motion: Pick<ToolbarMotion, "bar">; onFrame?: boolean }) {
   const theme = useTheme();
   const url = useBrowser((s) => s.tabs[tabId]?.url ?? "");
   const palette = toolbarPalette(theme, useToolbarSiteColor(tabId));
@@ -170,7 +170,7 @@ export function AutoHideBackdrop({ tabId, mode, motion, onFrame = false }: { tab
         style={{ position: "absolute", left: 0, right: 0, top: 0, height: H, backgroundColor: theme.card, transform: anim ? [{ translateY: anim.bandLift }, { scaleY: anim.bandScale }] : undefined }}
       >
         <Animated.View style={[StyleSheet.absoluteFill, { backgroundColor: band }]} />
-        {developer && <DeveloperStripes palette={palette} />}
+        {developer && <SolaraHostedView kind="developerStripes" windowId={windowId} state={stripesUri(palette) ?? ""} pointerEvents="none" style={StyleSheet.absoluteFill} />}
       </Animated.View>
       {url ? (
         <Animated.View style={{ position: "absolute", left: 0, right: 0, top: H - 1, height: 1, transform: anim ? [{ translateY: anim.dividerTop }] : undefined }}>

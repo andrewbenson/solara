@@ -206,7 +206,7 @@ async function promptOutcomes(instance) {
   let visit = 0;
   const pageEvent = (name, payload) => instance.eval(`return globalThis.expo.modules.SolaraMedia.devPromptFixture(${tab}, ${JSON.stringify(name)}, ${payload})`);
   const plant = async (name) => {
-    if (name === "engine") return instance.eval(`ac.pages.engineOffers.setState({ [${tab}]: { site: "https://example.com", host: "example.com", keySystem: "com.widevine.alpha", canRemember: true } }); return true`);
+    if (name === "engine") return pageEvent("onPageMessage", JSON.stringify({ kind: "drm", data: { keySystem: "com.widevine.alpha" } }));
     if (name === "popups") {
       for (const popup of JSON.parse(POPUPS)) await pageEvent("onPopupBlocked", JSON.stringify(popup));
       return instance.eval(`globalThis.expo.modules.SolaraSettings.setPanePopover(${tab}, "popups"); return true`);
@@ -214,11 +214,11 @@ async function promptOutcomes(instance) {
     return false;
   };
   const unplant = (name) => name === "engine"
-    ? instance.eval(`ac.pages.engineOffers.setState({}, true); return true`)
+    ? pageEvent("onDocumentCommitted", "{}")
     : name === "popups" ? pageEvent("onDocumentCommitted", "{}") : true;
   const present = (name, timeout) =>
     instance.eval(
-      name === "engine" ? `return !!ac.pages.engineOffers.getState()[${tab}]`
+      name === "engine" ? `return globalThis.expo.modules.SolaraMedia.devPromptState(${tab}).then((data) => !!JSON.parse(data).engineOffer)`
       : name === "popups" ? `return globalThis.expo.modules.SolaraMedia.devPromptState(${tab}).then((data) => ac.pageState.getState().popover[${tab}] === "popups" ? JSON.parse(data).popups.map((p) => p.id).join(",") : false)`
       : `return globalThis.expo.modules.SolaraMedia.devPromptState(${tab}).then((data) => !!JSON.parse(data)[${JSON.stringify(PANE_KEYS[name])}])`,
       { timeout },

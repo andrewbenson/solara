@@ -1,5 +1,6 @@
 import Foundation
 import SolaraModel
+import SolaraOmnibox
 import SolaraStore
 
 public enum EngineCommand {
@@ -22,11 +23,9 @@ public enum EngineCommand {
     return next != site(previous)
   }
 
-  private static func site(_ address: String) -> String? {
-    guard let url = URL(string: address), let scheme = url.scheme?.lowercased(),
-      ["http", "https"].contains(scheme), let host = url.host?.lowercased(), !host.isEmpty, url.port.map({ (0...65535).contains($0) }) ?? true else { return nil }
-    let port = url.port.flatMap { ($0 == 80 && scheme == "http") || ($0 == 443 && scheme == "https") ? nil : $0 }
-    return "\(scheme)://\(host)\(port.map { ":\($0)" } ?? "")"
+  public static func site(_ address: String) -> String? {
+    guard let url = WhatwgURL(address), ["http:", "https:"].contains(url.protocol), !url.hostname.isEmpty else { return nil }
+    return url.protocol + "//" + url.host
   }
 
   public static func plan(tab: Tab, currentEngine: String, destination: String) -> Plan? {
@@ -36,4 +35,36 @@ public enum EngineCommand {
   }
 
   public static let unsavedWork = #"(() => { const fields = Array.from(document.querySelectorAll('input:not([type=hidden]):not([type=password]):not([type=submit]):not([type=button]), textarea, select')); const changed = f => f.type === 'checkbox' || f.type === 'radio' ? f.checked !== f.defaultChecked : f.tagName === 'SELECT' ? Array.from(f.options).some(o => o.selected !== o.defaultSelected) : f.value !== f.defaultValue; post('result', JSON.stringify(fields.some(changed) || !!(document.activeElement && document.activeElement.isContentEditable))); })()"#
+}
+
+public struct EngineOfferThrottle: Sendable {
+  private var started: [String: TimeInterval] = [:]
+
+  public init() {}
+
+  public mutating func begin(tabId: String, now: TimeInterval) -> Bool {
+    if let last = started[tabId], now - last < 10 { return false }
+    started[tabId] = now
+    return true
+  }
+
+  public mutating func remove(tabId: String) { started[tabId] = nil }
+}
+
+public struct PageActionScope: Equatable, Sendable {
+  public let identity: PageIdentity
+  public let documentRevision: Int
+  public let tab: Tab
+
+  public init(identity: PageIdentity, documentRevision: Int, tab: Tab) {
+    self.identity = identity
+    self.documentRevision = documentRevision
+    self.tab = tab
+  }
+
+  public static func == (lhs: Self, rhs: Self) -> Bool {
+    lhs.identity == rhs.identity && lhs.documentRevision == rhs.documentRevision &&
+      lhs.tab.windowId == rhs.tab.windowId && lhs.tab.profileId == rhs.tab.profileId &&
+      lhs.tab.createdAt == rhs.tab.createdAt && lhs.tab.url == rhs.tab.url && lhs.tab.navigation == rhs.tab.navigation && lhs.tab.adoptId == rhs.tab.adoptId
+  }
 }

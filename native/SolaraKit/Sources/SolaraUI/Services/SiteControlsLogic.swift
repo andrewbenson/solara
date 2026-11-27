@@ -359,17 +359,20 @@ public struct SiteControlsSession: Sendable {
   public private(set) var featured: Set<String>?
   private var key: [String]?
   private var generation = 0
+  private var scope: PageActionScope?
 
   public init() {}
 
-  public mutating func beginRefresh(context: JSONValue) -> Int? {
+  public mutating func beginRefresh(context: JSONValue, scope: PageActionScope? = nil) -> Int? {
     guard let origin = SiteControlsLogic.origin(context["url"]?.string ?? "") else {
       invalidate()
       return nil
     }
-    let next = [origin, context["profile"]?.string ?? "", context["pageEngine"]?.string ?? "chromium"]
-    guard next != key else { return nil }
+    let next = [origin, context["navigationSeq"]?.text() ?? ""] +
+      ["tabId", "windowId", "url", "profileId", "profile", "pageEngine"].map { context[$0]?.string ?? "" }
+    guard next != key || scope != self.scope else { return nil }
     key = next
+    self.scope = scope
     generation += 1
     return generation
   }
@@ -384,6 +387,7 @@ public struct SiteControlsSession: Sendable {
 
   public mutating func invalidate() {
     key = nil
+    scope = nil
     generation += 1
   }
 }

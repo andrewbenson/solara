@@ -829,3 +829,8 @@ Run `TranslationLifetimeTests` with `-Xswiftc -DSOLARA_PROBES`. Run pane-prompts
 native window layout unset and set to 1. The translation driver uses a local page and a deterministic native
 provider to check language detection, DOM batches and dynamic text, exact revert, a failed batch, same-URL reload,
 Peek promotion, tab and window close, profile replacement, private site rules and Little Solara.
+
+
+## Lifecycles slice 13, engine offers and site controls
+
+`EngineOfferLifetimeTests`, `SiteActionLifetimeTests` and `WebKitVisitRecorderTests` cover page replacement, site rules, throttling and history settlement. Run webkit-pill, pane-prompts (pooled, inline and Safe Mode), selection-popover, native-page-commands, pool-e2e, little-solara, media-ui and pane-roots-placement in both layouts. Pane-prompts sends a DRM event through the native page issuer and checks that a replacement document has a fresh receipt. Pane-roots-placement reads the native site cards while the dock opens.

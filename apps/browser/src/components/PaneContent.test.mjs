@@ -59,15 +59,13 @@ async function fixture() {
     "./layout/geometry": { NO_TOOLBAR: {}, toolbarGeometry: () => ({ urlLeft: 100 }) },
     "./layout/paneFeed": { usePaneStatusStyle() {}, usePopoversOverCard() {}, markPaneRootDrawn() {} },
     "./layout/nativePaneOverlays": { useNativePaneHint() {}, useNativePanePopups() {}, useNativePanePromptsPane() {} },
-    "./overlayGates": { engineOfferMounted: () => false },
     "./layout/controls": { POPOVER_MARGIN: 8 },
-    "./site/SiteControlsParts": { SITE_PANEL: { width: 300 } },
   };
   state.popover = {};
   for (const [module, names] of [
     ["./PooledPageProps", ["PooledPageProps"]], ["./media/ShareBar", ["ShareBar"]], ["./pages", ["InternalPage"]],
     ["./NewTabPage", ["NewTabPage"]], ["./EmptyCard", ["EmptyCard"]], ["./FindBar", ["FindBar"]],
-    ["./layout/PaneOverlays", ["StatusBubble", "SadTab"]], ["./site/SiteControls", ["SiteControls"]],
+    ["./layout/PaneOverlays", ["StatusBubble", "SadTab"]], ["./site/SitePanelHost", ["SiteControls"]],
     ["./media/SharePicker", ["SharePicker"]], ["./layout/SwipeOverlay", ["NavigationOverlays"]],
   ]) modules[module] = Object.fromEntries(names.map((name) => [name, leaf(name)]));
   const exports = {};

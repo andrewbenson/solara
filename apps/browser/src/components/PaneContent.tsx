@@ -3,10 +3,8 @@ import { memo, useEffect, useLayoutEffect, useMemo, useState } from "react";
 import { Animated, StyleSheet, View, type ViewStyle } from "react-native";
 import { layout } from "../lib/theme";
 import { panePromptsNativeIn } from "../lib/pagesPool";
-import { useEngineOffers } from "../lib/engines";
 import { ExternalAppPrompt } from "./site/ExternalAppPrompt";
 import { DeviceChooser } from "./site/DeviceChooser";
-import { EngineOfferPrompt } from "./site/EnginePrompt";
 import { useBrowser } from "../store/browser";
 import { shallowEqual, useTabValue } from "../store/tabWatch";
 import { useActiveTabId } from "../store/hooks";
@@ -20,14 +18,12 @@ import { patchPage, useFullscreenTab, usePages } from "./layout/pageState";
 import { SadTab, StatusBubble } from "./layout/PaneOverlays";
 import { useNativePanePromptsPane } from "./layout/nativePaneOverlays";
 import { markPaneRootDrawn, usePaneStatusStyle, usePopoversOverCard } from "./layout/paneFeed";
-import { engineOfferMounted } from "./overlayGates";
 import { useAddressBarInSidebar, useTabLayout } from "./layout/windowLayout";
 import { NewTabPage } from "./NewTabPage";
 import { EmptyCard } from "./EmptyCard";
 import { InternalPage } from "./pages";
 import { AutofillPrompt, PasswordPrompt } from "./site/Prompts";
-import { SiteControls } from "./site/SiteControls";
-import { SITE_PANEL } from "./site/SiteControlsParts";
+import { SiteControls } from "./site/SitePanelHost";
 import { ZOOM_POPOVER_WIDTH, ZoomPopover } from "./site/ZoomHost";
 import { SelectionHost } from "./site/SelectionHost";
 import { SharePicker } from "./media/SharePicker";
@@ -68,7 +64,6 @@ export function PageOverlays({
   const zoom = useTabValue(tabId, (t) => t?.zoom ?? 1);
   const popoverSide = toolbar ? { right: POPOVER_MARGIN } : { left: POPOVER_MARGIN };
   const nativeCli = nativePrompts;
-  const engineOffer = useEngineOffers((offers) => offers[tabId] ?? null);
   useNativePanePromptsPane(windowId, tabId, nativePrompts, {
     urlLeft: geometry.urlLeft,
     newTabShown,
@@ -76,7 +71,6 @@ export function PageOverlays({
     ...(nativePrompts && {
       zoom,
       cliPill,
-      engineOffer: engineOffer && { site: engineOffer.site, host: engineOffer.host, canRemember: engineOffer.canRemember },
     }),
   });
   return (
@@ -87,7 +81,6 @@ export function PageOverlays({
       </Animated.View>
       {!nativePrompts && <SadTab tabId={tabId} nativeAllowed={!peek} />}
       {cliPill && !nativeCli && <CliControlPill tabId={tabId} style={statusStyle} nativeAllowed={!peek} />}
-      {engineOfferMounted(engineOffer, newTabShown, nativePrompts) && <EngineOfferPrompt tabId={tabId} left={Math.max(POPOVER_MARGIN, Math.min(geometry.urlLeft, width - 348))} top={POPOVER_MARGIN} />}
       {popovers && <SiteControls tabId={tabId} open={popover === "siteControls"} {...popoverSide} top={POPOVER_MARGIN} />}
       {popovers && popover === "zoom" && <ZoomPopover tabId={tabId} {...popoverSide} top={POPOVER_MARGIN} nativeAllowed={!peek} />}
       {!nativePrompts && <PasswordPrompt tabId={tabId} right={POPOVER_MARGIN} top={POPOVER_MARGIN} />}
@@ -184,7 +177,7 @@ export function BesidePeekPopovers({ tabId, left, top, room, placements, origin 
   };
   return (
     <>
-      <SiteControls tabId={tabId} open={popover === "siteControls"} {...fit("siteControls", SITE_PANEL.width)} />
+      <SiteControls tabId={tabId} open={popover === "siteControls"} {...fit("siteControls", 288)} />
       {popover === "zoom" && <ZoomPopover tabId={tabId} {...fit("zoom", ZOOM_POPOVER_WIDTH)} />}
     </>
   );

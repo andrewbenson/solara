@@ -39,7 +39,7 @@ function fixture() {
   const registration = compile("apps/browser/src/components/settings/nativeSettings.ts", { "@solara/settings": settings });
   const modules = {
     "@solara/settings": { ...settings, NativeSidebarAddressBarView: "NativeSidebarAddressBarView", setSidebarAddressBar: () => {} },
-    react: { useEffect: (fn) => fn(), useMemo: (fn) => fn(), useRef: (current) => ({ current }) },
+    react: { useEffect: (fn) => fn(), useMemo: (fn) => fn(), useState: (value) => [value, () => {}], useRef: (current) => ({ current }) },
     "react/jsx-runtime": require("react/jsx-runtime"),
     "react-native": { StyleSheet: { absoluteFill: {} } },
     "../../lib/theme": { layout: { sidebarInset: 10 }, useTheme: () => ({}) },
@@ -82,6 +82,7 @@ async function siteFixture() {
   const f = fixture();
   const model = await import("../../store/model.ts");
   const engines = await import("../../store/engines.ts");
+  f.state.windows.w = { profileId: "work" };
   f.state.tabs.a = { id: "a", windowId: "w", profileId: "work", url: "https://tv.apple.com/watch", title: "Temporary page", customTitle: null, favicon: "https://tv.apple.com/icon", muted: true, zoom: 1.5 };
   Object.assign(f.state.settings, { developerMode: { work: { on: ["tv.apple.com"], off: [], reload: "reload" } }, sleepInactiveTabs: true, keepAwakeSites: ["other.test"], showFullUrl: true, protectedVideoInWebKit: true, pageEngine: "chromium", websiteEngines: {} });
   Object.assign(f.modules, {
@@ -89,23 +90,26 @@ async function siteFixture() {
     "@solara/shell": { translation: false },
     "zustand/react/shallow": { useShallow: (fn) => fn },
     "../../store/model": model,
+    "../../lib/webviews": { webviewMount: () => null },
+    "../../store/nativeStore": { nativeOwnsWorkspace: () => false },
+    "../overlayGates": { siteControlsMounted: (open, latched) => open || latched },
     "../../store/engines": engines,
     "../omnibox/nativeBar": { useThemeTokens: () => ({}) },
     "../layout/pageState": { usePage: (id, select) => select({ security: null, blocked: 0, mediaAccess: null }) },
     "../media/state": { useMedia: (select) => select({ sessions: {}, pipOpen: {} }) },
     "./translate": { isNeverTranslated: () => false, useTranslateState: () => ({ status: "idle" }) },
   });
-  const site = compile("apps/browser/src/components/site/NativeSiteControls.tsx", f.modules);
+  const site = compile("apps/browser/src/components/site/SitePanelHost.tsx", f.modules);
   return { ...f, site };
 }
 
 test("site panel supplies the refused-session workspace to its native renderer", async () => {
   const f = await siteFixture();
-  const panel = f.site.NativeSiteControls({ tabId: "a", open: true, top: 8, right: 8, onClosed() {} });
+  const panel = f.site.SiteControls({ tabId: "a", open: true, top: 8, right: 8, onClosed() {} });
   const { fallbackContext } = JSON.parse(panel.props.request);
   assert.deepEqual(fallbackContext, {
     tabId: "a", windowId: "w", url: "https://tv.apple.com/watch", title: "Temporary page", customTitle: null, label: "tv.apple.com", favicon: "https://tv.apple.com/icon",
-    profileId: "work", profile: "work", privatePage: false, pageEngine: "webkit", muted: true, zoom: 1.5,
+    profileId: "work", profile: "work", privatePage: false, navigationSeq: null, mount: null, pageEngine: "webkit", muted: true, playingAudio: false, zoom: 1.5,
     showFullUrl: true, developerMode: f.state.settings.developerMode, sleepInactiveTabs: true, keepAwakeSites: ["other.test"], engineRule: null, streamingSite: true, recommendedEngine: "webkit",
   });
 });
@@ -118,15 +122,15 @@ test("refused-session native site setting and sound callbacks update only their 
     await flush();
     assert.equal(f.replies.at(-1).error, null);
   };
-  const url = f.state.tabs.a.url;
+  const source = { url: f.state.tabs.a.url, windowId: "w", profileId: "work", navigationSeq: null };
   const developerMode = { work: { on: [], off: [], reload: "reload" } };
-  for (const [id, patch] of [[1, { showFullUrl: false }], [2, { developerMode }], [3, { keepAwakeSites: ["tv.apple.com"] }]]) await send(id, "site.settings", ["a", url, patch]);
-  await send(4, "site.muted", ["a", url, false]);
+  for (const [id, patch] of [[1, { showFullUrl: false }], [2, { developerMode }], [3, { keepAwakeSites: ["tv.apple.com"] }]]) await send(id, "site.settings", ["a", source, patch]);
+  await send(4, "site.muted", ["a", source, false]);
   assert.deepEqual(f.effects, [["settings", { showFullUrl: false }], ["settings", { developerMode }], ["settings", { keepAwakeSites: ["tv.apple.com"] }], ["tab", "a", { muted: false }]]);
   f.effects.length = 0;
   f.state.tabs.a.url = "https://new.test";
-  await send(5, "site.settings", ["a", url, { showFullUrl: true }]);
-  await send(6, "site.muted", ["a", url, true]);
-  await send(7, "site.settings", ["missing", url, { showFullUrl: true }]);
+  await send(5, "site.settings", ["a", source, { showFullUrl: true }]);
+  await send(6, "site.muted", ["a", source, true]);
+  await send(7, "site.settings", ["missing", source, { showFullUrl: true }]);
   assert.deepEqual(f.effects, []);
 });

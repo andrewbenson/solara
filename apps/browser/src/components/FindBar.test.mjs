@@ -23,7 +23,7 @@ function fixture() {
     react: { memo: (fn) => fn, useEffect: () => {}, useRef: (current) => { const slot = refIndex++; refs[slot] ??= { current }; return refs[slot]; }, useState: (initial) => { const slot = index++; if (!(slot in states)) states[slot] = initial; return [states[slot], (value) => { states[slot] = value; }]; } },
     "react/jsx-runtime": jsx,
     "react-native": { Animated: { Value: class { interpolate() { return "motion"; } }, View: "AnimatedView", timing: () => ({ start() {} }) }, Easing: { out: (value) => value, cubic: "cubic" }, View: "View", TextInput: "TextInput", Text: "Text", Pressable: "Pressable", StyleSheet: { absoluteFill: { position: "absolute" } }, findNodeHandle: () => 42 },
-    "@solara/settings": { nativeToolbarAvailable: () => false, NativeFindBarView: "NativeFindBarView" },
+    "@solara/settings": { nativeToolbarAvailable: () => false, NativeFindBarView: "NativeFindBarView", replacePageField: async (...args) => { effects.push(["replace", ...args]); return f.replacement; } },
     "@solara/shell": { Surface: "Surface", Symbol: "Symbol" },
     "../lib/commandShortcuts": { useShortcutHint: (command) => command === "findNext" ? "⌘G" : "⇧⌘G", withShortcut: (label, hint) => `${label} (${hint})` },
     "../lib/focusClaims": { findFocus: (id) => `find:${id}`, claimFocusTag: (windowId, destination, claim) => effects.push(["claim", windowId, destination, claim()]) },
@@ -32,7 +32,6 @@ function fixture() {
     "../store/browser": { useBrowser },
     "../store/hooks": { useFind: () => f.find },
     "./primitives": { IconButton: "IconButton", useHover: () => ({ hovered: false, hoverProps: {} }) },
-    "./site/selection": { replaceInField: async (...args) => { effects.push(["replace", ...args]); return f.replacement; } },
   };
   const exports = {};
   const { outputText } = ts.transpileModule(source, { fileName: "FindBar.tsx", compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022, jsx: ts.JsxEmit.ReactJSX } });

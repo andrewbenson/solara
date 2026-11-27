@@ -119,6 +119,7 @@ public final class PageHostBinding {
 public final class PageIssuer {
   public static var shared: PageIssuer?
   public static var consumeLifecycleEvent: (@MainActor (PageIssuer, PageHostBinding, String, JSONValue) -> Bool)?
+  public static var consumePromptEvent: (@MainActor (PageIssuer, PageHostBinding, String, JSONValue) -> Bool)?
   public static var lifecycleEvent: (@MainActor (PageIssuer, PageHostBinding, String, JSONValue) -> Void)?
   public static var lifecycleObservers: [@MainActor (PageIssuer, PageHostBinding, String, JSONValue) -> Void] = []
   private struct RuntimeOwner {
@@ -428,6 +429,7 @@ public final class PageIssuer {
       }
       return nil
     }
+    if Self.consumePromptEvent?(self, binding, name, payload) == true { return nil }
     let sequence = reserveEventInScope(binding, name: name, payload: payload)
     if !mediaEnded, sequence != nil, name == "onMediaAccess" {
       binding.reportedMedia.insert(.capture)
@@ -483,7 +485,8 @@ public final class PageIssuer {
       guard currentInScope(binding, requirePage: true) else { return }
       let key = ObjectIdentifier(page)
       let previous = nativeExecutions[key]
-      if binding.associatedNativePage && (previous?.binding !== binding || previous?.page !== page) {
+      let replaced = binding.associatedNativePage && (previous?.binding !== binding || previous?.page !== page)
+      if replaced {
         nativeExecutions = nativeExecutions.filter { $0.value.binding !== binding }
         binding.reportedMedia.removeAll()
         if !mediaEnded { NowPlayingStore.shared.end(tabId: binding.tabId) }
@@ -495,6 +498,9 @@ public final class PageIssuer {
       }
       binding.associatedNativePage = true
       nativeExecutions[key] = NativeExecution(page: page, binding: binding)
+      if replaced {
+        for observer in Self.lifecycleObservers { observer(self, binding, "onPagePhysicalReplaced", .null) }
+      }
     }
   }
 

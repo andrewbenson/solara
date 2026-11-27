@@ -2713,6 +2713,7 @@ static BOOL PinnedLinkGestureBypassed() {
 }
 
 - (void)tabDidCommitDocument:(SolaraCoreTab *)tab {
+  [self emit:@"documentCommitted" payload:@{}];
   [SolaraCoreHost extensionInstallRequesterInvalidated:solaracore_host::BrowserId(tab)];
   [self resetUnreadSignals];
   ACFieldMarkNow(_transferKey, @"commit");

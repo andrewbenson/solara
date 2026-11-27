@@ -83,6 +83,7 @@ function harness({ owned = true, pooled = false, finishAccepted = true, quitting
     "../lib/pageHandoff": { handoffLoaded: () => false },
     "../lib/webviews": { noteIssued: spy("noteIssued"), notePooledPage: spy("notePooledPage"), webviewRef: () => spy("registerHandle"), webviews },
     "./webviews": { webviews },
+    "./site/ExternalAppPrompt": { answerExternalApp: spy("answerExternalApp") },
     "./layout/pageState": { pageOf: () => page, patchPage: (_id, patch) => { calls.push({ name: "patchPage", args: [patch] }); Object.assign(page, patch); }, setBrowserId: spy("browserId"), setPopover: spy("popover"), usePages: { getState: () => ({ popover: {} }) } },
   };
   function load(name, contents) {
@@ -144,7 +145,7 @@ test("RN native facts still issue one load and UI callbacks", async () => {
   h.emit("onNavigationChange", navigation("https://c.test/"));
   assert.equal(h.calls.filter(({ name }) => name === "nativeLoad").length, 1);
   assert.equal(h.calls.filter(({ name }) => name === "jsLoad").length, 0);
-  assert.ok(h.calls.some(({ name }) => name === "dismissPermissions"));
+  assert.ok(h.calls.some(({ name }) => name === "clearEngineOffer"));
 });
 
 test("pooled native facts issue no JS load or semantic writes", async () => {

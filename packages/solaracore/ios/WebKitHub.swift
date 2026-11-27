@@ -9,6 +9,7 @@ final class WebKitHub: NSObject, WKScriptMessageHandler {
   static let background = ProcessInfo.processInfo.environment["SOLARA_BACKGROUND"] == "1"
   static let silenced = background && ProcessInfo.processInfo.environment["SOLARA_ALLOW_AUDIO"] != "1"
 
+  var permissionEvents: ((String, [String: Any]) -> Void)?
   var events: ((String, [String: Any]) -> Void)?
   lazy var downloads = WebKitDownloads(hub: self)
   let contentBlocker = WebKitContentBlocker()
@@ -188,6 +189,7 @@ final class WebKitHub: NSObject, WKScriptMessageHandler {
     for (id, pending) in pendingPermissions where pending.store === store {
       pendingPermissions.removeValue(forKey: id)
       pending.decide(false)
+      permissionEvents?("permissionDismissed", ["id": id])
       events?("onWebKitPermissionDismissed", ["id": id])
     }
   }
@@ -396,7 +398,9 @@ final class WebKitHub: NSObject, WKScriptMessageHandler {
     lastPermission += 1
     let id = "wk-permission-\(lastPermission)"
     pendingPermissions[id] = PendingPermission(browserId: browserId, keys: keys, store: dataStore(for: profile), decide: decide)
-    events?("onWebKitPermission", ["id": id, "browserId": Int(browserId), "origin": origin, "permissions": kinds])
+    let payload: [String: Any] = ["id": id, "browserId": Int(browserId), "origin": origin, "permissions": kinds]
+    permissionEvents?("permission", payload)
+    events?("onWebKitPermission", payload)
   }
 
   func resolvePermission(_ id: String, result: String, remember: Bool) {
@@ -410,6 +414,7 @@ final class WebKitHub: NSObject, WKScriptMessageHandler {
     for (id, pending) in pendingPermissions where pending.browserId == browserId {
       pendingPermissions.removeValue(forKey: id)
       pending.decide(false)
+      permissionEvents?("permissionDismissed", ["id": id])
       events?("onWebKitPermissionDismissed", ["id": id])
     }
   }

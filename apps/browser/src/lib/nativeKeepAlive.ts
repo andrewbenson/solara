@@ -10,7 +10,7 @@ import { createKeepAliveFeed, keepAliveGone, observeKeepAlive } from "./keepAliv
 import { applyHeldReports } from "./nativeEvents";
 
 function clearTransientFacts(id: string) {
-  patchPage(id, { mediaAccess: null, permission: null, crashed: null, unresponsive: false, fullscreen: false, newTabShown: null });
+  patchPage(id, { mediaAccess: null, crashed: null, unresponsive: false, fullscreen: false, newTabShown: null });
   revealToolbar(id);
   useMedia.setState((media) => {
     const keys = ["displayRequests", "tabShares"] as const;
@@ -50,7 +50,7 @@ export function startNativeKeepAlive() {
     return {
       route: JSON.stringify([tab.profileId, tab.windowId]),
       keep: {
-        capturing: !!(page.mediaAccess || page.permission),
+        capturing: !!page.mediaAccess,
         newTabShown: !!page.newTabShown,
         pip: false,
         displayRequest: !!media.displayRequests[tab.id],
@@ -95,7 +95,7 @@ export function startNativeKeepAlive() {
       const now = s.pages[id];
       const before = prev.pages[id];
       if (now === before) continue;
-      if (!now || !before || now.mediaAccess !== before.mediaAccess || now.permission !== before.permission || now.newTabShown !== before.newTabShown || now.fullscreen !== before.fullscreen || now.crashed !== before.crashed || now.unresponsive !== before.unresponsive) return feed.changed();
+      if (!now || !before || now.mediaAccess !== before.mediaAccess || now.newTabShown !== before.newTabShown || now.fullscreen !== before.fullscreen || now.crashed !== before.crashed || now.unresponsive !== before.unresponsive) return feed.changed();
     }
   };
   const mediaChanged = (s: ReturnType<typeof useMedia.getState>, prev: ReturnType<typeof useMedia.getState>) => {

@@ -3,6 +3,7 @@
 NS_ASSUME_NONNULL_BEGIN
 
 @class SolaraCoreWebView;
+@class SolaraCoreTab;
 
 extern NSNotificationName const SolaraCorePictureInPictureDidChangeNotification;
 

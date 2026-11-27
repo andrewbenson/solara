@@ -222,8 +222,8 @@ const show = async (tabId) => {
   await until(`${tabId} shown`, async () => Object.values((await appState()).windows).some((w) => w.panes.includes(tabId)) && evalApp(`return !!ac.webviews.get(${JSON.stringify(tabId)})`), 10000);
 };
 const closeTab = (id) => evalApp(`ac.store.getState().closeTab(${JSON.stringify(id)}); return true`).catch(() => null);
-const prompt = (tabId) => evalApp(`return ac.pageState.getState().pages[${JSON.stringify(tabId)}]?.permission ?? null`);
-const answer = (tabId, id, result) => evalApp(`ac.permissions.answerPermission(${JSON.stringify(tabId)}, ${JSON.stringify(id)}, ${JSON.stringify(result)}); return true`);
+const prompt = (tabId) => evalApp(`return globalThis.expo.modules.SolaraMedia.devPromptState(${JSON.stringify(tabId)}).then((s) => JSON.parse(s).permission ?? null)`);
+const answer = (tabId, id, result) => evalApp(`return globalThis.expo.modules.SolaraMedia.devPromptAnswer(${[tabId, "permission", id, result, ""].map(JSON.stringify).join(",")})`);
 async function joinedCall(windowId = mainWindow) {
   const url = `${origin()}/conf`;
   const tab = await openTab(url, "Conference", windowId);

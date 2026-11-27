@@ -408,7 +408,7 @@ const groups = {
         } finally {
           page.close();
         }
-        const prompt = await instance.eval(`return ac.pageState.getState().pages["t1"]?.permission ?? null`);
+        const prompt = await instance.eval(`return globalThis.expo.modules.SolaraMedia.devPromptState("t1").then((s) => JSON.parse(s).permission ?? null)`);
         assert.equal(prompt, null, "no prompt was shown");
         const denied = await events(instance, "deny");
         assert.equal(denied.length, 1);

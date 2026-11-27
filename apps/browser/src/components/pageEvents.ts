@@ -18,14 +18,14 @@ import { setPageProgress } from "../store/pageProgress";
 import { engineProfile, navigationTo } from "../store/model";
 import { splitOf } from "../store/splits";
 import type { Tab } from "../store/types";
-import { dismissPermissions } from "./site/permissions";
 import { patchPage, pageOf, setBrowserId, setPopover, usePages } from "./layout/pageState";
 import { openFromPage } from "./layout/openFromPage";
 import { closeFolderPanelIn } from "./sidebar/tileFolderUi";
-import { answerExternalApp, shouldPromptForPopups, showAutofillPrompt, showPasswordPrompt } from "./site/Prompts";
 import { requestDisplayMedia } from "./media/SharePicker";
 import { noteScroll, revealToolbar } from "./layout/toolbarAutoHide";
 import { closeLittleSolaraOnEscape } from "./littleSolara/actions";
+import { answerExternalApp } from "./site/ExternalAppPrompt";
+import { showAutofillPrompt, showPasswordPrompt } from "./site/Prompts";
 import { closePeekOnEscape } from "./peek/actions";
 
 export type PageSession = {
@@ -60,6 +60,9 @@ export type PageEventName =
   | "onFavicon"
   | "onMedia"
   | "onDisplayMediaRequest"
+  | "onExternalApp"
+  | "onPasswordPrompt"
+  | "onAutofillPrompt"
   | "onOpenWindow"
   | "onStatus"
   | "onCrashed"
@@ -69,10 +72,6 @@ export type PageEventName =
   | "onMediaAccess"
   | "onSecurity"
   | "onContentBlocked"
-  | "onPopupBlocked"
-  | "onPasswordPrompt"
-  | "onAutofillPrompt"
-  | "onExternalApp"
   | "onPageFocus"
   | "onPagePress"
   | "onWindowClose"
@@ -84,8 +83,8 @@ export type PageEventName =
 export type PageEventHandlers = Required<Pick<WebViewProps, PageEventName>>;
 
 const isBlank = (url: string) => !url || url === "about:blank";
-const pageKey = (url: string) => url.replace(/#.*$/, "");
 const hostOf = (url: string) => url.match(/^[a-z][\w+.-]*:\/\/([^/?#]*)/i)?.[1]?.toLowerCase() ?? "";
+const pageKey = (url: string) => url.replace(/#.*$/, "");
 
 export function newPageSession(tabId: string, engine: PageEngine, peekOf: string | undefined, handoff: { seq?: number } | null): PageSession {
   const t = useBrowser.getState().tabs[tabId];
@@ -290,11 +289,10 @@ export function pageEventHandlers(session: PageSession): PageEventHandlers {
       if (engine === "webkit") noteWebKitPage(tabId, { url, title, isLoading, committedUrl: committedUrl ?? "" });
       const lastPage = session.lastPage;
       if (lastPage !== null && pageKey(url) !== lastPage) {
-        if (pageOf(tabId).externalApp && hostOf(url) !== hostOf(lastPage)) answerExternalApp(tabId, false);
-        dismissPermissions(tabId);
         setPopover(tabId, null);
         clearEngineOffer(tabId);
-        patchPage(tabId, { popups: [], passwordPrompt: null, crashed: null, status: "" });
+        if (pageOf(tabId).externalApp && hostOf(url) !== hostOf(lastPage)) answerExternalApp(tabId, false);
+        patchPage(tabId, { passwordPrompt: null, crashed: null, status: "" });
         revealToolbar(tabId);
         if (session.peekOf === undefined) followSiteChoice(tabId, engine, url, lastPage);
       }
@@ -339,6 +337,9 @@ export function pageEventHandlers(session: PageSession): PageEventHandlers {
       if (session.factsOwner === "js") store().updateLive(tabId, { playingAudio: playing });
       if (tab()?.muted && !muted) void webviews.get(tabId)?.setMuted(true);
     },
+    onPasswordPrompt: (prompt) => showPasswordPrompt(tabId, prompt),
+    onAutofillPrompt: (prompt, id) => showAutofillPrompt(tabId, prompt, id),
+    onExternalApp: (externalApp) => patchPage(tabId, { externalApp }),
     onDisplayMediaRequest: (request) => requestDisplayMedia(tabId, request),
     onOpenWindow: (request: OpenWindowRequest) => {
       const t = tab();
@@ -356,14 +357,6 @@ export function pageEventHandlers(session: PageSession): PageEventHandlers {
       if (!prewarmOnly()) patchPage(tabId, { security });
     },
     onContentBlocked: ({ count }) => patchPage(tabId, { blocked: count }),
-    onPopupBlocked: (popup) => {
-      const first = !pageOf(tabId).popups.length;
-      patchPage(tabId, { popups: [...pageOf(tabId).popups, popup] });
-      if (first) void shouldPromptForPopups(engineProfile(session.profileId), popup.origin).then((ask) => ask && setPopover(tabId, "popups"));
-    },
-    onPasswordPrompt: (prompt) => showPasswordPrompt(tabId, prompt),
-    onAutofillPrompt: (prompt, id) => showAutofillPrompt(tabId, prompt, id),
-    onExternalApp: (externalApp) => patchPage(tabId, { externalApp }),
     onPageFocus: activateSplitPane,
     onPagePress: activateSplitPane,
     onWindowClose: (withWindow) => {

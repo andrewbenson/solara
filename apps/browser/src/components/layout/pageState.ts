@@ -1,5 +1,5 @@
 import { onPanePopoversChanged, panePopovers, setPanePopover } from "@solara/settings";
-import type { AutofillPrompt, BlockedPopup, CrashInfo, ExternalAppRequest, MediaAccess, NavigationState, PasswordPrompt, PermissionRequest, SecurityInfo } from "@solara/solaracore";
+import type { AutofillPrompt, CrashInfo, ExternalAppRequest, MediaAccess, NavigationState, PasswordPrompt, SecurityInfo } from "@solara/solaracore";
 import { create } from "zustand";
 import { useBrowser } from "../../store/browser";
 import { activeTabId } from "../../store/model";
@@ -14,12 +14,10 @@ export type PageState = {
   security: SecurityInfo | null;
   blocked: number;
   themeColorSource: NavigationState["themeColorSource"];
-  popups: BlockedPopup[];
-  permission: PermissionRequest | null;
+  mediaAccess: MediaAccess | null;
   passwordPrompt: PasswordPrompt | null;
   autofillPrompt: AutofillPrompt | null;
   externalApp: ExternalAppRequest | null;
-  mediaAccess: MediaAccess | null;
   wasNewTab: boolean;
   backToNewTab: boolean;
   newTabShown: { url: string; title: string; favicon: string | null } | null;
@@ -35,12 +33,10 @@ const IDLE_PAGE: PageState = {
   security: null,
   blocked: 0,
   themeColorSource: null,
-  popups: [],
-  permission: null,
+  mediaAccess: null,
   passwordPrompt: null,
   autofillPrompt: null,
   externalApp: null,
-  mediaAccess: null,
   wasNewTab: false,
   backToNewTab: false,
   newTabShown: null,
@@ -56,6 +52,7 @@ type Store = {
 
 export const usePages = create<Store>()(() => ({ pages: {}, browsers: {}, popover: panePopovers() }));
 onPanePopoversChanged((popover) => usePages.setState({ popover }));
+
 
 export function patchPage(tabId: string, patch: Partial<PageState>) {
   usePages.setState((s) => {
@@ -83,6 +80,7 @@ export function setBrowserId(tabId: string, browserId: number) {
     return { browsers };
   });
 }
+
 
 export const tabForBrowser = (browserId: number): string | undefined => usePages.getState().browsers[browserId];
 

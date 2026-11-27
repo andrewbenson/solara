@@ -24,7 +24,7 @@ public class SettingsModule: Module {
       }
     }.runOnQueue(.main)
 
-    Events("onEngineBackChanged", "onPanePopoversChanged", "onBookmarkProjectionChanged", "onAppIntegrationPresentation", "onSettingsCall", "onLiveReplica", "onLiveCloseGroup", "onBookmarkWriterState")
+    Events("onEngineBackChanged", "onPanePopoversChanged", "onPopupCountsChanged", "onBookmarkProjectionChanged", "onAppIntegrationPresentation", "onSettingsCall", "onLiveReplica", "onLiveCloseGroup", "onBookmarkWriterState")
 
     OnCreate {
       NativeBookmarkLaunch.select()
@@ -43,6 +43,9 @@ public class SettingsModule: Module {
         NativeExtensionSheets.install()
         NativeSelectionTools.popoversChanged = { values in
           projectionSink.module?.sendEvent("onPanePopoversChanged", ["values": values])
+        }
+        PanePrompts.popupCountsChanged = { counts in
+          DispatchQueue.main.async { projectionSink.module?.sendEvent("onPopupCountsChanged", ["values": counts]) }
         }
         NativeEngineCommands.backChanged = {
           DispatchQueue.main.async {
@@ -92,6 +95,10 @@ public class SettingsModule: Module {
 
     Function("setPreferredImportSource") { (browserId: String?) in
       ImportPreferredSource.shared.set(browserId)
+    }
+
+    Function("popupCounts") { () -> [String: Int] in
+      PanePrompts.popupCounts()
     }
 
     Function("panePopovers") { () -> [String: String] in

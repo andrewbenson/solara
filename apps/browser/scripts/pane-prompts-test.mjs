@@ -6,20 +6,20 @@ import { devtools, launch, reporter, session, sleep } from "../../../scripts/lib
 
 const args = process.argv.slice(2);
 const appArg = args.find((a) => !a.startsWith("--"));
-if (!appArg || args.some((arg) => arg.startsWith("--") && !["--defaults", "--keep-data"].includes(arg))) {
-  console.error(`usage: node pane-prompts-test.mjs <Debug Solara.app> [--defaults] [--keep-data]
+if (!appArg || args.some((arg) => arg.startsWith("--") && !["--defaults", "--inline", "--safe", "--keep-data"].includes(arg))) {
+  console.error(`usage: node pane-prompts-test.mjs <Debug Solara.app> [--defaults | --inline | --safe] [--keep-data]
 
-The pooled pane's native prompts drawn from pool page events. Password: a real form submission brings Chrome's save
+Native page prompts in pooled and inline hosts. Password: a real form submission brings Chrome's save
 prompt; RN mounts no PasswordPrompt and the native popover sits 8 points from the pane's top right at 350 wide, with
 Never on This Site, Not Now and Save; a click on Save, after the input guard's delay, saves the login and closes it; a second
 submission's prompt goes when the page navigates to another page. External app: a link to a scheme no app handles
 brings the 340-wide popover 8 points below the pane's top with OK, which closes it. Autofill: a save-card prompt sent
-as a pool page event draws the 350-wide popover at the top right with its accept and decline buttons; decline closes
-it and clears the store, and a closed event for a second prompt takes it down. Pop-ups: a window.open without a
+as a native fixture draws the 350-wide popover at the top right with its accept and decline buttons; decline closes
+it and clears the receipt, and a closed event for a second prompt takes it down. Pop-ups: a window.open without a
 gesture is blocked and brings the 360-wide popover at the top right with Always Deny, Only Once, Always Allow and the
 blocked URL as a row; Only Once opens it as a tab and closes the prompt; a click outside a second one dismisses it and
 keeps the blocked list. Permission: a notification request and a location request queue; the native popover shows
-the same request as the store's current one, 300 wide 8 points below the pane's top, and Don't Allow denies it in the
+the active native request, 300 wide 8 points below the pane's top, and Don't Allow denies it in the
 page and moves on to the next; a request goes when the page navigates. Device chooser: Chrome's Bluetooth chooser
 (the DEBUG hook) draws natively at 340 wide, Cancel closes it in the engine and the store, and the unauthorized
 chooser shows its notice. Engine offer: a protected-video page message brings the 320-wide WebKit offer 8 points
@@ -55,11 +55,12 @@ const settle = (ms) => new Promise((r) => setTimeout(r, ms));
 const act = (n, a) => C.devWindow(n, a);
 const click = (n, p) => act(n, "mouse:moved:" + Math.round(p[0]) + "," + Math.round(p[1])).then(() => settle(60))
   .then(() => act(n, "mouse:down:" + Math.round(p[0]) + "," + Math.round(p[1]))).then(() => settle(60)).then(() => act(n, "mouse:up:" + Math.round(p[0]) + "," + Math.round(p[1])));
+const prompts = () => M.devPromptState("a").then(JSON.parse);
 const native = (w = "w1") => M.describePaneOverlays(w).then(JSON.parse);
 const promptIn = (w, kind) => native(w).then((d) => { const p = d && d.tabs && d.tabs.a && d.tabs.a[kind]; return p && !p.hidden ? p : null; });
 const rnDrawn = (name) => acPerf.findFibers(name, 5).filter((f) => !!f.child).length;
 const rnPrompt = () => rnDrawn("PasswordPrompt");
-const pageEvent = (name, payload) => globalThis.expo.modules.SolaraTabPool.devPageEvent("a", name, payload);
+const pageEvent = (name, payload) => ["onPageMessage", "onAutofillPrompt"].includes(name) ? globalThis.expo.modules.SolaraTabPool.devPageEvent("a", name, payload) : M.devPromptFixture("a", name, payload);
 `;
 let app = null;
 const run = (body, timeout = 20000) => app.eval(`${HELPERS}\n${body}`, { timeout });
@@ -107,7 +108,16 @@ const POOL = {
   SOLARA_NATIVE_SHELL: "1", SOLARA_NATIVE_PAGES_POOL: "1", SOLARA_SHELL_PANES: "1", SOLARA_TAB_POOL: "1",
   SOLARA_CHROMIUM_SWITCHES: `--solara-test-bluetooth-chooser ${process.env.SOLARA_CHROMIUM_SWITCHES ?? ""}`.trim(),
 };
-const LEGS = [{ tag: "native", env: args.includes("--defaults") ? { SOLARA_CHROMIUM_SWITCHES: POOL.SOLARA_CHROMIUM_SWITCHES } : POOL }];
+const inline = args.includes("--inline") || args.includes("--safe");
+const safe = args.includes("--safe");
+const LEGS = [{
+  tag: safe ? "safe" : inline ? "inline" : "native",
+  env: args.includes("--defaults") || inline
+    ? { SOLARA_CHROMIUM_SWITCHES: POOL.SOLARA_CHROMIUM_SWITCHES,
+        ...(inline ? { SOLARA_TAB_POOL: "0", SOLARA_NATIVE_PAGES_POOL: "0" } : {}),
+        ...(safe ? { SOLARA_LAUNCH_SWITCHES_DEFAULTS: `solara-prompt-safe-${process.pid}`, SOLARA_LAUNCH_SWITCHES_OPTION: "1" } : {}) }
+    : POOL,
+}];
 
 async function submit(user, pass) {
   await until("the login page", `return ac.store.getState().tabs.a?.title === "Login" && !ac.store.getState().live.a?.isLoading || null;`, 10000);
@@ -132,18 +142,49 @@ try {
   for (const { tag, env } of LEGS) {
     app = await launch(resolve(appArg), {
       data: join(scratch, `data-${tag}`), fresh: true, session: fixture, onboarded: true, probe: true, env,
-      ready: "return !!ac.store.getState().windows.w1",
+      ready: safe ? "return !!ac.store.getState()" : "return !!ac.store.getState().windows.w1",
     });
+    if (safe) {
+      await rep.check("safe-permission-lifetime", async () => {
+        const status = await run('return globalThis.expo.modules.SolaraStoreAdapter.status();');
+        if (!status?.safeMode) throw new Error("the app did not enter Safe Mode");
+        const url = `${base}/other?safe`;
+        const { windowId, tabId } = await run(`const initial = ac.store.getState();
+          const windowId = initial.createWindow({ url: ${JSON.stringify(url)} });
+          const window = ac.store.getState().windows[windowId];
+          return { windowId, tabId: window.activeTabIds[window.profileId] };`);
+        const target = await until("the Safe Mode page", () => app.pageTarget(url), 15000);
+        const cdp = await devtools(target);
+        try {
+          await cdp.send("Runtime.evaluate", { expression: "navigator.geolocation.getCurrentPosition(() => {}, () => {}); true", userGesture: true });
+        } finally {
+          cdp.close();
+        }
+        const tab = JSON.stringify(tabId);
+        const state = `M.devPromptState(${tab}).then((s) => JSON.parse(s).permission ?? null)`;
+        const request = await until("the Safe Mode permission receipt", `return ${state};`, 8000);
+        await untilSnapshot("the Safe Mode permission view", (window) =>
+          window?.paneOverlays?.tabs?.[tabId]?.permission?.hidden === false, windowId, 8000);
+        await run(`return ac.webviews.get(${tab}).reload().then(() => true);`);
+        await until("the Safe Mode reload retires the receipt", `return ${state}.then((p) => !p || null);`, 8000);
+        if (await run(`return M.devPromptAnswer(${tab}, "permission", ${JSON.stringify(request.id)}, "accept", "");`))
+          throw new Error("Safe Mode accepted the old permission receipt");
+        return { permission: request.permissions };
+      });
+      await app.quit();
+      app = null;
+      continue;
+    }
     await until("page A", `return ac.store.getState().tabs.a?.title === "Login" || null;`, 15000);
     const number = await until("window w1", `const id = Object.entries(ac.pageState.getState().browsers ?? {}).find(([, t]) => t === "a")?.[0]; return id ? C.devWindowNumber(Number(id)) : null;`, 15000);
     await untilSnapshot("page pool and hosted prompts", async (window, state) => {
       const served = await run(`return !!globalThis.expo.modules.SolaraTabPool?.available?.() && !!ac.webviews.get("a") && !acPerf.findFibers("TabWebView", 5).length;`);
       const kinds = await run(`return globalThis.expo.modules.SolaraHosted.kinds();`);
-      return served && kinds.includes("panePrompts") && state.poolAvailable === served && window?.chromeWindowNumber === number &&
+      return served === !inline && kinds.includes("panePrompts") && state.poolAvailable === served && window?.chromeWindowNumber === number &&
         window.mediaKinds.includes("panePrompts") === kinds.includes("panePrompts");
     });
 
-    await rep.check(`${tag}-password-save`, async () => {
+    if (!inline) await rep.check(`${tag}-password-save`, async () => {
       await submit("ada", "s3cret-pass");
       await until("the prompt reaches the store", `return ac.pageState.getState().pages.a?.passwordPrompt?.state === "save" || null;`, 10000);
       const shown = await until("the native prompt", `return native().then((d) => d && d.tabs.a && d.tabs.a.password && !d.tabs.a.password.hidden && d.tabs.a.password.controls.Save ? d.tabs.a.password : null);`, 6000);
@@ -171,7 +212,7 @@ try {
       return { card: shown.card, saved: !!saved };
     });
 
-    await rep.check(`${tag}-password-gone-on-navigation`, async () => {
+    if (!inline) await rep.check(`${tag}-password-gone-on-navigation`, async () => {
       await run(`ac.store.getState().navigate("a", ${JSON.stringify(`${base}/login`)}, { userInitiated: true }); return true;`);
       await submit("grace", "an0ther-pass");
       await until("a second prompt", `return ac.pageState.getState().pages.a?.passwordPrompt || null;`, 10000);
@@ -191,7 +232,16 @@ try {
       } finally {
         cdp.close();
       }
-      await until("the request reaches the store", `return ac.pageState.getState().pages.a?.externalApp || null;`, 8000);
+      if (inline) {
+        await until("the inline external-app prompt", `return rnDrawn("ExternalAppPrompt") || null;`, 8000);
+        await sleep(800);
+        await run(`const body = acPerf.findFibers("NativePromptBody", 5).find((f) => f.memoizedProps.spec?.buttons?.some((button) => button.id === "ok"));
+          if (!body) throw new Error("inline prompt body missing");
+          body.memoizedProps.onButton("ok"); return true;`);
+        await until("the inline external-app prompt closes", `return !rnDrawn("ExternalAppPrompt") || null;`, 4000);
+        return { host: "inline" };
+      }
+      await until("the request reaches Swift", `return prompts().then((p) => p.externalApp || null);`, 8000);
       const shown = await until("the native prompt", `return native().then((d) => d && d.tabs.a && d.tabs.a.externalApp && !d.tabs.a.externalApp.hidden && d.tabs.a.externalApp.controls.OK ? d.tabs.a.externalApp : null);`, 6000);
       await crossPrompt("w1", "externalApp", shown);
       if (await run(`return rnDrawn("ExternalAppPrompt");`)) throw new Error("RN still draws the external app prompt");
@@ -203,11 +253,11 @@ try {
       await run(`return click(${number}, ${JSON.stringify(centre(shown.controls.OK))}).then(() => true);`);
       await until("the prompt closes", `return native().then((d) => !d || !d.tabs.a || !d.tabs.a.externalApp || null);`, 3000);
       await promptGone("w1", "externalApp");
-      await until("the store's request clears", `return !ac.pageState.getState().pages.a?.externalApp || null;`, 3000);
+      await until("the native request clears", `return prompts().then((p) => !p.externalApp || null);`, 3000);
       return { card: shown.card };
     });
 
-    await rep.check(`${tag}-autofill`, async () => {
+    if (!inline) await rep.check(`${tag}-autofill`, async () => {
       const card = (id) => ({ id, kind: "saveCard", origin: base, title: "Save card?", message: "To pay faster next time", accept: "Save", decline: "No thanks", footer: "", lines: ["Visa ending in 1111", "Ada Lovelace"] });
       await run(`return pageEvent("onAutofillPrompt", ${JSON.stringify(card(41))});`);
       await until("the prompt reaches the store", `return ac.pageState.getState().pages.a?.autofillPrompt?.id === 41 || null;`, 4000);
@@ -233,7 +283,7 @@ try {
       return { card: shown.card };
     });
 
-    await rep.check(`${tag}-engine-offer`, async () => {
+    if (!inline) await rep.check(`${tag}-engine-offer`, async () => {
       await run(`return pageEvent("onPageMessage", { kind: "drm", data: { keySystem: "com.widevine.alpha" } });`);
       const shown = await until("the native offer", `return native().then((d) => d && d.tabs.a && d.tabs.a.engineOffer && !d.tabs.a.engineOffer.hidden && d.tabs.a.engineOffer.controls["Stay on Page"] ? d.tabs.a.engineOffer : null);`, 6000);
       await crossPrompt("w1", "engineOffer", shown);
@@ -262,7 +312,7 @@ try {
         } finally {
           cdp.close();
         }
-        await until("the prompt opens", `return ac.pageState.getState().popover.a === "popups" && ac.pageState.getState().pages.a?.popups.length ? true : null;`, 8000);
+        await until("the prompt opens", `return prompts().then((p) => ac.pageState.getState().popover.a === "popups" && p.popups?.length ? true : null);`, 8000);
       };
       const tabs = () => run(`return Object.keys(ac.store.getState().tabs).length;`);
       await blockPopup("/popped");
@@ -279,7 +329,7 @@ try {
       await run(`return click(${number}, ${JSON.stringify(centre(shown.controls["Only Once"]))}).then(() => true);`);
       await until("the prompt closes", `return native().then((d) => !d || !d.tabs.a || !d.tabs.a.popups || null);`, 3000);
       await promptGone("w1", "popups");
-      await until("the store clears", `return !ac.pageState.getState().popover.a && !ac.pageState.getState().pages.a?.popups.length || null;`, 3000);
+      await until("the store clears", `return prompts().then((p) => !ac.pageState.getState().popover.a && !p.popups?.length || null);`, 3000);
       await until("the pop-up opens as a tab", async () => ((await tabs()) > before ? true : null), 6000);
       await run(`ac.store.getState().activate("a"); return true;`);
       await until("page A is shown again", `return native().then((d) => d && d.tabs.a ? true : null);`, 4000).catch(() => {});
@@ -291,7 +341,7 @@ try {
       await until("a click outside dismisses it", `return native().then((d) => !d || !d.tabs.a || !d.tabs.a.popups || null);`, 3000);
       await promptGone("w1", "popups");
       await until("the popover state clears", `return !ac.pageState.getState().popover.a || null;`, 3000);
-      if (!(await run(`return ac.pageState.getState().pages.a?.popups.length;`))) throw new Error("dismissing dropped the blocked list");
+      if (!(await run(`return prompts().then((p) => p.popups?.length);`))) throw new Error("dismissing dropped the blocked list");
       return { card: shown.card };
     });
 
@@ -308,9 +358,18 @@ try {
           cdp.close();
         }
       };
-      const current = `return ac.pageState.getState().pages.a?.permission ?? null;`;
+      const current = `return prompts().then((p) => p.permission ?? null);`;
       await inPage("Notification.requestPermission(); true");
-      await until("the request reaches the store", current, 8000);
+      if (inline) {
+        await until("the inline external-app prompt", `return rnDrawn("ExternalAppPrompt") || null;`, 8000);
+        await sleep(800);
+        await run(`const body = acPerf.findFibers("NativePromptBody", 5).find((f) => f.memoizedProps.spec?.buttons?.some((button) => button.id === "ok"));
+          if (!body) throw new Error("inline prompt body missing");
+          body.memoizedProps.onButton("ok"); return true;`);
+        await until("the inline external-app prompt closes", `return !rnDrawn("ExternalAppPrompt") || null;`, 4000);
+        return { host: "inline" };
+      }
+      await until("the request reaches Swift", current, 8000);
       await inPage("navigator.geolocation.getCurrentPosition(() => {}, () => {}); true");
       const shownFor = (request) =>
         until(`the native prompt for ${request.permissions}`, `return native().then((d) => { const p = d && d.tabs.a && d.tabs.a.permission; return p && !p.hidden && p.controls["Don't Allow"] && p.key === ${JSON.stringify(request.id)} ? p : null; });`, 6000).catch(async (e) => {
@@ -327,13 +386,13 @@ try {
       await sleep(800);
       await run(`return click(${number}, ${JSON.stringify(centre(shown.controls["Don't Allow"]))}).then(() => true);`);
       if (first.permissions.includes("notifications")) await until("the page sees the denial", async () => ((await inPage("Notification.permission")) === "denied" ? true : null), 5000);
-      const second = await until("the store moves on", `const p = ac.pageState.getState().pages.a?.permission; return p && p.id !== ${JSON.stringify(first.id)} ? p : null;`, 6000).catch(() => null);
+      const second = await until("the native queue advances", `return prompts().then(({ permission: p }) => p && p.id !== ${JSON.stringify(first.id)} ? p : null);`, 6000).catch(() => null);
       if (second) {
         const next = await shownFor(second);
         await crossPrompt("w1", "permission", next);
         await sleep(800);
         await run(`ac.store.getState().navigate("a", ${JSON.stringify(`${base}/other`)}, { userInitiated: true }); return true;`);
-        await until("navigation drops it in the store", `return !ac.pageState.getState().pages.a?.permission || null;`, 8000);
+        await until("navigation drops the receipt", `return prompts().then((p) => !p.permission || null);`, 8000);
         await until("and natively", `return native().then((d) => !d || !d.tabs.a || !d.tabs.a.permission || null);`, 4000);
         await promptGone("w1", "permission");
         return { card: shown.card, first: first.permissions, queued: second.permissions, next: next.card };
@@ -346,9 +405,15 @@ try {
     await rep.check(`${tag}-device-chooser`, async () => {
       const browserId = await run(`return Number(Object.entries(ac.pageState.getState().browsers).find(([, t]) => t === "a")?.[0]);`);
       const UI = `globalThis.expo.modules.SolaraChromeUI`;
-      const chooserId = `return globalThis.acDeviceChoosers.useChoosers.getState().byTab.a?.id ?? null;`;
+      const chooserId = `return prompts().then((p) => p.deviceChooser?.id ?? null);`;
       if (!(await run(`return ${UI}.devShowBluetoothChooser(${browserId}, false);`))) throw new Error("the DEBUG chooser hook is missing");
-      const id = await until("the chooser reaches JS", chooserId, 6000);
+      if (inline) {
+        await until("the inline device chooser", `return rnDrawn("DeviceChooser") || null;`, 6000);
+        await run(`const d = globalThis.acDeviceChoosers; return d.cancelDeviceChooser(d.useChoosers.getState().byTab.a.id);`);
+        await until("the inline chooser closes", `return !rnDrawn("DeviceChooser") || null;`, 4000);
+        return { host: "inline" };
+      }
+      const id = await until("the chooser reaches Swift", chooserId, 6000);
       const shown = await until("the native chooser", `return native().then((d) => d && d.tabs.a && d.tabs.a.deviceChooser && !d.tabs.a.deviceChooser.hidden && d.tabs.a.deviceChooser.controls.Cancel && d.tabs.a.deviceChooser.id === ${id} ? d.tabs.a.deviceChooser : null);`, 6000);
       await crossPrompt("w1", "deviceChooser", shown);
       if (await run(`return rnDrawn("DeviceChooser");`)) throw new Error("RN still draws the device chooser");
@@ -357,11 +422,11 @@ try {
       if (Math.abs(cw - 340) > 0.5 || Math.abs(fy + 8 - cy) > 0.5) throw new Error(`card ${JSON.stringify(shown.card)} in pane ${JSON.stringify(shown.frame)} (x ${fx})`);
       await sleep(800);
       await run(`return click(${number}, ${JSON.stringify(centre(shown.controls.Cancel))}).then(() => true);`);
-      await until("the engine closes it", `return globalThis.acDeviceChoosers.useChoosers.getState().byTab.a ? null : true;`, 4000);
+      await until("the engine closes it", `return prompts().then((p) => !p.deviceChooser || null);`, 4000);
       await until("the native chooser goes", `return native().then((d) => !d || !d.tabs.a || !d.tabs.a.deviceChooser || null);`, 3000);
       await promptGone("w1", "deviceChooser");
       await run(`return ${UI}.devShowBluetoothChooser(${browserId}, true);`);
-      const lockedId = await until("the unauthorized chooser in JS", `const c = globalThis.acDeviceChoosers.useChoosers.getState().byTab.a; return c && c.unauthorized ? c.id : null;`, 6000);
+      const lockedId = await until("the unauthorized chooser in Swift", `return prompts().then(({ deviceChooser: c }) => c && c.unauthorized ? c.id : null);`, 6000);
       const locked = await until("the unauthorized chooser", `return native().then((d) => d && d.tabs.a && d.tabs.a.deviceChooser && d.tabs.a.deviceChooser.id === ${lockedId} && d.tabs.a.deviceChooser.controls.Cancel ? d.tabs.a.deviceChooser : null);`, 6000);
       await crossPrompt("w1", "deviceChooser", locked);
       await sleep(800);
@@ -372,26 +437,32 @@ try {
     });
 
     await rep.check(`${tag}-prompts-move-with-their-tab`, async () => {
-      await run(`ac.store.getState().navigate("a", ${JSON.stringify(`${base}/login`)}, { userInitiated: true }); return true;`);
-      await submit("hopper", "th1rd-pass");
-      await until("a password prompt", `return ac.pageState.getState().pages.a?.passwordPrompt || null;`, 10000);
-      const sourcePrompt = await until("drawn in w1", `return promptIn("w1", "password");`, 6000);
-      await crossPrompt("w1", "password", sourcePrompt);
+      if (!inline) {
+        await run(`ac.store.getState().navigate("a", ${JSON.stringify(`${base}/login`)}, { userInitiated: true }); return true;`);
+        await submit("hopper", "th1rd-pass");
+        await until("a password prompt", `return ac.pageState.getState().pages.a?.passwordPrompt || null;`, 10000);
+        const sourcePrompt = await until("drawn in w1", `return promptIn("w1", "password");`, 6000);
+        await crossPrompt("w1", "password", sourcePrompt);
+      }
       await run(`ac.store.getState().newTab("w1"); return true;`);
       const to = await run(`return ac.store.getState().moveTabsToWindow(["a"], null) ?? null;`);
       if (!to) throw new Error("no new window");
-      await until("the password prompt leaves w1", `return promptIn("w1", "password").then((p) => !p || null);`, 5000);
-      await promptGone("w1", "password");
-      const movedPassword = await until("and shows in the new window", `return promptIn(${JSON.stringify(to)}, "password");`, 5000).catch(async (e) => {
-        const seen = await run(`return native(${JSON.stringify(to)}).then((d) => ({ overlays: d, prompt: !!ac.pageState.getState().pages.a?.passwordPrompt, window: ac.store.getState().tabs.a?.windowId }));`).catch((x) => String(x));
-        throw new Error(`${e.message}; ${JSON.stringify(seen)}`);
-      });
-      await crossPrompt(to, "password", movedPassword);
-      await untilSnapshot("password prompt tab ownership", (_, state) => state.tabs.some((tab) => tab.id === "a" && tab.windowId === to), to);
+      if (!inline) {
+        await until("the password prompt leaves w1", `return promptIn("w1", "password").then((p) => !p || null);`, 5000);
+        await promptGone("w1", "password");
+        const movedPassword = await until("and shows in the new window", `return promptIn(${JSON.stringify(to)}, "password");`, 5000).catch(async (e) => {
+          const seen = await run(`return native(${JSON.stringify(to)}).then((d) => ({ overlays: d, prompt: !!ac.pageState.getState().pages.a?.passwordPrompt, window: ac.store.getState().tabs.a?.windowId }));`).catch((x) => String(x));
+          throw new Error(`${e.message}; ${JSON.stringify(seen)}`);
+        });
+        await crossPrompt(to, "password", movedPassword);
+        await untilSnapshot("password prompt tab ownership", (_, state) => state.tabs.some((tab) => tab.id === "a" && tab.windowId === to), to);
+      }
       const other = `${base.replace("127.0.0.1", "localhost")}/other`;
       await run(`ac.store.getState().navigate("a", ${JSON.stringify(other)}, { userInitiated: true }); return true;`);
-      await until("navigation drops the password prompt", `return promptIn(${JSON.stringify(to)}, "password").then((p) => !p || null);`, 8000);
-      await promptGone(to, "password");
+      if (!inline) {
+        await until("navigation drops the password prompt", `return promptIn(${JSON.stringify(to)}, "password").then((p) => !p || null);`, 8000);
+        await promptGone(to, "password");
+      }
       await until("the localhost page", `return ac.store.getState().tabs.a?.url === ${JSON.stringify(other)} && !ac.store.getState().live.a?.isLoading || null;`, 10000);
       const target = await until("its DevTools target", async () => (await app.pageTarget(other)) ?? null, 5000);
       const cdp = await devtools(target);
@@ -402,7 +473,15 @@ try {
       }
       const movedPermission = await until("a permission prompt in the new window", `return promptIn(${JSON.stringify(to)}, "permission");`, 8000);
       await crossPrompt(to, "permission", movedPermission);
+      const request = await run(`return prompts().then((p) => p.permission);`);
       await run(`ac.store.getState().moveTabsToWindow(["a"], "w1"); return true;`);
+      if (inline) {
+        await until("the inline handoff retires its permission", `return prompts().then((p) => !p.permission || null);`, 5000);
+        if (await run(`return M.devPromptAnswer("a", "permission", ${JSON.stringify(request.id)}, "deny", "");`))
+          throw new Error("the rehosted page accepted the old permission receipt");
+        await promptGone(to, "permission");
+        return { to, retired: true };
+      }
       const returnedPermission = await until("the permission prompt follows it back to w1", `return promptIn("w1", "permission");`, 5000);
       await crossPrompt("w1", "permission", returnedPermission);
       await untilSnapshot("permission prompt tab ownership", (_, state) => state.tabs.some((tab) => tab.id === "a" && tab.windowId === "w1"));
@@ -412,6 +491,42 @@ try {
       await until("navigation drops it", `return promptIn("w1", "permission").then((p) => !p || null);`, 8000);
       await promptGone("w1", "permission");
       return { to };
+    });
+
+    await rep.check(`${tag}-prompt-host-lifetimes`, async () => {
+      const probe = (tabId) => `M.devPromptState(${JSON.stringify(tabId)}).then((s) => JSON.parse(s).popups?.[0] ?? null)`;
+      const covered = [];
+      for (const [index, mode] of ["private", "little", "peek"].entries()) {
+        const url = `${base}/other?host=${mode}`;
+        const opened = mode === "peek"
+          ? { windowId: "w1", tabId: await run(`return ac.store.getState().openPeek("a", ${JSON.stringify(url)});`) }
+          : await run(`const s = ac.store.getState(); const windowId = s.createWindow(${JSON.stringify({ url, incognito: mode === "private", small: mode === "little" })});
+            const w = ac.store.getState().windows[windowId]; return w && { windowId, tabId: w.activeTabIds[w.profileId] };`);
+        if (!opened?.tabId) throw new Error(`no ${mode} page`);
+        const { windowId, tabId } = opened;
+        const tab = JSON.stringify(tabId);
+        const win = JSON.stringify(windowId);
+        const id = String(index + 1);
+        const plant = `return M.devPromptFixture(${tab}, "onPopupBlocked", ${JSON.stringify({ id, origin: base, url: `${base}/popped` })});`;
+        const staleAnswer = `return M.devPromptAnswer(${tab}, "popups", ${JSON.stringify(id)}, "dismiss", "");`;
+        try {
+          await until(`${mode} page loads`, `const s = ac.store.getState(); return s.tabs[${tab}]?.url === ${JSON.stringify(url)} && !s.live[${tab}]?.isLoading || null;`, 15000);
+          await until(`${mode} receipt arrives`, plant, 5000);
+          await untilSnapshot(`${mode} prompt is on its own page`, (window) =>
+            window?.paneOverlays?.tabs?.[tabId]?.popups?.hidden === false, windowId, 8000);
+          await run(`return ac.webviews.get(${tab}).reload().then(() => true);`);
+          await until(`${mode} same-URL reload retires the receipt`, `return ${probe(tabId)}.then((p) => !p || null);`, 8000);
+          if (await run(staleAnswer)) throw new Error(`${mode} accepted a pre-reload receipt`);
+          await until(`${mode} receipt arrives again`, plant, 5000);
+        } finally {
+          await run(mode === "peek" ? 'ac.store.getState().closePeek("w1"); return true;'
+            : `ac.store.getState().closeWindow(${win}); return true;`);
+        }
+        await until(`${mode} close retires the receipt`, `return ${probe(tabId)}.then((p) => !p || null);`, 5000);
+        if (await run(staleAnswer)) throw new Error(`${mode} accepted a closed page's receipt`);
+        covered.push(mode);
+      }
+      return { covered };
     });
 
     await app.quit();

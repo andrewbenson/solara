@@ -101,6 +101,12 @@ public struct PaneBrowsers: Sendable {
     if parkedChoosers.count > Self.parkedChooserLimit { parkedChoosers.removeFirst(parkedChoosers.count - Self.parkedChooserLimit) }
   }
 
+  public mutating func drain() -> [PanePermissionRequest] {
+    let pending = orphans
+    self = PaneBrowsers()
+    return pending
+  }
+
   public mutating func parkedChooser(_ browserId: Int) -> PaneDeviceChooser? {
     guard let index = parkedChoosers.firstIndex(where: { $0.browserId == browserId }) else { return nil }
     return parkedChoosers.remove(at: index)
@@ -128,7 +134,10 @@ public struct PaneBrowsers: Sendable {
 extension PanePromptPage {
   public var permission: PanePermissionRequest? { permissions.first }
 
-  public mutating func enqueue(_ request: PanePermissionRequest) { permissions.append(request) }
+  public mutating func enqueue(_ request: PanePermissionRequest) {
+    guard !permissions.contains(where: { $0.id == request.id }) else { return }
+    permissions.append(request)
+  }
 
   public mutating func dropPermission(_ id: String) -> Bool {
     let before = permissions.count

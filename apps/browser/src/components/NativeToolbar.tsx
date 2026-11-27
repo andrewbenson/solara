@@ -1,4 +1,5 @@
-import { NativeToolbarView, type ToolbarClick } from "@solara/settings";
+import { create } from "zustand";
+import { NativeToolbarView, onPopupCountsChanged, popupCounts, type ToolbarClick } from "@solara/settings";
 import { translation, WindowDragRegion } from "@solara/shell";
 import { useEffect, useRef } from "react";
 import { useShallow } from "zustand/react/shallow";
@@ -45,6 +46,9 @@ export const stripesUri = (palette: { text: string }) => {
   const onDark = !m || 0.2126 * parseInt(m[1]!, 16) + 0.7152 * parseInt(m[2]!, 16) + 0.0722 * parseInt(m[3]!, 16) > 128;
   return Image.resolveAssetSource(onDark ? LIGHT_STRIPES : DARK_STRIPES)?.uri ?? null;
 };
+const usePopupCounts = create<Record<string, number>>(() => popupCounts());
+onPopupCountsChanged((counts) => usePopupCounts.setState(counts, true));
+
 const togglePopover = (tabId: string, name: "siteControls" | "zoom" | "popups") =>
   setPopover(tabId, (usePages.getState().popover[tabId] ?? null) === name ? null : name);
 
@@ -98,7 +102,7 @@ export function useNativeToolbarModel({ tabId, geometry, windowId, focused, bare
   const editing = useUrlEdit((u) => u.tabId === tabId);
   const editRequest = useUrlEdit((u) => u.tabId === tabId ? u.request : 0);
   useEffect(() => () => endUrlEdit(tabId), [tabId]);
-  const popups = usePage(tabId, (p) => p.popups.length);
+  const popups = usePopupCounts((counts) => counts[tabId] ?? 0);
   const capture = usePage(tabId, (p) => p.mediaAccess);
   const newTabShown = usePage(tabId, (p) => !!p.newTabShown);
   const backToNewTab = usePage(tabId, (p) => p.backToNewTab);

@@ -9,7 +9,7 @@ import { opaqueCard } from "../lib/opaqueCard";
 import { handOff, takeHandOff, wantsPage } from "../lib/tabPages";
 import { noteGone } from "../lib/tabLifecycle";
 import { usePrewarm } from "../lib/preload";
-import { pagesPooledIn, panePromptsNativeIn } from "../lib/pagesPool";
+import { pagesPooledIn } from "../lib/pagesPool";
 import { persistEngine } from "../lib/engines";
 import { tabEngine } from "../store/engines";
 import { webviewRef } from "../lib/webviews";
@@ -88,9 +88,8 @@ export function LegacyContentCard() {
   const shell = useWindowShell();
   const [paneRoots] = useState(() => windowPaneRootsActive(windowId));
   const [pooled] = useState(() => pagesPooledIn(windowId));
-  const [nativePrompts] = useState(() => panePromptsNativeIn(windowId));
   const cardTheme = useTheme();
-  useNativePanePromptsTheme(nativePrompts, windowId, cardTheme, useFormColors());
+  useNativePanePromptsTheme(true, windowId, cardTheme, useFormColors());
   useNativeSplitChrome(windowId, shell, cardTheme, fullscreenTab ?? null, !!peekId, !addressInSidebar && !small && !hideWhileScrolling, small);
   useEffect(() => {
     if (fullscreenTab && peekId && !peekFullscreen) dismissPeek(windowId);

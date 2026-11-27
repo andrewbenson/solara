@@ -9,6 +9,7 @@ public enum PageEvents {
     "created": "onPageCreated",
     "pageIssue": "onPageIssue",
     "navigation": "onNavigationChange",
+    "documentCommitted": "onDocumentCommitted",
     "progress": "onProgress",
     "favicon": "onFavicon",
     "media": "onMedia",

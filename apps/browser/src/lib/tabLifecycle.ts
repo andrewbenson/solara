@@ -106,7 +106,6 @@ function keepAliveReason(s: BrowserState, id: string): string | null {
   if (live?.isLoading) return "loading";
   const page = pageOf(id);
   if (page.mediaAccess) return "capturing";
-  if (page.permission) return "asking for permission";
   if (page.newTabShown) return "kept for Forward";
   const media = useMedia.getState();
   const nativeMedia = mediaProtectionReason(id, tab.pinned);

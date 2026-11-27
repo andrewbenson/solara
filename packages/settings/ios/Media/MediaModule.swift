@@ -33,8 +33,9 @@ public class MediaModule: Module {
 
     Function("cliIndicatorShown") { () -> Bool? in NativeMedia.cliShown }
 
-    Function("protectionReason") { (tabId: String, pinned: Bool) in
-      NowPlayingStore.shared.protectionReason(tabId: tabId, pinned: pinned)
+    Function("protectionReason") { (tabId: String, pinned: Bool) -> String? in
+      if PanePrompts.permissionPending(tabId) { return "answering a permission request" }
+      return NowPlayingStore.shared.protectionReason(tabId: tabId, pinned: pinned)
     }
 
     #if DEBUG
@@ -83,7 +84,24 @@ public class MediaModule: Module {
     }.runOnQueue(.main)
 
     #if DEBUG
-      AsyncFunction("describePaneOverlays") { (windowId: String) -> String in
+      AsyncFunction("devPromptFixture") { (tabId: String, name: String, payload: [String: Any]) -> Bool in
+      nonisolated(unsafe) let body = payload
+      return MainActor.assumeIsolated {
+        SolaraCoreTestHooksAllowed() && PanePrompts.devFixture(tabId, name: name, payload: body)
+      }
+    }.runOnQueue(.main)
+
+    AsyncFunction("devPromptState") { (tabId: String) -> String in
+      MainActor.assumeIsolated { SolaraCoreTestHooksAllowed() ? PanePrompts.devState(tabId) : "{}" }
+    }.runOnQueue(.main)
+
+    AsyncFunction("devPromptAnswer") { (tabId: String, kind: String, id: String, action: String, option: String) -> Bool in
+      MainActor.assumeIsolated {
+        SolaraCoreTestHooksAllowed() && PanePrompts.devAnswer(tabId, kind: kind, id: id, action: action, option: option)
+      }
+    }.runOnQueue(.main)
+
+    AsyncFunction("describePaneOverlays") { (windowId: String) -> String in
         FrameUpdates.readOnMain { NativePaneOverlays.describe(windowId) }
       }.runOnQueue(.main)
     #endif

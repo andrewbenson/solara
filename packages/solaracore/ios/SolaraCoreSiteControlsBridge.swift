@@ -14,3 +14,15 @@ public enum SolaraCoreSiteControlsBridge {
     WebKitHub.shared.setSitePermission(profile: profile, origin: origin, kind: kind, value: value)
   }
 }
+
+@MainActor
+public enum SolaraCorePromptAnswers {
+  public static func installEventTap() {
+    WebKitHub.shared.permissionEvents = { name, payload in SolaraCoreEventTaps.send(name, payload) }
+  }
+
+  public static func permission(_ id: String, result: String, remember: Bool) {
+    if id.hasPrefix("wk-permission-") { WebKitHub.shared.resolvePermission(id, result: result, remember: remember) }
+    else { SolaraCoreHost.resolvePermission(id, result: result, remember: remember) }
+  }
+}

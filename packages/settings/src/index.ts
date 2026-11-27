@@ -6,6 +6,7 @@ type NativeSettingsModule = {
   available(): boolean;
   replacePageField(tabId: string, query: string, replacement: string, all: boolean): Promise<{ field: boolean; count: number }>;
   servicesActive?(): boolean;
+  popupCounts?(): Record<string, number>;
   panePopovers?(): Record<string, PanePopoverKind>;
   setPanePopover?(tabId: string, value: PanePopoverKind | null): Record<string, PanePopoverKind>;
   setPreferredImportSource?(browserId: string | null): void;
@@ -51,6 +52,7 @@ type NativeSettingsModule = {
   reply(id: number, resultJSON: string | null, error: string | null): Promise<void>;
   publish(topic: string, json: string): Promise<void>;
   addListener(event: "onEngineBackChanged", listener: () => void): EventSubscription;
+  addListener(event: "onPopupCountsChanged", listener: (event: { values: Record<string, number> }) => void): EventSubscription;
   addListener(event: "onPanePopoversChanged", listener: (event: { values: Record<string, PanePopoverKind> }) => void): EventSubscription;
   addListener(event: "onAppIntegrationPresentation", listener: (event: AppIntegrationPresentation) => void): EventSubscription;
   addListener(event: "onBookmarkProjectionChanged", listener: (event: Record<string, never>) => void): EventSubscription;
@@ -497,6 +499,10 @@ export function replacePageField(tabId: string, query: string, replacement: stri
 }
 
 export type PanePopoverKind = "zoom" | "siteControls" | "popups";
+export const popupCounts = () => native?.popupCounts?.() ?? {};
+export const onPopupCountsChanged = (listener: (values: Record<string, number>) => void) =>
+  native?.addListener("onPopupCountsChanged", ({ values }) => listener(values)) ?? null;
+
 export const panePopovers = () => native?.panePopovers?.() ?? {};
 export const setPanePopover = (tabId: string, value: PanePopoverKind | null) => native?.setPanePopover?.(tabId, value) ?? {};
 export const onPanePopoversChanged = (listener: (values: Record<string, PanePopoverKind>) => void) =>

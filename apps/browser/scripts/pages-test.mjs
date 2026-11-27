@@ -160,12 +160,11 @@ const frameOf = (current, label) => current.frames.find((f) => f.label === label
 const click = (frame) => dev(`click:${frame.x + frame.width / 2},${frame.y + frame.height / 2}`);
 
 const PROMPT_FIELDS = {
-  permission: ["permission", `{ id: "probe-perm", browserId: 0, origin: ${JSON.stringify(base)}, permissions: ["notifications"] }`],
   password: ["passwordPrompt", `{ state: "save", origin: "https://example.com", username: "ada@example.com", passwordLength: 12, federation: "", usernames: ["ada@example.com"] }`],
   autofill: ["autofillPrompt", `{ id: 7, kind: "saveAddress", origin: "https://example.com", title: "Save address?", message: "", accept: "Save", decline: "No thanks", footer: "", lines: ["Ada Lovelace", "1 Analytical Way"] }`],
   externalApp: ["externalApp", `{ id: "probe-ext", url: "zoommtg://x", scheme: "zoommtg", origin: "https://example.com", app: "zoom.us", appPath: null, icon: null, title: "Open zoom.us?", message: "https://example.com wants to open this application.", remember: "Always allow example.com to open links of this type" }`],
 };
-const PROMPT_NAMES = [...Object.keys(PROMPT_FIELDS), "engine", "chooser", "popups"];
+const PROMPT_NAMES = ["permission", ...Object.keys(PROMPT_FIELDS), "engine", "chooser", "popups"];
 const PAGE_EVENTS = { password: ["onPasswordPrompt", "{}"], autofill: ["onAutofillPrompt", "{ id: 7, closed: true }"], externalApp: ["onExternalApp", "{}"] };
 const PANE_KEYS = { permission: "permission", password: "password", autofill: "autofill", externalApp: "externalApp", engine: "engineOffer", chooser: "deviceChooser", popups: "popups" };
 const panePromptsHosted = async (instance) => {
@@ -205,25 +204,23 @@ async function promptOutcomes(instance) {
   const tab = JSON.stringify(ids.tab);
   await panePromptsHosted(instance);
   let visit = 0;
-  const pageEvent = (name, payload) => instance.eval(`return globalThis.expo.modules.SolaraTabPool.devPageEvent(${tab}, ${JSON.stringify(name)}, ${payload})`);
-  const pageField = (field, value) => `ac.pageState.setState((s) => ({ pages: { ...s.pages, [${tab}]: { ...(s.pages[${tab}] || {}), ${field}: ${value} } } })); return true`;
-  const plant = (name) =>
-    instance.eval(
-      name === "engine" ? `ac.pages.engineOffers.setState({ [${tab}]: { site: "https://example.com", host: "example.com", keySystem: "com.widevine.alpha", canRemember: true } }); return true`
-      : name === "popups" ? `ac.pageState.setState((s) => ({ pages: { ...s.pages, [${tab}]: { ...(s.pages[${tab}] || {}), popups: ${POPUPS} } }, popover: { ...s.popover, [${tab}]: "popups" } })); return true`
-      : pageField(PROMPT_FIELDS[name][0], PROMPT_FIELDS[name][1]),
-    );
-  const unplant = (name) =>
-    instance.eval(
-      name === "engine" ? `ac.pages.engineOffers.setState({}, true); return true`
-      : name === "popups" ? `ac.pageState.setState((s) => ({ pages: { ...s.pages, [${tab}]: { ...(s.pages[${tab}] || {}), popups: [] } }, popover: { ...s.popover, [${tab}]: null } })); return true`
-      : pageField(PROMPT_FIELDS[name][0], "null"),
-    );
+  const pageEvent = (name, payload) => instance.eval(`return globalThis.expo.modules.SolaraMedia.devPromptFixture(${tab}, ${JSON.stringify(name)}, ${payload})`);
+  const plant = async (name) => {
+    if (name === "engine") return instance.eval(`ac.pages.engineOffers.setState({ [${tab}]: { site: "https://example.com", host: "example.com", keySystem: "com.widevine.alpha", canRemember: true } }); return true`);
+    if (name === "popups") {
+      for (const popup of JSON.parse(POPUPS)) await pageEvent("onPopupBlocked", JSON.stringify(popup));
+      return instance.eval(`globalThis.expo.modules.SolaraSettings.setPanePopover(${tab}, "popups"); return true`);
+    }
+    return false;
+  };
+  const unplant = (name) => name === "engine"
+    ? instance.eval(`ac.pages.engineOffers.setState({}, true); return true`)
+    : name === "popups" ? pageEvent("onDocumentCommitted", "{}") : true;
   const present = (name, timeout) =>
     instance.eval(
       name === "engine" ? `return !!ac.pages.engineOffers.getState()[${tab}]`
-      : name === "popups" ? `const s = ac.pageState.getState(); return s.popover[${tab}] === "popups" ? s.pages[${tab}].popups.map((p) => p.id).join(",") : false`
-      : `return !!ac.pageState.getState().pages[${tab}]?.${PROMPT_FIELDS[name][0]}`,
+      : name === "popups" ? `return globalThis.expo.modules.SolaraMedia.devPromptState(${tab}).then((data) => ac.pageState.getState().popover[${tab}] === "popups" ? JSON.parse(data).popups.map((p) => p.id).join(",") : false)`
+      : `return globalThis.expo.modules.SolaraMedia.devPromptState(${tab}).then((data) => !!JSON.parse(data)[${JSON.stringify(PANE_KEYS[name])}])`,
       { timeout },
     );
   const show = async (name) => {
@@ -790,7 +787,7 @@ try {
     await sleep(2000);
     await panePromptsHosted(app);
     const tab = JSON.stringify(ids.tab);
-    const asked = (timeout) => app.eval(`return !!ac.pageState.getState().pages[${tab}]?.permission`, { timeout });
+    const asked = (timeout) => app.eval(`return globalThis.expo.modules.SolaraMedia.devPromptState(${tab}).then((data) => !!JSON.parse(data).permission)`, { timeout });
     const shownPermission = (snapshot) => snapshot.windows.map((window) => window.paneOverlays?.tabs?.[ids.tab]?.permission)
       .find((entry) => entry && !entry.hidden && entry.card) ?? null;
     const choices = (entry) => Object.entries(entry?.controls ?? {}).filter(([label]) => label === "Allow" || label === "Don't Allow")

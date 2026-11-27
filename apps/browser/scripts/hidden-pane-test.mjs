@@ -154,7 +154,7 @@ try {
   assert.equal(hiddenTab.zoom, 1.5);
   await askFromPage("/HiddenLoad", "Notification.requestPermission(); true");
   await sleep(3000);
-  const askedWhileHidden = await ac("return !!ac.pageState.getState().pages.b?.permission;");
+  const askedWhileHidden = await ac("return globalThis.expo.modules.SolaraMedia.devPromptState("b").then((s) => !!JSON.parse(s).permission);");
   console.log(`note the request reached the store while B was hidden: ${askedWhileHidden}`);
 
   const shown = await ac(`${S}

@@ -1,13 +1,11 @@
-import { resolveExternalApp, type AutofillPromptAnswer, type PasswordPromptAnswer, type PermissionResult } from "@solara/solaracore";
+import { resolveExternalApp, type AutofillPromptAnswer, type PasswordPromptAnswer } from "@solara/solaracore";
 import { publishSettingsTopic } from "@solara/settings";
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { View } from "react-native";
 import { webviews } from "../../lib/webviews";
 import type { Theme } from "../../lib/theme";
 import { addNativeSettingsHandlers } from "../settings/nativeSettings";
-import { pageOf, patchPage, usePage } from "./pageState";
-import { answerBlockedPopups, openOneBlockedPopup, type BlockedPopupsAnswer } from "../site/Prompts";
-import { answerPermission } from "../site/permissions";
+import { pageOf, patchPage } from "./pageState";
 import { cliCommand, cliProduct, useCliIndicator } from "../../lib/cliControl";
 import { mediaTheme } from "../media/nativeMedia";
 import { acceptEngineOffer, stayOnPage } from "../../lib/engines";
@@ -69,11 +67,6 @@ addNativeSettingsHandlers({
     if (action === "webkit") void acceptEngineOffer(tabId);
     else stayOnPage(tabId, action === "stay" && remember);
   },
-  "pane.permission": (_windowId: string, tabId: string, id: string, result: PermissionResult) => answerPermission(tabId, id, result),
-  "pane.popups": (_windowId: string, tabId: string, action: string, id: string) => {
-    if (action === "row") openOneBlockedPopup(tabId, id);
-    else answerBlockedPopups(tabId, action as BlockedPopupsAnswer);
-  },
 });
 
 export function useNativePaneHandler<Event>(kind: "history" | "selection", active: boolean, windowId: string, tabId: string, handler: (event: Event) => void) {
@@ -128,11 +121,16 @@ export type PageFrame = [number, number, number, number];
 
 const promptWindows: Record<string, { theme?: object; panes: Record<string, Record<string, unknown>> }> = {};
 
-function setPaneHint(windowId: string, tabId: string, hint: Record<string, unknown>) {
-  const panes = (promptWindows[windowId] ??= { panes: {} }).panes;
-  panes[tabId] = { ...panes[tabId], ...hint };
+type PanePromptClaim = { native: boolean; hint: Record<string, unknown> };
+const panePromptClaims: Record<string, PanePromptClaim[]> = {};
+
+function publishPaneHint(windowId: string, tabId: string, claims: PanePromptClaim[]) {
+  const owner = claims.filter((claim) => claim.native).at(-1) ?? claims.at(-1);
+  if (owner) (promptWindows[windowId] ??= { panes: {} }).panes[tabId] = owner.hint;
+  else if (promptWindows[windowId]) delete promptWindows[windowId].panes[tabId];
   publishPrompts();
 }
+
 let promptsQueued = false;
 
 function publishPrompts() {
@@ -172,35 +170,23 @@ export function useNativePanePromptsTheme(active: boolean, windowId: string, the
   );
 }
 
-export function useNativePanePromptsPane(active: boolean, windowId: string, tabId: string, urlLeft: number, newTabShown: boolean) {
-  useEffect(() => {
-    if (!active) return;
-    setPaneHint(windowId, tabId, { urlLeft, newTabShown });
-  }, [active, windowId, tabId, urlLeft, newTabShown]);
-  useEffect(
-    () => () => {
-      if (!active || !promptWindows[windowId]) return;
-      delete promptWindows[windowId].panes[tabId];
-      publishPrompts();
-    },
-    [active, windowId, tabId],
-  );
-}
-
-export function useNativePaneHint(active: boolean, windowId: string, tabId: string, hint: Record<string, unknown>) {
+export function useNativePanePromptsPane(windowId: string, tabId: string, native: boolean, hint: Record<string, unknown>) {
+  const claim = useRef<PanePromptClaim>({ native, hint }).current;
   const key = JSON.stringify(hint);
+  const slot = overlaySlot(windowId, tabId, "prompts");
   useEffect(() => {
-    if (active) setPaneHint(windowId, tabId, JSON.parse(key));
-  }, [active, windowId, tabId, key]);
-}
-
-export function useNativePanePopups(active: boolean, windowId: string, tabId: string, open: boolean, side: "left" | "right") {
-  const popups = usePage(tabId, (p) => p.popups);
-  const key = active && open && popups.length ? JSON.stringify({ side, list: popups.map(({ id, url, origin }) => ({ id, url, origin })) }) : "";
-  useEffect(() => {
-    if (!active) return;
-    setPaneHint(windowId, tabId, { popups: key ? JSON.parse(key) : null });
-  }, [active, windowId, tabId, key]);
+    claim.native = native;
+    claim.hint = hint;
+    const claims = (panePromptClaims[slot] ??= []);
+    if (!claims.includes(claim)) claims.push(claim);
+    publishPaneHint(windowId, tabId, claims);
+  }, [windowId, tabId, slot, native, key]);
+  useEffect(() => () => {
+    const remaining = (panePromptClaims[slot] ?? []).filter((entry) => entry !== claim);
+    if (remaining.length) panePromptClaims[slot] = remaining;
+    else delete panePromptClaims[slot];
+    publishPaneHint(windowId, tabId, remaining);
+  }, [windowId, tabId, slot]);
 }
 
 export function useNativeSadTab(active: boolean, windowId: string, tabId: string, mode: "crashed" | "unresponsive" | null, frame: PageFrame | null, theme: Theme) {

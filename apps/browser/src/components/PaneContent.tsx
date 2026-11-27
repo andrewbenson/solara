@@ -4,6 +4,8 @@ import { Animated, StyleSheet, View, type ViewStyle } from "react-native";
 import { layout } from "../lib/theme";
 import { panePromptsNativeIn } from "../lib/pagesPool";
 import { useEngineOffers } from "../lib/engines";
+import { ExternalAppPrompt } from "./site/ExternalAppPrompt";
+import { DeviceChooser } from "./site/DeviceChooser";
 import { EngineOfferPrompt } from "./site/EnginePrompt";
 import { useBrowser } from "../store/browser";
 import { shallowEqual, useTabValue } from "../store/tabWatch";
@@ -16,21 +18,20 @@ import { POPOVER_MARGIN } from "./layout/controls";
 import { NO_TOOLBAR, splitGeometry, toolbarGeometry, type ToolbarGeometry } from "./layout/geometry";
 import { patchPage, useFullscreenTab, usePages } from "./layout/pageState";
 import { SadTab, StatusBubble } from "./layout/PaneOverlays";
-import { useNativePaneHint, useNativePanePopups, useNativePanePromptsPane } from "./layout/nativePaneOverlays";
+import { useNativePanePromptsPane } from "./layout/nativePaneOverlays";
 import { markPaneRootDrawn, usePaneStatusStyle, usePopoversOverCard } from "./layout/paneFeed";
 import { engineOfferMounted } from "./overlayGates";
 import { useAddressBarInSidebar, useTabLayout } from "./layout/windowLayout";
 import { NewTabPage } from "./NewTabPage";
 import { EmptyCard } from "./EmptyCard";
 import { InternalPage } from "./pages";
-import { AutofillPrompt, BLOCKED_POPUPS_WIDTH, BlockedPopupsPrompt, ExternalAppPrompt, PasswordPrompt, PermissionPrompt } from "./site/Prompts";
+import { AutofillPrompt, PasswordPrompt } from "./site/Prompts";
 import { SiteControls } from "./site/SiteControls";
 import { SITE_PANEL } from "./site/SiteControlsParts";
 import { ZOOM_POPOVER_WIDTH, ZoomPopover } from "./site/ZoomHost";
 import { SelectionHost } from "./site/SelectionHost";
 import { SharePicker } from "./media/SharePicker";
 import { ShareBar } from "./media/ShareBar";
-import { DeviceChooser } from "./site/DeviceChooser";
 import { NavigationOverlays } from "./layout/SwipeOverlay";
 import { isSmallWindow } from "../store/small";
 import { PooledPageProps } from "./PooledPageProps";
@@ -66,13 +67,17 @@ export function PageOverlays({
   const popover = usePages((s) => s.popover[tabId] ?? null);
   const zoom = useTabValue(tabId, (t) => t?.zoom ?? 1);
   const popoverSide = toolbar ? { right: POPOVER_MARGIN } : { left: POPOVER_MARGIN };
-  useNativePanePopups(nativePrompts, windowId, tabId, popovers && popover === "popups", toolbar ? "right" : "left");
   const nativeCli = nativePrompts;
   const engineOffer = useEngineOffers((offers) => offers[tabId] ?? null);
-  useNativePaneHint(nativePrompts, windowId, tabId, {
-    zoom,
-    cliPill: nativeCli && cliPill,
-    engineOffer: engineOffer && { site: engineOffer.site, host: engineOffer.host, canRemember: engineOffer.canRemember },
+  useNativePanePromptsPane(windowId, tabId, nativePrompts, {
+    urlLeft: geometry.urlLeft,
+    newTabShown,
+    popupSide: toolbar ? "right" : "left",
+    ...(nativePrompts && {
+      zoom,
+      cliPill,
+      engineOffer: engineOffer && { site: engineOffer.site, host: engineOffer.host, canRemember: engineOffer.canRemember },
+    }),
   });
   return (
     <>
@@ -82,16 +87,15 @@ export function PageOverlays({
       </Animated.View>
       {!nativePrompts && <SadTab tabId={tabId} nativeAllowed={!peek} />}
       {cliPill && !nativeCli && <CliControlPill tabId={tabId} style={statusStyle} nativeAllowed={!peek} />}
-      {!newTabShown && !nativePrompts && <PermissionPrompt tabId={tabId} left={Math.max(POPOVER_MARGIN, Math.min(geometry.urlLeft, width - 308))} top={POPOVER_MARGIN} />}
+      {engineOfferMounted(engineOffer, newTabShown, nativePrompts) && <EngineOfferPrompt tabId={tabId} left={Math.max(POPOVER_MARGIN, Math.min(geometry.urlLeft, width - 348))} top={POPOVER_MARGIN} />}
+      {popovers && <SiteControls tabId={tabId} open={popover === "siteControls"} {...popoverSide} top={POPOVER_MARGIN} />}
+      {popovers && popover === "zoom" && <ZoomPopover tabId={tabId} {...popoverSide} top={POPOVER_MARGIN} nativeAllowed={!peek} />}
       {!nativePrompts && <PasswordPrompt tabId={tabId} right={POPOVER_MARGIN} top={POPOVER_MARGIN} />}
       {!nativePrompts && <AutofillPrompt tabId={tabId} right={POPOVER_MARGIN} top={POPOVER_MARGIN} />}
       {!newTabShown && !nativePrompts && <ExternalAppPrompt tabId={tabId} left={Math.max(POPOVER_MARGIN, Math.min(geometry.urlLeft, width - 348))} top={POPOVER_MARGIN} />}
-      {engineOfferMounted(engineOffer, newTabShown, nativePrompts) && <EngineOfferPrompt tabId={tabId} left={Math.max(POPOVER_MARGIN, Math.min(geometry.urlLeft, width - 348))} top={POPOVER_MARGIN} />}
-      {popovers && <SiteControls tabId={tabId} open={popover === "siteControls"} {...popoverSide} top={POPOVER_MARGIN} />}
-      {popovers && popover === "popups" && !nativePrompts && <BlockedPopupsPrompt tabId={tabId} {...popoverSide} top={POPOVER_MARGIN} />}
-      {popovers && popover === "zoom" && <ZoomPopover tabId={tabId} {...popoverSide} top={POPOVER_MARGIN} nativeAllowed={!peek} />}
-      <SharePicker tabId={tabId} paneWidth={width} nativeAllowed={!peek} />
       {!newTabShown && !nativePrompts && <DeviceChooser tabId={tabId} left={Math.max(POPOVER_MARGIN, Math.min(geometry.urlLeft, width - 348))} top={POPOVER_MARGIN} />}
+      <SolaraHostedView kind="panePrompts" windowId={windowId} state={tabId} pointerEvents="box-none" style={StyleSheet.absoluteFill} />
+      <SharePicker tabId={tabId} paneWidth={width} nativeAllowed={!peek} />
       {(peek || !windowShellActive(windowId)) && <SolaraHostedView kind="media.castPicker" windowId={windowId} state={tabId} pointerEvents="box-none" style={StyleSheet.absoluteFill} />}
       <NavigationOverlays tabId={tabId} windowId={windowId} geometry={geometry} peek={peek} />
       {!nativePrompts && <SelectionHost tabId={tabId} nativeAllowed={!peek} />}
@@ -132,7 +136,6 @@ export function PaneContent({ windowId, tabId, shown, nativeFallback = false }: 
   const toolbar = !addressInSidebar && !small;
   const sidebarButton = leading && tabLayout === "sidebar" && showSidebarButton;
   const geometry = useMemo(() => (!toolbar ? NO_TOOLBAR : toolbarGeometry({ sidebarButton })), [toolbar, sidebarButton]);
-  useNativePanePromptsPane(nativePrompts, windowId, tabId, geometry.urlLeft, newTabShown);
   return (
     <View pointerEvents="box-none" style={{ flex: 1 }} onLayout={(e) => setWidth(e.nativeEvent.layout.width)}>
       {nativeLayout && shown && (
@@ -182,7 +185,6 @@ export function BesidePeekPopovers({ tabId, left, top, room, placements, origin 
   return (
     <>
       <SiteControls tabId={tabId} open={popover === "siteControls"} {...fit("siteControls", SITE_PANEL.width)} />
-      {popover === "popups" && <BlockedPopupsPrompt tabId={tabId} {...fit("popups", BLOCKED_POPUPS_WIDTH)} />}
       {popover === "zoom" && <ZoomPopover tabId={tabId} {...fit("zoom", ZOOM_POPOVER_WIDTH)} />}
     </>
   );

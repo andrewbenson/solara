@@ -1,7 +1,6 @@
 import { windowNativeLayout } from "@solara/settings";
 import { useEffect, useMemo, useState } from "react";
 import { useTheme } from "../lib/theme";
-import { panePromptsNativeIn } from "../lib/pagesPool";
 import { useBrowser } from "../store/browser";
 import { useActiveTabId, useWindowId } from "../store/hooks";
 import { wake } from "../store/model";
@@ -37,9 +36,8 @@ function NativeContentGuests() {
   const activeId = useActiveTabId();
   const split = useBrowser((s) => splitOf(s, activeId));
   const theme = useTheme();
-  const [nativePrompts] = useState(() => panePromptsNativeIn(windowId));
   useContentServices();
-  useNativePanePromptsTheme(nativePrompts, windowId, theme, useFormColors());
+  useNativePanePromptsTheme(true, windowId, theme, useFormColors());
   useNativeSplitChrome(windowId, true, theme, null, false, true, false);
   const fallbacks = useNativePaneFallbacks(windowId);
   const tabIds = useMemo(() => split?.tabIds ?? (activeId ? [activeId] : NO_TABS), [split, activeId]);

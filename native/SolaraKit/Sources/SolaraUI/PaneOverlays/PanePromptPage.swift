@@ -60,6 +60,7 @@ public struct PaneAutofillPrompt: Equatable, Sendable {
 public struct PaneExternalApp: Equatable, Sendable {
   public var id: String
   public var app: String?
+  public var origin: String?
   public var icon: String?
   public var title: String
   public var message: String?
@@ -70,12 +71,29 @@ public struct PaneExternalApp: Equatable, Sendable {
     self.id = id
     self.title = title
     app = payload["app"] as? String
+    origin = payload["origin"] as? String
     icon = payload["icon"] as? String
     message = payload["message"] as? String
     remember = payload["remember"] as? String
   }
 
   public var key: String { id }
+}
+
+public struct PaneBlockedPopup: Equatable, Sendable {
+  public let id: String
+  public let url: String
+  public let origin: String
+
+  public init?(_ payload: [String: Any]) {
+    guard let id = payload["id"] as? String, let url = payload["url"] as? String,
+      let origin = payload["origin"] as? String else { return nil }
+    self.id = id
+    self.url = url
+    self.origin = origin
+  }
+
+  public var payload: [String: String] { ["id": id, "url": url, "origin": origin] }
 }
 
 public struct PanePromptPage: Equatable, Sendable {
@@ -87,6 +105,7 @@ public struct PanePromptPage: Equatable, Sendable {
   public var autofill: PaneAutofillPrompt?
   public var externalApp: PaneExternalApp?
   public var alwaysOpen = false
+  public var popups: [PaneBlockedPopup] = []
   public var permissions: [PanePermissionRequest] = []
   public var chooser: PaneDeviceChooser?
   public var chooserSelected: Int?
@@ -106,8 +125,11 @@ public struct PanePromptPage: Equatable, Sendable {
   public mutating func take(_ name: String, _ payload: [String: Any]) -> Bool {
     let before = self
     switch name {
-    case "onPageCreated": self = PanePromptPage()
+    case "onPageCreated", "onPageGone": self = PanePromptPage()
+    case "onDocumentCommitted", "onDiscarded", "onWindowClose":
+      clearPrompts()
     case "onCrashed":
+      clearPrompts()
       crashed = true
       unresponsive = false
     case "onUnresponsive": unresponsive = true
@@ -120,6 +142,10 @@ public struct PanePromptPage: Equatable, Sendable {
         autofill = prompt
       } else if let id = (payload["id"] as? NSNumber)?.intValue, autofill?.id == id {
         autofill = nil
+      }
+    case "onPopupBlocked":
+      if let popup = PaneBlockedPopup(payload), !popups.contains(where: { $0.id == popup.id }) {
+        popups.append(popup)
       }
     case "onExternalApp":
       externalApp = PaneExternalApp(payload)
@@ -135,6 +161,7 @@ public struct PanePromptPage: Equatable, Sendable {
         password = nil
         chosenUsername = nil
         permissions = []
+        popups = []
         selection = nil
         if externalApp != nil, Self.host(key) != Self.host(pageKey) {
           externalApp = nil
@@ -145,6 +172,11 @@ public struct PanePromptPage: Equatable, Sendable {
     default: break
     }
     return self != before
+  }
+
+  private mutating func clearPrompts() {
+    popups = []
+    permissions = []
   }
 
   public static func pageKey(_ url: String) -> String {

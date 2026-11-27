@@ -27,7 +27,7 @@ function fixture(running = true, hasPage = () => true) {
   const followBrowser = browser.subscribe;
   let browserListeners = 0;
   browser.subscribe = (listener) => { browserListeners++; return followBrowser(listener); };
-  const pages = createStore(() => ({ pages: { t: { fullscreen: false, crashed: null, unresponsive: false, mediaAccess: null, permission: null, newTabShown: null } } }));
+  const pages = createStore(() => ({ pages: { t: { fullscreen: false, crashed: null, unresponsive: false, mediaAccess: null, newTabShown: null } } }));
   const followPages = pages.subscribe;
   let pagesListeners = 0;
   const media = createStore(() => ({ displayRequests: {}, tabShares: {} }));
@@ -91,7 +91,7 @@ test("changing one page's protection avoids native reads for unchanged tracked p
   f.flush();
   assert.equal(f.sent.length, 2);
   f.nativeReads.length = 0;
-  f.page({ permission: { kind: "camera" } });
+  f.page({ mediaAccess: { camera: true } });
   f.events.keepAliveHandled(f.identity, 8);
   f.flush();
   assert.deepEqual(f.nativeReads, [["current", "t"], ["facts", "t"]]);
@@ -105,7 +105,7 @@ test("page and media subscriptions produce every typed keep fact and handled wat
   const f = fixture();
   f.events.keepAliveCreated(f.identity, "rn");
   f.flush();
-  f.page({ permission: {}, fullscreen: true, crashed: {}, unresponsive: true, newTabShown: {} });
+  f.page({ mediaAccess: { camera: true }, fullscreen: true, crashed: {}, unresponsive: true, newTabShown: {} });
   f.media.setState({ displayRequests: { t: {} }, tabShares: { other: { capturedTabId: "t" } } });
   f.toolbar.setState({ scrolledDown: { t: true } });
   f.events.keepAliveHandled(f.identity, 4);
@@ -139,7 +139,7 @@ test("discard and session replacement clear old transient facts before a full fe
   const f = fixture();
   f.events.keepAliveCreated(f.identity, "rn");
   f.flush();
-  f.page({ mediaAccess: { microphone: true }, permission: {} });
+  f.page({ mediaAccess: { microphone: true } });
   f.media.setState({ displayRequests: { t: {} }, tabShares: { other: { capturedTabId: "t" } } });
   f.browser.setState({ live: { t: { discarded: true } } });
   f.flush();
@@ -161,13 +161,12 @@ test("registration replacement and close clear the retired page's transient fact
     const f = fixture();
     f.events.keepAliveCreated(f.identity, "rn");
     f.flush();
-    f.page({ mediaAccess: { microphone: true }, permission: {}, newTabShown: {} });
+    f.page({ mediaAccess: { microphone: true }, newTabShown: {} });
     f.media.setState({ displayRequests: { t: {} }, tabShares: { other: { capturedTabId: "t" } } });
     if (transition === "registration") f.replace({ ...f.identity, registrationGeneration: 2 });
     else f.browser.setState({ tabs: {} });
     f.flush();
     assert.equal(f.pages.getState().pages.t.mediaAccess, null, transition);
-    assert.equal(f.pages.getState().pages.t.permission, null, transition);
     assert.equal(f.pages.getState().pages.t.newTabShown, null, transition);
     assert.deepEqual(Object.keys(f.media.getState().displayRequests), [], transition);
     assert.deepEqual(Object.keys(f.media.getState().tabShares), [], transition);
@@ -276,7 +275,7 @@ test("the feed adds no pages-store listener and follows the store through native
     f.flush();
     assert.equal(f.pagesListeners(), 0);
     const before = f.sent.length;
-    f.page({ permission: {} });
+    f.page({ mediaAccess: { microphone: true } });
     assert.equal(f.jobs.length, 1);
     f.flush();
     assert.equal(f.sent.length, before + 1);
@@ -386,7 +385,6 @@ test("no listeners before the first page, and none after the last page closes", 
 test("a protect flip on a tracked tab queues its flush in the same turn, ahead of later noise, and the flush carries the protection", () => {
   const protects = [
     [() => f.page({ mediaAccess: { camera: true } }), (r) => r.keep.capturing],
-    [() => f.page({ permission: {} }), (r) => r.keep.capturing],
     [() => f.page({ newTabShown: {} }), (r) => r.keep.newTabShown],
     [() => f.media.setState({ displayRequests: { t: {} } }), (r) => r.keep.displayRequest],
   ];

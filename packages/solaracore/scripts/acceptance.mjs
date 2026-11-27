@@ -857,6 +857,8 @@ const closeFromPage = (target) =>
     if (!String(e?.message).includes("the target closed before replying")) throw e;
   });
 const cef = (call) => evalApp(`return globalThis.expo.modules.SolaraCEF.${call}`);
+const promptState = (tabId, kind) => evalApp(`return globalThis.expo.modules.SolaraMedia.devPromptState(${JSON.stringify(tabId)}).then((s) => JSON.parse(s)[${JSON.stringify(kind)}] ?? null)`);
+const promptAnswer = (tabId, kind, id, action, option = "") => evalApp(`return globalThis.expo.modules.SolaraMedia.devPromptAnswer(${[tabId, kind, String(id), action, option].map(JSON.stringify).join(",")})`);
 const webKit = (call) => evalApp(`return globalThis.expo.modules.SolaraWebKit.${call}`);
 const exts = (call) => evalApp(`return globalThis.expo.modules.SolaraExtensions.${call}`);
 const extPath = join(scratch, "fixture-ext");
@@ -2021,29 +2023,29 @@ try {
       userGesture: true,
     });
     const chooser = await until("the app's chooser", async () => {
-      const c = await evalApp(`return globalThis.acDeviceChoosers?.useChoosers.getState().byTab["${first.id}"] ?? null`);
+      const c = await promptState(first.id, "deviceChooser");
       if (c) return c;
       const r = await cdp(t, "Runtime.evaluate", { expression: "String(window.__usb)", returnByValue: true });
       if (r.result.value !== "pending") throw new Error(`no chooser; the page got ${r.result.value}`);
       return null;
     }, 10000);
-    await evalApp(`return globalThis.acDeviceChoosers.cancelDeviceChooser(${chooser.id}).then(() => true)`);
+    await promptAnswer(first.id, "deviceChooser", chooser.id, "cancel");
     const result = await until("the page's answer", async () => {
       const r = await cdp(t, "Runtime.evaluate", { expression: "window.__usb", returnByValue: true });
       return r.result.value !== "pending" ? r.result.value : null;
     }, 8000);
-    await until("the sheet gone", async () => !(await evalApp(`return globalThis.acDeviceChoosers.useChoosers.getState().byTab["${first.id}"] ?? null`)), 5000);
+    await until("the sheet gone", async () => !(await promptState(first.id, "deviceChooser")), 5000);
     if (result !== "NotFoundError") throw new Error(`page got ${result}`);
-    return { chooser: { id: chooser.id, title: chooser.title, options: chooser.options?.length }, page: result };
+    return { chooser: { id: chooser.id, title: chooser.title, options: chooser.optionCount }, page: result };
   });
 
   const chromeUI = (call) => evalApp(`return globalThis.expo.modules.SolaraChromeUI.${call}`);
-  const chooserOf = (tabId) => evalApp(`return globalThis.acDeviceChoosers?.useChoosers.getState().byTab["${tabId}"] ?? null`);
+  const chooserOf = (tabId) => promptState(tabId, "deviceChooser");
   const bluetoothChooser = async (unauthorized) => {
     if (!(await chromeUI(`devShowBluetoothChooser(${await browserOf(first.id)}, ${unauthorized})`))) throw new Error("devShowBluetoothChooser said no (switch off?)");
     return until("the app's Bluetooth chooser", async () => {
       const c = await chooserOf(first.id);
-      return c && (unauthorized ? c.unauthorized : c.options?.length) ? c : null;
+      return c && (unauthorized ? c.unauthorized : c.optionCount) ? c : null;
     }, 10000);
   };
   const chooserEvents = () => chromeUI(`devChooserEvents()`);
@@ -2056,13 +2058,13 @@ try {
       const before = (await chooserEvents()).length;
       const chooser = await bluetoothChooser(false);
       const sent = (await evalApp(`return globalThis.__acChooser`)).length;
-      await chromeUI(`refreshDeviceChooser(${chooser.id}).then(() => true)`);
+      await promptAnswer(first.id, "deviceChooser", chooser.id, "refresh");
       const rescan = await until("Chrome's rescan", async () => (await chooserEvents()).slice(before).find((e) => e.event === "rescan") ?? null, 5000);
       const refreshed = await until("the list sent again", async () => {
         const list = await evalApp(`return globalThis.__acChooser`);
         return list.slice(sent).find((c) => c.open && c.options?.length && !c.refreshing) ?? null;
       }, 5000);
-      await chromeUI(`selectDevice(${chooser.id}, 0).then(() => true)`);
+      await promptAnswer(first.id, "deviceChooser", chooser.id, "select", "0");
       const selected = await until("the pick answered", async () => (await chooserEvents()).slice(before).find((e) => e.event === "selected") ?? null, 5000);
       await chooserGone();
       if (selected.device !== "ac-test-device") throw new Error(`picked ${selected.device}`);
@@ -2070,7 +2072,7 @@ try {
     } finally {
       await evalApp(`globalThis.__acChooserSub?.remove(); return true`).catch(() => null);
       const c = await chooserOf(first.id).catch(() => null);
-      if (c) await chromeUI(`cancelDeviceChooser(${c.id}).then(() => true)`).catch(() => null);
+      if (c) await promptAnswer(first.id, "deviceChooser", c.id, "cancel").catch(() => null);
     }
   });
 
@@ -2082,13 +2084,13 @@ try {
       const before = (await launches()).filter(isSettings).length;
       const events = (await chooserEvents()).length;
       const bt = await bluetoothChooser(true);
-      await chromeUI(`openBluetoothSettings(${bt.id}).then(() => true)`);
+      await promptAnswer(first.id, "deviceChooser", bt.id, "settings");
       const recorded = await until("the Bluetooth settings pane recorded", async () => {
         const list = (await launches()).filter(isSettings);
         return list.length > before ? list.at(-1) : null;
       }, 5000);
       if ((await chooserOf(first.id))?.id !== bt.id) throw new Error("the chooser closed on openBluetoothSettings");
-      await chromeUI(`cancelDeviceChooser(${bt.id}).then(() => true)`);
+      await promptAnswer(first.id, "deviceChooser", bt.id, "cancel");
       await chooserGone();
       const cancelled = await until("the cancel answered", async () => (await chooserEvents()).slice(events).find((e) => e.event === "cancelled") ?? null, 5000);
       await cdp(t, "Runtime.evaluate", {
@@ -2096,17 +2098,17 @@ try {
         userGesture: true,
       });
       const usb = await until("the WebUSB chooser", () => chooserOf(first.id), 10000);
-      await chromeUI(`openBluetoothSettings(${usb.id}).then(() => true)`);
+      await promptAnswer(first.id, "deviceChooser", usb.id, "settings");
       await sleep(500);
       const after = (await launches()).filter(isSettings).length;
       if (after !== before + 1) throw new Error(`the WebUSB chooser recorded ${after - before - 1} settings pane(s)`);
       if ((await chooserOf(first.id))?.id !== usb.id) throw new Error("the WebUSB chooser closed on openBluetoothSettings");
-      await chromeUI(`cancelDeviceChooser(${usb.id}).then(() => true)`);
+      await promptAnswer(first.id, "deviceChooser", usb.id, "cancel");
       await chooserGone();
       return { unauthorized: bt.unauthorized, recorded: recorded.url, cancelled: !!cancelled, webUSB: "ignored" };
     } finally {
       const c = await chooserOf(first.id).catch(() => null);
-      if (c) await chromeUI(`cancelDeviceChooser(${c.id}).then(() => true)`).catch(() => null);
+      if (c) await promptAnswer(first.id, "deviceChooser", c.id, "cancel").catch(() => null);
     }
   });
 
@@ -3289,20 +3291,26 @@ try {
   });
 
   await check("permission-dismissed", async () => {
-    await evalApp(`globalThis.__acDismissed = []; globalThis.__acDismissSub?.remove(); globalThis.__acDismissSub = globalThis.expo.modules.SolaraCEF.addListener("onPermissionDismissed", (e) => globalThis.__acDismissed.push(e)); return true`);
-    const asker = await openTab(`${base}/c?asker`, "Page C");
+    const ask = async (tab, url) => {
+      const target = await pageFor(tab.id, url);
+      await cdp(target, "Runtime.evaluate", { expression: "navigator.requestMIDIAccess({ sysex: true }).catch(() => {}); true", userGesture: true });
+      return until("the prompt", () => promptState(tab.id, "permission"), 10000);
+    };
+    const url = `${base}/c?asker`;
+    const asker = await openTab(url, "Page C");
+    let next;
     try {
-      const t = await pageFor(asker.id, `${base}/c?asker`);
-      await cdp(t, "Runtime.evaluate", { expression: "navigator.requestMIDIAccess({ sysex: true }).catch(() => {}); true", userGesture: true });
-      const request = await until("the prompt", async () => evalApp(`return ac.pageState.getState().pages["${asker.id}"]?.permission ?? null`), 10000);
+      const request = await ask(asker, url);
       await closeTab(asker.id);
-      const dismissed = await until("onPermissionDismissed", async () => {
-        const list = await evalApp(`return globalThis.__acDismissed`);
-        return list.find((x) => x.id === request.id) ?? null;
-      }, 10000).catch(async (e) => { throw new Error(`${e.message}; request ${request.id}; got ${JSON.stringify(await evalApp(`return globalThis.__acDismissed`))}`); });
-      return { request: request.id, dismissed };
+      await until("the closed tab's permission receipt to retire", async () => !(await promptState(asker.id, "permission")), 10000);
+      if (await promptAnswer(asker.id, "permission", request.id, "deny")) throw new Error("the closed tab's permission receipt accepted an answer");
+      next = await openTab(url, "Page C");
+      const nextRequest = await ask(next, url);
+      if (nextRequest.id === request.id) throw new Error("the new tab reused the closed tab's permission receipt");
+      await promptAnswer(next.id, "permission", nextRequest.id, "dismiss");
+      return { request: request.id, nextRequest: nextRequest.id };
     } finally {
-      await evalApp(`globalThis.__acDismissSub?.remove(); return true`);
+      if (next) await closeTab(next.id);
       await evalApp(`ac.actions.switchToTab("${first.id}"); return true`);
     }
   });
@@ -5853,7 +5861,7 @@ try {
       });
     const t = await pageFor(first.id, `${base}/a`);
     await cdp(t, "Runtime.evaluate", { expression: "location.href = 'solaracore-no-such-app://hello'", userGesture: true });
-    const external = await until("onExternalApp", async () => evalApp(`return ac.pageState.getState().pages["${first.id}"]?.externalApp ?? null`), 10000);
+    const external = await until("onExternalApp", async () => promptState(first.id, "externalApp"), 10000);
     const securityEvent = (await eventsOf(first.id)).some((x) => x.name === "security");
     if (!securityEvent) throw new Error("no onSecurity");
     const focused = (await eventsOf(first.id)).some((x) => x.name === "focus");
@@ -5936,20 +5944,18 @@ try {
     await evalApp(`ac.actions.switchToTab("${first.id}"); return true`);
     await until("A shown", async () => (await state()).active === first.id);
     const ask = async (n) => {
-      await evalApp(`ac.pageState.setState((s) => ({ pages: { ...s.pages, "${first.id}": { ...s.pages["${first.id}"], externalApp: null } } })); return true`);
       const t = await pageFor(first.id, `${base}/a`);
       for (const type of ["mousePressed", "mouseReleased"])
         await cdp(t, "Input.dispatchMouseEvent", { type, x: 600, y: 400, button: "left", clickCount: 1 });
       await cdp(t, "Runtime.evaluate", { expression: `location.href = 'shortcuts://solaracore-acceptance-${n}'`, userGesture: true });
-      return until(`prompt ${n}`, async () => evalApp(`return ac.pageState.getState().pages["${first.id}"]?.externalApp ?? null`), 10000);
+      return until(`prompt ${n}`, async () => promptState(first.id, "externalApp"), 10000);
     };
     const decline = async (request) => {
-      await evalApp(`ac.pageState.setState((s) => ({ pages: { ...s.pages, "${first.id}": { ...s.pages["${first.id}"], externalApp: null } } }));
-        return globalThis.expo.modules.SolaraCEF.resolveExternalApp(${JSON.stringify(request.id)}, false, true).then(() => true)`);
+      await promptAnswer(first.id, "externalApp", request.id, "cancel");
       await sleep(1500);
     };
     const firstAsk = await ask(1);
-    if (!firstAsk.app || !firstAsk.appPath?.endsWith("Shortcuts.app")) throw new Error(`no app found: ${JSON.stringify({ ...firstAsk, icon: !!firstAsk.icon })}`);
+    if (!firstAsk.app?.includes("Shortcuts")) throw new Error(`no app found: ${JSON.stringify({ ...firstAsk, icon: !!firstAsk.icon })}`);
     if (!firstAsk.remember) throw new Error("no \"always allow\" offered for a trustworthy origin");
     await decline(firstAsk);
     const allowances = await cef(`getExternalAppAllowances("")`);
@@ -5958,8 +5964,7 @@ try {
     if (again.id === firstAsk.id) throw new Error("the second link reused the first request");
     await decline(again);
     const third = await ask(3);
-    await evalApp(`ac.pageState.setState((s) => ({ pages: { ...s.pages, "${first.id}": { ...s.pages["${first.id}"], externalApp: null } } }));
-      return globalThis.expo.modules.SolaraCEF.resolveExternalApp(${JSON.stringify(third.id)}, true, true).then(() => true)`);
+    await promptAnswer(first.id, "externalApp", third.id, "open", "remember");
     const launch = await until("the recorded launch", async () =>
       (await cef(`devExternalLaunches()`)).find((l) => l.url?.includes("solaracore-acceptance-3")) ?? null, 8000);
     const remembered = await until("Chrome's allowance", async () => {
@@ -6017,8 +6022,8 @@ try {
     await cef(`setSiteSetting("", "${base}", "notifications", "default")`);
     const askPermission = await nothingShown("window.__n4 = new Notification('Unasked'); true", "while the site's setting is Ask");
     await cdp(t, "Runtime.evaluate", { expression: "window.__asked = 'pending'; Notification.requestPermission().then((r) => (window.__asked = r)); true", userGesture: true });
-    const request = await until("the notification prompt", async () => evalApp(`return ac.pageState.getState().pages["${first.id}"]?.permission ?? null`), 10000);
-    await evalApp(`ac.permissions.answerPermission("${first.id}", "${request.id}", "deny"); return true`);
+    const request = await until("the notification prompt", async () => promptState(first.id, "permission"), 10000);
+    await promptAnswer(first.id, "permission", request.id, "deny");
     const asked = await until("the page's answer", async () => {
       const v = (await cdp(t, "Runtime.evaluate", { expression: "window.__asked", returnByValue: true })).result.value;
       return v !== "pending" ? v : null;
@@ -6428,8 +6433,8 @@ try {
       const js = async (e) => (await cdp(t, "Runtime.evaluate", { expression: e, awaitPromise: true, userGesture: true, returnByValue: true })).result.value;
       await js(`join(${JSON.stringify(constraints)})`);
       await until("joined", async () => {
-        const request = await evalApp(`return ac.pageState.getState().pages["${tab.id}"]?.permission ?? null`);
-        if (request) await evalApp(`ac.permissions.answerPermission("${tab.id}", "${request.id}", "accept"); return true`);
+        const request = await promptState(tab.id, "permission");
+        if (request) await promptAnswer(tab.id, "permission", request.id, "accept");
         return JSON.parse(await js("callState()")).joined ? true : null;
       }, 10000);
       return { tab, t, js, call: async () => JSON.parse(await js("callState()")) };
@@ -7553,8 +7558,8 @@ try {
       expression: "navigator.requestMIDIAccess({ sysex: true }).then(() => (window.__geo = 'ok'), (e) => (window.__geo = 'denied:' + e.name))",
       userGesture: true,
     });
-    const request = await until("the prompt", async () => evalApp(`return ac.pageState.getState().pages["${first.id}"]?.permission ?? null`), 10000);
-    await cef(`resolvePermission("${request.id}", "deny", false)`);
+    const request = await until("the prompt", async () => promptState(first.id, "permission"), 10000);
+    await promptAnswer(first.id, "permission", request.id, "deny");
     const answer = await until("the page's answer", async () => {
       const r = await cdp(t, "Runtime.evaluate", { expression: "String(window.__geo)", returnByValue: true });
       return r.result.value !== "undefined" ? r.result.value : null;
@@ -7569,10 +7574,10 @@ try {
     const t = await pageFor(first.id, `${base}/a`);
     await cdp(t, "Runtime.evaluate", { expression: `window.open("${base}/c?blocked")` });
     const popups = await until("the blocked popup", async () => {
-      const p = await evalApp(`return ac.pageState.getState().pages["${first.id}"]?.popups ?? []`);
-      return p.length ? p : null;
+      const p = await promptState(first.id, "popups");
+      return p?.length ? p : null;
     }, 10000);
-    await evalApp(`return ac.webviews.get("${first.id}").openBlockedPopup("${popups[0].id}")`);
+    await promptAnswer(first.id, "popups", popups[0].id, "row", popups[0].id);
     const opened = await until("the popup as a tab", async () => (await state()).tabs.find((x) => x.url?.includes("c?blocked")), 10000);
     return { popup: popups[0].url, tab: opened.id };
   });
@@ -8652,8 +8657,8 @@ try {
           return { ...tab, target: await until("its page", () => pageTarget(url), 10000) };
         },
         js: async (t, expression) => (await cdp(t, "Runtime.evaluate", { expression, returnByValue: true, awaitPromise: true, userGesture: true })).result.value,
-        prompt: (tabId) => evalApp(`return ac.pageState.getState().pages["${tabId}"]?.permission ?? null`),
-        answer: (tabId, id, result) => evalApp(`ac.permissions.answerPermission("${tabId}", "${id}", "${result}"); return true`),
+        prompt: (tabId) => promptState(tabId, "permission"),
+        answer: (tabId, id, result) => promptAnswer(tabId, "permission", id, result),
         async answered(t, i = 0) {
           return until("the page's getUserMedia answer", async () => {
             const a = JSON.parse(await this.js(t, "JSON.stringify(window.__asks)"))[i];
@@ -8695,7 +8700,8 @@ try {
       try {
         await media.js(tab.target, `ask({ audio: true, video: true })`);
         const request = await until("the prompt", () => media.prompt(tab.id), 10000);
-        await evalApp(`ac.permissions.answerPermission("${tab.id}", "${request.id}", "accept"); ac.permissions.answerPermission("${tab.id}", "${request.id}", "accept"); return true`);
+        await promptAnswer(tab.id, "permission", request.id, "accept");
+        await promptAnswer(tab.id, "permission", request.id, "accept");
         await cef(`resolvePermission("${request.id}", "accept", true)`);
         await cef(`resolvePermission("${request.id}", "deny", true)`);
         const answer = await media.answered(tab.target);

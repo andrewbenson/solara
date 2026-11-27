@@ -667,6 +667,7 @@ final class WebKitTab: NSView, WKNavigationDelegate, WKUIDelegate {
   }
 
   func webView(_ webView: WKWebView, didCommit navigation: WKNavigation!) {
+    emit("documentCommitted")
     WebKitHub.shared.contentBlocker.sync(webView, url: webView.backForwardList.currentItem?.url ?? webView.url)
     if !showingError { errorURL = nil }
     playingFrames.removeAll()

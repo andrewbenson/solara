@@ -2,6 +2,7 @@ import AppKit
 import Foundation
 import SolaraUI
 import SolaraModel
+import SolaraShell
 import SolaraStore
 
 @MainActor
@@ -9,16 +10,53 @@ enum NativePaneOverlays {
   static let topic = "pane.overlays"
   private static var started = false
   private static var hosts: [String: PaneOverlayHost] = [:]
+  private static var inline: [UUID: InlineAnchor] = [:]
+
+  private struct InlineAnchor {
+    let windowId: String
+    let tabId: String
+    weak var view: PanePopoverWrap?
+  }
+
+  static func registerInline() {
+    HostedViews.register(PanePrompts.kind) { windowId in
+      let view = PanePopoverWrap()
+      let id = UUID()
+      func changed() { DispatchQueue.main.async { refresh(windowId) } }
+      view.onReturn = changed
+      view.onLeave = changed
+      view.onResize = changed
+      return HostedContent(view: view, onUnmount: {
+        inline[id] = nil
+        changed()
+      }, takesFocus: false) { [weak view] tabId in
+        inline[id] = InlineAnchor(windowId: windowId, tabId: tabId, view: view)
+        changed()
+      }
+    }
+  }
+
+  static func promptSlot(_ windowId: String, _ tabId: String) -> NSView? {
+    guard let window = ShellDrag.window(windowId) else { return nil }
+    if NativeStoreHandle.store?.state.peeks[windowId]?.tabId == tabId,
+      let peek = TabSlots.shared.container(for: .peek(windowId)), peek.window === window,
+      !peek.isHiddenOrHasHiddenAncestor { return peek }
+    if let pane = PaneOverlays.shared.container(windowId: windowId, tabId: tabId, layer: .native),
+      pane.window === window, !pane.isHiddenOrHasHiddenAncestor { return pane }
+    return inline.values.lazy.filter { $0.windowId == windowId && $0.tabId == tabId }
+      .compactMap(\.view).first { $0.window === window && !$0.isHiddenOrHasHiddenAncestor }
+  }
 
   static func start() {
     HostedSadTab.register()
     HostedSelectionBar.register()
     HostedSwipeCapsule.register()
     HostedFrozenPage.register()
-    guard NativeWindowShell.enabled, !started else { return }
-    started = true
-    _ = SettingsJS.shared.observe(topic) { value in apply(value) }
     PanePrompts.start()
+    guard !started else { return }
+    started = true
+    guard NativeWindowShell.enabled else { return }
+    _ = SettingsJS.shared.observe(topic) { value in apply(value) }
     _ = SettingsJS.shared.observe("pane.navigation") { value in
       navigation = (value as? [String: Any])?["windows"] as? [String: [String: Any]] ?? [:]
       navigationRevision &+= 1
@@ -67,7 +105,8 @@ enum NativePaneOverlays {
   static func refresh(_ windowId: String) {
     guard started else { return }
     if let host = hosts[windowId] { return host.refresh() }
-    guard NativeWindowShell.host(windowId) != nil, PanePrompts.draws(windowId) else { return }
+    guard PanePrompts.draws(windowId),
+      NativeWindowShell.host(windowId) != nil || inline.values.contains(where: { $0.windowId == windowId }) else { return }
     let host = PaneOverlayHost(windowId: windowId)
     hosts[windowId] = host
     host.refresh()
@@ -209,6 +248,7 @@ final class PanePopover<Body: NSView> {
 @MainActor
 final class PanePromptEntry {
   let key: String
+  let receipt: String
   let tabId: String
   let kind: PanePromptKind
   let popover: PanePopover<PromptBodyView>
@@ -216,11 +256,13 @@ final class PanePromptEntry {
   var dark = false
   private var input = PromptInputGuard()
   private var fitWidth: CGFloat = -1
+  private weak var container: NSView?
 
   static func id(_ tabId: String, _ kind: PanePromptKind) -> String { tabId + "\u{1}" + kind.rawValue }
 
-  init(key: String, tabId: String, kind: PanePromptKind, popover: PanePopover<PromptBodyView>) {
+  init(key: String, receipt: String, tabId: String, kind: PanePromptKind, popover: PanePopover<PromptBodyView>) {
     self.key = key
+    self.receipt = receipt
     self.tabId = tabId
     self.kind = kind
     self.popover = popover
@@ -229,7 +271,16 @@ final class PanePromptEntry {
 
   func allowInput() -> Bool { input.allow(at: ProcessInfo.processInfo.systemUptime, activatedAt: PanePrompts.activatedAt) }
 
-  func refit() {
+  func place(in container: NSView?) {
+    if self.container !== container {
+      self.container = container
+      if container != nil { input.shown(at: ProcessInfo.processInfo.systemUptime) }
+    }
+    popover.place(in: container)
+    refit()
+  }
+
+  private func refit() {
     let width = popover.wrap.bounds.width
     guard let leftWidth = kind.leftWidth, width != fitWidth, var placement, placement.left != nil else { return }
     fitWidth = width
@@ -292,6 +343,8 @@ final class PaneOverlayHost {
   init(windowId: String) {
     self.windowId = windowId
   }
+
+  private func promptSlot(_ tabId: String) -> NSView? { NativePaneOverlays.promptSlot(windowId, tabId) }
 
   private func slot(_ tabId: String) -> NSView? { PaneOverlays.shared.container(windowId: windowId, tabId: tabId, layer: .native) }
 
@@ -373,13 +426,13 @@ final class PaneOverlayHost {
       (sadTabs[tabId] ?? makeSadTab(tabId)).update(state)
     }
     var asking = Set<String>()
-    for found in PanePrompts.prompts(in: windowId, paneWidth: { [weak self] in self?.slot($0).map { Double($0.bounds.width) } }) {
+    for found in PanePrompts.prompts(in: windowId, paneWidth: { [weak self] in self?.promptSlot($0).map { Double($0.bounds.width) } }) {
       guard let state = PromptState.decode(found.json), let placement = found.json.data(using: .utf8).flatMap(PanelPopover.placement) else { continue }
       let id = PanePromptEntry.id(found.tabId, found.kind)
       asking.insert(id)
-      if prompts[id]?.key != found.key {
+      if prompts[id]?.receipt != found.receipt {
         prompts[id]?.popover.wrap.removeFromSuperview()
-        prompts[id] = PanePromptEntry(key: found.key, tabId: found.tabId, kind: found.kind, popover: makePrompt(found.tabId, found.kind, id))
+        prompts[id] = PanePromptEntry(key: found.key, receipt: found.receipt, tabId: found.tabId, kind: found.kind, popover: makePrompt(found, id))
       }
       let entry = prompts[id]!
       entry.placement = placement
@@ -392,7 +445,7 @@ final class PaneOverlayHost {
       prompts[id] = nil
     }
     var choosing = Set<String>()
-    for found in PanePrompts.choosers(in: windowId, paneWidth: { [weak self] in self?.slot($0).map { Double($0.bounds.width) } }) {
+    for found in PanePrompts.choosers(in: windowId, paneWidth: { [weak self] in self?.promptSlot($0).map { Double($0.bounds.width) } }) {
       guard let state = DeviceChooserState.decode(found.json), let placement = found.json.data(using: .utf8).flatMap(PanelPopover.placement) else { continue }
       choosing.insert(found.tabId)
       if choosers[found.tabId]?.id != found.id {
@@ -445,15 +498,25 @@ final class PaneOverlayHost {
     return view
   }
 
-  private func makePrompt(_ tabId: String, _ kind: PanePromptKind, _ id: String) -> PanePopover<PromptBodyView> {
+  private func makePrompt(_ found: PanePrompts.Shown, _ id: String) -> PanePopover<PromptBodyView> {
     let prompt = PanePopover(PromptBodyView(frame: .zero))
     let windowId = windowId
+    let tabId = found.tabId
+    let kind = found.kind
+    let receipt = found.receipt
     prompt.body.onHeight = { [weak prompt] h in prompt?.setHeight(h) }
     prompt.body.onEvent = { [weak self] event in
-      if case .choice = event {} else if self?.prompts[id]?.allowInput() != true { return }
-      PanePrompts.promptEvent(windowId, tabId, kind, event)
+      guard let entry = self?.prompts[id], entry.receipt == receipt,
+        entry.popover.wrap.window != nil, !entry.popover.wrap.isHiddenOrHasHiddenAncestor else { return }
+      if case .choice = event {} else if !entry.allowInput() { return }
+      PanePrompts.promptEvent(windowId, tabId, kind, receipt, event)
     }
-    if kind == .popups { prompt.popover.onDismiss = { PanePrompts.promptEvent(windowId, tabId, .popups, .close) } }
+    if kind == .popups {
+      prompt.popover.onDismiss = { [weak self] in
+        guard self?.prompts[id]?.receipt == receipt else { return }
+        PanePrompts.promptEvent(windowId, tabId, kind, receipt, .close)
+      }
+    }
     return prompt
   }
 
@@ -631,8 +694,7 @@ final class PaneOverlayHost {
     }
     for (tabId, zoom) in zooms { zoom.place(in: slot(tabId)) }
     for entry in prompts.values {
-      entry.popover.place(in: slot(entry.tabId))
-      entry.refit()
+      entry.place(in: promptSlot(entry.tabId))
     }
     for entry in choosers.values {
       entry.popover.place(in: slot(entry.tabId))

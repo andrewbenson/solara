@@ -13,7 +13,6 @@ import { closeTab } from "../../lib/actions";
 import { backClosesToOpener, backSelection } from "../../store/openers";
 import { useShallow } from "zustand/react/shallow";
 import type { BrowserState } from "../../store/browser";
-import type { TabLive } from "../../store/types";
 import { backAction, knownHistoryFor, type BackAction, type BackFacts } from "./backAction";
 import { internalPageOf, tabDestination } from "../pages/urls";
 import { pageOf, patchPage, usePage } from "./pageState";
@@ -35,14 +34,6 @@ function backFacts(s: BrowserState, tabId: string): { pageId: string; facts: Bac
       opener: backClosesToOpener(s, tabId),
     },
   };
-}
-
-export function canGoBack(tabId: string): boolean {
-  return backAction(backFacts(store(), tabId).facts) !== "none";
-}
-
-export function canGoForward(tabId: string, live: Pick<TabLive, "canGoForward">): boolean {
-  return !!pageOf(tabId).newTabShown || live.canGoForward;
 }
 
 const subscribeEngineBack = (notify: () => void) => {

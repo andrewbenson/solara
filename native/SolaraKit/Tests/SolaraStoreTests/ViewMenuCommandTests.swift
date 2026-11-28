@@ -30,6 +30,37 @@ import Testing
     return state
   }
 
+  @Test func validationUsesTheWindowLayoutAndSplit() {
+    var state = fixture()
+    state.windows["w"]?.tabLayout = "top"
+    #expect(ViewMenuCommand.row("toggleAddressBar", arg: nil, windowId: "w", state: state)?.enabled == false)
+    #expect(ViewMenuCommand.row("toggleTabLayout", arg: nil, windowId: "w", state: state)?.checked == false)
+    #expect(ViewMenuCommand.row("focusNextPane", arg: nil, windowId: "w", state: state)?.enabled == false)
+    state.splits["split"] = SplitView(id: "split", windowId: "w", tabIds: ["a", "b"], orientation: "horizontal", sizes: [0.5, 0.5])
+    #expect(ViewMenuCommand.row("focusNextPane", arg: nil, windowId: "w", state: state)?.enabled == true)
+  }
+
+  @Test func windowlessSettingsAndLittleSolaraHaveSeparateValidation() {
+    let state = withSmall(fixture())
+    #expect(ViewMenuCommand.row("setAppearance", arg: "auto", windowId: nil, state: state)?.checked == true)
+    #expect(ViewMenuCommand.row("toggleTabLayout", arg: nil, windowId: nil, state: state)?.enabled == false)
+    #expect(ViewMenuCommand.row("toggleAddressBar", arg: nil, windowId: "s", state: state)?.enabled == false)
+  }
+
+  @Test func onlyAnInternalPageReachedFromNewTabOffersBackToNewTab() throws {
+    var state = fixture()
+    state.tabs["a"]?.url = ""
+    state.tabs["b"]?.url = "solara://bookmarks"
+    let store = makeStore(state)
+    #expect(!store.menuHistoryFacts("a").backToNewTab)
+    #expect(!store.menuHistoryFacts("b").backToNewTab)
+    try store.dispatch(Command("navigate", ["a", "solara://history"]))
+    #expect(store.menuHistoryFacts("a").backToNewTab)
+    #expect(!store.menuHistoryFacts("a").newTabShown)
+    try store.dispatch(Command("updateTab", ["a", ["url": "", "navigation": .null]]))
+    #expect(store.menuHistoryFacts("a").newTabShown)
+  }
+
   @discardableResult private func run(_ command: String, arg: String? = nil, windowId: String? = "w", store: Store) throws -> ViewMenuPlan {
     let plan = try #require(ViewMenuCommand.plan(command, arg: arg, windowId: windowId, state: store.state, closing: store.memory.closingWindows))
     let outcome = try #require(ViewMenuCommand.perform(command, arg: arg, windowId: windowId, store: store))

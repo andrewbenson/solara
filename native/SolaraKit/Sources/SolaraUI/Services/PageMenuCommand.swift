@@ -2,6 +2,142 @@ import Foundation
 import SolaraModel
 import SolaraStore
 
+public struct BrowserMenuContext {
+  private static let externalPageCommands: Set<String> = [
+    "print", "findInPage", "findNext", "findPrevious", "reload",
+    "forceReload", "useSelectionForFind", "findAndReplace", "jumpToSelection", "zoomReset",
+    "zoomIn", "zoomOut", "devTools", "toggleDeveloperMode", "toggleDevTools",
+    "javaScriptConsole", "inspectElements", "viewSource", "toggleMute", "share",
+    "savePage", "emailPageLocation", "printWithSystemDialog", "stop", "caretBrowsing",
+  ]
+  private static let anyPageCommands: Set<String> = ["copyUrl", "copyUrlAsMarkdown", "bookmarkPage", "addBookmarkToFolder"]
+  private static let windowCommands: Set<String> = [
+    "focusCommandBar", "closeTab", "closeAllTabs", "setSidebarPosition", "toggleTabLayout",
+    "toggleSidebar", "openSplitPane", "back", "forward", "nextTab",
+    "previousTab", "selectTab", "selectLastTab", "togglePin", "togglePinnedRow",
+    "duplicateTab", "moveTabToProfile", "moveTabToWindow", "openBookmark", "downloads",
+    "mergeAllWindows", "switchProfile", "nextProfile", "previousProfile", "newTabInGroup",
+    "newGroupWithTabs", "cleanUpTabs", "searchTabs", "renameTab", "changeTabIcon",
+    "returnToPinnedUrl", "tabSwitcher", "moveTabDown", "moveTabUp", "closeTabGroup",
+    "openProfileMenu",
+  ]
+  private static let unavailableInLittleSolara: Set<String> = [
+    "closeAllTabs", "setSidebarPosition", "toggleTabLayout", "toggleSidebar", "openSplitPane",
+    "focusNextPane", "focusPreviousPane", "toggleAddressBar", "toggleSidebarIconsOnly", "nextTab",
+    "previousTab", "selectTab", "selectLastTab", "togglePin", "togglePinnedRow",
+    "duplicateTab", "moveTabToProfile", "moveTabToWindow", "mergeAllWindows", "bookmarkAllTabs",
+    "newTabInGroup", "newGroupWithTabs", "cleanUpTabs", "searchTabs", "renameTab",
+    "changeTabIcon", "returnToPinnedUrl", "tabSwitcher", "moveTabDown", "moveTabUp",
+    "closeTabGroup",
+  ]
+
+  private let state: BrowserState
+  private let window: BrowserWindow?
+  private let page: Tab?
+  private let active: Tab?
+  private let opensPeek: Bool
+  private let internalPage: Bool
+  private let loading: Bool
+  private let back: Bool
+  private let forward: Bool
+  private let engine: String
+  private let bookmarked: Bool
+  private let product: String
+
+  public init(state: BrowserState, windowId: String?, pageId: String?, opensPeek: Bool = false, internalPage: Bool = false,
+    loading: Bool = false, back: Bool = false, forward: Bool = false, engine: String = "chromium",
+    bookmarked: Bool = false, product: String = "Solara") {
+    self.state = state
+    window = windowId.flatMap { state.windows[$0] }
+    active = windowId.flatMap { state.activeTabId($0) }.flatMap { state.tabs[$0] }
+    page = pageId.flatMap { state.tabs[$0] }
+    self.opensPeek = opensPeek
+    self.internalPage = internalPage
+    self.loading = loading
+    self.back = back
+    self.forward = forward
+    self.engine = engine
+    self.bookmarked = bookmarked
+    self.product = product
+  }
+
+  private var selection: [String] {
+    guard let window, let picked = state.selection[window.id]?.ids else { return [] }
+    let ids = Set(picked)
+    return state.viewTabIds(window.id).filter { ids.contains($0) }
+  }
+
+  public func row(_ command: String, arg: String? = nil) -> BrowserMenuRow? {
+    if let row = ViewMenuCommand.row(command, arg: arg, windowId: window?.id, state: state, product: product) { return row }
+    var row = BrowserMenuRow()
+    let hasPage = window != nil && page?.url.isEmpty == false
+    if Self.anyPageCommands.contains(command) || Self.externalPageCommands.contains(command) {
+      row.enabled = hasPage && (!internalPage || Self.anyPageCommands.contains(command))
+    } else if Self.windowCommands.contains(command), window == nil {
+      row.enabled = false
+    }
+    if window?.isSmall == true, Self.unavailableInLittleSolara.contains(command) { row.enabled = false }
+    switch command {
+    case "back": row.enabled = window != nil && back
+    case "forward": row.enabled = window != nil && forward
+    case "stop": row.enabled = row.enabled == true && loading
+    case "toggleDeveloperMode":
+      if let page {
+        let context: JSONValue = ["url": .string(page.url), "profileId": .string(page.profileId),
+          "privatePage": .bool(Ids.isIncognitoProfile(page.profileId)), "developerMode": state.settings["developerMode"] ?? [:]]
+        row.enabled = row.enabled == true && SiteControlsLogic.canToggleDeveloper(context: context)
+        if SiteControlsLogic.developerEnabled(context: context) { row.title = "Turn off Developer Mode for this site" }
+      }
+    case "togglePageEngine":
+      row.enabled = hasPage && page.map { EngineCommand.plan(tab: $0, currentEngine: engine, destination: engine == "webkit" ? "chromium" : "webkit") != nil } == true
+      if engine == "webkit" { row.title = "Open Page in Chromium" }
+    case "toggleMute":
+      if page?.muted == true { row.title = "Unmute Site" }
+    case "bookmarkPage":
+      if bookmarked { row.title = "Edit Bookmark…" }
+    case "togglePin":
+      if arg == "tile" {
+        if active?.isPinnedRow == true { row.title = "Move to Top Apps" }
+        else { row.enabled = false }
+      } else if active?.pinned == true {
+        row.title = active?.isPinnedRow == true ? "Unpin" : "Unpin from Top Apps"
+      }
+    case "togglePinnedRow":
+      if window != nil {
+        let profile = active.flatMap { state.profiles[$0.profileId]?.name } ?? "Profile"
+        row.title = active?.pinned == true ? "Move out of Pinned" : "Move to Pinned in \(profile)"
+      }
+    case "newGroupWithTabs":
+      if window != nil {
+        let picked = selection
+        let ids = picked.isEmpty ? active.map { [$0.id] } ?? [] : picked
+        let count = ids.filter { state.tabs[$0]?.pinSection != .tile }.count
+        if count == 0 { row.enabled = false }
+        if count > 1 { row.title = "New Group with \(count) Tabs" }
+      }
+    case "closeTab":
+      if opensPeek { row.title = "Close Peek" }
+      else {
+        let count = selection.count
+        if count > 1 { row.title = "Close \(count) Tabs" }
+      }
+    case "openFile":
+      if window?.isSmall == true { row.title = "Open in \(product)" }
+      else if opensPeek { row.title = "Open Peek as Tab" }
+    case "moveTabToProfile":
+      if window?.incognito == true || (arg != nil && arg == active?.profileId) { row.enabled = false }
+    case "moveTabToWindow", "switchProfile", "nextProfile", "previousProfile":
+      if window?.incognito == true { row.enabled = false }
+    case "mergeAllWindows":
+      if let window, !window.incognito, !window.isSmall, state.windows.values.lazy.filter({ !$0.incognito && !$0.isSmall }).prefix(2).count < 2 {
+        row.enabled = false
+      }
+    default: break
+    }
+    return row == BrowserMenuRow() ? nil : row
+  }
+}
+
 public struct PageMenuPlan: Equatable, Sendable {
   public var commands: [Command]
   public var tabId: String?

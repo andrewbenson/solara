@@ -18,6 +18,7 @@ public struct StoreMemory: Sendable, Equatable {
   var replicaProfilesAttached = false
   public var chromeTabs = ChromeTabsMemory()
   var pages: [String: PageReportMemory] = [:]
+  var internalPageFromNewTab: Set<String> = []
   var currentEpoch = 0
   var feedWatermark: [String: FeedWatermark] = [:]
   var pageProducerFence: [String: PageProducerFence] = [:]

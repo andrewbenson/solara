@@ -205,6 +205,9 @@ final class ShareMenu: NSObject, NSMenuDelegate, NSMenuItemValidation {
   }
 
   func validateMenuItem(_ item: NSMenuItem) -> Bool {
-    item.action == #selector(openSharingSettings(_:)) || !MenuState.current.disabled.contains("share")
+    if item.action == #selector(openSharingSettings(_:)) { return true }
+    let windowId = WindowManager.shared.keyWindowId
+    let row = NativeMenuCommands.browserRow?("share", nil, windowId)
+    return MenuTarget.enabled("share", arg: nil, windowId: windowId, browserEnabled: row?.enabled)
   }
 }

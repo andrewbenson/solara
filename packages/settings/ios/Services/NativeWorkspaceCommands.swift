@@ -51,6 +51,10 @@ enum NativeWorkspaceCommands {
       NativeMenuCommands.argumentHandlers[command] = { arg, windowId in perform(command, arg: arg, windowId: windowId) }
     }
     NativeMenuCommands.keepsMenuDispatch = ViewMenuCommand.commands.union(PageMenuCommand.commands).union(BookmarkMenuCommand.commands).union(NativeBookmarkCommands.formCommands).union(CopyLinkCommand.commands).union(BrowserServiceCommand.commands).union(TabFocusCommand.commands).union(["showHistory", "manageBookmarks"])
+    NativeMenuCommands.sidebarPositionInWindow = { NativeWindowShell.nativeLayoutActive($0) }
+    NativeMenuCommands.browserRow = { command, arg, windowId in
+      browserMenuRow(command, arg: arg, windowId: windowId).map { ($0.enabled, $0.checked, $0.title) }
+    }
     NativeMenuCommands.workspaceAvailability = { command, arg, windowId in
       if command == "findInPage", windowId == NativeSettingsWindow.windowId { return true }
       if command == "returnToPinnedUrl" { return NativePinnedPageCommands.available(windowId: windowId) }
@@ -62,6 +66,41 @@ enum NativeWorkspaceCommands {
       return WorkspaceMenuCommand.available(command, arg: arg, windowId: windowId, state: state)
     }
     WindowHost.closeRequest = { id in perform("closeWindow", windowId: id) }
+  }
+
+  private static func browserMenuRow(_ command: String, arg: String?, windowId: String?) -> BrowserMenuRow? {
+    guard NativeStoreHandle.ownsWorkspace, let store = NativeStoreHandle.store else { return nil }
+    if command == "closeTab", windowId == nil, WindowHost.hasClosableForeignKeyWindow { return nil }
+    let state = store.state
+    let window = windowId.flatMap { state.windows[$0] }
+    let peek = window.flatMap { state.peeks[$0.id]?.tabId }
+    let tabId = peek ?? window.flatMap { state.activeTabId($0.id) }
+    let page = tabId.flatMap { state.tabs[$0] }
+    let destination = page.map { $0.navigation?.url ?? $0.url } ?? ""
+    let internalPage = SettingsOpening.internalPage(of: destination, isAppScheme: isAppScheme) != nil
+    let live = tabId.flatMap { state.live[$0] }
+    let holder = page?.pageIn ?? tabId
+    var back = false
+    var forward = false
+    if command == "back" || command == "forward", let page, let holder {
+      let history = store.menuHistoryFacts(holder)
+      let opener = page.openerId.flatMap { state.tabs[$0] }
+      let holderLive = state.live[holder]
+      let openerBack = history.historyKnown && holderLive != nil && opener?.windowId == page.windowId && opener?.profileId == page.profileId
+        && peek == nil && Splits.splitOf(state, page.id) == nil && !state.inPinnedContainer(page.id)
+      back = !history.newTabShown && (holderLive?.canGoBack == true || NativeEngineCommands.hasBack(holder)
+        || history.backToNewTab || openerBack)
+      forward = store.menuHistoryFacts(page.id).newTabShown || live?.canGoForward == true
+    }
+    let engine = command == "togglePageEngine" ? tabId.map { store.pageEngine($0, in: state) } ?? "chromium" : "chromium"
+    var bookmarked = false
+    if command == "bookmarkPage", let window, let page, !page.url.isEmpty,
+      let nodes = NativeBookmarkEditing(windowId: window.id)?.snapshot()?.document["nodes"]?.object {
+      bookmarked = nodes.values.contains { $0["kind"]?.string == "url" && $0["url"]?.string == page.url }
+    }
+    let context = BrowserMenuContext(state: state, windowId: windowId, pageId: tabId, opensPeek: peek != nil, internalPage: internalPage,
+      loading: live?.isLoading == true, back: back, forward: forward, engine: engine, bookmarked: bookmarked, product: Bundle.main.productName)
+    return context.row(command, arg: arg)
   }
 
   private static func bindHistoryMenu() {

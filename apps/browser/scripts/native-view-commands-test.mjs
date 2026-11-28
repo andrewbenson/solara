@@ -96,6 +96,16 @@ try {
   assert.equal(probe?.debug, true, "devWorkspaceMenuCommand did nothing: this driver needs a Debug build (the hook is compiled out of Release)");
   handlerBaseline = await run("const baseline = ac.commandHandlers.stats(); ac.commandHandlers.setEnabled(false); return baseline;");
 
+  const viewRows = () => run('return expo.modules.SolaraApp.devMenuItems("View", null);');
+  const viewRow = async (title) => (await viewRows()).find((row) => row.title === title);
+  await until("View title and checkmarks are read from the native settings", async (state) => {
+    const fullUrl = await viewRow("Show Full URL");
+    const appearance = await viewRow("Appearance");
+    return fullUrl?.checked === state.settings.showFullUrl &&
+      appearance?.items.some((row) => row.checked === true && row.title === "Automatic");
+  });
+  pass("View checkmarks match native settings");
+
   for (const [command, key] of [
     ["toggleFullUrl", "showFullUrl"],
     ["toggleOpenLinksInLittleSolara", "openLinksInLittleSolara"],
@@ -108,6 +118,8 @@ try {
   for (const [mode, name] of [["dark", "NSAppearanceNameDarkAqua"], ["light", "NSAppearanceNameAqua"], ["auto", "auto"]]) {
     const { result } = await step(`setAppearance ${mode}`, () => menu("w1", "setAppearance", mode), (_, s) => s.settings.appearance === mode);
     assert.equal(result.appearance, name, `setAppearance ${mode}: Swift applied ${name} before the JS mirror could`);
+    const checked = (await viewRow("Appearance"))?.items.filter((row) => row.checked).map((row) => row.title);
+    assert.deepEqual(checked, [{ dark: "Dark", light: "Light", auto: "Automatic" }[mode]]);
   }
   await step("setAppearance dark again", () => menu("w1", "setAppearance", "dark"), (_, s) => s.settings.appearance === "dark");
   await unchanged("setAppearance with an invalid mode changes nothing", () => menu("w1", "setAppearance", "sepia"),

@@ -42,6 +42,43 @@ import Testing
     return state
   }
 
+  @Test func rowsUsePeekForPageFactsAndActiveTabForPinning() {
+    var state = fixture()
+    state.tabs["a"]?.pinned = true
+    state.tabs["a"]?.pinnedAsRow = true
+    state.tabs["b"]?.muted = true
+    let menu = BrowserMenuContext(state: state, windowId: "w", pageId: "b", opensPeek: true, loading: true)
+    #expect(menu.row("stop")?.enabled == true)
+    #expect(menu.row("toggleMute")?.title == "Unmute Site")
+    #expect(menu.row("closeTab")?.title == "Close Peek")
+    #expect(menu.row("togglePin", arg: "tile")?.title == "Move to Top Apps")
+  }
+
+  @Test func validationDistinguishesBlankInternalAndLittleWindows() {
+    let idle = BrowserMenuContext(state: fixture(), windowId: "w", pageId: "a")
+    #expect(idle.row("stop")?.enabled == false)
+    let internalPage = BrowserMenuContext(state: fixture(), windowId: "w", pageId: "a", internalPage: true)
+    #expect(internalPage.row("reload")?.enabled == false)
+    #expect(internalPage.row("copyUrl")?.enabled == true)
+    let blank = BrowserMenuContext(state: fixture(), windowId: "w", pageId: "n")
+    #expect(blank.row("copyUrl")?.enabled == false)
+    let little = BrowserMenuContext(state: withSmall(fixture()), windowId: "s", pageId: "c")
+    #expect(little.row("duplicateTab")?.enabled == false)
+    #expect(little.row("openFile")?.title == "Open in Solara")
+    let windowless = BrowserMenuContext(state: fixture(), windowId: nil, pageId: nil)
+    #expect(windowless.row("reload")?.enabled == false)
+  }
+
+  @Test func developerValidationUsesPageProfileAndSettings() {
+    var state = fixture()
+    state.settings = state.settings.choosing(["developerMode": ["default": ["on": ["a.example"]]]])
+    let menu = BrowserMenuContext(state: state, windowId: "w", pageId: "a")
+    #expect(menu.row("toggleDeveloperMode")?.enabled == true)
+    #expect(menu.row("toggleDeveloperMode")?.title == "Turn off Developer Mode for this site")
+    let file = BrowserMenuContext(state: state, windowId: "w", pageId: "b")
+    #expect(file.row("toggleDeveloperMode")?.enabled == false)
+  }
+
   private func plan(_ command: String, windowId: String? = "w", _ state: BrowserState, closing: Set<String> = []) throws -> PageMenuPlan {
     try #require(PageMenuCommand.plan(command, arg: nil, windowId: windowId, state: state, closing: closing))
   }

@@ -579,6 +579,13 @@ then closes it again and checks that Swift updates the menu and retains the Show
 checks that an obsolete JS menu payload cannot replace the native archive rows. Use `--baseline` with API 107
 to skip the obsolete payload check. `RecentlyClosedMenuTests` covers titles, private tabs, ordering and caps.
 
+## Native View and browser menu validation
+
+Run `native-view-commands-test.mjs <Debug app> <fresh output directory>` in layouts 0 and 1. The driver reads the
+real AppKit View menu and checks its full-URL and appearance checkmarks against Swift settings with JavaScript command
+handlers disabled. `ViewMenuCommandTests` and `PageMenuCommandTests` cover split and layout state, windowless commands,
+Little Solara, Peek, blank and internal pages, loading, pins and Developer Mode.
+
 ## Native omnibox actions
 
 `node apps/browser/scripts/native-omnibox-actions-test.mjs <Debug app> <fresh scratch directory>` disables JavaScript omnibox actions and records received/executed fallback counters. It checks hero, panel, sidebar and toolbar fields, real Return, modified Return, verbatim search, tab switching, paste-and-go/search, Copy URL, Escape, Developer Mode URL editing and opening Command Bar commands. The driver records native ownership and app snapshots in `evidence.json`, owns one hidden instance and quits it with a bounded teardown. Use an existing engine and dependencies in the verification VM. Swift cases are `OmniboxActionTests` and `OmniboxActionControllerTests`; run the full SolaraKit suite with `-Xswiftc -DSOLARA_PROBES` after the focused cases. Native menus, file picker, extension action/options/side-panel fixtures, profile creation and the Clear Browsing Data dialog also need VM interaction checks.

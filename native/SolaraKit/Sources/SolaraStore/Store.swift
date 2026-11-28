@@ -614,6 +614,15 @@ public final class Store: Sendable {
     enqueueSequenced(Command("pageReport", [.string(id), report]), origin: .engine)
   }
 
+  public func menuHistoryFacts(_ tabId: String) -> (newTabShown: Bool, backToNewTab: Bool, historyKnown: Bool) {
+    core.withLock { core in
+      let page = core.memory.pages[tabId]
+      let fromNewTab = core.memory.internalPageFromNewTab.contains(tabId)
+      let showingNewTab = page?.newTabShownUrl != nil || (fromNewTab && core.state.tabs[tabId]?.url.isEmpty == true)
+      return (showingNewTab, page?.backToNewTab == true || fromNewTab, page?.historyKnown == true)
+    }
+  }
+
   public func pageFacts(_ tabId: String) -> PageFacts? {
     sequence { core.withLock { core in
       guard let tab = core.state.tabs[tabId], tab.unloaded != true, !truthy(tab.pageIn) else { return nil }

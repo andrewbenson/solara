@@ -193,9 +193,6 @@ export type MenuEntry = { id: string; title: string; current?: boolean };
 export type MenuBookmark = { id: string; title: string; url?: string; children?: MenuBookmark[] };
 
 export type MenuState = {
-  checked: string[];
-  disabled: string[];
-  titles: Record<string, string>;
   profiles: MenuEntry[];
   windows: MenuEntry[];
   bookmarkNative?: { profileId: string; revision: number };

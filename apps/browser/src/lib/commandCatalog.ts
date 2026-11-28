@@ -3,20 +3,11 @@ import { PRODUCT } from "./productName";
 import { parseShortcut, type ShortcutSource } from "./shortcuts";
 
 type Keys = readonly string[];
-type Scope = "page" | "window";
-type InLittleSolara = "page" | "off";
 type Variant = { title?: string; barTitle?: string; symbol?: string; keys?: Keys };
 type CommandSpec = Variant & {
-  scope?: Scope;
-  onInternalPages?: true;
-  littleSolara?: InLittleSolara;
+  littleSolara?: "page";
   variants?: Readonly<Record<string, Variant>>;
 };
-
-const inWindow = { scope: "window" } as const;
-const pageInLittleSolara = { scope: "page", littleSolara: "page" } as const;
-const offInLittleSolara = { littleSolara: "off" } as const;
-const windowOffInLittleSolara = { scope: "window", littleSolara: "off" } as const;
 
 export const COMMANDS: Readonly<Record<BrowserCommand, CommandSpec>> = {
   newTab: { title: "New Tab", symbol: "plus", keys: ["⌘T"] },
@@ -27,15 +18,15 @@ export const COMMANDS: Readonly<Record<BrowserCommand, CommandSpec>> = {
   reopenClosedTab: { title: "Reopen Closed Tab", symbol: "arrow.uturn.backward", keys: ["⇧⌘T"], littleSolara: "page" },
   reopenClosedWindow: { title: "Reopen Closed Window" },
   restoreClosed: { littleSolara: "page" },
-  focusCommandBar: { title: "Open Command Bar", keys: ["⌘L", "⌃F5"], ...inWindow },
-  closeTab: { title: "Close Tab", symbol: "xmark", keys: ["⌘W"], ...inWindow },
-  closeAllTabs: { title: "Close All Tabs", symbol: "xmark.square", keys: ["⇧⌘K"], ...windowOffInLittleSolara },
-  print: { title: "Print…", symbol: "printer", keys: ["⌘P"], ...pageInLittleSolara },
-  copyUrl: { title: "Copy URL", symbol: "link", keys: ["⇧⌘C"], ...pageInLittleSolara, onInternalPages: true },
-  copyUrlAsMarkdown: { title: "Copy URL as Markdown", symbol: "link", keys: ["⌥⇧⌘C"], ...pageInLittleSolara, onInternalPages: true },
-  findInPage: { title: "Find…", barTitle: "Find in Page", symbol: "text.magnifyingglass", keys: ["⌘F"], ...pageInLittleSolara },
-  findNext: { title: "Find Next", keys: ["⌘G"], ...pageInLittleSolara },
-  findPrevious: { title: "Find Previous", keys: ["⇧⌘G"], ...pageInLittleSolara },
+  focusCommandBar: { title: "Open Command Bar", keys: ["⌘L", "⌃F5"] },
+  closeTab: { title: "Close Tab", symbol: "xmark", keys: ["⌘W"] },
+  closeAllTabs: { title: "Close All Tabs", symbol: "xmark.square", keys: ["⇧⌘K"] },
+  print: { title: "Print…", symbol: "printer", keys: ["⌘P"], littleSolara: "page" },
+  copyUrl: { title: "Copy URL", symbol: "link", keys: ["⇧⌘C"], littleSolara: "page" },
+  copyUrlAsMarkdown: { title: "Copy URL as Markdown", symbol: "link", keys: ["⌥⇧⌘C"], littleSolara: "page" },
+  findInPage: { title: "Find…", barTitle: "Find in Page", symbol: "text.magnifyingglass", keys: ["⌘F"], littleSolara: "page" },
+  findNext: { title: "Find Next", keys: ["⌘G"], littleSolara: "page" },
+  findPrevious: { title: "Find Previous", keys: ["⇧⌘G"], littleSolara: "page" },
   setAppearance: {
     variants: {
       auto: { title: "Automatic", barTitle: "Use System Appearance", symbol: "circle.lefthalf.filled" },
@@ -43,93 +34,89 @@ export const COMMANDS: Readonly<Record<BrowserCommand, CommandSpec>> = {
       dark: { title: "Dark", barTitle: "Dark Appearance", symbol: "moon" },
     },
   },
-  reload: { title: "Refresh", barTitle: "Reload Page", symbol: "arrow.clockwise", keys: ["⌘R"], ...pageInLittleSolara },
-  forceReload: { title: "Force Refresh the Page", barTitle: "Force Reload Page", symbol: "arrow.clockwise", keys: ["⇧⌘R"], ...pageInLittleSolara },
+  reload: { title: "Refresh", barTitle: "Reload Page", symbol: "arrow.clockwise", keys: ["⌘R"], littleSolara: "page" },
+  forceReload: { title: "Force Refresh the Page", barTitle: "Force Reload Page", symbol: "arrow.clockwise", keys: ["⇧⌘R"], littleSolara: "page" },
   setSidebarPosition: {
-    ...windowOffInLittleSolara,
     variants: {
       left: { title: "Left", barTitle: "Sidebar on Left", symbol: "sidebar.left" },
       right: { title: "Right", barTitle: "Sidebar on Right", symbol: "sidebar.right" },
     },
   },
-  toggleTabLayout: { title: "Show Tabs in Sidebar", keys: ["⇧⌘S"], ...windowOffInLittleSolara },
-  toggleSidebar: { title: "Auto-Hide Tabs", symbol: "sidebar.left", keys: ["⌘S", "⇧⌘L", "⇧⌘F"], ...windowOffInLittleSolara },
-  openSplitPane: { title: "Open Split Pane", keys: ["⌃⇧=", "⌃+"], ...windowOffInLittleSolara },
-  useSelectionForFind: { title: "Use Selection for Find", keys: ["⌘E"], ...pageInLittleSolara },
-  findAndReplace: { title: "Find and Replace…", keys: ["⌥⌘F"], ...pageInLittleSolara },
-  jumpToSelection: { title: "Jump to Selection", keys: ["⌘J"], ...pageInLittleSolara },
-  focusNextPane: { title: "Focus Next Split Pane", keys: ["⌃⇧]", "⌃}"], ...offInLittleSolara },
-  focusPreviousPane: { title: "Focus Previous Split Pane", keys: ["⌃⇧[", "⌃{"], ...offInLittleSolara },
+  toggleTabLayout: { title: "Show Tabs in Sidebar", keys: ["⇧⌘S"] },
+  toggleSidebar: { title: "Auto-Hide Tabs", symbol: "sidebar.left", keys: ["⌘S", "⇧⌘L", "⇧⌘F"] },
+  openSplitPane: { title: "Open Split Pane", keys: ["⌃⇧=", "⌃+"] },
+  useSelectionForFind: { title: "Use Selection for Find", keys: ["⌘E"], littleSolara: "page" },
+  findAndReplace: { title: "Find and Replace…", keys: ["⌥⌘F"], littleSolara: "page" },
+  jumpToSelection: { title: "Jump to Selection", keys: ["⌘J"], littleSolara: "page" },
+  focusNextPane: { title: "Focus Next Split Pane", keys: ["⌃⇧]", "⌃}"] },
+  focusPreviousPane: { title: "Focus Previous Split Pane", keys: ["⌃⇧[", "⌃{"] },
   toggleFullUrl: { title: "Show Full URL", symbol: "text.alignleft" },
   toggleJavaScriptFromAppleEvents: { title: "Allow JavaScript from Apple Events" },
-  toggleAddressBar: { title: "Show Address Bar in Sidebar", ...offInLittleSolara },
-  toggleSidebarIconsOnly: { title: "Icons-Only Sidebar", symbol: "sidebar.squares.left", ...offInLittleSolara },
+  toggleAddressBar: { title: "Show Address Bar in Sidebar" },
+  toggleSidebarIconsOnly: { title: "Icons-Only Sidebar", symbol: "sidebar.squares.left" },
   cast: { title: "Cast…", littleSolara: "page" },
-  zoomReset: { title: "Zoom to Actual Size", barTitle: "Actual Size", symbol: "1.magnifyingglass", keys: ["⌘0"], ...pageInLittleSolara },
-  zoomIn: { title: "Zoom In", symbol: "plus.magnifyingglass", keys: ["⌘+", "⌘="], ...pageInLittleSolara },
-  zoomOut: { title: "Zoom Out", symbol: "minus.magnifyingglass", keys: ["⌘-"], ...pageInLittleSolara },
-  devTools: { title: "Developer Tools", symbol: "hammer", keys: ["⌥⌘I"], ...pageInLittleSolara },
-  toggleDeveloperMode: { title: "Turn on Developer Mode for this site", symbol: "hammer", ...pageInLittleSolara },
-  toggleDevTools: { title: "Toggle Developer Tools", keys: ["F12"], ...pageInLittleSolara },
-  javaScriptConsole: { title: "JavaScript Console", keys: ["⌥⌘J"], ...pageInLittleSolara },
-  inspectElements: { title: "Inspect Elements", keys: ["⌥⌘C"], ...pageInLittleSolara },
-  viewSource: { title: "View Source", keys: ["⌥⌘U"], ...pageInLittleSolara },
-  back: { title: "Go Back", keys: ["⌘[", "⌘←"], scope: "window", littleSolara: "page" },
-  forward: { title: "Go Forward", keys: ["⌘]", "⌘→"], scope: "window", littleSolara: "page" },
-  nextTab: { title: "Next Tab", keys: ["⇧⌘]", "⌘}", "⌃⇟", "⌥⌘↓", "⌃⇥"], ...windowOffInLittleSolara },
-  previousTab: { title: "Previous Tab", keys: ["⇧⌘[", "⌘{", "⌃⇞", "⌥⌘↑", "⌃⇧⇥"], ...windowOffInLittleSolara },
+  zoomReset: { title: "Zoom to Actual Size", barTitle: "Actual Size", symbol: "1.magnifyingglass", keys: ["⌘0"], littleSolara: "page" },
+  zoomIn: { title: "Zoom In", symbol: "plus.magnifyingglass", keys: ["⌘+", "⌘="], littleSolara: "page" },
+  zoomOut: { title: "Zoom Out", symbol: "minus.magnifyingglass", keys: ["⌘-"], littleSolara: "page" },
+  devTools: { title: "Developer Tools", symbol: "hammer", keys: ["⌥⌘I"], littleSolara: "page" },
+  toggleDeveloperMode: { title: "Turn on Developer Mode for this site", symbol: "hammer", littleSolara: "page" },
+  toggleDevTools: { title: "Toggle Developer Tools", keys: ["F12"], littleSolara: "page" },
+  javaScriptConsole: { title: "JavaScript Console", keys: ["⌥⌘J"], littleSolara: "page" },
+  inspectElements: { title: "Inspect Elements", keys: ["⌥⌘C"], littleSolara: "page" },
+  viewSource: { title: "View Source", keys: ["⌥⌘U"], littleSolara: "page" },
+  back: { title: "Go Back", keys: ["⌘[", "⌘←"], littleSolara: "page" },
+  forward: { title: "Go Forward", keys: ["⌘]", "⌘→"], littleSolara: "page" },
+  nextTab: { title: "Next Tab", keys: ["⇧⌘]", "⌘}", "⌃⇟", "⌥⌘↓", "⌃⇥"] },
+  previousTab: { title: "Previous Tab", keys: ["⇧⌘[", "⌘{", "⌃⇞", "⌥⌘↑", "⌃⇧⇥"] },
   selectTab: {
-    ...windowOffInLittleSolara,
     variants: Object.fromEntries([1, 2, 3, 4, 5, 6, 7, 8].map((n) => [String(n), { title: `Select Tab ${n}`, keys: [`⌘${n}`] }])),
   },
-  selectLastTab: { title: "Select Last Tab", keys: ["⌘9"], ...windowOffInLittleSolara },
+  selectLastTab: { title: "Select Last Tab", keys: ["⌘9"] },
   togglePin: {
     title: "Move to Top Apps",
     symbol: "pin",
-    ...windowOffInLittleSolara,
     variants: { tile: { title: "Move Pinned Tab to Top Apps" } },
   },
-  togglePinnedRow: { title: "Move to Pinned", keys: ["⌘D"], ...windowOffInLittleSolara },
-  duplicateTab: { title: "Duplicate", barTitle: "Duplicate Tab", symbol: "plus.square.on.square", ...windowOffInLittleSolara },
-  moveTabToProfile: windowOffInLittleSolara,
-  moveTabToWindow: windowOffInLittleSolara,
-  bookmarkPage: { title: "Add to Bookmarks…", symbol: "bookmark", keys: ["⌥⇧⌘D"], ...pageInLittleSolara, onInternalPages: true },
-  addBookmarkToFolder: { ...pageInLittleSolara, onInternalPages: true },
-  openBookmark: { scope: "window", littleSolara: "page" },
+  togglePinnedRow: { title: "Move to Pinned", keys: ["⌘D"] },
+  duplicateTab: { title: "Duplicate", barTitle: "Duplicate Tab", symbol: "plus.square.on.square" },
+  moveTabToProfile: {},
+  moveTabToWindow: {},
+  bookmarkPage: { title: "Add to Bookmarks…", symbol: "bookmark", keys: ["⌥⇧⌘D"], littleSolara: "page" },
+  addBookmarkToFolder: { littleSolara: "page" },
+  openBookmark: { littleSolara: "page" },
   addFolderToSidebar: {},
   restoreArcFolders: {},
-  toggleMute: { title: "Mute Site", symbol: "speaker.slash", ...pageInLittleSolara },
+  toggleMute: { title: "Mute Site", symbol: "speaker.slash", littleSolara: "page" },
   togglePageEngine: { title: "Open Page in WebKit" },
-  downloads: { title: "Downloads", symbol: "arrow.down.circle", keys: ["⇧⌘J", "⌥⌘L"], scope: "window", littleSolara: "page" },
-  mergeAllWindows: { title: "Merge All Windows", symbol: "rectangle.stack", ...windowOffInLittleSolara },
-  switchProfile: inWindow,
-  nextProfile: { title: "Next Profile", keys: ["⌥⌘→"], ...inWindow },
-  previousProfile: { title: "Previous Profile", keys: ["⌥⌘←"], ...inWindow },
+  downloads: { title: "Downloads", symbol: "arrow.down.circle", keys: ["⇧⌘J", "⌥⌘L"], littleSolara: "page" },
+  mergeAllWindows: { title: "Merge All Windows", symbol: "rectangle.stack" },
+  switchProfile: {},
+  nextProfile: { title: "Next Profile", keys: ["⌥⌘→"] },
+  previousProfile: { title: "Previous Profile", keys: ["⌥⌘←"] },
   newProfile: { title: "New Profile…", symbol: "person.crop.circle.badge.plus" },
   openSettings: { title: "Settings…", symbol: "gearshape", keys: ["⌘,"] },
   importBrowserData: { title: "Import from Another Browser…", barTitle: "Import Browser Data", symbol: "square.and.arrow.down" },
   showHistory: { title: "Show History…", barTitle: "History", symbol: "clock", keys: ["⌘Y"] },
   clearBrowsingData: { title: "Clear Browsing Data…", symbol: "trash", keys: ["⇧⌘⌫"] },
   manageBookmarks: { title: "Manage Bookmarks", barTitle: "Bookmarks", symbol: "book", keys: ["⌥⌘B"] },
-  bookmarkAllTabs: { title: "Bookmark All Tabs…", keys: ["⇧⌘D"], ...offInLittleSolara },
+  bookmarkAllTabs: { title: "Bookmark All Tabs…", keys: ["⇧⌘D"] },
   setBookmarksBar: { variants: { always: { title: "Always" }, newTab: { title: "On New Tab Only" }, never: { title: "Never" } } },
   toggleBookmarksBar: { title: "Toggle Bookmarks Bar", symbol: "menubar.rectangle", keys: ["⇧⌘B"] },
-  newTabInGroup: { title: "New Tab in Group", keys: ["⌥⌘T", "⌃⌘C"], ...windowOffInLittleSolara },
-  newGroupWithTabs: { title: "New Group with Tab", symbol: "folder.badge.plus", keys: ["⌃⌘N", "⌃⌘P"], ...windowOffInLittleSolara },
-  cleanUpTabs: { title: "Clean Up Tabs", symbol: "sparkles", keys: ["⌥⌘K"], ...windowOffInLittleSolara },
+  newTabInGroup: { title: "New Tab in Group", keys: ["⌥⌘T", "⌃⌘C"] },
+  newGroupWithTabs: { title: "New Group with Tab", symbol: "folder.badge.plus", keys: ["⌃⌘N", "⌃⌘P"] },
+  cleanUpTabs: { title: "Clean Up Tabs", symbol: "sparkles", keys: ["⌥⌘K"] },
   tidyPins: { title: "Tidy Pins", symbol: "sparkles" },
-  searchTabs: { title: "Search Tabs…", symbol: "magnifyingglass", keys: ["⇧⌘A"], ...windowOffInLittleSolara },
-  renameTab: { title: "Rename…", barTitle: "Rename Tab", symbol: "pencil", ...windowOffInLittleSolara },
-  changeTabIcon: { title: "Change Icon…", ...windowOffInLittleSolara },
-  returnToPinnedUrl: { title: "Back to Pinned URL", keys: ["⌘↩"], ...windowOffInLittleSolara },
+  searchTabs: { title: "Search Tabs…", symbol: "magnifyingglass", keys: ["⇧⌘A"] },
+  renameTab: { title: "Rename…", barTitle: "Rename Tab", symbol: "pencil" },
+  changeTabIcon: { title: "Change Icon…" },
+  returnToPinnedUrl: { title: "Back to Pinned URL", keys: ["⌘↩"] },
   tabSwitcher: {
-    ...windowOffInLittleSolara,
     variants: {
       forward: { title: "Tab Switcher (forward)", keys: ["⌃`"] },
       backward: { title: "Tab Switcher (backward)" },
     },
   },
-  share: { title: "Share…", barTitle: "Share", symbol: "square.and.arrow.up", keys: ["⌥⌘S"], ...pageInLittleSolara },
+  share: { title: "Share…", barTitle: "Share", symbol: "square.and.arrow.up", keys: ["⌥⌘S"], littleSolara: "page" },
   reportBug: { title: "Report a Bug…", barTitle: "Report a Bug", symbol: "ladybug" },
   sendFeedback: { title: "Send Feedback…", keys: ["⌥⇧⌘I"] },
   keyboardShortcuts: { title: "Keyboard Shortcuts", symbol: "keyboard" },
@@ -149,15 +136,15 @@ export const COMMANDS: Readonly<Record<BrowserCommand, CommandSpec>> = {
     variants: { contact: { title: "Contact…" }, passwords: { title: "Passwords…" }, creditCard: { title: "Credit Card…" } },
   },
   openFile: { title: "Open File…", keys: ["⌘O"] },
-  savePage: { title: "Save Page As…", ...pageInLittleSolara },
-  emailPageLocation: { title: "Email Page Location", keys: ["⇧⌘I"], ...pageInLittleSolara },
-  printWithSystemDialog: { title: "Print Using System Dialog…", keys: ["⌥⌘P"], ...pageInLittleSolara },
-  stop: { title: "Stop", keys: ["⌘."], ...pageInLittleSolara },
-  caretBrowsing: { title: "Caret Browsing", keys: ["F7"], ...pageInLittleSolara },
-  moveTabDown: { title: "Move Tab Down", keys: ["⌃⇧⇟"], ...windowOffInLittleSolara },
-  moveTabUp: { title: "Move Tab Up", keys: ["⌃⇧⇞"], ...windowOffInLittleSolara },
-  closeTabGroup: { title: "Close Group", keys: ["⌃⌘W"], ...windowOffInLittleSolara },
-  openProfileMenu: { title: "Show Profiles Menu", keys: ["⇧⌘M"], ...inWindow },
+  savePage: { title: "Save Page As…", littleSolara: "page" },
+  emailPageLocation: { title: "Email Page Location", keys: ["⇧⌘I"], littleSolara: "page" },
+  printWithSystemDialog: { title: "Print Using System Dialog…", keys: ["⌥⌘P"], littleSolara: "page" },
+  stop: { title: "Stop", keys: ["⌘."], littleSolara: "page" },
+  caretBrowsing: { title: "Caret Browsing", keys: ["F7"], littleSolara: "page" },
+  moveTabDown: { title: "Move Tab Down", keys: ["⌃⇧⇟"] },
+  moveTabUp: { title: "Move Tab Up", keys: ["⌃⇧⇞"] },
+  closeTabGroup: { title: "Close Group", keys: ["⌃⌘W"] },
+  openProfileMenu: { title: "Show Profiles Menu", keys: ["⇧⌘M"] },
 };
 
 export const STANDARD_ITEMS: Readonly<Record<string, { keys?: Keys }>> = {
@@ -202,10 +189,6 @@ export const STANDARD_ITEMS: Readonly<Record<string, { keys?: Keys }>> = {
 const ALL_COMMANDS = Object.keys(COMMANDS) as BrowserCommand[];
 const commandsWhere = (test: (spec: CommandSpec) => boolean) => ALL_COMMANDS.filter((command) => test(COMMANDS[command]));
 
-export const PAGE_COMMANDS = commandsWhere((c) => c.scope === "page");
-export const PAGE_COMMANDS_OFF_INTERNAL_PAGES = commandsWhere((c) => c.scope === "page" && !c.onInternalPages);
-export const WINDOW_COMMANDS = commandsWhere((c) => c.scope !== undefined);
-export const LITTLE_SOLARA_DISABLED_COMMANDS = commandsWhere((c) => c.littleSolara === "off");
 export const LITTLE_SOLARA_PAGE_COMMANDS: ReadonlySet<string> = new Set(commandsWhere((c) => c.littleSolara === "page"));
 
 const variantOf = (command: BrowserCommand, arg: string | undefined): Variant => {

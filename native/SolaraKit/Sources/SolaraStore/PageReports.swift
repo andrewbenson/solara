@@ -205,6 +205,7 @@ extension Session {
     switch effect {
     case .markLoading: _ = page.live.markLoading()
     case .navigated(let url, _, let loading, let back, let forward):
+      if !loading, !url.isEmpty, url != "about:blank" { page.historyKnown = true }
       _ = page.live.navigation(url: url, isLoading: loading, canGoBack: back, canGoForward: forward,
         themeColor: report["themeColor"]?.string, now: now)
     case .keepNewTabShown:
@@ -212,9 +213,13 @@ extension Session {
       _ = page.live.navigation(url: url, isLoading: report["isLoading"]?.bool ?? false,
         canGoBack: report["canGoBack"]?.bool ?? false, canGoForward: report["canGoForward"]?.bool ?? false,
         themeColor: report["themeColor"]?.string, now: now)
+    case .backToNewTab: page.backToNewTab = true
     case .clearNewTabShown: page.newTabShownUrl = nil
     case .stopLoading: _ = page.live.download()
-    case .discarded: _ = page.live.discard()
+    case .discarded:
+      page.backToNewTab = false
+      page.historyKnown = false
+      _ = page.live.discard()
     default: break
     }
   }

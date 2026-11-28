@@ -1,7 +1,6 @@
 import { keepAlivePagesChanged } from "./nativeKeepAlive";
 import { usePages } from "../components/layout/pageState";
 import { startPinnedLinks } from "./pinnedLinks";
-import { sidebarIconsOnlyOf, sidebarPositionOf, sidebarPositionSupported } from "../store/sidebarRail";
 import { lastTabClosesWindow, onDownload, releaseProfile } from "@solara/solaracore";
 import {
   cancelFocusMove,
@@ -29,34 +28,24 @@ import {
 import { Appearance } from "react-native";
 import { cancelBookmarkQuit, flushBookmarkJournal } from "@solara/settings";
 import { nativeOwnsWorkspace } from "../store/nativeStore";
-import { folderChildren, isBookmarked } from "../store/bookmarks";
+import { folderChildren } from "../store/bookmarks";
 import { useBrowser, type BrowserState } from "../store/browser";
-import { activeTab, bookmarkProfileId, IDLE_LIVE, isPinnedRow, togglePinTitle, windowTitle } from "../store/model";
-import { multiSelection } from "../store/organize";
-import { canSwitchEngine, tabEngine } from "../store/engines";
+import { bookmarkProfileId, windowTitle } from "../store/model";
 import { setLastTabKeepsWindow } from "../store/newTabBar";
-import { peekTabId } from "../store/peek";
-import { splitOf } from "../store/splits";
-import { canGoBack, canGoForward } from "../components/layout/history";
 import type { Bookmarks, BookmarkNode } from "../store/types";
 import { isUtilityWindowId } from "../components/settings/windows";
 import { openingLightsCenter } from "../components/layout/windowLayout";
-import { isInternalTab } from "../components/pages/urls";
-import { sidebarMenuState } from "../components/sidebar/commands";
 import { openWindow as createWindow } from "./actions";
 import { createWindowSync, type WindowPort } from "./windowSync";
 import { openExternalUrls } from "../components/littleSolara/actions";
 import { SMALL_LIGHTS_CENTER } from "../components/littleSolara/SmallChrome";
 import { runCommand } from "./commands";
-import { LITTLE_SOLARA_DISABLED_COMMANDS, PAGE_COMMANDS, PAGE_COMMANDS_OFF_INTERNAL_PAGES, WINDOW_COMMANDS } from "./commandCatalog";
 import { setMenuBarShortcuts } from "./commandShortcuts";
 import { finishAnimatedCloses } from "./closeAnimated";
 import { setFocusSenders } from "./focusClaims";
 import { cancelAbandonedFocusMoves, settlingCommandFocus } from "./focusHandoff";
 import { flushPersistence, resumePersistence } from "./persist";
 import { startWindowCloseGuard } from "./windowClose";
-import { PRODUCT } from "./productName";
-import { canToggleDeveloperModeFor, tabInDeveloperMode } from "../components/site/developerMode";
 
 let quitting = false;
 let quitAttempt = 0;
@@ -223,71 +212,10 @@ function bookmarkMenus(b: Bookmarks, profileId: string): BookmarkMenus {
 export function menuState(s: BrowserState): MenuState {
   const windowId = s.ui.focusedWindowId && s.windows[s.ui.focusedWindowId] ? s.ui.focusedWindowId : undefined;
   const w = windowId ? s.windows[windowId] : undefined;
-  const tab = windowId ? activeTab(s, windowId) : undefined;
-  const peek = windowId ? peekTabId(s, windowId) : undefined;
-  const page = peek ? s.tabs[peek] : tab;
-  const live = page ? s.live[page.id] : undefined;
   const bookmarkProfile = bookmarkProfileId(s, w);
   const regularWindows = s.windowOrder.filter((id) => !s.windows[id]!.incognito && s.windows[id]!.kind !== "small");
 
-  const disabled: string[] = [];
-  if (!sidebarPositionSupported(windowId) || s.settings.fileOwn?.covered.includes("sidebarPosition")) disabled.push("setSidebarPosition");
-  if (!tab || !splitOf(s, tab.id)) disabled.push("focusNextPane", "focusPreviousPane");
-  if (w && (w.tabLayout ?? s.settings.tabLayout) === "top") disabled.push("toggleAddressBar", "toggleSidebarIconsOnly");
-  if (!w) disabled.push(...WINDOW_COMMANDS);
-  else {
-    if (!page?.url) disabled.push(...PAGE_COMMANDS);
-    else if (isInternalTab(page)) disabled.push(...PAGE_COMMANDS_OFF_INTERNAL_PAGES);
-    if (!page || !canGoBack(page.id)) disabled.push("back");
-    if (!page || !canGoForward(page.id, live ?? IDLE_LIVE)) disabled.push("forward");
-    if (!live?.isLoading) disabled.push("stop");
-    if (w.incognito) disabled.push("moveTabToProfile", "moveTabToWindow", "switchProfile", "nextProfile", "previousProfile");
-    else if (tab) disabled.push(`moveTabToProfile:${tab.profileId}`);
-    if (regularWindows.length < 2) disabled.push("mergeAllWindows");
-  }
-
-  const checked = [`setAppearance:${s.settings.appearance}`, `setSidebarPosition:${sidebarPositionOf(w, s.settings)}`];
-  if (s.settings.showFullUrl) checked.push("toggleFullUrl");
-  if (s.settings.allowJavaScriptFromAppleEvents) checked.push("toggleJavaScriptFromAppleEvents");
-  if (s.settings.addressBar === "sidebar") checked.push("toggleAddressBar");
-  if (sidebarIconsOnlyOf(w, s.settings)) checked.push("toggleSidebarIconsOnly");
-  checked.push(`setBookmarksBar:${s.settings.bookmarksBar}`);
-  if ((w?.tabLayout ?? s.settings.tabLayout) === "sidebar") checked.push("toggleTabLayout");
-  if (w && !w.sidebarOpen) checked.push("toggleSidebar");
-
-  const titles: Record<string, string> = {};
-  if (!canToggleDeveloperModeFor(page?.id)) disabled.push("toggleDeveloperMode");
-  if (tabInDeveloperMode(page?.id)) titles.toggleDeveloperMode = "Turn off Developer Mode for this site";
-  if (tab?.pinned) titles.togglePin = togglePinTitle(tab);
-  if (isPinnedRow(tab)) titles["togglePin:tile"] = "Move to Top Apps";
-  else disabled.push("togglePin:tile");
-  if (page?.muted) titles.toggleMute = "Unmute Site";
-  if (page && tabEngine(s, page.id) === "webkit") titles.togglePageEngine = "Open Page in Chromium";
-  if (!canSwitchEngine(page?.url)) disabled.push("togglePageEngine");
-  if (page?.url && isBookmarked(s.bookmarks, bookmarkProfile, page.url)) {
-    titles.bookmarkPage = "Edit Bookmark…";
-  }
-
-  if (!s.settings.openLinksInLittleSolara) titles.toggleOpenLinksInLittleSolara = `Open Links from Other Apps in Little ${PRODUCT}`;
-
-  const sidebar = sidebarMenuState(s, windowId);
-  disabled.push(...sidebar.disabled);
-  Object.assign(titles, sidebar.titles);
-  const selected = windowId ? multiSelection(s, windowId).length : 0;
-  if (selected) titles.closeTab = `Close ${selected} Tabs`;
-  if (peek) {
-    titles.openFile = "Open Peek as Tab";
-    titles.closeTab = "Close Peek";
-  }
-  if (w?.kind === "small") {
-    disabled.push(...LITTLE_SOLARA_DISABLED_COMMANDS);
-    titles.openFile = `Open in ${PRODUCT}`;
-  }
-
   return {
-    checked,
-    disabled,
-    titles,
     profiles: s.profileOrder.map((id) => ({ id, title: s.profiles[id]!.name, current: w?.profileId === id })),
     windows: w?.incognito ? [] : regularWindows.filter((id) => id !== windowId).map((id) => ({ id, title: windowTitle(s, id) })),
     ...bookmarkMenus(s.bookmarks, bookmarkProfile),

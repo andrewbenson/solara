@@ -182,8 +182,12 @@ public enum SiteControlsLogic {
     return defaults ? !listed : listed
   }
 
+  public static func canToggleDeveloper(context: JSONValue) -> Bool {
+    context["privatePage"]?.bool != true && developerHost(context["url"]?.string ?? "") != nil
+  }
+
   public static func developerSettings(context: JSONValue, on: Bool) -> JSONValue? {
-    guard context["privatePage"]?.bool != true, let h = developerHost(context["url"]?.string ?? "") else { return nil }
+    guard canToggleDeveloper(context: context), let h = developerHost(context["url"]?.string ?? "") else { return nil }
     let profile = developerProfile(context)
     var all = context["developerMode"]?.object ?? [:]
     var state = developerState(all[profile])
@@ -253,7 +257,7 @@ public enum SiteControlsLogic {
       items.append(["kind": "section", "title": "Settings", "tight": true])
       items.append(setting("blocker", "shield.lefthalf.filled", "Block Ads & Trackers", blockerValue, enabled && !allowed && !unavailable && !preparing, blocker != nil && !unavailable && !preparing && (!webkit || blocker?["ready"]?.bool == true)))
       let developer = developerEnabled(context: c)
-      items.append(setting("developer", "hammer.fill", "Developer Mode", developer ? "On" : "Off", developer, c["privatePage"]?.bool != true && developerHost(url) != nil))
+      items.append(setting("developer", "hammer.fill", "Developer Mode", developer ? "On" : "Off", developer, canToggleDeveloper(context: c)))
       let opensIn = c["privatePage"]?.bool == true ? engineName(engine) : c["engineRule"]?.string.map(engineName) ?? recommendedTitle(c)
       items.append(setting("engine", engineIcon(engine), "Opens in", opensIn, c["engineRule"]?.string != nil, true))
       let sleeps = c["sleepInactiveTabs"]?.bool != false

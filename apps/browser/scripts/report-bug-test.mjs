@@ -261,8 +261,7 @@ try {
     const other = await run('return ac.store.getState().createWindow({ url: "about:blank#other" });');
     await until("second window", tabs, (t) => !!t.windows[other]);
     await run('return expo.modules.SolaraApp.devWorkspaceMenuCommand("w1", "closeWindow", null);');
-    const state = await until("prompt gone with its window", () => bug("state"), (s) => !s.prompt.shown);
-    assert.equal(state.answered, "closed");
+    const state = await until("prompt close receipt", () => bug("state"), (s) => !s.prompt.shown && s.answered === "closed");
     assert.equal(state.lastOpened, null, "closing answers nothing");
     await quit();
   });

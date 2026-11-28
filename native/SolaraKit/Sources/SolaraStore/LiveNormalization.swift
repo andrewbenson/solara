@@ -3,6 +3,11 @@ import SolaraModel
 func normalizePageState(_ state: inout BrowserState, memory: inout StoreMemory) {
   state.live = state.live.filter { state.tabs[$0.key] != nil }
   memory.pages = memory.pages.filter { state.tabs[$0.key] != nil }
+  if !memory.internalPageFromNewTab.isEmpty {
+    memory.internalPageFromNewTab = memory.internalPageFromNewTab.filter { id in
+      state.tabs[id].map { $0.unloaded != true } == true
+    }
+  }
   memory.feedWatermark = memory.feedWatermark.filter { state.tabs[$0.key] != nil }
   memory.pageProducerFence = memory.pageProducerFence.filter { state.tabs[$0.key] != nil }
   for tab in state.tabs.values {

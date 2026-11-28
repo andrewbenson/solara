@@ -24,9 +24,6 @@ struct MenuState {
 
   static var current = MenuState()
 
-  var checked = Set<String>()
-  var disabled = Set<String>()
-  var titles: [String: String] = [:]
   var profiles: [Entry] = []
   var windows: [Entry] = []
   var bookmarkFolders: [Entry] = []
@@ -77,15 +74,11 @@ struct MenuState {
   }
 
   init(_ d: [String: Any]) {
-    func strings(_ key: String) -> [String] { d[key] as? [String] ?? [] }
     func entries(_ key: String) -> [Entry] {
       (d[key] as? [[String: Any]] ?? []).map {
         Entry(id: $0["id"] as? String ?? "", title: $0["title"] as? String ?? "", current: $0["current"] as? Bool ?? false)
       }
     }
-    checked = Set(strings("checked"))
-    disabled = Set(strings("disabled"))
-    titles = d["titles"] as? [String: String] ?? [:]
     profiles = entries("profiles")
     windows = entries("windows")
     if d["bookmarksBar"] == nil, let sent = MenuState.sentBookmarks {
@@ -237,6 +230,8 @@ enum SwitcherHold {
 public enum NativeMenuCommands {
   nonisolated(unsafe) public static var switcherRelease: (() -> Bool)?
   nonisolated(unsafe) public static var handlers: [String: (String?) -> Void] = [:]
+  nonisolated(unsafe) public static var sidebarPositionInWindow: ((String) -> Bool)?
+  nonisolated(unsafe) public static var browserRow: ((String, String?, String?) -> (enabled: Bool?, checked: Bool?, title: String?)?)?
   nonisolated(unsafe) public static var workspaceAvailability: ((String, String?, String?) -> Bool?)?
   nonisolated(unsafe) public static var argumentHandlers: [String: (String?, String?) -> Bool] = [:]
   nonisolated(unsafe) public static var keepsMenuDispatch: Set<String> = []
@@ -248,26 +243,36 @@ final class MenuTarget: NSObject, NSMenuItemValidation {
 
   static let focusMovingCommands: Set<String> = ["newTab", "focusCommandBar", "findInPage"]
 
+  static func enabled(_ command: String, arg: String?, windowId: String?, browserEnabled: Bool?) -> Bool {
+    if command == "findInPage", windowId == "settings" { return true }
+    if command == "setSidebarPosition" {
+      guard NativeSidebarPositionCapability.enabled, let windowId,
+        NativeMenuCommands.sidebarPositionInWindow?(windowId) == true else { return false }
+    }
+    return browserEnabled != false && NativeMenuCommands.workspaceAvailability?(command, arg, windowId) != false
+  }
+
   @objc(commandDispatch:) func performCommand(_ sender: NSMenuItem) {
     guard let item = sender as? CommandItem else { return }
-    let nativeAvailability = NativeMenuCommands.workspaceAvailability?(item.command, item.arg, item.windowless ? nil : WindowManager.shared.keyWindowId)
+    let windowId = item.windowless ? nil : WindowManager.shared.keyWindowId
+    let row = NativeMenuCommands.browserRow?(item.command, item.arg, windowId)
+    guard Self.enabled(item.command, arg: item.arg, windowId: windowId, browserEnabled: row?.enabled) else { return }
     var prepared = false
     if let run = NativeMenuCommands.argumentHandlers[item.command] {
-      guard nativeAvailability ?? (!MenuState.current.disabled.contains(item.stateKey) && !MenuState.current.disabled.contains(item.command)) else { return }
       if NativeMenuCommands.keepsMenuDispatch.contains(item.command) {
         prepareDispatch(item.command)
         prepared = true
       }
-      if run(item.arg, item.windowless ? nil : WindowManager.shared.keyWindowId) {
+      if run(item.arg, windowId) {
         if item.command == "tabSwitcher" { SwitcherHold.opened(by: item) }
         return
       }
     }
     if let run = NativeMenuCommands.handlers[item.command] {
-      return run(item.windowless ? nil : WindowManager.shared.keyWindowId)
+      return run(windowId)
     }
     if !prepared { prepareDispatch(item.command) }
-    handler?(item.command, item.arg, item.windowless ? nil : WindowManager.shared.keyWindowId)
+    handler?(item.command, item.arg, windowId)
     if item.command == "tabSwitcher" { SwitcherHold.opened(by: item) }
   }
 
@@ -308,7 +313,7 @@ final class MenuTarget: NSObject, NSMenuItemValidation {
   private static var undoReopensClosedTab: Bool {
     let state = MenuState.current
     let canReopen = NativeMenuCommands.workspaceAvailability?("reopenClosedTab", nil, WindowManager.shared.keyWindowId)
-      ?? !state.disabled.contains("reopenClosedTab")
+      ?? false
     guard state.undoReopensClosedTab, canReopen,
       WindowManager.shared.keyWindowId != "settings", let window = WindowManager.shared.keyBrowserWindow
     else { return false }
@@ -352,15 +357,14 @@ final class MenuTarget: NSObject, NSMenuItemValidation {
       return reopens || Self.validateForwarded(menuItem, Self.undoAction)
     }
     guard let item = menuItem as? CommandItem else { return true }
-    let state = MenuState.current
-    if item.tracksChecked { item.state = state.checked.contains(item.stateKey) ? .on : .off }
-    let title = state.titles[item.stateKey] ?? item.defaultTitle
+    let windowId = item.windowless ? nil : WindowManager.shared.keyWindowId
+    let row = NativeMenuCommands.browserRow?(item.command, item.arg, windowId)
+    if item.tracksChecked { item.state = row?.checked == true ? .on : .off }
+    let title = row?.title ?? item.defaultTitle
     if item.title != title { item.title = title }
     if item.keyEquivalent == "\r", NSApp.keyWindow?.firstResponder is NSText { return false }
     if MainMenu.movesCaret(item), NSApp.currentEvent?.type == .keyDown, MainMenu.editsText(NSApp.keyWindow?.firstResponder) { return false }
-    if item.command == "findInPage", WindowManager.shared.keyWindowId == "settings" { return true }
-    let enabled = NativeMenuCommands.workspaceAvailability?(item.command, item.arg, item.windowless ? nil : WindowManager.shared.keyWindowId)
-      ?? (!state.disabled.contains(item.stateKey) && !state.disabled.contains(item.command))
+    let enabled = Self.enabled(item.command, arg: item.arg, windowId: windowId, browserEnabled: row?.enabled)
     if item.hidesWhenDisabled, item.isHidden == enabled { item.isHidden = !enabled }
     return enabled
   }

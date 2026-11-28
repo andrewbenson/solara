@@ -18,11 +18,51 @@ public struct ViewMenuOutcome: Equatable, Sendable {
   public let appearance: String?
 }
 
+public struct BrowserMenuRow: Equatable, Sendable {
+  public var enabled: Bool?
+  public var checked: Bool?
+  public var title: String?
+
+  public init(enabled: Bool? = nil, checked: Bool? = nil, title: String? = nil) {
+    self.enabled = enabled
+    self.checked = checked
+    self.title = title
+  }
+}
+
 public enum ViewMenuCommand {
   public static let commands: Set<String> = [
     "toggleOpenLinksInLittleSolara", "setAppearance", "toggleFullUrl", "toggleJavaScriptFromAppleEvents", "toggleAddressBar",
     "setBookmarksBar", "toggleBookmarksBar", "toggleTabLayout", "toggleSidebar", "downloads", "focusNextPane", "focusPreviousPane",
   ]
+
+  public static func row(_ command: String, arg: String?, windowId: String?, state: BrowserState, product: String = "Solara") -> BrowserMenuRow? {
+    let window = windowId.flatMap { state.windows[$0] }
+    let settings = state.settings
+    let sidebar = (window?.tabLayout ?? settings.string("tabLayout")) == "sidebar"
+    let fullWindow = window?.isSmall == false
+    switch command {
+    case "setAppearance": return BrowserMenuRow(checked: arg == settings.string("appearance"))
+    case "setBookmarksBar": return BrowserMenuRow(checked: arg == settings.string("bookmarksBar"))
+    case "setSidebarPosition":
+      return BrowserMenuRow(enabled: fullWindow && settings.fileSource("sidebarPosition") == nil,
+        checked: arg == (window?.effectiveSidebarPosition(settings) ?? settings.string("sidebarPosition") ?? "left"))
+    case "toggleOpenLinksInLittleSolara":
+      return BrowserMenuRow(title: settings.bool("openLinksInLittleSolara") ? nil : "Open Links from Other Apps in Little \(product)")
+    case "toggleFullUrl": return BrowserMenuRow(checked: settings.bool("showFullUrl"))
+    case "toggleJavaScriptFromAppleEvents": return BrowserMenuRow(checked: settings.bool("allowJavaScriptFromAppleEvents"))
+    case "toggleAddressBar":
+      return BrowserMenuRow(enabled: window == nil || (fullWindow && sidebar), checked: settings.string("addressBar") == "sidebar")
+    case "toggleSidebarIconsOnly":
+      return BrowserMenuRow(enabled: window == nil || (fullWindow && sidebar),
+        checked: window?.effectiveSidebarIconsOnly(settings) ?? settings.bool("sidebarIconsOnly"))
+    case "toggleTabLayout": return BrowserMenuRow(enabled: fullWindow, checked: sidebar)
+    case "toggleSidebar": return BrowserMenuRow(enabled: fullWindow, checked: window?.sidebarOpen == false)
+    case "focusNextPane", "focusPreviousPane":
+      return BrowserMenuRow(enabled: fullWindow && Splits.splitOf(state, windowId.flatMap { state.activeTabId($0) }) != nil)
+    default: return nil
+    }
+  }
 
   public static func plan(_ command: String, arg: String?, windowId requested: String?, state: BrowserState, closing: Set<String>) -> ViewMenuPlan? {
     guard commands.contains(command) else { return nil }

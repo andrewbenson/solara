@@ -11,7 +11,7 @@ public class AppModule: Module {
 
   public func definition() -> ModuleDefinition {
     Name("SolaraApp")
-    Constant("apiVersion") { () -> Int in 111 }
+    Constant("apiVersion") { () -> Int in 112 }
     Constant("sidebarRail") { true }
     Constant("sidebarPosition") { NativeSidebarPositionCapability.enabled }
     Events("onNotificationResponse", "onPendingUpdate")
@@ -348,7 +348,7 @@ public class AppModule: Module {
           var out: [String: Any] = [
             "title": item.isSeparatorItem ? "-" : item.title, "key": item.keyEquivalent,
             "modifiers": item.keyEquivalentModifierMask.rawValue, "action": item.action.map(NSStringFromSelector) ?? "",
-            "enabled": item.isEnabled, "hidden": item.isHidden, "alternate": item.isAlternate,
+            "enabled": item.isEnabled, "hidden": item.isHidden, "alternate": item.isAlternate, "checked": item.state == .on,
           ]
           if let sub = item.submenu { out["items"] = items(sub) }
           return out

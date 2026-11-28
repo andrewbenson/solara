@@ -1,5 +1,6 @@
 import Foundation
 import SolaraModel
+import SolaraOmnibox
 
 public struct NewTabOptions: Sendable {
   public var url: String?
@@ -461,6 +462,9 @@ extension Session {
     let s = state
     let url = resolved(input, s)
     guard !url.isEmpty, let tab = s.tabs[id] else { return }
+    if (tab.navigation?.url ?? tab.url).isEmpty, SettingsOpening.internalPage(of: url, isAppScheme: isAppScheme) != nil {
+      memory.internalPageFromNewTab.insert(id)
+    }
     let base = userInitiated && !tab.url.isEmpty ? forgetOpeners(s, tab.windowId) : s
     let navigation = navigationTo(url, userInitiated: userInitiated)
     let engine = userInitiated ? typedNavigationEngine(s, tab, url) : nil

@@ -180,6 +180,7 @@ extension Session {
   public func hydrate(_ data: HydrateData) {
     let next = hydrated(data, base: state)
     memory.pages = [:]
+    memory.internalPageFromNewTab = []
     memory.feedWatermark = memory.feedWatermark.filter { next.tabs[$0.key] != nil }
     memory.pageProducerFence = memory.pageProducerFence.filter { next.tabs[$0.key] != nil }
     memory.closingWindowUndos = [:]

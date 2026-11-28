@@ -96,7 +96,6 @@ export const snapshotTab = (t: Tab): TabSnapshot => ({
 
 export const isPinnedRow = (t: Pick<Tab, "pinned" | "pinnedAsRow"> | undefined): boolean => !!t?.pinned && !!t.pinnedAsRow;
 export const pinnedSectionTitle = (s: BrowserState, tab: Pick<Tab, "profileId"> | undefined) => `Pinned in ${s.profiles[tab?.profileId ?? ""]?.name ?? "Profile"}`;
-export const togglePinTitle = (tab: Pick<Tab, "pinned" | "pinnedAsRow"> | undefined) => (isPinnedRow(tab) ? "Unpin" : tab?.pinned ? "Unpin from Top Apps" : "Move to Top Apps");
 
 export type PinSection = "tile" | "row" | "none";
 export const pinSection = (t: Pick<Tab, "pinned" | "pinnedAsRow"> | undefined): PinSection => (!t?.pinned ? "none" : t.pinnedAsRow ? "row" : "tile");

@@ -97,6 +97,8 @@ struct PageReportMemory: Sendable, Equatable {
   var keepAlive: KeepAliveFacts? = nil
   var latchedThrough = 0
   var newestEventSeq = 0
+  var backToNewTab = false
+  var historyKnown = false
 
   var facts: PageFacts? {
     guard let generation else { return nil }

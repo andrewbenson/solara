@@ -36,7 +36,7 @@ export function LittleSolaraWindow() {
         pointerEvents={shell ? "box-none" : "auto"}
         style={{ flex: 1, flexDirection: "row", paddingTop: SMALL_BAR_HEIGHT, paddingLeft: SMALL_INSET, paddingRight: SMALL_INSET, paddingBottom: SMALL_INSET }}
       >
-        <ContentCard />
+        <ContentCard small />
       </View>
       {shell ? (
         <ShellLittleSolaraBar width={width} />

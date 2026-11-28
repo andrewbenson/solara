@@ -10,6 +10,8 @@ enum NativeSidebarDock {
   static let topic = "sidebar.dock"
   private static var observer: UUID?
   private static var docks: [String: SidebarDock] = [:]
+  private static var menuObservers: [NSObjectProtocol] = []
+  private static var trackingMenus: Set<ObjectIdentifier> = []
   private static var reactPeekRight: [String: CGFloat] = [:]
 
   nonisolated static var enabled: Bool { NativeSidebarShell.enabled }
@@ -19,6 +21,20 @@ enum NativeSidebarDock {
     HostedViews.register(topic) { _ in nil }
     observer = SettingsJS.shared.observe(topic) { value in receive(value) }
     receive(SettingsJS.shared.latestValue(topic))
+    _ = NativeSelectionTools.observe { recheckPeeks() }
+    let center = NotificationCenter.default
+    for name in [NSMenu.didBeginTrackingNotification, NSMenu.didEndTrackingNotification, ToolbarInfoPopover.changed] {
+      menuObservers.append(center.addObserver(forName: name, object: nil, queue: .main) { note in
+        let menu = (note.object as? NSMenu).map(ObjectIdentifier.init)
+        MainActor.assumeIsolated {
+          if let menu {
+            if name == NSMenu.didBeginTrackingNotification { trackingMenus.insert(menu) }
+            if name == NSMenu.didEndTrackingNotification { trackingMenus.remove(menu) }
+          }
+          recheckPeeks()
+        }
+      })
+    }
   }
 
   static func adopt(_ dock: SidebarDock, windowId: String) { docks[windowId] = dock }
@@ -68,6 +84,15 @@ enum NativeSidebarDock {
     }
   }
 
+  static func panePopoverHeld(_ windowId: String, addressInSidebar: Bool, state: BrowserState?) -> Bool {
+    guard addressInSidebar, let tabId = state?.activeTabId(windowId) else { return false }
+    return NativeSelectionTools.popoverSnapshot()[tabId] != nil
+  }
+
+  private static func recheckPeeks() {
+    for dock in docks.values { dock.peek.recheck() }
+  }
+
   static func railShown(_ windowId: String) -> Bool {
     guard let state = NativeStoreHandle.store?.state, let window = state.windows[windowId] else { return false }
     return window.effectiveSidebarIconsOnly(state.settings)
@@ -77,9 +102,15 @@ enum NativeSidebarDock {
     guard let shell = NativeWindowShell.host(windowId)?.shell else { return }
     let dock = SidebarDock(shell: shell, state: state)
     dock.column = { NativeSidebarShell.column(windowId) }
-    dock.revealHeld = {
-      NativeSidebarHoverCard.hasPointer(windowId) || NativeSidebarIconPicker.isOpen(windowId)
+    dock.revealHeld = { [weak dock] in
+      guard let dock else { return false }
+      let state = NativeStoreHandle.store?.state
+      let toolbarWindow = ToolbarInfoPopover.current?.anchorView?.window
+      let toolbarInWindow = toolbarWindow.map { $0 === dock.shell.window || $0 === dock.panel.content?.window } == true
+      return !trackingMenus.isEmpty || state?.windowUi[windowId]?.downloadsOpen == true
+        || NativeSidebarHoverCard.hasPointer(windowId) || NativeSidebarIconPicker.isOpen(windowId)
         || NativeWorkspaceRename.override(windowId).flatMap { $0 } != nil
+        || toolbarInWindow || panePopoverHeld(windowId, addressInSidebar: dock.shell.input.addressBarInSidebar, state: state)
     }
     dock.onWatch = { [weak dock] hold in
       ShellWindowEdge.watch(windowId, hold: hold) { over in dock?.edge(over: over) }

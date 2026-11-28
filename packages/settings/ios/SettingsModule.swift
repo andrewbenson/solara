@@ -88,6 +88,10 @@ public class SettingsModule: Module {
       return DispatchQueue.main.sync { MainActor.assumeIsolated { NativeWorkspaceCommands.perform(command, arg: arg, windowId: windowId) } }
     }
 
+    AsyncFunction("closeWorkspaceTab") { (tabId: String, successor: String?) -> Bool in
+      MainActor.assumeIsolated { NativeWorkspaceCommands.closeWorkspaceTab(tabId, successor: successor) }
+    }.runOnQueue(.main)
+
     Function("openSplitPane") { (windowId: String, json: String) -> String? in
       guard let options = (try? JSONValue.parse(json))?.object else { return nil }
       if Thread.isMainThread { return MainActor.assumeIsolated { NativeSplitChrome.openPane(windowId: windowId, options: options) } }

@@ -1,12 +1,13 @@
 import { addNativeSettingsHandlers } from "../settings/nativeSettings";
 import { dismissHoverIn } from "../sidebar/hover";
-import { applyWindowLayoutPreferences } from "./windowLayout";
+import { applyWindowLayoutPreferences, endWindowLayoutPreferences } from "./windowLayout";
 import { setDockMoving, setPeekShown } from "./dockMotion";
 
 export const nativeDockListeners = new Map<string, (value: number, moving: boolean) => void>();
 
 addNativeSettingsHandlers({
   "window.layoutPreferences": applyWindowLayoutPreferences,
+  "window.layoutPreferencesEnded": endWindowLayoutPreferences,
   ["sidebar.dock"]: (windowId: string, event: string, extra: { value?: number; moving?: boolean; live?: boolean; right?: number; rect?: [number, number, number, number] | null }) => {
     if (event === "dock") {
       setDockMoving(windowId, !!extra.moving);

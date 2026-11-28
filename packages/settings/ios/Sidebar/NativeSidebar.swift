@@ -838,3 +838,120 @@ enum NativeSidebarMaintenance {
     }
   }
 }
+
+#if DEBUG || SOLARA_PERF_TRACE
+@MainActor
+enum SidebarLayoutWatch {
+  private struct Place: Codable {
+    var x: Double
+    var y: Double
+    var width: Double
+    var height: Double
+    var commit: Int
+
+    init?(_ frame: [String: Double], commit: Int) {
+      guard let x = frame["x"], let y = frame["y"], let width = frame["width"], let height = frame["height"] else { return nil }
+      self.x = x
+      self.y = y
+      self.width = width
+      self.height = height
+      self.commit = commit
+    }
+
+    func onScreen(_ frame: [Double]?) -> Bool {
+      let bounds = frame.flatMap { $0.count >= 4 ? $0 : nil }
+      return width > 0 && height > 0 && x >= 0 && x + width <= (bounds?[2] ?? .infinity) + 1
+        && y + height > 0 && y < (bounds?[3] ?? .infinity)
+    }
+  }
+
+  private struct Move: Codable {
+    var row: String
+    var from: Place
+    var to: Place
+  }
+
+  private struct Report: Codable {
+    var commits: Int
+    var rows: Int
+    var shown: Int
+    var ms: Double
+    var moves: [Move]
+    var missing: [String]
+    var edits: [String]
+  }
+
+  private static var last: [String: Place] = [:]
+  private static var shown: Set<String> = []
+  private static var moves: [Move] = []
+  private static var edits: [String] = []
+  private static var commits = 0
+  private static var started: Date?
+  private static var finished = false
+
+  static func committed(editAt: Int) {
+    guard !finished, let state = NativeStoreHandle.store?.state else { return }
+    if started == nil {
+      started = Date()
+      DispatchQueue.main.asyncAfter(deadline: .now() + 8) { finish() }
+    }
+    commits += 1
+    if commits == editAt { DispatchQueue.main.async { edit() } }
+    let query = SidebarQuery(state)
+    for windowId in state.windowOrder {
+      guard let window = state.windows[windowId] else { continue }
+      let ids = Set(expectedRows(query, window: window)
+        + window.tabIds.filter { state.tabs[$0]?.profileId == window.profileId }
+        + state.groups.values.filter { $0.windowId == windowId && $0.profileId == window.profileId }.map(\.id)
+        + state.splits.values.filter { $0.windowId == windowId }.map { "s:\($0.id)" })
+      for id in ids {
+        guard let frame = NativeSidebar.rowFrame(windowId: windowId, key: id), let place = Place(frame, commit: commits) else { continue }
+        let key = "\(windowId)|\(id)"
+        if let before = last[key], shown.contains(key), abs(before.x - place.x) > 0.5 || abs(before.y - place.y) > 0.5 {
+          moves.append(Move(row: key, from: before, to: place))
+        }
+        last[key] = place
+        if place.onScreen(window.frame) { shown.insert(key) }
+      }
+    }
+  }
+
+  private static func expectedRows(_ query: SidebarQuery, window: BrowserWindow) -> [String] {
+    let entries = query.entries(windowId: window.id, profileId: window.profileId)
+    return entries.cells + (entries.pinned + entries.list).map { $0.hasPrefix("s:") ? $0 : String($0.dropFirst(2)) }
+  }
+
+  private static func edit() {
+    guard let store = NativeStoreHandle.store, let windowId = store.state.resolveWindowId(nil),
+      let window = store.state.windows[windowId] else { return }
+    let state = store.state
+    let ids = window.tabIds.filter { state.tabs[$0]?.profileId == window.profileId && state.tabs[$0]?.pinned == false }
+    guard let added = (try? store.dispatch(Command("newTab", [.string(windowId), ["url": "about:blank#layout-edit", "background": true]]), origin: .native))?.result?.string else { return }
+    let closed = ids.count > 3 ? ids[3] : nil
+    let moved = ids.last
+    var commands = [Command("moveTab", [.string(added), 0])]
+    if let closed { commands.append(Command("closeTab", [.string(closed)])) }
+    if let moved { commands.append(Command("moveTab", [.string(moved), 1])) }
+    _ = try? store.dispatch(commands, origin: .native)
+    edits = ["added \(added)", "closed \(closed ?? "undefined")", "moved \(moved ?? "undefined")"]
+  }
+
+  private static func finish() {
+    guard let started, let state = NativeStoreHandle.store?.state else { return }
+    finished = true
+    let query = SidebarQuery(state)
+    var missing: [String] = []
+    for windowId in state.windowOrder {
+      guard let window = state.windows[windowId], window.sidebarOpen else { continue }
+      for id in expectedRows(query, window: window) where NativeSidebar.rowFrame(windowId: windowId, key: id) == nil {
+        missing.append("\(windowId)|\(id)")
+      }
+    }
+    let result = Report(commits: commits, rows: last.count, shown: shown.count, ms: Date().timeIntervalSince(started) * 1000,
+      moves: moves, missing: missing, edits: edits)
+    if let data = try? JSONEncoder().encode(result), let json = String(data: data, encoding: .utf8) {
+      try? DocumentStore.write("layout-watch.json", json)
+    }
+  }
+}
+#endif

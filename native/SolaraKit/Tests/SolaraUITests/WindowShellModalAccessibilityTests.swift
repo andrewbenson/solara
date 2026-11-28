@@ -4,6 +4,20 @@ import Testing
 
 @MainActor
 struct WindowShellModalAccessibilityTests {
+  @Test func commandPanelAndGuestModalKeepIndependentOwnership() {
+    let shell = WindowShellView(windowId: "w")
+    shell.setCommandPanelModal(shown: true)
+    #expect(shell.modalShown)
+    shell.setModal("mainRoot", shown: true)
+    shell.setCommandPanelModal(shown: false)
+    #expect(shell.modalShown)
+    shell.setCommandPanelModal(shown: true)
+    shell.setModal("mainRoot", shown: false)
+    #expect(shell.modalShown)
+    shell.setCommandPanelModal(shown: false)
+    #expect(!shell.modalShown)
+  }
+
   @Test func titlebarButtonsLeaveTheWindowTreeDuringAModalAndReturnAfterIt() {
     let shell = WindowShellView(windowId: "w")
     let root = NSView(frame: NSRect(x: 0, y: 0, width: 500, height: 400))
@@ -53,12 +67,12 @@ struct WindowShellModalAccessibilityTests {
     shell.layoutSubtreeIfNeeded()
     #expect(reachable(card.cell!, from: window))
     #expect(reachable(panel.cell!, from: window))
-    shell.setModal("mainRoot", shown: true)
+    shell.setCommandPanelModal(shown: true)
     #expect(!reachable(card.cell!, from: window))
     #expect(reachable(panel.cell!, from: window))
     #expect(shell.accessibilityReach()["overlay"] != nil)
     #expect(shell.accessibilityReach()["card"] == nil)
-    shell.setModal("mainRoot", shown: false)
+    shell.setCommandPanelModal(shown: false)
     #expect(reachable(card.cell!, from: window))
   }
 

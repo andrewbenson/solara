@@ -1,3 +1,4 @@
+import type { WindowPaneSplit } from "@solara/settings";
 import type { PageEngine } from "@solara/solaracore";
 
 export type Frame = [number, number, number, number];
@@ -121,14 +122,7 @@ export type TabGroup = {
   parentId?: string;
 };
 
-export type SplitView = {
-  id: string;
-  windowId: string;
-  tabIds: string[];
-  orientation: "horizontal" | "vertical";
-  sizes: number[];
-  stack?: { index: number; sizes: [number, number] };
-};
+export type SplitView = WindowPaneSplit;
 
 export type HistoryEntry = {
   url: string;

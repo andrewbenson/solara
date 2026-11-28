@@ -1,3 +1,4 @@
+import AppKit
 import SolaraModel
 import SolaraStore
 import Testing
@@ -34,6 +35,25 @@ import Testing
     #expect(try #require(CommandBarFocusCommand.plan(windowId: "w", state: s, closing: [])).destination == .developer)
     s.settings["developerMode"] = ["default": ["on": [], "off": ["localhost"]]]
     #expect(try #require(CommandBarFocusCommand.plan(windowId: "w", state: s, closing: [])).destination == .panel)
+  }
+
+  @MainActor
+  @Test func developerFocusAllowsTheIncomingPageToTakeFocusFromTheWindow() throws {
+    let developer = try #require(CommandBarFocusCommand.plan(windowId: "w", state: fixture("http://localhost:8080/"), closing: []))
+    let panel = try #require(CommandBarFocusCommand.plan(windowId: "w", state: fixture(), closing: []))
+    let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 100, height: 100), styleMask: [], backing: .buffered, defer: false)
+    let content = try #require(window.contentView)
+    let page = NSView()
+    let renderer = NSView()
+    let sibling = NSTextField()
+    content.addSubview(page)
+    content.addSubview(sibling)
+    page.addSubview(renderer)
+    #expect(developer.allowsPageHandoff(from: ObjectIdentifier(window), to: renderer, page: page, in: window))
+    #expect(!developer.allowsPageHandoff(from: ObjectIdentifier(window), to: sibling, page: page, in: window))
+    #expect(!developer.allowsPageHandoff(from: ObjectIdentifier(sibling), to: renderer, page: page, in: window))
+    #expect(!developer.allowsPageHandoff(from: ObjectIdentifier(window), to: renderer, page: NSView(), in: window))
+    #expect(!panel.allowsPageHandoff(from: ObjectIdentifier(window), to: renderer, page: page, in: window))
   }
 
   @Test func blankSplitPaneUsesThePanel() throws {

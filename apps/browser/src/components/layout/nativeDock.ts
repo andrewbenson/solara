@@ -14,7 +14,6 @@ export type NativeDockState = {
   fullscreen: boolean;
   topTabs: boolean;
   width: number;
-  held: boolean;
   slideSwitch: boolean;
   lights: readonly [number, number];
   look: { fill: string; border: string; shadowOpacity: number };

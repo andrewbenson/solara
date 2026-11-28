@@ -238,12 +238,20 @@ final class NativeCommandBarFocus {
   }
 
   static func developerAllowed(_ token: Int, field: NSView) -> Bool {
-    let allowed = requests.values.contains { $0.editorRequest == token && $0.plan.destination == .developer && $0.current && $0.sourceUnchanged
-      && field.window === $0.window && !field.isHiddenOrHasHiddenAncestor }
+    let allowed = requests.values.contains {
+      $0.editorRequest == token && $0.plan.destination == .developer && $0.current
+        && field.window === $0.window && !field.isHiddenOrHasHiddenAncestor
+        && ($0.sourceUnchanged || $0.developerPageHandoff)
+    }
     #if DEBUG
     if !allowed { FocusMoves.trace("commandBar developerAllowed: refused token=\(token)") }
     #endif
     return allowed
+  }
+
+  private var developerPageHandoff: Bool {
+    guard generation != nil, let window else { return false }
+    return plan.allowsPageHandoff(from: source, to: window.firstResponder, page: TabPoolHost.shared.pageView(plan.tabId), in: window)
   }
 
   static func developerDidFocus(_ token: Int, field: NSView) {

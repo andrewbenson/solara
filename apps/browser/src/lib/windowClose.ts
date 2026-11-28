@@ -1,5 +1,6 @@
 import { confirm, onWindowEvent, retainLastWindow } from "@solara/shell";
 import { useBrowser } from "../store/browser";
+import { nativeOwnsWorkspace } from "../store/nativeStore";
 import { tabsClosingWithWindow } from "../store/model";
 import { closeWindowDialog } from "./closeWindowDialog";
 import { isSmall } from "../store/small";
@@ -11,7 +12,7 @@ const MIN_TABS = 2;
 export function startWindowCloseGuard() {
   const pending = new Set<string>();
   onWindowEvent((e) => {
-    if (e.type !== "closeRequest" || pending.has(e.id)) return;
+    if (e.type !== "closeRequest" || nativeOwnsWorkspace() || pending.has(e.id)) return;
     pending.add(e.id);
     void requestClose(e.id).finally(() => pending.delete(e.id));
   });

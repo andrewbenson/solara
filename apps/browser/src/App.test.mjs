@@ -15,33 +15,32 @@ function load(path, modules) {
   return exports;
 }
 
-test("opening and closing a native modal updates shell ownership without redrawing page guests", async () => {
+test("opening and closing a profile modal updates shell ownership without redrawing page guests", async () => {
   const listeners = new Set();
   const calls = [];
   const renders = {};
   const errors = [];
-  let state = { windows: { w: {} }, windowUi: { w: { panel: { open: false } } } };
-  const useBrowser = (select) => react.useSyncExternalStore((listener) => { listeners.add(listener); return () => listeners.delete(listener); }, () => select(state));
+  let profileOpen = false;
+  const useBrowser = (select) => react.useSyncExternalStore((listener) => { listeners.add(listener); return () => listeners.delete(listener); }, () => select(profileOpen));
   const modules = {
     react,
     "react/jsx-runtime": require("react/jsx-runtime"),
     "react-native": { View: "RCTView", StyleSheet: { absoluteFill: {} } },
     "@solara/settings": { windowNativeLayout: () => true, windowShellActive: () => true, setWindowShellModal: (...args) => calls.push(args) },
-    "../../store/browser": { useBrowser },
     "../onboarding/state": { useOnboarding: (select) => select({}) },
-    "../profiles/CreateProfile": { useCreateProfileOpen: () => false },
+    "../profiles/CreateProfile": { useCreateProfileOpen: () => useBrowser((open) => open) },
     "./components/settings/windows": { isUtilityWindowId: () => false },
-    "./store/browser": { useBrowser },
     "./store/hooks": { useWindowId: () => "w", useWindowProfileId: () => "default", WindowContext: react.createContext("w") },
     "./lib/theme": { ThemeScope: ({ children }) => children },
-    "./components/layout/windowLayout": { useNativeWindowBounds: () => 800, useTabLayout: () => "sidebar", useAddressBarInSidebar: () => false },
+    "./components/layout/windowLayout": { useNativeWindowBounds: () => 800, useNativeWindowPreferences: (_id, select) => select({ topTabs: false, addressBar: false }) },
     "./components/layout/nativeWindowAnchors": { useNativeWindowAnchors() {} },
   };
+  modules["./windowLayout"] = { useWindowReplicaFallback: () => null };
   modules["./components/layout/shellModal"] = load("./components/layout/shellModal.ts", modules);
   for (const [module, names] of [
     ["./components/CommandPanel", ["CommandPanel"]], ["./components/ContentCard", ["ContentCard"]],
     ["./components/onboarding", ["OnboardingOverlay"]],
-    ["./components/profiles/CreateProfile", ["CreateProfileHost"]], ["./components/layout/WindowProfile", ["WindowProfile"]],
+    ["./components/profiles/CreateProfile", ["CreateProfileHost"]],
     ["./components/sidebar/NativeSidebar", ["NativeSidebar"]],
     ["./components/layout/ShellBackdrop", ["ShellBackdrop"]], ["./components/sidebar/Overlays", ["SidebarOverlays"]],
   ]) modules[module] = Object.fromEntries(names.map((name) => [name, () => { renders[name] = (renders[name] ?? 0) + 1; return null; }]));
@@ -62,14 +61,14 @@ test("opening and closing a native modal updates shell ownership without redrawi
     return require(name);
   }, renderer, true);
   const settle = () => new Promise((resolve) => setImmediate(resolve));
-  renderer.render(react.createElement(WindowRoot, { windowId: "w" }), 1, null, { onUncaughtError: (error) => errors.push(error) });
+  renderer.render(react.createElement(WindowRoot, { windowId: "w", kind: "browser" }), 1, null, { onUncaughtError: (error) => errors.push(error) });
   await settle();
   try {
     assert.deepEqual(errors, []);
     assert.equal(renders.ContentCard, 1);
     assert.equal(renders.NativeSidebar, 1);
     for (const open of [true, false]) {
-      state = { ...state, windowUi: { w: { panel: { open } } } };
+      profileOpen = open;
       for (const listener of [...listeners]) listener();
       await settle();
       assert.deepEqual(errors, []);

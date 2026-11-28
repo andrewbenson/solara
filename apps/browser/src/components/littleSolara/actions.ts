@@ -1,3 +1,4 @@
+import { nativeWorkspaceCommand } from "@solara/settings";
 import { type LinkRoute, routeLinkTabs } from "@solara/solaracore";
 import { showMenu } from "@solara/shell";
 import { focus, openWindow } from "../../lib/actions";
@@ -9,7 +10,7 @@ import { profileAccent } from "../../lib/theme";
 import { useBrowser } from "../../store/browser";
 import { activeTabId } from "../../store/model";
 import { isSmall, lastActiveProfile, mainWindowFor } from "../../store/small";
-import { nativeOwnsWorkspace, nativeWrite } from "../../store/nativeStore";
+import { nativeOwnsWorkspace } from "../../store/nativeStore";
 
 const store = () => useBrowser.getState();
 
@@ -86,6 +87,7 @@ export function openInMainWindow(windowId: string) {
 }
 
 export function moveLittleSolaraToProfile(windowId: string, profileId: string) {
+  if (nativeOwnsWorkspace() && nativeWorkspaceCommand("moveLittleSolaraToProfile", profileId, windowId)) return;
   const s = store();
   const w = s.windows[windowId];
   if (!w || !isSmall(s, windowId) || isWindowClosing(windowId) || !s.profiles[profileId] || w.profileId === profileId) return;
@@ -94,8 +96,7 @@ export function moveLittleSolaraToProfile(windowId: string, profileId: string) {
   const id = store().createWindow({ small: true, url, profileId, frame: w.frame });
   if (!url) store().openPanel(id, "");
   closeWindowAnimated(windowId, id, () => {
-    if (tabId && nativeOwnsWorkspace()) nativeWrite({ name: "forgetClosedTab", args: [tabId] });
-    else if (tabId) useBrowser.setState((now) => ({ closedTabs: now.closedTabs.filter((c) => c.tabId !== tabId) }));
+    if (tabId) useBrowser.setState((now) => ({ closedTabs: now.closedTabs.filter((c) => c.tabId !== tabId) }));
   });
 }
 
@@ -123,7 +124,9 @@ export async function openLittleSolaraProfileMenu(windowId: string) {
 }
 
 export function closeLittleSolara(windowId: string) {
-  if (isSmall(store(), windowId)) closeWindowAnimated(windowId, null);
+  if (!isSmall(store(), windowId)) return;
+  if (nativeOwnsWorkspace() && nativeWorkspaceCommand("closeWindow", null, windowId)) return;
+  closeWindowAnimated(windowId);
 }
 
 export function closeLittleSolaraOnEscape(tabId: string) {

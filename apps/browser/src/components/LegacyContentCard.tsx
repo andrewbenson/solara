@@ -17,7 +17,7 @@ import { webviewRef } from "../lib/webviews";
 import { useBrowser } from "../store/browser";
 import { setPageProgress } from "../store/pageProgress";
 import { shallowEqual, useProfilesValue, useStoreWhile, useTabValue } from "../store/tabWatch";
-import { useActiveTabId, useWindowId } from "../store/hooks";
+import { useWindowId } from "../store/hooks";
 import { activeTabId, engineProfile, isIncognitoProfile, wake } from "../store/model";
 import { needsPage } from "../store/pageSession";
 import { removeTabs } from "../store/tabs";
@@ -39,7 +39,7 @@ import { SplitToolbarFeed } from "./layout/NativeSplitToolbars";
 import { dockMoving, useDockMotion, usePeekEdge } from "./layout/dockMotion";
 import { FrozenPage } from "./layout/frozenPage";
 import { holderOf } from "../store/pinShare";
-import { setCardAnchor, setUrlAnchor, useCardAnchors, useNativePopoverAnchors, useAddressBarInSidebar, useToolbarExtensionsWidths } from "./layout/windowLayout";
+import { setCardAnchor, setUrlAnchor, useCardAnchors, useNativePopoverAnchors, useAddressBarInSidebar, useNativeWindowPreferences, useToolbarExtensionsWidths, useWindowReplicaFallback } from "./layout/windowLayout";
 import { notePageEventHandled, acceptPageReport, currentPageContext, followNavigation, newPageSession, pageEventHandlers, releasePageSession } from "./pageEvents";
 import { NewTabPage } from "./NewTabPage";
 import { EmptyCard } from "./EmptyCard";
@@ -49,7 +49,6 @@ import { ShareBar } from "./media/ShareBar";
 import { Toolbar, ToolbarBackdrop, urlFieldRight } from "./Toolbar";
 import { WindowToolbar } from "./WindowToolbar";
 import { useToolbarSidebarToggle } from "./layout/nativeToolbarPresentation";
-import { isSmallWindow } from "../store/small";
 import { useNativeWindowAnchors } from "./layout/shellLayout";
 import { NativePeekMount } from "./peek/NativePeekMount";
 import { PeekOverlay } from "./peek/PeekOverlay";
@@ -59,13 +58,20 @@ import { useContentServices } from "./ContentServices";
 import { PageOverlays, BesidePeekPopovers, paneTab } from "./PaneContent";
 
 
-export function LegacyContentCard() {
+export function LegacyContentCard({ small }: { small: boolean }) {
   const windowId = useWindowId();
-  const activeId = useActiveTabId();
-  const split = useBrowser((s) => splitOf(s, activeId));
+  const selection = useNativeWindowPreferences(windowId, (value) => value && ({
+    activeId: value.activeTabId ?? undefined,
+    split: value.split ?? undefined,
+    peekId: value.peekTabId ?? undefined,
+  }));
+  const fallback = useWindowReplicaFallback(windowId, (state) => {
+    const activeId = activeTabId(state, windowId);
+    return { activeId, split: splitOf(state, activeId), peekId: state.peeks[windowId]?.tabId };
+  });
+  const { activeId, split, peekId } = selection ?? fallback ?? {};
   const fullscreenTab = useFullscreenTab(windowId);
   const addressInSidebar = useAddressBarInSidebar();
-  const small = useBrowser((s) => isSmallWindow(s.windows[windowId]));
   const showSidebarButton = useToolbarSidebarToggle(windowId);
   const [frozenBar, setFrozenBar] = useState<{ tabId: string; height: number } | null>(null);
   const [size, setSize] = useState({ width: 0, height: 0 });
@@ -76,7 +82,6 @@ export function LegacyContentCard() {
   const origin = useMemo(() => nativeContent ? { x: nativeContent.left, y: nativeContent.top } : measuredOrigin, [nativeContent, measuredOrigin]);
   const container = useRef<View>(null);
   useContentServices();
-  const peekId = useBrowser((s) => s.peeks[windowId]?.tabId);
   const peekFullscreen = !!peekId && fullscreenTab === peekId;
   const shell = useWindowShell();
   const [paneRoots] = useState(() => windowPaneRootsActive(windowId));

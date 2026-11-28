@@ -1,16 +1,16 @@
 import { setWindowShellModal, windowShellActive } from "@solara/settings";
 import { useEffect, useState } from "react";
-import { useBrowser } from "../../store/browser";
 import { useOnboarding } from "../onboarding/state";
 import { useCreateProfileOpen } from "../profiles/CreateProfile";
+import { useWindowReplicaFallback } from "./windowLayout";
 
 const MAIN_ROOT = "mainRoot";
 
 export function useMainRootModal(windowId: string): boolean {
-  const panel = useBrowser((s) => !!s.windowUi[windowId]?.panel.open);
   const profile = useCreateProfileOpen(windowId);
   const onboarding = useOnboarding((o) => o.windowId === windowId);
-  return panel || profile || onboarding;
+  const fallbackPanel = useWindowReplicaFallback(windowId, (state) => !!state.windowUi[windowId]?.panel.open);
+  return profile || onboarding || fallbackPanel === true;
 }
 
 export function useShellModal(windowId: string) {

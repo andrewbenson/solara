@@ -1,9 +1,8 @@
 import { nativeOmniboxAvailable, publishSettingsTopic, sidebarAddressBarAvailable, SolaraHostedView } from "@solara/settings";
-import { memo, useEffect, useMemo, useState } from "react";
+import { memo, useEffect, useMemo } from "react";
 import { StyleSheet } from "react-native";
-import { useBrowser } from "../../store/browser";
+import { useNativeWindowPreferences } from "../layout/windowLayout";
 import { useSync } from "../../sync/engine";
-import { sidebarWidthOf } from "../../store/sidebarRail";
 import { addNativeSettingsHandlers } from "../settings/nativeSettings";
 import { applyHoverProbe } from "./hover";
 import { applyNativeRenameState, resetNativeRenames } from "./renameMirror";
@@ -11,7 +10,6 @@ import { setSidebarUi, sidebarUi } from "./state";
 import { showTidiedPinsToast } from "./tidyPinsUi";
 import { requestCreateProfile } from "../profiles/CreateProfile";
 import { useTabDrag } from "../layout/tabDrag";
-import { followPeekHold } from "../layout/peekHold";
 import { nativeLayoutFeed, useNativeLayoutFeed } from "../layout/nativeLayoutFeed";
 import { SidebarAddressBarState } from "./AddressBar";
 import { installNativeDragProbe } from "./nativeDrag";
@@ -32,7 +30,7 @@ function publishSyncedDevices() {
 
 const SHELL_TOPIC = "sidebar.shell";
 const shellColumns: Record<string, object> = {};
-const nativeFeed = nativeLayoutFeed<{ state: string; dropOver: boolean; held: boolean }>("sidebar.nativeFeed");
+const nativeFeed = nativeLayoutFeed<{ state: string; dropOver: boolean }>("sidebar.nativeFeed");
 
 export { nativeSidebarShell } from "./sidebarShell";
 
@@ -68,11 +66,8 @@ function ShellColumnState({ windowId, state, dropOver, addressWidth }: { windowI
 }
 
 function NativeSidebarFeed({ windowId, state, dropOver, addressBar }: { windowId: string; state: string; dropOver: boolean; addressBar: boolean }) {
-  const floating = useBrowser((s) => s.windows[windowId]?.sidebarOpen === false);
-  const width = useBrowser((s) => sidebarWidthOf(s.windows[windowId], s.settings, true));
-  const [held, setHeld] = useState(false);
-  useEffect(() => followPeekHold(windowId, floating, setHeld, true), [windowId, floating]);
-  const value = useMemo(() => ({ state, dropOver, held }), [state, dropOver, held]);
+  const width = useNativeWindowPreferences(windowId, (value) => value?.sidebarWidth ?? 0);
+  const value = useMemo(() => ({ state, dropOver }), [state, dropOver]);
   useNativeLayoutFeed(nativeFeed, windowId, value);
   return addressBar ? <SidebarAddressBarState width={width} /> : null;
 }

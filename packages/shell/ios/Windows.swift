@@ -40,8 +40,8 @@ public enum WindowHost {
   @MainActor public static func retainLastWindow(_ id: String, committingClose: Bool = false) -> Bool {
     WindowManager.shared.retainLastWindow(id: id, committingClose: committingClose)
   }
-  @MainActor public static func animateClose(_ id: String, done: @escaping @MainActor () -> Void) {
-    WindowManager.shared.animateClose(id: id, after: nil) { MainActor.assumeIsolated { done() } }
+  @MainActor public static func animateClose(_ id: String, after replacement: String? = nil, done: @escaping @MainActor () -> Void) {
+    WindowManager.shared.animateClose(id: id, after: replacement) { MainActor.assumeIsolated { done() } }
   }
   @MainActor public static var hasClosableForeignKeyWindow: Bool {
     guard WindowManager.shared.keyWindowId == nil, let key = NSApp.keyWindow, !(key is NSPanel) else { return false }
@@ -980,6 +980,7 @@ final class WindowManager: NSObject, NSWindowDelegate {
     let bookmarkTimer = Timer(timeInterval: 30, repeats: false) { _ in finishBookmarks(false) }
     bookmarkQuitWait = bookmarkTimer
     RunLoop.main.add(bookmarkTimer, forMode: .common)
+    for id in Array(exits.keys) { finishCloseAnimation(id) }
     DocumentStore.flushBookmarksForQuit(finishBookmarks)
     emit("onAppEvent", ["type": "willQuit"])
     waitForSave()

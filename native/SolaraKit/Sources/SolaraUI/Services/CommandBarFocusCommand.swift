@@ -1,3 +1,4 @@
+import AppKit
 import SolaraModel
 import SolaraStore
 
@@ -13,6 +14,13 @@ public struct CommandBarFocusPlan: Equatable, Sendable {
   public func isCurrent(state: BrowserState, closing: Set<String>, gateLive: Bool) -> Bool {
     guard gateLive, let next = CommandBarFocusCommand.plan(windowId: windowId, state: state, closing: closing) else { return false }
     return next.windowId == windowId && next.tabId == tabId && next.profileId == profileId && next.text == text && next.destination == destination
+  }
+
+  @MainActor
+  public func allowsPageHandoff(from source: ObjectIdentifier?, to responder: NSResponder?, page: NSView?, in window: NSWindow) -> Bool {
+    guard destination == .developer, source == ObjectIdentifier(window), let page, page.window === window,
+      let view = responder as? NSView else { return false }
+    return view.isDescendant(of: page)
   }
 }
 

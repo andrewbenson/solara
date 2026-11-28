@@ -1,9 +1,8 @@
 import { windowNativeLayout } from "@solara/settings";
 import { useState } from "react";
 import { useTheme } from "../lib/theme";
-import { useBrowser } from "../store/browser";
-import { useActiveTabId, useWindowId } from "../store/hooks";
-import { splitOf } from "../store/splits";
+import { useWindowId } from "../store/hooks";
+import { useNativeWindowPreferences } from "./layout/windowLayout";
 import { toolbarGeometry } from "./layout/geometry";
 import { useNativePanePromptsTheme } from "./layout/nativePaneOverlays";
 import { useFormColors } from "./settings/controls";
@@ -17,32 +16,34 @@ import { PaneContent } from "./PaneContent";
 import "./layout/devExpose";
 
 
-export function ContentCard() {
+export function ContentCard({ small = false }: { small?: boolean }) {
   const windowId = useWindowId();
   const [nativeLayout] = useState(() => windowNativeLayout(windowId));
   if (nativeLayout) return <NativeContentGuests />;
   const { LegacyContentCard } = require("./LegacyContentCard") as typeof import("./LegacyContentCard");
-  return <LegacyContentCard />;
+  return <LegacyContentCard small={small} />;
 }
 
 function NativeContentGuests() {
   const windowId = useWindowId();
-  const activeId = useActiveTabId();
-  const split = useBrowser((s) => splitOf(s, activeId));
+  const panes = useNativeWindowPreferences(windowId, (value) => value && ({
+    activeTabId: value.activeTabId,
+    tabIds: value.paneTabIds,
+  }));
   const theme = useTheme();
   useContentServices();
   useNativePanePromptsTheme(true, windowId, theme, useFormColors());
   useNativeSplitChrome(windowId, true, theme);
   const fallbacks = useNativePaneFallbacks(windowId);
-  const tabIds = split?.tabIds ?? (activeId ? [activeId] : []);
+  const tabIds = panes?.tabIds ?? [];
   return (
     <>
-      {tabIds.map((tabId) => (
-        <NativePaneFallback key={tabId} windowId={windowId} tabId={tabId} target={fallbacks[tabId]}>
+      {Object.entries(fallbacks).map(([tabId, target]) => (
+        <NativePaneFallback key={tabId} windowId={windowId} tabId={tabId} target={target}>
           <PaneContent windowId={windowId} tabId={tabId} shown nativeFallback />
         </NativePaneFallback>
       ))}
-      {tabIds.map((tabId) => <SplitToolbarFeed key={tabId} windowId={windowId} tabId={tabId} geometry={toolbarGeometry({ sidebarButton: false })} focused={tabId === activeId} inSplit={!!split} />)}
+      {tabIds.map((tabId) => <SplitToolbarFeed key={tabId} windowId={windowId} tabId={tabId} geometry={toolbarGeometry({ sidebarButton: false })} focused={tabId === panes?.activeTabId} inSplit={tabIds.length > 1} />)}
       {tabIds.map((tabId) => <FrozenPage key={tabId} windowId={windowId} tabId={tabId} headless />)}
       <NativePeekMount windowId={windowId} origin={null} fullscreen={false} />
     </>

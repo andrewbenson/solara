@@ -562,13 +562,13 @@ final class NativeLayoutChrome {
   private var revision = -1
   private var sidebarFeed: SidebarPresentationInput?
   private var sidebarDropOver = false
-  private var held = false
   private let revealHolds = RevealHolds()
   #if DEBUG
   static func devRevealHeld(_ windowId: String) -> Bool? { owners[windowId].map { $0.revealHolds.held } }
   #endif
   private var holdTokens: [String: UUID] = [:]
   private var holdObservers: [NSObjectProtocol] = []
+  private var popoverObserver: UUID?
   private var mediaListener: UUID?
   private var stopped = false
 
@@ -649,7 +649,12 @@ final class NativeLayoutChrome {
     }
     strip.renderingEnabled = false
     peek.strip.renderingEnabled = false
-    dock.revealHeld = { [weak self] in self?.revealHolds.held ?? false }
+    dock.revealHeld = { [weak self] in
+      guard let self else { return false }
+      return self.revealHolds.held || NativeSidebarDock.panePopoverHeld(windowId,
+        addressInSidebar: self.shell.input.addressBarInSidebar, state: self.state)
+    }
+    popoverObserver = NativeSelectionTools.observe { [weak self] in self?.dock.peek.recheck() }
     let stripHeld = peek.view.peek.held
     peek.view.peek.held = { [weak self] in stripHeld() || (self?.revealHolds.held ?? false) }
     revealHolds.onChange = { [weak self] held in
@@ -673,7 +678,8 @@ final class NativeLayoutChrome {
             let drag = TabDragSession.current
             self.setHold("drag", drag?.sourceWindow == windowId || drag?.overWindow == windowId)
             self.dragGlowChanged()
-            self.setHold("toolbar", ToolbarInfoPopover.current?.anchorView?.window === self.shell.window && self.shell.window != nil)
+            let toolbarWindow = ToolbarInfoPopover.current?.anchorView?.window
+            self.setHold("toolbar", toolbarWindow.map { $0 === self.shell.window || $0 === self.dock.panel.content?.window } == true)
           }
         }
       })
@@ -776,9 +782,8 @@ final class NativeLayoutChrome {
     column.apply(state: state, host: sidebar, layout: column.layout(for: chrome, clip: SidebarPagerView.profileIDs(state: state, windowId: shell.windowId).count > 1),
       chrome: chrome, renderHost: !input.layout.topTabs)
     setHold("downloads", controls.downloadsOpen)
-    setHold("feature", held)
     dock.apply(SidebarDockState(open: effectiveOpen, arc: sidebar.addressBar, fullscreen: input.layout.fullscreen,
-      topTabs: input.layout.topTabs, width: Double(input.layout.sidebarWidth), held: held || controls.downloadsOpen,
+      topTabs: input.layout.topTabs, width: Double(input.layout.sidebarWidth), held: controls.downloadsOpen,
       sidebarPosition: input.layout.sidebarSide.rawValue, look: look.panel))
     let stripLook = NativeLayoutAppearance(state: state, profileId: window.profileId, incognito: window.incognito, strip: true)
     let stripControls = stripLook.controls(state: state, window: window)
@@ -803,6 +808,7 @@ final class NativeLayoutChrome {
     peek.apply(state: state, host: strip, controls: stripControls, theme: stripLook.tokens,
       enabled: input.layout.topTabs && dock.stripAway && !input.layout.fullscreen,
       bandLeft: ShellMetrics.topStripLeadingReservation, look: look.panel, renderStrip: peek.view.live)
+    dock.peek.recheck()
     if input.layout.topTabs && effectiveOpen && !dock.moving { ShellWindowEdge.setLightsCenter(shell.windowId, ShellMetrics.topStripLightsCenter) }
   }
 
@@ -813,6 +819,8 @@ final class NativeLayoutChrome {
     stopped = true
     holdObservers.forEach { NotificationCenter.default.removeObserver($0) }
     holdObservers = []
+    if let popoverObserver { NativeSelectionTools.stopObserving(popoverObserver) }
+    popoverObserver = nil
     NativeMediaStack.stopListening(mediaListener)
     mediaListener = nil
     revealHolds.onChange = { _ in }
@@ -921,7 +929,6 @@ final class NativeLayoutChrome {
       if topic == "sidebar.nativeFeed" {
         owner.sidebarFeed = (feed["state"] as? String).flatMap(SidebarPresentationInput.decode)
         owner.sidebarDropOver = feed["dropOver"] as? Bool ?? false
-        owner.held = feed["held"] as? Bool ?? false
       } else if topic == "topStrip.nativeFeed" {
         owner.stripOver = feed["dropOver"] as? Bool ?? false
       }

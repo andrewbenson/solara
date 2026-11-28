@@ -1,9 +1,10 @@
 import { listExtensions } from "@solara/solaracore";
 import { confirm, focusWindow } from "@solara/shell";
-import { stepProfilePager, switchProfilePager } from "@solara/settings";
+import { closeNativeWorkspaceTab, stepProfilePager, switchProfilePager } from "@solara/settings";
 import "../components/layout/profilePager";
 import { profileNames, requestCreateProfile, type CreateProfilePreset } from "../components/profiles/CreateProfile";
 import { useBrowser, type CreateWindowOptions } from "../store/browser";
+import { nativeOwnsWorkspace } from "../store/nativeStore";
 import { closeTogether } from "../store/closedTogether";
 import { rootOf } from "../store/groups";
 import { closesWindow, engineProfile, isIncognitoProfile, plural, resolveWindowId } from "../store/model";
@@ -35,6 +36,7 @@ export function switchToTab(tabId: string) {
 }
 
 export async function closeTab(tabId: string, successor?: string) {
+  if (nativeOwnsWorkspace() && await closeNativeWorkspaceTab(tabId, successor)) return;
   const s = store();
   const tab = s.tabs[tabId];
   const w = tab && s.windows[tab.windowId];

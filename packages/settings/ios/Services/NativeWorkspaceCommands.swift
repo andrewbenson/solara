@@ -355,6 +355,11 @@ enum NativeWorkspaceCommands {
       }
       return true
     }
+    if command == "moveLittleSolaraToProfile" {
+      guard NativeStoreHandle.ownsWorkspace, let store = NativeStoreHandle.store else { return false }
+      if let windowId, let arg { moveLittleSolara(windowId, to: arg, store: store) }
+      return true
+    }
     if command == "cast" { return NativeCast.command(windowID: windowId) }
     if command == "togglePageEngine" { return NativeEngineCommands.perform(command, arg: arg, windowId: windowId) }
     if command == "toggleDeveloperMode" { return NativeSiteControls.toggleDeveloperMode(windowId: windowId) }
@@ -662,23 +667,29 @@ enum NativeWorkspaceCommands {
     }
   }
 
-  static func closeFromControl(_ tabId: String, store: Store) {
+  static func closeWorkspaceTab(_ tabId: String, successor: String?) -> Bool {
+    guard NativeStoreHandle.ownsWorkspace, let store = NativeStoreHandle.store else { return false }
+    closeFromControl(tabId, successor: successor, store: store)
+    return true
+  }
+
+  static func closeFromControl(_ tabId: String, successor: String? = nil, store: Store) {
     let before = store.state
     guard let close = WorkspaceClosePolicy.control(tabId, state: before, lastTabKeepsWindow: store.memory.lastTabKeepsWindow) else { return }
     let windowId = close.windowId
     guard !store.memory.closingWindows.contains(windowId), !pending.contains(windowId) else { return }
-    guard let setting = WorkspaceClosePolicy.controlWarning(close, state: before) else { return finishControlClose(tabId, close, store: store) }
-    askClose(windowId, setting: setting, store: store) { finishControlClose(tabId, close, store: store) }
+    guard let setting = WorkspaceClosePolicy.controlWarning(close, state: before) else { return finishControlClose(tabId, close, successor: successor, store: store) }
+    askClose(windowId, setting: setting, store: store) { finishControlClose(tabId, close, successor: successor, store: store) }
   }
 
-  private static func finishControlClose(_ tabId: String, _ close: WorkspaceControlClose, store: Store) {
+  private static func finishControlClose(_ tabId: String, _ close: WorkspaceControlClose, successor: String?, store: Store) {
     let windowId = close.windowId
     guard NativeStoreHandle.ownsWorkspace, NativeStoreHandle.store === store, !store.memory.closingWindows.contains(windowId),
-      store.state.tabs[tabId] != nil else { return }
+      store.state.tabs[tabId]?.windowId == windowId else { return }
     let current = store.state
     let now = WorkspaceClosePolicy.control(tabId, state: current, lastTabKeepsWindow: store.memory.lastTabKeepsWindow)
     if close.last, now?.windowId == windowId, now?.closesItsWindow == true { return animateClose(windowId, store: store) }
-    _ = try? store.dispatch(Command("closeTab", [.string(tabId)]), origin: .native)
+    _ = try? store.dispatch(Command("closeTab", [.string(tabId), successor.map(JSONValue.string) ?? .null]), origin: .native)
     materializeChanges(before: current, after: store.state)
     FrameUpdates.flush()
   }
@@ -701,12 +712,27 @@ enum NativeWorkspaceCommands {
     animateClose(id, store: store)
   }
 
-  private static func animateClose(_ id: String, store: Store) {
+  private static func moveLittleSolara(_ id: String, to profileId: String, store: Store) {
+    let before = store.state
+    guard let window = before.windows[id], window.isSmall, !window.incognito, window.profileId != profileId,
+      before.profiles[profileId] != nil, !store.memory.closingWindows.contains(id), !pending.contains(id) else { return }
+    let tab = before.activeTab(id)
+    let url = tab?.url ?? ""
+    var options: JSONObject = ["small": true, "profileId": .string(profileId)]
+    if !url.isEmpty { options["url"] = .string(url) }
+    if let frame = window.frame { options["frame"] = .array(frame.map(JSONValue.number)) }
+    guard let replacement = (try? store.dispatch(Command("createWindow", [.object(options)]), origin: .native))?.result?.string else { return }
+    if url.isEmpty { _ = try? store.dispatch(Command("openPanel", [.string(replacement), ""]), origin: .native) }
+    materializeChanges(before: before, after: store.state)
+    animateClose(id, after: replacement, forgetTab: tab?.id, store: store)
+  }
+
+  private static func animateClose(_ id: String, after replacement: String? = nil, forgetTab: String? = nil, store: Store) {
     guard let window = store.state.windows[id] else { return }
     let leaving = Set(window.tabIds)
     let generation = NativeStoreHandle.ownershipGeneration
-    _ = try? store.dispatch(Command("setWindowClosing", [.string(id), true]), origin: .native)
-    WindowHost.animateClose(id) {
+    guard (try? store.dispatch(Command("setWindowClosing", [.string(id), true]), origin: .native)) != nil else { return }
+    WindowHost.animateClose(id, after: replacement) {
       let sameStore = NativeStoreHandle.store === store
       if sameStore { _ = try? store.dispatch(Command("setWindowClosing", [.string(id), false]), origin: .native) }
       guard NativeStoreHandle.ownsWorkspace, NativeStoreHandle.ownershipGeneration == generation, sameStore else {
@@ -718,7 +744,12 @@ enum NativeWorkspaceCommands {
         WindowHost.cancelWindowClose(id)
         return
       }
-      _ = try? store.dispatch(Command("closeWindow", [.string(id)]), origin: .native)
+      var commands = [Command("closeWindow", [.string(id)])]
+      if let forgetTab { commands.append(Command("forgetClosedTab", [.string(forgetTab)])) }
+      guard (try? store.dispatch(commands, origin: .native)) != nil, store.state.windows[id] == nil else {
+        WindowHost.cancelWindowClose(id)
+        return
+      }
       WindowHost.closeBrowserWindow(id)
       FrameUpdates.flush()
     }

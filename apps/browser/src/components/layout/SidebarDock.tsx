@@ -11,7 +11,7 @@ import { AreaBoundary } from "../AreaBoundary";
 import { dismissHoverIn } from "../sidebar/hover";
 import { shellColumnFitsAddressBar } from "../sidebar/NativeSidebar";
 import { useSidebarUi } from "../sidebar/state";
-import { followPeekHold, peekHeld, watchPeekHolds } from "./peekHold";
+import { peekHeld, watchPeekHolds } from "./peekHold";
 import { useShellLayoutPush } from "./shellLayout";
 import { useShellModal } from "./shellModal";
 import {
@@ -300,16 +300,12 @@ function NativeDockPublisher({
 }) {
   const windowId = useWindowId();
   const theme = useTheme();
-  const floating = !open && !fullscreen && !topTabs;
-  const [held, setHeld] = useState(false);
-  useEffect(() => followPeekHold(windowId, floating, setHeld), [windowId, floating]);
   useNativeDockState(windowId, {
     open,
     arc,
     fullscreen,
     topTabs,
     width,
-    held,
     slideSwitch: switchOn("sidebarSlide"),
     lights,
     look: { fill: hex(theme.windowTint[0]), border: hex(theme.panelBorder), shadowOpacity: theme.panelShadowOpacity },

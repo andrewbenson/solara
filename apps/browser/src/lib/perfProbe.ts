@@ -236,7 +236,7 @@ function committed(root: { current: Fiber }) {
   stats.walkMs += now() - t;
   if (layoutProbe) {
     try {
-      (require("./layoutWatch") as typeof import("./layoutWatch")).layoutCommitted(layoutEditAt);
+      modules?.SolaraWindowShell?.layoutCommitted?.(layoutEditAt);
     } catch {}
   }
 }

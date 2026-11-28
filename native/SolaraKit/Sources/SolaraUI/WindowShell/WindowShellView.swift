@@ -246,6 +246,7 @@ public final class WindowShellView: FrameLayoutView {
   public private(set) var devPointerLookupNanos: UInt64 = 0
   #endif
   private var modalOwners: Set<String> = []
+  private var commandPanelModal = false
   private weak var titlebarWindow: NSWindow?
   private var titlebarAccessibility: [(button: NSButton, cell: NSCell, accessible: Bool, children: [Any]?)] = []
 
@@ -604,12 +605,22 @@ public final class WindowShellView: FrameLayoutView {
     return nil
   }
 
-  public var modalShown: Bool { !modalOwners.isEmpty }
+  public var modalShown: Bool { commandPanelModal || !modalOwners.isEmpty }
+
+  public func setCommandPanelModal(shown: Bool) {
+    let before = modalShown
+    commandPanelModal = shown
+    refreshModal(previous: before)
+  }
 
   public func setModal(_ owner: String, shown: Bool) {
     let before = modalShown
     if shown { modalOwners.insert(owner) } else { modalOwners.remove(owner) }
-    guard modalShown != before else { return }
+    refreshModal(previous: before)
+  }
+
+  private func refreshModal(previous: Bool) {
+    guard modalShown != previous else { return }
     placeRailToolbar()
     syncTitlebarAccessibility()
     NSAccessibility.post(element: self, notification: .layoutChanged)

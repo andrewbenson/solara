@@ -5,6 +5,7 @@ import { useBrowser } from "../../store/browser";
 import { activeTabId } from "../../store/model";
 import { peekTabId } from "../../store/peek";
 import { splitOf } from "../../store/splits";
+import { useNativeWindowPreferences, useWindowReplicaFallback } from "./windowLayout";
 
 export type PageState = {
   status: string;
@@ -94,13 +95,20 @@ export function useFullscreenTab(windowId: string): string | undefined {
     for (const id in s.pages) if (s.pages[id]!.fullscreen) ids += `${id}\n`;
     return ids;
   });
-  return useBrowser((s) => {
+  const native = useNativeWindowPreferences(windowId, (value) => {
+    if (!fullscreen || !value) return undefined;
+    const ids = fullscreen.split("\n");
+    if (value.peekTabId && ids.includes(value.peekTabId)) return value.peekTabId;
+    return value.paneTabIds.find((id) => ids.includes(id));
+  });
+  const fallback = useWindowReplicaFallback(windowId, (state) => {
     if (!fullscreen) return undefined;
-    const active = activeTabId(s, windowId);
-    const peek = peekTabId(s, windowId);
-    const shown = [...(peek ? [peek] : []), ...(active ? (splitOf(s, active)?.tabIds ?? [active]) : [])];
+    const active = activeTabId(state, windowId);
+    const peek = peekTabId(state, windowId);
+    const shown = [...(peek ? [peek] : []), ...(active ? (splitOf(state, active)?.tabIds ?? [active]) : [])];
     return shown.find((id) => fullscreen.split("\n").includes(id));
   });
+  return native ?? fallback ?? undefined;
 }
 
 useBrowser.subscribe((s, prev) => {

@@ -3,8 +3,9 @@ import { NativeSidebarAddressBarView, setSidebarAddressBar, type ToolbarClick } 
 import { StyleSheet } from "react-native";
 import { layout, useTheme } from "../../lib/theme";
 import { useBrowser } from "../../store/browser";
-import { useActiveTabId, useWindowId } from "../../store/hooks";
-import { addressBarInSidebar, setUrlAnchor } from "../layout/windowLayout";
+import { activeTabId } from "../../store/model";
+import { useWindowId } from "../../store/hooks";
+import { setUrlAnchor, useAddressBarInSidebar, useNativeWindowPreferences, useWindowReplicaFallback } from "../layout/windowLayout";
 import { useNativeToolbarModel } from "../NativeToolbar";
 import { addNativeSettingsHandlers } from "../settings/nativeSettings";
 
@@ -42,7 +43,10 @@ export function SidebarAddressBarState({ width }: { width: number }) {
 
 function usePublishedSidebarAddressBar(width: number): string {
   const windowId = useWindowId();
-  const tabId = useActiveTabId() ?? "";
+  const selected = useNativeWindowPreferences(windowId, (value) => value?.activeTabId);
+  const fallback = useWindowReplicaFallback(windowId, (state) => activeTabId(state, windowId));
+  const tabId = selected ?? fallback ?? "";
+  const inSidebar = useAddressBarInSidebar();
   const theme = useTheme();
   const extensionLimit = Math.max(1, Math.floor((width - 2 * layout.sidebarInset - 10 - 3 - HOST_ROOM + 2) / 30));
   const look = { resting: theme.pinnedResting, stroke: theme.pinnedRestingStroke, hover: theme.tabHover, placeholder: theme.placeholder, prompt: "Search or enter address" };
@@ -56,7 +60,7 @@ function usePublishedSidebarAddressBar(width: number): string {
       return model.onClick(c);
     },
     onAnchors: ({ field, ...extensions }) => {
-      if (field && field[2] && addressBarInSidebar(useBrowser.getState(), windowId)) setUrlAnchor(windowId, { left: field[0], top: field[1], width: field[2], sidebar: { height: field[3] } });
+      if (field && field[2] && inSidebar) setUrlAnchor(windowId, { left: field[0], top: field[1], width: field[2], sidebar: { height: field[3] } });
       model.onAnchors(extensions);
     },
   };

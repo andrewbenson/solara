@@ -57,7 +57,7 @@ if (__DEV__ || perfProbeEnabled) require("./lib/devHarness").startDevHarness();
 
 const devMountDelay = () => (__DEV__ ? ((globalThis as { acDevMountDelayMs?: number }).acDevMountDelayMs ?? 0) : 0);
 
-function Root({ windowId }: { windowId: string }) {
+function Root({ windowId, kind }: { windowId: string; kind: string }) {
   const [delay] = useState(devMountDelay);
   const [held, setHeld] = useState(delay > 0);
   useEffect(() => {
@@ -71,7 +71,7 @@ function Root({ windowId }: { windowId: string }) {
   if (held) return null;
   return (
     <AreaBoundary area="window" windowId={windowId}>
-      <WindowRoot windowId={windowId} />
+      <WindowRoot windowId={windowId} kind={kind} />
     </AreaBoundary>
   );
 }

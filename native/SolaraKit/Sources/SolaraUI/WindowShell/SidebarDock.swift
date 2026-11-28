@@ -7,7 +7,7 @@ public struct SidebarDockState: Decodable, Equatable, Sendable {
   public var fullscreen: Bool
   public var topTabs: Bool
   public var width: Double
-  public var held: Bool
+  public var held: Bool?
   public var slideSwitch: Bool
   public var lights: [Double]
   public var sidebarPosition: String?
@@ -185,7 +185,7 @@ public final class SidebarDock {
     if next.sidebarPosition != was.sidebarPosition { setWatch(nil) }
     if next.arc != was.arc || next.sidebarPosition != was.sidebarPosition { rebuildPeek() }
     if next.open != was.open { toggleTo(next.open) }
-    if was.held && !next.held { peek.recheck() }
+    if was.held == true && next.held != true { peek.recheck() }
     syncPeek()
     refresh()
   }
@@ -222,7 +222,7 @@ public final class SidebarDock {
   private func wire(_ peek: EdgePeek) {
     peek.held = { [weak self] in
       guard let self else { return false }
-      return self.edgeOver || self.state.held || self.revealHeld()
+      return self.edgeOver || self.state.held == true || self.revealHeld()
     }
     peek.onSlideOut = { [weak self] in self?.onSlideOut() }
     peek.onLive = { [weak self] live in self?.peekLive(live) }

@@ -22,11 +22,10 @@ const GLOW_ROOM = 24;
 
 export function Sidebar({ width }: { width: number }) {
   const windowId = useWindowId();
-  const current = useWindowProfileId();
   const addressBar = useAddressBarInSidebar();
   const [shellCapable] = useState(() => nativeSidebarShell(windowId));
   const shellColumn = shellCapable && shellColumnFitsAddressBar(addressBar);
-  useLayoutEffect(() => dismissHoverIn(windowId), [windowId, current, shellColumn]);
+  useLayoutEffect(() => dismissHoverIn(windowId), [windowId, shellColumn]);
 
   if (shellColumn) {
     return <NativeSidebar windowId={windowId} addressBar={addressBar} width={width} />;
@@ -36,6 +35,8 @@ export function Sidebar({ width }: { width: number }) {
 
 function SidebarFallback({ width, addressBar }: { width: number; addressBar: boolean }) {
   const windowId = useWindowId();
+  const current = useWindowProfileId();
+  useLayoutEffect(() => dismissHoverIn(windowId), [windowId, current]);
   const header = addressBar ? SIDEBAR_HEADER_WITH_FIELD : layout.sidebarHeader;
   const hasDownloads = useBrowser((s) => downloadsIn(s, windowId).length > 0);
   const dots = useProfileDotsShown();

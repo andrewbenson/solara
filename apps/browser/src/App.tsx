@@ -7,33 +7,27 @@ import { ContentCard } from "./components/ContentCard";
 import { isUtilityWindowId } from "./components/settings/windows";
 import { OnboardingOverlay } from "./components/onboarding";
 import { CreateProfileHost } from "./components/profiles/CreateProfile";
-import { useAddressBarInSidebar, useTabLayout } from "./components/layout/windowLayout";
-import { WindowProfile } from "./components/layout/WindowProfile";
 import { NativeTopStripFeed } from "./components/layout/NativeTopStrip";
 import { NativeSidebar } from "./components/sidebar/NativeSidebar";
 import { useShellModal } from "./components/layout/shellModal";
 import { ShellBackdrop } from "./components/layout/ShellBackdrop";
 import { LittleSolaraWindow } from "./components/littleSolara/LittleSolaraWindow";
 import { SidebarOverlays } from "./components/sidebar/Overlays";
+import { switchOn } from "./lib/killSwitches";
 import { ThemeScope } from "./lib/theme";
-import { useBrowser } from "./store/browser";
 import { useWindowId, WindowContext } from "./store/hooks";
-import { useNativeWindowBounds } from "./components/layout/windowLayout";
+import { useNativeWindowBounds, useNativeWindowPreferences } from "./components/layout/windowLayout";
 import { useNativeWindowAnchors } from "./components/layout/nativeWindowAnchors";
 
-export function WindowRoot({ windowId }: { windowId?: string }) {
-  if (isUtilityWindowId(windowId)) return null;
-  return <BrowserWindowRoot windowId={windowId} />;
+export function WindowRoot({ windowId, kind }: { windowId: string; kind: string }) {
+  if (isUtilityWindowId(windowId) || (kind !== "browser" && kind !== "small")) return null;
+  return <BrowserWindowRoot windowId={windowId} kind={kind} />;
 }
 
-function BrowserWindowRoot({ windowId }: { windowId?: string }) {
-  const id = useBrowser((s) => windowId ?? s.ui.focusedWindowId ?? s.windowOrder[0] ?? null);
-  const exists = useBrowser((s) => !!id && !!s.windows[id]);
-  const small = useBrowser((s) => !!id && s.windows[id]?.kind === "small");
-  if (!id || !exists) return null;
+function BrowserWindowRoot({ windowId, kind }: { windowId: string; kind: string }) {
   return (
-    <WindowContext.Provider value={id}>
-      <ThemeScope>{small ? <LittleSolaraWindow /> : <BrowserWindow />}</ThemeScope>
+    <WindowContext.Provider value={windowId}>
+      <ThemeScope>{kind === "small" ? <LittleSolaraWindow /> : <BrowserWindow />}</ThemeScope>
     </WindowContext.Provider>
   );
 }
@@ -50,12 +44,10 @@ function NativeBrowserWindow() {
   const windowId = useWindowId();
   useNativeWindowAnchors(windowId);
   const width = useNativeWindowBounds((s) => s[windowId]?.[2] ?? 0);
-  const topTabs = useTabLayout() === "top";
   return (
     <View testID={`solara-window-guest.${windowId}`} pointerEvents="box-none" style={StyleSheet.absoluteFill}>
       <ShellBackdrop shell />
-      <WindowProfile />
-      <NativeLayoutGuests topTabs={topTabs} />
+      <NativeLayoutGuests />
       <CommandPanel windowWidth={width} />
       <CreateProfileHost />
       <SidebarOverlays windowWidth={width} />
@@ -64,14 +56,17 @@ function NativeBrowserWindow() {
   );
 }
 
-function NativeLayoutGuests({ topTabs }: { topTabs: boolean }) {
+function NativeLayoutGuests() {
   const windowId = useWindowId();
-  const addressBar = useAddressBarInSidebar();
+  const preferences = useNativeWindowPreferences(windowId, (value) => value && ({
+    topTabs: value.topTabs,
+    addressBar: value.addressBar && (value.sidebarOpen || switchOn("sidebarSlide")),
+  }));
   return (
     <>
       <NativeShellModal windowId={windowId} />
       <ContentCard />
-      {topTabs ? <NativeTopStripFeed windowId={windowId} /> : <NativeSidebar windowId={windowId} addressBar={addressBar} headless />}
+      {preferences && (preferences.topTabs ? <NativeTopStripFeed windowId={windowId} /> : <NativeSidebar windowId={windowId} addressBar={preferences.addressBar} headless />)}
     </>
   );
 }

@@ -39,6 +39,15 @@ export function windowNativeLayoutGeneration(windowId: string): number {
   return native?.nativeLayoutGeneration?.(windowId) ?? 0;
 }
 
+export type WindowPaneSplit = {
+  id: string;
+  windowId: string;
+  tabIds: string[];
+  orientation: "horizontal" | "vertical";
+  sizes: number[];
+  stack?: { index: number; sizes: [number, number] };
+};
+
 export type WindowLayoutPreferences = {
   generation: number;
   revision: number;
@@ -46,6 +55,10 @@ export type WindowLayoutPreferences = {
   sidebarOpen: boolean;
   sidebarWidth: number;
   addressBar: boolean;
+  activeTabId: string | null;
+  paneTabIds: string[];
+  split: WindowPaneSplit | null;
+  peekTabId: string | null;
 };
 
 export function windowLayoutPreferences(windowId: string): WindowLayoutPreferences | null {

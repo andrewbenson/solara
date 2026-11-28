@@ -48,7 +48,12 @@ function fixture() {
     "../../store/hooks": { useWindowId: () => "w", useActiveTabId: () => null },
     "../extensions/ToolbarExtensionHost": { extensionsFitting: () => 4 },
     "../layout/toolbarColors": { toolbarPalette: () => ({}) },
-    "../layout/windowLayout": { addressBarInSidebar: () => true, setUrlAnchor: (...args) => effects.push(["anchor", ...args]) },
+    "../layout/windowLayout": {
+      useNativeWindowPreferences: () => null,
+      useWindowReplicaFallback: () => null,
+      useAddressBarInSidebar: () => true,
+      setUrlAnchor: (...args) => effects.push(["anchor", ...args]),
+    },
     "../Toolbar": { GLYPH: 13 },
     "../NativeToolbar": { useNativeToolbarModel: () => ({ tab: null, state: null, onClick: (click) => effects.push(["click", click.id]), onAnchors: (anchors) => effects.push(["extensions", anchors]) }) },
     "../settings/nativeSettings": registration,

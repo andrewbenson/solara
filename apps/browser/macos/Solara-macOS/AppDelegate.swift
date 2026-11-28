@@ -34,7 +34,7 @@ final class AppDelegate: ExpoAppDelegate {
     WindowHost.makeWindow = { BrowserWindow() }
     WindowHost.makeContentView = { [weak factory] windowId in
       (factory?.rootViewFactory as? ExpoReactRootViewFactory)?.superView(
-        withModuleName: "main", initialProperties: ["windowId": windowId], launchOptions: nil) ?? NSView()
+        withModuleName: "main", initialProperties: ["windowId": windowId, "kind": WindowHost.openingKinds[windowId] ?? "browser"], launchOptions: nil) ?? NSView()
     }
     WindowHost.makeRootView = { [weak factory] module, props in
       (factory?.rootViewFactory as? ExpoReactRootViewFactory)?.superView(

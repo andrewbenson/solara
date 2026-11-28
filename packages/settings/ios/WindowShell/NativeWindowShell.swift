@@ -76,6 +76,9 @@ enum NativeWindowShell {
     NativeSplitChrome.start()
     NativeShareBand.start()
     NativePeek.start()
+    SettingsJS.shared.onConnect {
+      for id in lifetimes.ids { lifetimes.host(id)?.sendPreferences() }
+    }
     if !nativeLayout, let store = NativeStoreHandle.store {
       let sink = commits
       #if SOLARA_PROBES
@@ -192,22 +195,44 @@ final class ShellHost {
   private let windowGeneration: UInt64
   private var layoutState: BrowserState?
   private var sentPreferences: WindowLayoutPreferences?
+  private var sentActiveTab: String?
+  private var sentPaneTabs: [String] = []
+  private var sentSplit: JSONValue = .null
+  private var sentPeekTab: String?
 
-  private func preferencesJSON(_ preferences: WindowLayoutPreferences) -> String? {
+  private func preferencesJSON(_ preferences: WindowLayoutPreferences, activeTabId: String?, paneTabIds: [String], split: JSONValue, peekTabId: String?) -> String? {
     NativeTopStrip.json(["generation": windowGeneration, "revision": layoutRevision, "topTabs": preferences.topTabs,
-      "sidebarOpen": preferences.sidebarOpen, "sidebarWidth": preferences.sidebarWidth, "addressBar": preferences.addressBarInSidebar])
+      "sidebarOpen": preferences.sidebarOpen, "sidebarWidth": preferences.sidebarWidth, "addressBar": preferences.addressBarInSidebar,
+      "activeTabId": activeTabId.map { $0 as Any } ?? NSNull(), "paneTabIds": paneTabIds,
+      "split": split.foundation, "peekTabId": peekTabId.map { $0 as Any } ?? NSNull()])
   }
 
   private func publishPreferences(_ state: BrowserState) {
     guard let window = state.windows[shell.windowId] else { return }
     let next = WindowLayoutPreferences(window: window, settings: state.settings,
       nativeRail: ownsNativeLayout || profilePager != nil, legacyGuest: !ownsNativeLayout)
-    guard next != sentPreferences, let json = preferencesJSON(next) else { return }
+    let activeTabId = state.activeTabId(shell.windowId)
+    let paneTabIds = Splits.visiblePaneIds(state, windowId: shell.windowId)
+    let split = Splits.splitOf(state, activeTabId).flatMap { $0.windowId == window.id ? JSONValue.object($0.json) : nil } ?? .null
+    let peekTabId = state.peeks[window.id]?.tabId
+    guard next != sentPreferences || activeTabId != sentActiveTab || paneTabIds != sentPaneTabs || split != sentSplit || peekTabId != sentPeekTab,
+      let json = preferencesJSON(next, activeTabId: activeTabId, paneTabIds: paneTabIds, split: split, peekTabId: peekTabId) else { return }
     sentPreferences = next
+    sentActiveTab = activeTabId
+    sentPaneTabs = paneTabIds
+    sentSplit = split
+    sentPeekTab = peekTabId
     NativeWindowShell.layoutPreferences.withLock { $0[shell.windowId] = (windowGeneration, json) }
+    sendPreferences()
+  }
+
+  func sendPreferences() {
+    guard SettingsJS.shared.connected else { return }
     Task { @MainActor [weak self] in
-      guard let self, !self.layoutStopped else { return }
-      _ = await SettingsAdapters.js("window.layoutPreferences", self.shell.windowId, json)
+      guard let self, !self.layoutStopped,
+        let entry = NativeWindowShell.layoutPreferences.withLock({ $0[self.shell.windowId] }),
+        entry.generation == self.windowGeneration else { return }
+      _ = await SettingsAdapters.js("window.layoutPreferences", self.shell.windowId, entry.json)
     }
   }
   private var layoutRevision = -1
@@ -361,9 +386,12 @@ final class ShellHost {
   func stop() {
     guard !layoutStopped else { return }
     layoutStopped = true
+    let windowId = shell.windowId
+    let generation = windowGeneration
     NativeWindowShell.layoutPreferences.withLock {
-      if $0[shell.windowId]?.generation == windowGeneration { $0[shell.windowId] = nil }
+      if $0[windowId]?.generation == generation { $0[windowId] = nil }
     }
+    if SettingsJS.shared.connected { SettingsJS.shared.fire("window.layoutPreferencesEnded", windowId, generation) }
     NativeTabPickers.windowEnded(shell.windowId, in: shell.overlay)
     NativeSidebarHoverCard.windowEnded(shell.windowId)
     NativeSidebarIconPicker.close(shell.windowId)
@@ -536,8 +564,13 @@ extension ShellHost {
     let trace = LayoutTrace.begin("layoutState", "\(shell.windowId) \(revision)")
     defer { LayoutTrace.end(trace) }
     #endif
+    if let previous = layoutState?.windows[shell.windowId]?.profileId, previous != state.windows[shell.windowId]?.profileId {
+      NativeSidebarHoverCard.dismiss(shell.windowId)
+    }
     layoutState = state
     layoutRevision = revision
+    shell.setCommandPanelModal(shown: state.windowUi[shell.windowId]?.panelOpen == true)
+    NativeSidebarDock.dock(shell.windowId)?.peek.recheck()
     publishPreferences(state)
     scheduleLayoutProjection()
   }
@@ -1018,6 +1051,10 @@ public class WindowShellModule: Module {
       }
       return LayoutTrace.take(reset: reset)
     }
+    AsyncFunction("layoutCommitted") { (editAt: Int) in
+      MainActor.assumeIsolated { SidebarLayoutWatch.committed(editAt: editAt) }
+    }.runOnQueue(.main)
+
     Function("layoutTraceMark") { (stage: String, detail: String) in LayoutTrace.event("command", "\(stage) \(detail)") }
     #endif
 

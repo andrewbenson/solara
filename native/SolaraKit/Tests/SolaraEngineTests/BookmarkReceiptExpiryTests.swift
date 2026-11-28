@@ -281,15 +281,20 @@ extension BookmarkReceiptExpiryTests {
     let clock = ReceiptExpiryClock()
     let owner = coordinator(clock, directory: dir)
     try history(owner)
-    clock.now = 299_990
-    let start = Date()
-    let advancing = BookmarkCoordinator(profiles: ["p": ""], defaultProfile: "p", now: { 299_990 + Date().timeIntervalSince(start) * 1000 }, stampsEnabled: true, pendingStore: BookmarkPendingStore(directory: dir))
-    let view = advancing.desiredView(engine: "")
-    let read = try #require(advancing.beginReceiptRead(engine: "", epoch: 0))
-    #expect(advancing.completeRead(engine: "", document: view.document, capturedRevision: view.revision, receiptRead: read))
-    let deadline = Date().addingTimeInterval(2)
+    let setup = DispatchQueue(label: "BookmarkReceiptExpiryTests.setup")
+    let setupClock = DispatchSpecificKey<Double>()
+    setup.setSpecific(key: setupClock, value: 299_990)
+    let advancing = setup.sync {
+      let advancing = BookmarkCoordinator(profiles: ["p": ""], defaultProfile: "p",
+        now: { DispatchQueue.getSpecific(key: setupClock) ?? 300_000 }, stampsEnabled: true,
+        pendingStore: BookmarkPendingStore(directory: dir))
+      let view = advancing.desiredView(engine: "")
+      #expect(advancing.completeRead(engine: "", document: view.document, capturedRevision: view.revision))
+      return advancing
+    }
+    let deadline = ContinuousClock.now + .seconds(2)
     var count = 34
-    while Date() < deadline {
+    while ContinuousClock.now < deadline {
       count = BookmarkPendingStore(directory: dir).load().payload?["requests"]?.array?.count ?? 0
       if count == 32 { break }
       try await Task.sleep(for: .milliseconds(10))

@@ -342,7 +342,10 @@ extension Session {
       }
       updateSettings(patch, fromSync: a[1]?["fromSync"]?.truthy ?? false)
     case "setFocusedWindow": setFocusedWindow(try a.requireString(0))
-    case "upsertDownload": upsertDownload(Download(json: a.object(0)))
+    case "upsertDownload":
+      let download = Download(json: a.object(0))
+      let retired = state.orphanedProfileData.contains { $0.jsEquals(download.profile ?? "") }
+      if download.isPrivate || !retired { upsertDownload(download) }
     case "removeDownload": removeDownload(try a.requireString(0))
     case "clearDownloads": clearDownloads(a.string(0))
     case "forgetDownloads": forgetDownloads(try a.requireString(0))

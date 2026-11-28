@@ -19,7 +19,9 @@ enum SolaraCoreProfileData {
       } }),
       ("bookmarks", { deleteBookmarks(deletionAllowed: deletionAllowed, $0) }),
       ("history, cookies and cache", { ok in
-        SolaraCoreServices.clearBrowsingData(profile: "", types: ["history", "siteData", "cache", "downloads"], since: 0) { ok(true) }
+        SolaraCoreServices.call("ac_browsing_data_clear", profile: "", args: ["types": ["history", "siteData", "cache", "downloads"]]) {
+          ok($0["ok"] as? Bool == true)
+        }
       }),
       ("autocomplete entries", { ok in
         SolaraCoreServices.call("ac_browsing_data_clear", profile: "", args: ["types": ["formData", "siteSettings"]]) { ok($0["ok"] as? Bool == true) }

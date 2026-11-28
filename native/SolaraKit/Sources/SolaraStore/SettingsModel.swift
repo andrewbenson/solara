@@ -74,6 +74,18 @@ public final class SettingsModel {
     try writeProfile { ProfileThemeEdit.command(profileId: id, fields: fields, state: $0) }
   }
 
+  public func deleteProfile(_ id: String, engineProfile: String, shared: Bool) throws -> Bool {
+    let commit = try writeProfile { state in
+      guard let profile = state.profiles[id], profile.id.jsEquals(id), engineIdOf(profile).jsEquals(engineProfile) else { return nil }
+      let sharesData = sharesProfileEngine(engineProfile, excluding: id, in: state)
+      return sharesData == shared ? SettingsWrites.deleteProfile(id) : nil
+    }
+    return commit?.effects.contains {
+      guard case .profileDeleted(let deleted, let keptData, let engine) = $0 else { return false }
+      return deleted.jsEquals(id) && engine.jsEquals(engineProfile) && keptData == shared
+    } ?? false
+  }
+
   private func writeProfile(_ makeCommand: (BrowserState) -> Command?) throws -> Commit? {
     guard SettingsWrites.directStore === store else { return nil }
     let commit = try store.sequence { () -> Commit? in

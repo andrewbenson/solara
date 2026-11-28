@@ -143,6 +143,84 @@ import Testing
     try run()
   }
 
+  @MainActor @Test func profileDeletionRequiresTheConfirmedEngineAndSharingDisposition() throws {
+    let s = store()
+    let id = try #require(try s.dispatch(SettingsWrites.createProfile(name: "Work", color: "blue", shareWith: nil)).result?.string)
+    let alias = try #require(try s.dispatch(SettingsWrites.createProfile(name: "Shared", color: "green", shareWith: id)).result?.string)
+    let model = SettingsModel(store: s)
+    try withLayoutStore(s) { () throws in
+      let before = s.snapshot
+      #expect(try !model.deleteProfile(id, engineProfile: "", shared: true))
+      #expect(try !model.deleteProfile(id, engineProfile: id, shared: false))
+      #expect(s.state == before.state)
+      #expect(s.rev == before.rev)
+      #expect(try model.deleteProfile(alias, engineProfile: id, shared: true))
+      #expect(s.state.orphanedProfileData.isEmpty)
+      #expect(try !model.deleteProfile(id, engineProfile: id, shared: true))
+      #expect(model.profiles.map(\.id) == ["default", id])
+      #expect(try model.deleteProfile(id, engineProfile: id, shared: false))
+      #expect(model.profiles.map(\.id) == ["default"])
+      #expect(s.state.orphanedProfileData == [id])
+      #expect(try !model.deleteProfile(id, engineProfile: id, shared: false))
+      #expect(try !model.deleteProfile("default", engineProfile: "", shared: false))
+    }
+  }
+
+  @MainActor @Test func profileDeletionRemovesOnlyTheRetiredEngineDownloads() throws {
+    let s = store()
+    let id = try #require(try s.dispatch(SettingsWrites.createProfile(name: "Work", color: "blue", shareWith: nil)).result?.string)
+    let alias = try #require(try s.dispatch(SettingsWrites.createProfile(name: "Alias", color: "green", shareWith: id)).result?.string)
+    let work = Command("upsertDownload", [["id": "work", "profile": .string(id), "state": "finished"]])
+    let legacy = Command("upsertDownload", [["id": "legacy", "state": "finished"]])
+    try s.dispatch(work)
+    try s.dispatch(legacy)
+    let model = SettingsModel(store: s)
+    try withLayoutStore(s) { () throws in
+      #expect(try model.deleteProfile(alias, engineProfile: id, shared: true))
+      #expect(s.state.downloads.map(\.id) == ["legacy", "work"])
+      #expect(try model.deleteProfile(id, engineProfile: id, shared: false))
+      try s.dispatch(work)
+      #expect(s.state.downloads.map(\.id) == ["legacy"])
+    }
+  }
+
+  @MainActor @Test func duplicateOrderEntriesCannotMakeTheLastProfileDeletable() throws {
+    var state = BrowserState(settings: Settings.hydrated(from: nil))
+    state.profileOrder = ["default", "default", "missing"]
+    let s = Store(state: state, checksInvariants: false)
+    let model = SettingsModel(store: s)
+    try withLayoutStore(s) { () throws in
+      #expect(try !model.deleteProfile("default", engineProfile: "", shared: false))
+    }
+    #expect(s.state == state)
+    #expect(s.rev == 0)
+  }
+
+  @MainActor @Test func settingsDeletionRefusesUnownedFrozenOrSafeModeStores() throws {
+    let s = store()
+    let id = try #require(try s.dispatch(SettingsWrites.createProfile(name: "Work", color: "blue", shareWith: nil)).result?.string)
+    let model = SettingsModel(store: s)
+    let before = s.snapshot
+    try withLayoutStore(s) { () throws in
+      NativeStoreHandle.ownsWorkspace = false
+      #expect(try !model.deleteProfile(id, engineProfile: id, shared: false))
+      NativeStoreHandle.ownsWorkspace = true
+      NativeStoreHandle.markFrozen()
+      defer { NativeStoreHandle.thawForTests() }
+      #expect(try !model.deleteProfile(id, engineProfile: id, shared: false))
+    }
+    #expect(s.state == before.state)
+    #expect(s.rev == before.rev)
+    var config = StoreConfig()
+    config.safeMode = true
+    let safe = Store(state: before.state, config: config)
+    let safeModel = SettingsModel(store: safe)
+    try withLayoutStore(safe) { () throws in
+      #expect(try !safeModel.deleteProfile(id, engineProfile: id, shared: false))
+    }
+    #expect(safe.state == before.state)
+  }
+
   @MainActor @Test func choosingTopPreservesInheritedAndExplicitLayouts() throws {
     let s = store()
     let inherited = try #require(try s.dispatch(Command("createWindow", [[:]])).result?.string)

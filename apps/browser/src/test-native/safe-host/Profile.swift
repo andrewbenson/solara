@@ -8,8 +8,12 @@ enum SolaraCoreHost {
 }
 enum SolaraCoreServices {
   static var calls: [String] = []
-  static func clearBrowsingData(profile: String, types: [String], since: Int, completion: () -> Void) { calls.append("clearBrowsingData"); completion() }
-  static func call(_ name: String, profile: String, args: [String: Any]?, completion: ([String: Any]) -> Void) { calls.append(name); completion(["ok": true]) }
+  static var refuseBrowsingData = false
+  static func call(_ name: String, profile: String, args: [String: Any]?, completion: ([String: Any]) -> Void) {
+    calls.append(name)
+    let types = args?["types"] as? [String] ?? []
+    completion(["ok": !(refuseBrowsingData && types.contains("history"))])
+  }
   static func addresses(profile: String, completion: ([String: Any]) -> Void) { calls.append("addresses"); completion(["addresses": []]) }
   static func cards(profile: String, completion: ([String: Any]) -> Void) { calls.append("cards"); completion(["cards": []]) }
   static func deleteAutofillEntry(_ id: String, profile: String, completion: (Bool) -> Void) { calls.append("deleteAutofillEntry"); completion(true) }
@@ -27,8 +31,9 @@ enum SolaraCoreServices {
 __PRODUCTION__
 
 var results: [[String: Any]] = []
-for safe in [true, false] {
+for (safe, refused) in [(true, false), (false, false), (false, true)] {
   SolaraCoreHost.safeMode = safe
+  SolaraCoreServices.refuseBrowsingData = refused
   SolaraCoreServices.calls = []
   var callbacks = 0
   var remaining: [String] = []

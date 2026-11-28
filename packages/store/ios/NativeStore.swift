@@ -48,7 +48,7 @@ public final class NativeStore: Sendable {
 
   @MainActor
   init(host: StoreHost, launch: SafeLaunch, folder: URL) {
-    profileDataCleanup = NativeProfileDataCleanup(store: host.bridge.store)
+    profileDataCleanup = NativeProfileDataCleanup(store: host.bridge.store, writer: host.writer)
     privateSessionEffects = NativePrivateSessionEffects(store: host.bridge.store)
     tabSleep = NativeTabSleep(store: host.bridge.store)
     keepAwakeSites = NativeKeepAwakeSites(store: host.bridge.store, folder: folder)

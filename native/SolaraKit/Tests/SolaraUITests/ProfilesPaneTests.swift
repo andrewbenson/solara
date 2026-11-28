@@ -13,10 +13,12 @@ final class FakeProfilesServices: ProfilesServices {
   var appDark = false
   var calls: [String] = []
   var keptExtensions: [String]? = []
+  var lookupExtensions: (() async -> [String]?)?
   var arcChoices: [ArcThemeChoice] = []
   var heldKeyLook = false
   var createdIds = 0
   var acceptsUpdates = true
+  var acceptsDeletion = true
 
   init(store: FakeSettingsStore, profiles: [ProfileSummary] = ProfilesFixture.profiles) {
     self.store = store
@@ -53,11 +55,12 @@ final class FakeProfilesServices: ProfilesServices {
     calls.append("update \(id)")
   }
 
-  func deleteProfile(_ id: String, completion: @escaping @MainActor (Bool) -> Void) {
+  func deleteProfile(_ id: String, engineProfile: String, shared: Bool) -> Bool {
+    guard acceptsDeletion else { return false }
     profiles.removeAll { $0.id == id }
     if store.string("defaultProfileId") == id, let first = profiles.first { store.values["defaultProfileId"] = .string(first.id) }
     calls.append("delete \(id)")
-    completion(true)
+    return true
   }
 
   func reorderProfiles(_ ids: [String]) {
@@ -75,7 +78,10 @@ final class FakeProfilesServices: ProfilesServices {
   func clearBrowsingData(engineProfile: String, kinds: [BrowsingDataKind], since: Date?) async {
     calls.append("clearData [\(engineProfile)] \(kinds.map(\.rawValue).joined(separator: ","))")
   }
-  func extensionsKeptOnDelete() async -> [String]? { keptExtensions }
+  func extensionsKeptOnDelete() async -> [String]? {
+    if let lookupExtensions { return await lookupExtensions() }
+    return keptExtensions
+  }
   func adoptProfileTheme(_ id: String) { calls.append("adopt \(id)") }
   func holdThemedWindowsKeyLook(_ on: Bool) { heldKeyLook = on }
   func arcThemeChoices() async -> [ArcThemeChoice] { arcChoices }
@@ -192,6 +198,51 @@ struct ProfilesPaneTests {
     model.confirmDelete(prompt, navigation: navigation)
     #expect(services.calls == ["delete work"])
     #expect(navigation.place == SettingsPlace(pane: .profiles))
+    #expect(model.deletePrompt == nil)
+  }
+
+  @Test func replacingOrDismissingADeletionPromptInvalidatesItsConfirmation() async throws {
+    let (model, services, _) = make()
+    await model.requestDelete("work", fromDetails: true)
+    let work = try #require(model.deletePrompt)
+    await model.requestDelete("default", fromDetails: false)
+    let replacement = try #require(model.deletePrompt)
+    model.confirmDelete(work, navigation: nil)
+    #expect(model.deletePrompt == replacement)
+    model.deletePrompt = nil
+    model.confirmDelete(replacement, navigation: nil)
+    #expect(services.calls.isEmpty)
+  }
+
+  @Test func delayedExtensionLookupCannotReplaceANewerDeletionPrompt() async throws {
+    let (model, services, _) = make(Array(ProfilesFixture.profiles.prefix(2)))
+    let started = AsyncStream<Void>.makeStream()
+    var resume: CheckedContinuation<[String]?, Never>?
+    services.lookupExtensions = {
+      await withCheckedContinuation {
+        resume = $0
+        started.continuation.yield(())
+      }
+    }
+    let earlier = Task { await model.requestDelete("default", fromDetails: true) }
+    var signal = started.stream.makeAsyncIterator()
+    _ = await signal.next()
+    let newer = try #require(await model.requestDelete("work", fromDetails: true))
+    resume?.resume(returning: [])
+    #expect(await earlier.value == nil)
+    #expect(model.deletePrompt == newer)
+    #expect(services.calls.isEmpty)
+  }
+
+  @Test func refusedDeletionKeepsTheProfileDetailsOpen() async throws {
+    let (model, services, _) = make()
+    let navigation = SettingsNavigation(place: SettingsPlace(pane: .profiles, profileId: "work"))
+    services.acceptsDeletion = false
+    await model.requestDelete("work", fromDetails: true)
+    let prompt = try #require(model.deletePrompt)
+    #expect(!model.confirmDelete(prompt, navigation: navigation))
+    #expect(navigation.profileId == "work")
+    #expect(model.profile("work") != nil)
     #expect(model.deletePrompt == nil)
   }
 

@@ -274,6 +274,36 @@ private func cleanupStore(_ state: BrowserState = BrowserState(settings: Setting
     #expect(service.isStopped)
   }
 
+  @Test func workspaceFlushRefusalKeepsTheOrphanAndPreventsRetirement() async throws {
+    let store = cleanupStore()
+    let id = try #require(try store.dispatch(SettingsWrites.createProfile(name: "Work", color: "blue", shareWith: nil)).result?.string)
+    try store.dispatch(SettingsWrites.deleteProfile(id))
+    var saved = false
+    var retired: [String] = []
+    var deleted: [String] = []
+    var trouble: [String] = []
+    let cleanup = ProfileDataCleanup(store: store, delete: { engine, done in
+      deleted.append(engine)
+      done([])
+    }, persistWorkspace: {
+      guard saved else { throw CommandError("disk full") }
+    }, retireBookmarks: { retired.append($0) }, grace: {}, trouble: { _, details in trouble += details })
+    cleanup.start()
+    defer { cleanup.stop() }
+    await cleanup.task?.value
+    #expect(trouble == ["Workspace persistence: disk full"])
+    #expect(retired.isEmpty && deleted.isEmpty)
+    #expect(store.state.orphanedProfileData == [id])
+    #expect(store.state.profiles[id] == nil)
+
+    saved = true
+    cleanup.retry()
+    await cleanup.task?.value
+    #expect(retired == [id] && deleted == [id])
+    #expect(store.state.orphanedProfileData.isEmpty)
+    #expect(store.state.profiles["default"] != nil)
+  }
+
   @Test func persistedWorkWaitsForStartAndProcessesSerially() async throws {
     var state = BrowserState(settings: Settings.hydrated(from: nil))
     state.orphanedProfileData = ["old-a", "old-b"]

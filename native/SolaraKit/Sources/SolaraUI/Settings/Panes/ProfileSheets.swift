@@ -105,7 +105,7 @@ protocol CreateProfileSource: AnyObject {
 }
 
 extension CreateProfileSource {
-  func profile(_ id: String) -> ProfileSummary? { profiles.first { $0.id == id } }
+  func profile(_ id: String) -> ProfileSummary? { profiles.first { $0.id.utf16.elementsEqual(id.utf16) } }
 
   func dataGroups() -> [(dataId: String, profileIds: [String])] {
     var groups: [(dataId: String, profileIds: [String])] = []

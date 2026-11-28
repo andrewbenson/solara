@@ -10,9 +10,8 @@ func unusedProfileColor(_ profiles: Table<Profile>) -> String {
   profileColors.first { c in !profiles.values.contains { $0.color == c } } ?? "blue"
 }
 
-func sharingProfiles(_ s: BrowserState, _ id: String) -> [String] {
-  guard let p = s.profiles[id] else { return [] }
-  return s.profileOrder.filter { other in !other.jsEquals(id) && s.profiles[other].map { dataIdOf($0).jsEquals(dataIdOf(p)) } ?? false }
+func sharesProfileEngine(_ engine: String, excluding id: String, in state: BrowserState) -> Bool {
+  state.profiles.values.contains { !$0.id.jsEquals(id) && engineIdOf($0).jsEquals(engine) }
 }
 
 extension Session {
@@ -77,14 +76,15 @@ extension Session {
     guard !config.safeMode else {
       throw CommandError("Profiles can't be deleted in safe mode. Quit and open Solara normally to delete one.")
     }
-    guard state.profiles[id] != nil, state.profileOrder.count > 1 else { return }
-    let deleting = engineIdOf(state.profiles[id]!)
-    let sharedEngine = state.profiles.values.contains { !$0.id.jsEquals(id) && engineIdOf($0).jsEquals(deleting) }
+    guard let profile = state.profiles[id], profile.id.jsEquals(id) else { return }
+    let profileOrder = state.profileOrder.filter { !$0.jsEquals(id) && state.profiles[$0] != nil }
+    guard !profileOrder.isEmpty else { return }
+    let deleting = engineIdOf(profile)
+    let sharedEngine = sharesProfileEngine(deleting, excluding: id, in: state)
     try ProfileDataTombstones.confirm(profile: id, engine: sharedEngine ? nil : deleting, at: config.profileDataTombstones,
       pending: state.orphanedProfileData, live: state.profiles.values.map(engineIdOf))
     for w in state.windows.values where w.incognito && w.originalProfileId?.jsEquals(id) == true { closeWindow(w.id) }
     var s = state
-    let profileOrder = s.profileOrder.filter { !$0.jsEquals(id) }
     let fallback = s.settings.defaultProfileId.jsEquals(id) ? profileOrder[0] : s.settings.defaultProfileId
     var neverTranslate = s.settings["neverTranslateSites"]?.object ?? [:]
     neverTranslate.removeValue(forKey: id)
@@ -93,11 +93,8 @@ extension Session {
     let settings = s.settings.merging([
       "defaultProfileId": .string(fallback), "neverTranslateSites": .object(neverTranslate), "developerMode": .object(developerMode),
     ])
-    let shared = !sharingProfiles(s, id).isEmpty
-    let engine = engineIdOf(s.profiles[id]!)
-    let orphaned =
-      profileOrder.contains(where: { engineIdOf(s.profiles[$0]!).jsEquals(engine) }) || s.orphanedProfileData.contains(where: { $0.jsEquals(engine) })
-      ? s.orphanedProfileData : s.orphanedProfileData + [engine]
+    let orphaned = sharedEngine || s.orphanedProfileData.contains(where: { $0.jsEquals(deleting) })
+      ? s.orphanedProfileData : s.orphanedProfileData + [deleting]
     for w in s.windows.values where w.profileId.jsEquals(id) {
       if let other = w.tabIds.first(where: { s.tabs[$0]?.profileId.jsEquals(id) != true }) {
         s = activated(s, w.activeTabIds[s.tabs[other]!.profileId] ?? other)
@@ -134,7 +131,10 @@ extension Session {
       return kept
     }.filter { !$0.tabs.isEmpty }
     next.parkedPins.remove([id])
-    emit(.profileDeleted(profileId: id, shared: shared, engineProfile: engine))
+    if !sharedEngine {
+      next.downloads.removeAll { !$0.isPrivate && ($0.profile ?? "").jsEquals(deleting) }
+    }
+    emit(.profileDeleted(profileId: id, shared: sharedEngine, engineProfile: deleting))
     set(next)
     for w in state.windows.values where state.viewTabIds(w.id).isEmpty { _ = newTab(w.id) }
   }

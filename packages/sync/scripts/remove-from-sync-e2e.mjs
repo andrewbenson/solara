@@ -83,9 +83,17 @@ try {
   const stale = await ev("B", `return acSync.removeRemoteProfile(${JSON.stringify(named(before, "RFS Work").syncId)}, "stale")`);
   check("a stale confirmation is refused", stale === false);
 
-  await ev("A", `const s = ac.store.getState(); s.deleteProfile(s.profileOrder.find((id) => s.profiles[id].name === "RFS Work")); return true`);
+  const deleted = await ev("A", `
+    const s = ac.store.getState();
+    const id = s.profileOrder.find((id) => s.profiles[id].name === "RFS Work");
+    const settings = globalThis.expo.modules.SolaraSettings;
+    return settings.navigate("profiles", id, null)
+      .then(() => settings.devSettingsWrites("delete", JSON.stringify({ id, confirmed: true }))).then(JSON.parse);
+  `);
+  check("A deletes Work locally through Settings", deleted.deleted === true);
   await sync("A", "A");
   const work = named(await rows("B"), "RFS Work");
+  check("B still offers Work after local deletion", !!work?.removal);
   check("B removes Work from sync", (await ev("B", `return acSync.removeRemoteProfile(${JSON.stringify(work.syncId)}, ${JSON.stringify(work.removal.token)})`)) === true);
   check("the row goes away at once", !named(await rows("B"), "RFS Work"));
   for (let i = 0; i < 4; i++) await sync("B", "A");

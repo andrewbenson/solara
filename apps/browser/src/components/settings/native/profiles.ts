@@ -1,21 +1,15 @@
-import { clearBrowsingData, listExtensions, type BrowsingDataType } from "@solara/solaracore";
+import { clearBrowsingData, type BrowsingDataType } from "@solara/solaracore";
 import { publishSettingsTopic, type SettingsHandler } from "@solara/settings";
 import { useBrowser, type BrowserState } from "../../../store/browser";
 import { refuseSafeHistoryDeletion } from "../../../store/safeLibraryEdits";
 import { adoptProfileTheme } from "../../../sync/engine";
 
 export const profilesHandlers: Record<string, SettingsHandler> = {
-  "profiles.delete": (id: string) => useBrowser.getState().deleteProfile(id),
   "profiles.clearHistory": (profileId: string, since: number | null) => useBrowser.getState().clearHistory(profileId, since ?? undefined),
   "profiles.clearBrowsingData": (profile: string, kinds: BrowsingDataType[], since: number | null) => {
     if (kinds.includes("history") && refuseSafeHistoryDeletion(profile, undefined, since ?? undefined)) throw new Error("History deletion is unavailable until the legacy file has migrated in a normal launch.");
     return clearBrowsingData(profile, kinds, since ?? undefined);
   },
-  "profiles.extensionsKeptOnDelete": () =>
-    listExtensions("").then(
-      (list) => list.filter((e) => e.mayModify).map((e) => e.name),
-      () => null,
-    ),
   "profiles.adoptTheme": (id: string) => adoptProfileTheme(id),
 };
 

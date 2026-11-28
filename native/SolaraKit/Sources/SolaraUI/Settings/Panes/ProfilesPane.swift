@@ -98,7 +98,7 @@ public protocol ProfilesServices: AnyObject {
   func stats(profileId: String) -> ProfileStats
   func createProfile(name: String, color: ProfileColorValue, shareWith: String?) -> String
   func updateProfile(_ id: String, _ patch: ProfilePatch)
-  func deleteProfile(_ id: String, completion: @escaping @MainActor (Bool) -> Void)
+  func deleteProfile(_ id: String, engineProfile: String, shared: Bool) -> Bool
   func reorderProfiles(_ ids: [String])
   func setDefaultProfile(_ id: String)
   func clearHistory(profileId: String, since: Date?)
@@ -125,6 +125,19 @@ public struct ProfileDeletePrompt: Identifiable, Hashable, Sendable {
   public let message: String
   public let fromDetails: Bool
   public let canDelete: Bool
+  let engineProfile: String
+  let shared: Bool
+  private let confirmation = UUID()
+
+  init(profileId: String, title: String, message: String, fromDetails: Bool, canDelete: Bool, engineProfile: String = "", shared: Bool = false) {
+    self.profileId = profileId
+    self.title = title
+    self.message = message
+    self.fromDetails = fromDetails
+    self.canDelete = canDelete
+    self.engineProfile = engineProfile
+    self.shared = shared
+  }
 }
 
 @MainActor
@@ -136,6 +149,7 @@ public final class ProfilesPaneModel: SettingsPaneProvider {
   var creating = false
   var clearingProfileId: String?
   var deletePrompt: ProfileDeletePrompt?
+  @ObservationIgnored private var deleteRequest: UUID?
   var arcChoices: [ArcThemeChoice]?
   var themeDrafts: [String: ProfileThemeValue] = [:]
   @ObservationIgnored var pendingThemes: [String: ProfileThemeValue] = [:]
@@ -165,7 +179,9 @@ public final class ProfilesPaneModel: SettingsPaneProvider {
 
   func sharingProfiles(_ id: String) -> [String] {
     guard let profile = profile(id) else { return [] }
-    return profiles.filter { $0.id != id && $0.dataGroup == profile.dataGroup }.map(\.id)
+    return profiles.filter {
+      !$0.id.utf16.elementsEqual(id.utf16) && $0.dataGroup.utf16.elementsEqual(profile.dataGroup.utf16)
+    }.map(\.id)
   }
 
   func sharedWith(_ id: String) -> [String] {
@@ -190,13 +206,18 @@ public final class ProfilesPaneModel: SettingsPaneProvider {
     services.createProfile(name: name, color: color, shareWith: shareWith)
   }
 
-  func requestDelete(_ id: String, fromDetails: Bool) async {
-    guard let profile = profile(id), profiles.count > 1 else { return }
+  @discardableResult
+  func requestDelete(_ id: String, fromDetails: Bool) async -> ProfileDeletePrompt? {
+    let request = UUID()
+    deleteRequest = request
+    deletePrompt = nil
+    guard let profile = profile(id), profiles.count > 1 else { return nil }
     if safeMode {
-      deletePrompt = ProfileDeletePrompt(
+      let prompt = ProfileDeletePrompt(
         profileId: id, title: "Safe Mode", message: "Profiles can't be deleted in safe mode. Quit and open Solara normally to delete one.",
         fromDetails: fromDetails, canDelete: false)
-      return
+      deletePrompt = prompt
+      return prompt
     }
     let sharing = sharingProfiles(id).compactMap { self.profile($0)?.name }
     let message: String
@@ -206,7 +227,12 @@ public final class ProfilesPaneModel: SettingsPaneProvider {
       let note = profile.usesDefaultEngineProfile ? Self.keptExtensionsNote(await services.extensionsKeptOnDelete()) : ""
       message = "All data associated with this Profile will be removed. This action cannot be undone.\(note)"
     }
-    deletePrompt = ProfileDeletePrompt(profileId: id, title: "Delete “\(profile.name)”?", message: message, fromDetails: fromDetails, canDelete: true)
+    guard deleteRequest == request else { return nil }
+    let prompt = ProfileDeletePrompt(
+      profileId: id, title: "Delete “\(profile.name)”?", message: message, fromDetails: fromDetails, canDelete: true,
+      engineProfile: profile.usesDefaultEngineProfile ? "" : profile.dataGroup, shared: !sharing.isEmpty)
+    deletePrompt = prompt
+    return prompt
   }
 
   static func keptExtensionsNote(_ names: [String]?) -> String {
@@ -215,12 +241,14 @@ public final class ProfilesPaneModel: SettingsPaneProvider {
     return " Its extensions (\(ProfileNames.ampersand(names))) stay installed on this Mac, turned off."
   }
 
-  func confirmDelete(_ prompt: ProfileDeletePrompt, navigation: SettingsNavigation?) {
+  @discardableResult
+  func confirmDelete(_ prompt: ProfileDeletePrompt, navigation: SettingsNavigation?) -> Bool {
+    guard deletePrompt == prompt else { return false }
     deletePrompt = nil
-    guard !safeMode, prompt.canDelete, profiles.count > 1, profile(prompt.profileId) != nil else { return }
-    services.deleteProfile(prompt.profileId) { deleted in
-      if deleted, prompt.fromDetails, navigation?.profileId?.utf16.elementsEqual(prompt.profileId.utf16) == true { navigation?.go(.profiles) }
-    }
+    guard !safeMode, prompt.canDelete,
+          services.deleteProfile(prompt.profileId, engineProfile: prompt.engineProfile, shared: prompt.shared) else { return false }
+    if prompt.fromDetails, navigation?.profileId?.utf16.elementsEqual(prompt.profileId.utf16) == true { navigation?.go(.profiles) }
+    return true
   }
 
   func refuseProfileEdit(_ id: String) -> Bool {
@@ -316,6 +344,16 @@ public final class ProfilesPaneModel: SettingsPaneProvider {
   }
 
   #if DEBUG
+  public func devDeleteProfile(_ id: String, confirmed: Bool, navigation: SettingsNavigation) async -> Bool {
+    guard let prompt = await requestDelete(id, fromDetails: navigation.profileId?.utf16.elementsEqual(id.utf16) == true),
+          deletePrompt == prompt else { return false }
+    guard confirmed else {
+      deletePrompt = nil
+      return false
+    }
+    return confirmDelete(prompt, navigation: navigation)
+  }
+
   public func devArcThemeChoices(profile: String, choose id: String?) -> [ArcThemeChoice]? {
     if let id, let choice = arcChoices?.first(where: { $0.id == id }) {
       importArcTheme(profile, choice)

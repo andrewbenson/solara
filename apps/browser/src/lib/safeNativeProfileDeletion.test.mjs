@@ -82,10 +82,12 @@ test("SolaraCoreProfileData refuses default-profile deletion with a reason befor
   assert.equal(results[1].callbacks, 1);
   assert.deepEqual(results[1].calls, [
     "listExtensions", "listExtensions", "ac_bookmarks_clear",
-    "clearBrowsingData", "ac_browsing_data_clear", "listPasswords", "listPasswords", "neverSaveOrigins", "neverSaveOrigins",
+    "ac_browsing_data_clear", "ac_browsing_data_clear", "listPasswords", "listPasswords", "neverSaveOrigins", "neverSaveOrigins",
     "addresses", "addresses", "cards", "cards", "siteSettingsOrigins", "siteSettingsOrigins", "zoomLevels", "zoomLevels",
     "ac_bookmarks_clear",
   ]);
+  assert.deepEqual(results[2].remaining, ["history, cookies and cache"]);
+  assert.equal(results[2].callbacks, 1);
 });
 
 test("WebKit deletion preserves exact live identities beside Unicode and case aliases", () => {

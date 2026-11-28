@@ -40,6 +40,9 @@ struct SolaraCoreServices {
       clearCalls += 1
       live = false
       pending = completion
+    case "ac_browsing_data_clear":
+      if enabled && (args?["types"] as? [String])?.contains("history") == true { live = true }
+      completion(["ok": true])
     default: completion(["ok": true])
     }
   }
@@ -48,7 +51,6 @@ struct SolaraCoreServices {
     if success { durable = live }
     callback?(["ok": success])
   }
-  static func clearBrowsingData(profile: String, types: [String], since: Int, completion: @escaping () -> Void) { if enabled { live = true }; completion() }
   static func listExtensions(profile: String, completion: ([String: Any]) -> Void) { completion(["extensions": enabled ? [["id": "writer", "enabled": true, "mayModify": true]] : []]) }
   static func setExtension(_ id: String, enabled value: Bool, profile: String, completion: ([String: Any]) -> Void) { if !denyDisable { enabled = value }; completion(["ok": !denyDisable]) }
   static func addresses(profile: String, completion: ([String: Any]) -> Void) { completion(["addresses": []]) }

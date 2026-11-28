@@ -150,6 +150,32 @@ const untilSnapshot = async (what, accept, ms = 5000) => {
   }
   throw new Error(`${what}: native snapshot never matched (${JSON.stringify(last)})`);
 };
+async function checkProfileDeletion(ac) {
+  const settings = (action, args) => ac(
+    `return globalThis.expo.modules.SolaraSettings.devSettingsWrites(${JSON.stringify(action)}, ${JSON.stringify(JSON.stringify(args))}).then(JSON.parse);`,
+  );
+  const { id } = await settings("create", { name: "Settings deletion fixture" });
+  assert.ok(id, "fixture profile created");
+  await ac(`
+    const s = ac.store.getState();
+    s.switchProfile(s.windowOrder[0], ${JSON.stringify(id)});
+    return globalThis.expo.modules.SolaraSettings.navigate("profiles", ${JSON.stringify(id)}, null).then(() => true);
+  `);
+  const canceled = await settings("delete", { id, confirmed: false });
+  assert.equal(canceled.direct, true);
+  assert.equal(canceled.deleted, false);
+  assert.equal(canceled.settingsProfile, id);
+  assert.ok(canceled.windows.some((window) => window.profileId === id), "the canceled profile is still shown");
+  const deleted = await settings("delete", { id, confirmed: true });
+  assert.equal(deleted.deleted, true);
+  assert.equal(deleted.settingsProfile, null);
+  assert.ok(!deleted.profileOrder.includes(id) && deleted.profileOrder.includes("default"));
+  assert.ok(deleted.windows.every((window) => window.profileId !== id), "no window shows the deleted profile");
+  const last = await settings("delete", { id: "default", confirmed: true });
+  assert.equal(last.deleted, false);
+  assert.deepEqual(last.profileOrder, ["default"]);
+}
+
 try {
   app = flags.attach
     ? attach(data)
@@ -208,6 +234,7 @@ try {
   }
   if (importSources && PANES.includes("profiles")) {
     await rep.check("Profiles theme picker loads and applies Arc choices", () => checkArcThemePicker(ac));
+    await rep.check("Profile deletion requires confirmation and preserves the last profile", () => checkProfileDeletion(ac));
   }
 } catch (error) {
   rep.record("setup", { error });

@@ -41,6 +41,7 @@ public final class ProfileDataCleanup {
 
   private let store: Store
   private let delete: @MainActor (String, @escaping Completion) -> Void
+  private let persistWorkspace: @MainActor () async throws -> Void
   private let retireBookmarks: @MainActor (String) throws -> Void
   private let settleBookmarks: @MainActor (String) async throws -> Void
   private let grace: @MainActor () async throws -> Void
@@ -58,6 +59,7 @@ public final class ProfileDataCleanup {
   public init(
     store: Store,
     delete: @escaping @MainActor (String, @escaping Completion) -> Void,
+    persistWorkspace: @escaping @MainActor () async throws -> Void = {},
     retireBookmarks: @escaping @MainActor (String) throws -> Void = { _ in },
     settleBookmarks: @escaping @MainActor (String) async throws -> Void = { _ in },
     grace: @escaping @MainActor () async throws -> Void = { try await Task.sleep(for: .milliseconds(1500)) },
@@ -65,6 +67,7 @@ public final class ProfileDataCleanup {
   ) {
     self.store = store
     self.delete = delete
+    self.persistWorkspace = persistWorkspace
     self.retireBookmarks = retireBookmarks
     self.settleBookmarks = settleBookmarks
     self.grace = grace
@@ -199,6 +202,15 @@ public final class ProfileDataCleanup {
         continue
       }
       do { try await grace() } catch { return }
+      guard !isStopped, !Task.isCancelled else { return }
+      do {
+        try await persistWorkspace()
+      } catch {
+        guard !isStopped, !Task.isCancelled else { return }
+        failed.insert(item.generation)
+        trouble(item.engine, ["Workspace persistence: \(error)"])
+        continue
+      }
       let launch = store.memory.ids.launch
       let reserved: Bool
       do {

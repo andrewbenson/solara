@@ -1,6 +1,7 @@
 import AppKit
 import Darwin
 import SolaraCore
+import SolaraPersistence
 internal import SolaraStore
 internal import SolaraEngine
 
@@ -13,7 +14,7 @@ final class NativeProfileDataCleanup {
   private var applicationReady = false
   private var readiness: Task<Void, Never>?
 
-  init(store: Store) {
+  init(store: Store, writer: PersistenceWriter?) {
     self.store = store
     cleanup = ProfileDataCleanup(store: store, delete: { engine, done in
       let env = ProcessInfo.processInfo.environment
@@ -21,7 +22,11 @@ final class NativeProfileDataCleanup {
         FileHandle.standardError.write(Data("[profile-delete] point after-ledger\n".utf8))
         _exit(86)
       }
-      SolaraProfileData.delete(engine, liveProfiles: { store.snapshot.state.profiles.values.map { ($0.dataId ?? $0.id) == "default" ? "" : ($0.dataId ?? $0.id) } }, completion: done) }, retireBookmarks: { engine in
+      SolaraProfileData.delete(engine, liveProfiles: { store.snapshot.state.profiles.values.map { ($0.dataId ?? $0.id) == "default" ? "" : ($0.dataId ?? $0.id) } }, completion: done) }, persistWorkspace: {
+      guard let writer else { throw CommandError("Workspace writer is unavailable.") }
+      let result = await Task.detached(priority: .userInitiated) { writer.flush(timeout: 5) }.value
+      guard result == .saved else { throw CommandError(result.description) }
+    }, retireBookmarks: { engine in
       try NativeBookmarkOwner.retireBookmarksForCleanup(engine: engine)
     }, settleBookmarks: { engine in
       try await NativeBookmarkOwner.settleBookmarkEngine(engine: engine)

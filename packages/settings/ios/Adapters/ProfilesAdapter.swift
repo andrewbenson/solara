@@ -66,20 +66,13 @@ final class ProfilesAdapter: ProfilesServices {
     writeProfile("updateProfile") { try store.model.editProfile(id, fields: fields) }
   }
 
-  func deleteProfile(_ id: String, completion: @escaping @MainActor (Bool) -> Void) {
-    guard profiles.count > 1, profiles.contains(where: { $0.id == id }) else { completion(false); return }
-    if let store = SettingsDirectWrites.store {
-      completion(SettingsDirectWrites.write(store, SettingsWrites.deleteProfile(id)) != nil)
-      return
-    }
-    Task {
-      do {
-        _ = try await SettingsAdapters.jsThrowing("profiles.delete", id)
-        completion(true)
-      } catch {
-        NSLog("[settings] %@ failed: %@", "profiles.delete", String(describing: error))
-        completion(false)
-      }
+  func deleteProfile(_ id: String, engineProfile: String, shared: Bool) -> Bool {
+    guard !SolaraCoreHost.safeMode else { return false }
+    do {
+      return try store.model.deleteProfile(id, engineProfile: engineProfile, shared: shared)
+    } catch {
+      NSLog("[settings] deleteProfile failed: %@", String(describing: error))
+      return false
     }
   }
 
@@ -253,16 +246,13 @@ enum SettingsWritesDev {
       let patch = ProfilePatch(name: args.string("name"), color: args.string("color").flatMap(ProfileColorValue.init(rawValue:)), icon: icon)
       adapter.updateProfile(id, patch)
     case "delete":
-      if viaJS {
-        do {
-          _ = try await SettingsAdapters.jsThrowing("profiles.delete", id)
-          out["deleted"] = true
-        } catch {
-          out["deleted"] = false
-        }
-      } else {
-        out["deleted"] = await withCheckedContinuation { (done: CheckedContinuation<Bool, Never>) in adapter.deleteProfile(id) { done.resume(returning: $0) } }
+      guard !viaJS else { return #"{"error":"Delete Profile is native only"}"# }
+      guard let context = NativeSettingsWindow.existingContext, context.navigation.pane == .profiles,
+            let profiles = context.panes[.profiles] as? ProfilesPaneModel else {
+        return #"{"error":"Open Profiles in Settings first"}"#
       }
+      out["deleted"] = await profiles.devDeleteProfile(id, confirmed: args.bool("confirmed") == true, navigation: context.navigation)
+      out["settingsProfile"] = context.navigation.profileId ?? NSNull()
     case "reorder":
       guard !viaJS else { return #"{"error":"Reorder Profiles is native only"}"# }
       adapter.reorderProfiles(args.strings("ids"))

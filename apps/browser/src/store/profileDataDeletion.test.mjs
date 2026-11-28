@@ -3,7 +3,6 @@ import { readFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import { test } from "node:test";
 import { runInNewContext } from "node:vm";
-import { declaration, runNative, source } from "../test-native/safe-host/run.mjs";
 
 const ts = createRequire(import.meta.url)("typescript");
 const bookmarkProjection = await import("./bookmarkProjection.ts");
@@ -141,41 +140,4 @@ test("Settings replies with a ledger-write deletion refusal without an unhandled
   assert.equal(reply[1], null);
   assert.match(reply[2], /Profile deletion history could not be written/);
   await new Promise((resolve) => setImmediate(resolve));
-});
-
-test("Settings returns from details after confirmed deletion and keeps details on refusal", () => {
-  const adapter = source("packages/settings/ios/Adapters/ProfilesAdapter.swift");
-  const production = [
-    "@MainActor final class ProfilesAdapter {",
-    "let store = StoreSource()",
-    "private var pending: (base: [ProfileSummary], profiles: [ProfileSummary])?",
-    "static func summary(_ profile: ProfileSummary) -> ProfileSummary { profile }",
-    declaration(adapter, "var profiles: [ProfileSummary]"),
-    declaration(adapter, "func deleteProfile(_ id:"),
-    "}",
-    "@MainActor final class ProfilesPaneModel {",
-    "let services: ProfilesAdapter; let safeMode = false; var deletePrompt: ProfileDeletePrompt?",
-    "init(services: ProfilesAdapter) { self.services = services }",
-    "var profiles: [ProfileSummary] { services.profiles }",
-    "func profile(_ id: String) -> ProfileSummary? { profiles.first { $0.id == id } }",
-    declaration(source("native/SolaraKit/Sources/SolaraUI/Settings/Panes/ProfilesPane.swift"), "func confirmDelete("),
-    "}",
-    "enum SettingsAdapters {",
-    declaration(source("packages/settings/ios/Adapters/SettingsAdapters.swift"), "static func jsThrowing(_ name:"),
-    "}",
-  ].join("\n");
-  const results = runNative("ProfilesAdapter.swift", production, [], true);
-  assert.equal(results.length, 4);
-  for (const result of results.filter((row) => row.direct)) {
-    assert.deepEqual(result.writes, ["deleteProfile:named"]);
-    assert.equal(result.asked, false);
-    assert.equal(result.detailsAfterReply, result.refused);
-  }
-  for (const result of results.filter((row) => !row.direct)) {
-    assert.equal(result.visibleBeforeReply, true);
-    assert.equal(result.detailsBeforeReply, true);
-    assert.equal(result.noBlankPane, true);
-    assert.equal(result.failed, result.refused);
-    assert.equal(result.detailsAfterReply, result.refused);
-  }
 });

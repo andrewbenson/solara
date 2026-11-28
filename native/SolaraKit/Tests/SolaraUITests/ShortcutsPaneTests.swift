@@ -290,3 +290,19 @@ struct ShortcutsPaneTests {
     }
   }
 }
+
+extension ShortcutsPaneTests {
+  @Test func displaysTheBindingsInstalledByTheShell() async {
+    let (model, _, services, _) = await model(overrides: ["newTab": ["y", "command"]])
+    services.items = [
+      MenuShortcutItem(id: "newTab", title: "New Tab", path: ["File"], defaultShortcut: KeyShortcut(stored: ["t", "command"]), remappable: true,
+        bindings: []),
+      MenuShortcutItem(id: "focusCommandBar", title: "Open Command Bar", path: ["File"], defaultShortcut: KeyShortcut(stored: ["l", "command"]), remappable: true,
+        bindings: [["\u{F708}", "control"]]),
+    ]
+    await model.reload()
+    let resolved = model.resolved(model.overrides)
+    #expect(resolved.effective("newTab") == .empty)
+    #expect(resolved.effective("focusCommandBar").formatted == "⌃F5")
+  }
+}

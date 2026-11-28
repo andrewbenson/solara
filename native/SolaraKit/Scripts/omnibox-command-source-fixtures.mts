@@ -7,8 +7,10 @@ const source = (path: string) => new URL(path, root).href;
 registerHooks({ load(url, context, next) { const loaded = next(url, context); return url.endsWith("/test-native/reactNative.ts") ? { ...loaded, source: String(loaded.source) + "\nexport const unstable_batchedUpdates = (run) => run();\n" } : loaded; } });
 const { useBrowser } = await import(source("apps/browser/src/store/browser.ts"));
 const { currentBarActions } = await import(source("apps/browser/src/components/omnibox/actions.ts"));
-const { setMenuBarShortcuts, menuBarRevision, resolvedShortcuts } = await import(source("apps/browser/src/lib/commandShortcuts.ts"));
-const { formatShortcut } = await import(source("apps/browser/src/lib/shortcuts.ts"));
+const { setShortcutHints } = await import(source("apps/browser/src/lib/commandShortcuts.ts"));
+const output = new URL("../Tests/SolaraOmniboxTests/Fixtures/command-sources.json", import.meta.url);
+const accepted = readFileSync(output, "utf8");
+const capturedHints = new Map<string, Record<string, string>>(JSON.parse(accepted).cases.map((c: any) => [c.name, c.output.shortcutHints]));
 const { isBookmarked } = await import(source("apps/browser/src/store/bookmarks.ts"));
 const { bookmarkProfileId, setSharedDataIds, activeTab, engineProfile, privateSession } = await import(source("apps/browser/src/store/model.ts"));
 useBrowser.getState().hydrate({});
@@ -28,6 +30,7 @@ const baseline = { profiles: { default: profile }, profileOrder: ["default"], wi
 const extension = { id: "fixture-extension", name: "Fixture Extension", enabled: true, state: "ENABLED", hasAction: true, icon: "general-icon", actionIcon: "action-icon", optionsUrl: "", incognito: true, incognitoSplit: true };
 const cases: any[] = [];
 let menuRegistry: any[] | null = null;
+let menuRevision = 0;
 let rawExtensions: any[] = [];
 let pendingMutation: any = null;
 const apply = (patch: any = {}) => { const state = clone({ ...baseline, ...patch }); setSharedDataIds(Object.fromEntries(Object.values(state.profiles).flatMap((p: any) => p.dataId ? [[p.id, p.dataId]] : []))); useBrowser.setState(state); };
@@ -42,11 +45,12 @@ const capture = (name: string, context: any = {}) => {
   const state = useBrowser.getState();
   const input = Object.fromEntries(Object.keys(baseline).map((key) => [key, state[key]]));
   const windowId = context.windowId ?? "w";
-  const shortcutHints = Object.fromEntries([...resolvedShortcuts(state).bindings].flatMap(([id, keys]: any) => { const hint = keys[0] && formatShortcut(keys[0]); return hint ? [[id, hint]] : []; }));
+  const shortcutHints = capturedHints.get(name) ?? {};
+  setShortcutHints(Object.entries(shortcutHints));
   const output = { actions: currentBarActions(windowId), extensions: barExtensions(state.windows[windowId]), shortcutHints };
   const active = activeTab(state, windowId);
   const bookmarked = !!active?.url && isBookmarked(state.bookmarks, bookmarkProfileId(state, state.windows[windowId]), active.url);
-  cases.push(clone({ name, windowId, input, bookmarked, menuRegistry, menuRevision: menuBarRevision(), engineBookmarkUrls: [], rawExtensions, extensionLists, pendingMutation, ...context, output }));
+  cases.push(clone({ name, windowId, input, bookmarked, menuRegistry, menuRevision, engineBookmarkUrls: [], rawExtensions, extensionLists, pendingMutation, ...context, output }));
   return output;
 };
 const run = (name: string, patch: any = {}, context: any = {}) => { apply(patch); return capture(name, context); };
@@ -211,7 +215,7 @@ apply({ windows: {} });
 capture("extension-close-after-old-refresh");
 run("shortcut-absent-remap-and-clearing", { settings: { ...baseline.settings, shortcuts: { newTab: ["r", "command"], reload: [], "openExtension:x": ["t", "command"] } } });
 run("shortcut-function-and-uppercase", { settings: { ...baseline.settings, shortcuts: { newTab: ["\uf70f", "function"], reload: ["A", "command"] } } });
-const menu = (items: any[]) => { menuRegistry = items; setMenuBarShortcuts(items); };
+const menu = (items: any[]) => { menuRegistry = items; menuRevision += 1; };
 menu([]);
 run("menu-empty");
 const listed = (id: string, key = "", modifiers: string[] = [], remappable = true, aliases: string[][] = []) => ({ id, title: id, defaultKey: key, defaultModifiers: modifiers, remappable, aliases });
@@ -233,9 +237,7 @@ assert.equal(cases.find((c) => c.name === "extension-pending-disable").output.ex
 assert.equal(cases.find((c) => c.name === "extension-failed-mutation-list-retains-optimism").output.extensions.length, 0);
 assert.equal(cases.find((c) => c.name === "extension-later-refresh-recovers").output.extensions.length, 1);
 const serialized = JSON.stringify({ format: 1, environment: { locale: Intl.DateTimeFormat().resolvedOptions().locale, icu: process.versions.icu, now }, cases }, null, 2) + "\n";
-const output = new URL("../Tests/SolaraOmniboxTests/Fixtures/command-sources.json", import.meta.url);
 if (process.argv.includes("--verify")) {
-  const accepted = readFileSync(output, "utf8");
   const comparable = serialized.replace(`"icu": ${JSON.stringify(process.versions.icu)}`, `"icu": ${JSON.stringify(JSON.parse(accepted).environment.icu)}`);
   assert.equal(accepted, comparable, "command source fixtures differ; regenerate with the recorded Node locale");
 }

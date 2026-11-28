@@ -45,9 +45,6 @@ struct MenuState {
   var warnBeforeClosingWindow = false
   var undoReopensClosedTab = false
   var downloadsInProgress = 0
-  var shortcuts: [String: [String]] = [:]
-  var shortcutPrecedence: [String: String] = [:]
-  var fromApp = false
 
   init() {}
 
@@ -56,10 +53,6 @@ struct MenuState {
     warnBeforeClosingWindow = d["warnBeforeClosingWindow"] as? Bool ?? false
     undoReopensClosedTab = d["undoReopensClosedTab"] as? Bool ?? false
     downloadsInProgress = d["downloadsInProgress"] as? Int ?? 0
-    shortcuts = d["shortcuts"] as? [String: [String]] ?? [:]
-    shortcutPrecedence = (d["shortcutPrecedence"] as? [String: Any] ?? [:]).compactMapValues { $0 as? String }
-    fromApp = true
-
   }
 }
 
@@ -823,7 +816,7 @@ enum MainMenu {
     recentlyClosed = entries
     recentlyClosedGroups = groups
     buildHistory()
-    applyShortcuts(MenuState.current.shortcuts)
+    applyShortcuts()
   }
 
   static func refresh() {
@@ -844,7 +837,7 @@ enum MainMenu {
       undo.target = state.undoReopensClosedTab ? MenuTarget.shared : nil
       undo.title = undo.defaultTitle
     }
-    applyShortcuts(state.shortcuts)
+    applyShortcuts()
   }
 
   private static func buildProfileMenus() {
@@ -1060,20 +1053,21 @@ enum MainMenu {
 
   private static func shortcutGroups() -> [(id: String, group: ShortcutGroup)] {
     var order: [String] = []
-    var groups: [String: ShortcutGroup] = [:]
+    var groups: [[UInt8]: ShortcutGroup] = [:]
     walk(NSApp.mainMenu) { item, path in
       guard let item = item as? Rebindable, (item as? CommandItem)?.commandAlternateOf == nil else { return }
       let id = item.shortcutId
-      if var group = groups[id] {
+      let key = Array(id.utf8)
+      if var group = groups[key] {
         group.items.append(item)
         if group.primary.isHidden && !item.isHidden { group.primary = item; group.path = path }
-        groups[id] = group
+        groups[key] = group
       } else {
         order.append(id)
-        groups[id] = ShortcutGroup(primary: item, path: path, items: [item])
+        groups[key] = ShortcutGroup(primary: item, path: path, items: [item])
       }
     }
-    return order.map { ($0, groups[$0]!) }
+    return order.map { ($0, groups[Array($0.utf8)]!) }
   }
 
   private static func setShortcut(_ item: NSMenuItem, _ key: String, _ mods: NSEvent.ModifierFlags) {
@@ -1082,41 +1076,47 @@ enum MainMenu {
     if item.keyEquivalentModifierMask != shortcut.mods { item.keyEquivalentModifierMask = shortcut.mods }
   }
 
-  private static var announcedShortcuts: [String]?
+  private static var shortcutSettings = MenuShortcutSettings()
+  private static var announcedShortcuts: NSArray?
+  private(set) static var shortcutHints: [[String]] = []
 
-  private static func announceShortcuts() {
-    guard MenuState.current.fromApp else { return }
-    var bound: [String] = []
-    walk(NSApp.mainMenu) { item, _ in
-      if item is Rebindable {
-        let precedence = precedence(of: item)?.rawValue ?? ""
-        bound.append("\(item.identifier?.rawValue ?? "")=\(item.keyEquivalent)|\(item.keyEquivalentModifierMask.rawValue)|\(precedence)")
-      }
-    }
-    if bound != announcedShortcuts {
-      announcedShortcuts = bound
-      NotificationCenter.default.post(name: .init("SolaraMenuShortcutsChanged"), object: nil)
-    }
+  static func setShortcutSettings(overrides: [(String, [String])], precedence: [(String, String)]) {
+    let settings = MenuShortcutSettings(overrides: overrides, precedence: precedence)
+    guard settings != shortcutSettings else { return }
+    shortcutSettings = settings
+    applyShortcuts()
   }
 
-  private static func applyShortcuts(_ overrides: [String: [String]]) {
-    defer { announceShortcuts() }
+  private static func announceShortcuts() {
+    let list = shortcutList()
+    let snapshot = NSArray(array: list)
+    guard snapshot != announcedShortcuts else { return }
+    announcedShortcuts = snapshot
+    shortcutHints = list.compactMap { row in
+      guard let id = row["id"] as? String, let binding = (row["bindings"] as? [[String]])?.first,
+        let key = binding.first, let hint = TabNumberShortcut.formatted(key: key, modifiers: Array(binding.dropFirst())) else { return nil }
+      return [id, hint]
+    }
+    MainActor.assumeIsolated {
+      ShellMenus.emit?("onAppEvent", ["type": "shortcutHints", "hints": shortcutHints])
+    }
+    NotificationCenter.default.post(name: .init("SolaraMenuShortcutsChanged"), object: nil)
+  }
+
+  private static func modifierStrings(_ mods: NSEvent.ModifierFlags) -> [String] {
+    modifierNames.filter { mods.contains($0.1) }.map(\.0)
+  }
+
+  private static func applyShortcuts() {
+    guard NSApp.mainMenu != nil else { return }
     let groups = shortcutGroups()
-    let liveIds = Set(groups.map(\.id))
-    let taken = Set(overrides.compactMap { id, o -> String? in
-      guard liveIds.contains(id), let key = o.first, !key.isEmpty else { return nil }
-      return comboKey(key, modifiers(o.dropFirst()))
-    })
+    let reserved = shortcutSettings.reserved(liveIds: groups.map(\.id)) { comboKey($0, modifiers($1)) }
     for (id, group) in groups {
-      let carriesOverride: (Rebindable) -> Bool = { $0 === group.primary || !$0.isHidden }
       for item in group.items {
-        if let o = overrides[id] {
-          if carriesOverride(item) { setShortcut(item, o.first ?? "", modifiers(o.dropFirst())) } else { setShortcut(item, "", []) }
-        } else if !item.defaultKey.isEmpty, taken.contains(comboKey(item.defaultKey, item.defaultModifiers)) {
-          setShortcut(item, "", [])
-        } else {
-          setShortcut(item, item.defaultKey, item.defaultModifiers)
-        }
+        let binding = shortcutSettings.binding(id: id, carriesOverride: item === group.primary || !item.isHidden,
+          defaultBinding: [item.defaultKey] + modifierStrings(item.defaultModifiers),
+          defaultCombo: comboKey(item.defaultKey, item.defaultModifiers), reserved: reserved)
+        setShortcut(item, binding.first ?? "", modifiers(binding.dropFirst()))
       }
     }
     var bound = Set<String>()
@@ -1125,11 +1125,12 @@ enum MainMenu {
       bound.insert(comboKey(item.keyEquivalent, item.keyEquivalentModifierMask))
     }
     for case let item as CommandItem in profiles.items { item.followPrimaryShortcut(bound: bound) }
+    announceShortcuts()
   }
 
   static func precedence(of item: NSMenuItem) -> ShortcutPrecedence? {
     guard let item = item as? Rebindable else { return nil }
-    return ShortcutPrecedence.resolve(shortcutId: item.shortcutId, command: (item as? CommandItem)?.command, chosen: MenuState.current.shortcutPrecedence)
+    return shortcutSettings.precedence(id: item.shortcutId, command: (item as? CommandItem)?.command)
   }
 
   private static func standardPrecedence(of item: Rebindable) -> ShortcutPrecedence {
@@ -1159,9 +1160,6 @@ enum MainMenu {
 
   static func shortcutList() -> [[String: Any]] {
     var list: [[String: Any]] = []
-    func names(_ mods: NSEvent.ModifierFlags) -> [String] {
-      modifierNames.filter { mods.contains($0.1) }.map(\.0)
-    }
     for (id, group) in shortcutGroups() {
       let item = group.primary
       if let command = item as? CommandItem, dynamicCommands.contains(command.command) { continue }
@@ -1172,13 +1170,21 @@ enum MainMenu {
       var seen: Set<String> = [defaultCombo]
       for other in group.items where other !== item && !other.defaultKey.isEmpty {
         if seen.insert(comboKey(other.defaultKey, other.defaultModifiers)).inserted {
-          aliases.append([other.defaultKey] + names(other.defaultModifiers))
+          aliases.append([other.defaultKey] + modifierStrings(other.defaultModifiers))
         }
       }
+      var seenBindings = Set<String>()
+      let bindings = ([item] + group.items.filter { $0 !== item }).compactMap { candidate -> [String]? in
+        guard !candidate.isHidden || candidate.allowsKeyEquivalentWhenHidden else { return nil }
+        let binding = shortcut(of: candidate)
+        guard !binding.key.isEmpty, seenBindings.insert(comboKey(binding.key, binding.mods)).inserted else { return nil }
+        return [binding.key] + modifierStrings(binding.mods)
+      }
       list.append([
+        "bindings": bindings,
         "id": id, "title": item.defaultTitle, "path": group.path, "key": current.key,
-        "modifiers": current.key.isEmpty ? [] : names(current.mods), "defaultKey": item.defaultKey,
-        "defaultModifiers": item.defaultKey.isEmpty ? [] : names(item.defaultModifiers), "remappable": true,
+        "modifiers": current.key.isEmpty ? [] : modifierStrings(current.mods), "defaultKey": item.defaultKey,
+        "defaultModifiers": item.defaultKey.isEmpty ? [] : modifierStrings(item.defaultModifiers), "remappable": true,
         "aliases": aliases, "precedence": (precedence(of: item) ?? .website).rawValue, "defaultPrecedence": standardPrecedence(of: item).rawValue,
         "precedenceFixed": ShortcutPrecedence.isFixed(shortcutId: item.shortcutId, command: (item as? CommandItem)?.command),
       ])
@@ -1189,10 +1195,10 @@ enum MainMenu {
       let id = "system:" + (path + [item.title]).joined(separator: " > ")
       guard seen.insert(id).inserted else { return }
       let current = shortcut(of: item)
-      let mods = names(current.mods)
+      let mods = modifierStrings(current.mods)
       list.append([
         "id": id, "title": item.title, "path": path, "key": current.key, "modifiers": mods,
-        "defaultKey": current.key, "defaultModifiers": mods, "remappable": false, "aliases": [[String]](),
+        "bindings": [[current.key] + mods], "defaultKey": current.key, "defaultModifiers": mods, "remappable": false, "aliases": [[String]](),
       ])
     }
     return list

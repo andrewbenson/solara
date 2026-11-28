@@ -1,32 +1,30 @@
 import type { BrowserCommand } from "@solara/shell";
 import { PRODUCT } from "./productName";
-import { parseShortcut, type ShortcutSource } from "./shortcuts";
 
-type Keys = readonly string[];
-type Variant = { title?: string; barTitle?: string; symbol?: string; keys?: Keys };
+type Variant = { title?: string; barTitle?: string; symbol?: string };
 type CommandSpec = Variant & {
   littleSolara?: "page";
   variants?: Readonly<Record<string, Variant>>;
 };
 
 export const COMMANDS: Readonly<Record<BrowserCommand, CommandSpec>> = {
-  newTab: { title: "New Tab", symbol: "plus", keys: ["⌘T"] },
-  newWindow: { title: "New Window", symbol: "macwindow", keys: ["⌘N"] },
-  newIncognitoWindow: { title: "New Incognito Window", symbol: "eyeglasses", keys: ["⇧⌘N"] },
-  newLittleSolara: { title: `New Little ${PRODUCT} Window`, keys: ["⌥⌘N"] },
+  newTab: { title: "New Tab", symbol: "plus" },
+  newWindow: { title: "New Window", symbol: "macwindow" },
+  newIncognitoWindow: { title: "New Incognito Window", symbol: "eyeglasses" },
+  newLittleSolara: { title: `New Little ${PRODUCT} Window` },
   toggleOpenLinksInLittleSolara: { title: "Open Links from Other Apps in Main Window" },
-  reopenClosedTab: { title: "Reopen Closed Tab", symbol: "arrow.uturn.backward", keys: ["⇧⌘T"], littleSolara: "page" },
+  reopenClosedTab: { title: "Reopen Closed Tab", symbol: "arrow.uturn.backward", littleSolara: "page" },
   reopenClosedWindow: { title: "Reopen Closed Window" },
   restoreClosed: { littleSolara: "page" },
-  focusCommandBar: { title: "Open Command Bar", keys: ["⌘L", "⌃F5"] },
-  closeTab: { title: "Close Tab", symbol: "xmark", keys: ["⌘W"] },
-  closeAllTabs: { title: "Close All Tabs", symbol: "xmark.square", keys: ["⇧⌘K"] },
-  print: { title: "Print…", symbol: "printer", keys: ["⌘P"], littleSolara: "page" },
-  copyUrl: { title: "Copy URL", symbol: "link", keys: ["⇧⌘C"], littleSolara: "page" },
-  copyUrlAsMarkdown: { title: "Copy URL as Markdown", symbol: "link", keys: ["⌥⇧⌘C"], littleSolara: "page" },
-  findInPage: { title: "Find…", barTitle: "Find in Page", symbol: "text.magnifyingglass", keys: ["⌘F"], littleSolara: "page" },
-  findNext: { title: "Find Next", keys: ["⌘G"], littleSolara: "page" },
-  findPrevious: { title: "Find Previous", keys: ["⇧⌘G"], littleSolara: "page" },
+  focusCommandBar: { title: "Open Command Bar" },
+  closeTab: { title: "Close Tab", symbol: "xmark" },
+  closeAllTabs: { title: "Close All Tabs", symbol: "xmark.square" },
+  print: { title: "Print…", symbol: "printer", littleSolara: "page" },
+  copyUrl: { title: "Copy URL", symbol: "link", littleSolara: "page" },
+  copyUrlAsMarkdown: { title: "Copy URL as Markdown", symbol: "link", littleSolara: "page" },
+  findInPage: { title: "Find…", barTitle: "Find in Page", symbol: "text.magnifyingglass", littleSolara: "page" },
+  findNext: { title: "Find Next", littleSolara: "page" },
+  findPrevious: { title: "Find Previous", littleSolara: "page" },
   setAppearance: {
     variants: {
       auto: { title: "Automatic", barTitle: "Use System Appearance", symbol: "circle.lefthalf.filled" },
@@ -34,91 +32,91 @@ export const COMMANDS: Readonly<Record<BrowserCommand, CommandSpec>> = {
       dark: { title: "Dark", barTitle: "Dark Appearance", symbol: "moon" },
     },
   },
-  reload: { title: "Refresh", barTitle: "Reload Page", symbol: "arrow.clockwise", keys: ["⌘R"], littleSolara: "page" },
-  forceReload: { title: "Force Refresh the Page", barTitle: "Force Reload Page", symbol: "arrow.clockwise", keys: ["⇧⌘R"], littleSolara: "page" },
+  reload: { title: "Refresh", barTitle: "Reload Page", symbol: "arrow.clockwise", littleSolara: "page" },
+  forceReload: { title: "Force Refresh the Page", barTitle: "Force Reload Page", symbol: "arrow.clockwise", littleSolara: "page" },
   setSidebarPosition: {
     variants: {
       left: { title: "Left", barTitle: "Sidebar on Left", symbol: "sidebar.left" },
       right: { title: "Right", barTitle: "Sidebar on Right", symbol: "sidebar.right" },
     },
   },
-  toggleTabLayout: { title: "Show Tabs in Sidebar", keys: ["⇧⌘S"] },
-  toggleSidebar: { title: "Auto-Hide Tabs", symbol: "sidebar.left", keys: ["⌘S", "⇧⌘L", "⇧⌘F"] },
-  openSplitPane: { title: "Open Split Pane", keys: ["⌃⇧=", "⌃+"] },
-  useSelectionForFind: { title: "Use Selection for Find", keys: ["⌘E"], littleSolara: "page" },
-  findAndReplace: { title: "Find and Replace…", keys: ["⌥⌘F"], littleSolara: "page" },
-  jumpToSelection: { title: "Jump to Selection", keys: ["⌘J"], littleSolara: "page" },
-  focusNextPane: { title: "Focus Next Split Pane", keys: ["⌃⇧]", "⌃}"] },
-  focusPreviousPane: { title: "Focus Previous Split Pane", keys: ["⌃⇧[", "⌃{"] },
+  toggleTabLayout: { title: "Show Tabs in Sidebar" },
+  toggleSidebar: { title: "Auto-Hide Tabs", symbol: "sidebar.left" },
+  openSplitPane: { title: "Open Split Pane" },
+  useSelectionForFind: { title: "Use Selection for Find", littleSolara: "page" },
+  findAndReplace: { title: "Find and Replace…", littleSolara: "page" },
+  jumpToSelection: { title: "Jump to Selection", littleSolara: "page" },
+  focusNextPane: { title: "Focus Next Split Pane" },
+  focusPreviousPane: { title: "Focus Previous Split Pane" },
   toggleFullUrl: { title: "Show Full URL", symbol: "text.alignleft" },
   toggleJavaScriptFromAppleEvents: { title: "Allow JavaScript from Apple Events" },
   toggleAddressBar: { title: "Show Address Bar in Sidebar" },
   toggleSidebarIconsOnly: { title: "Icons-Only Sidebar", symbol: "sidebar.squares.left" },
   cast: { title: "Cast…", littleSolara: "page" },
-  zoomReset: { title: "Zoom to Actual Size", barTitle: "Actual Size", symbol: "1.magnifyingglass", keys: ["⌘0"], littleSolara: "page" },
-  zoomIn: { title: "Zoom In", symbol: "plus.magnifyingglass", keys: ["⌘+", "⌘="], littleSolara: "page" },
-  zoomOut: { title: "Zoom Out", symbol: "minus.magnifyingglass", keys: ["⌘-"], littleSolara: "page" },
-  devTools: { title: "Developer Tools", symbol: "hammer", keys: ["⌥⌘I"], littleSolara: "page" },
+  zoomReset: { title: "Zoom to Actual Size", barTitle: "Actual Size", symbol: "1.magnifyingglass", littleSolara: "page" },
+  zoomIn: { title: "Zoom In", symbol: "plus.magnifyingglass", littleSolara: "page" },
+  zoomOut: { title: "Zoom Out", symbol: "minus.magnifyingglass", littleSolara: "page" },
+  devTools: { title: "Developer Tools", symbol: "hammer", littleSolara: "page" },
   toggleDeveloperMode: { title: "Turn on Developer Mode for this site", symbol: "hammer", littleSolara: "page" },
-  toggleDevTools: { title: "Toggle Developer Tools", keys: ["F12"], littleSolara: "page" },
-  javaScriptConsole: { title: "JavaScript Console", keys: ["⌥⌘J"], littleSolara: "page" },
-  inspectElements: { title: "Inspect Elements", keys: ["⌥⌘C"], littleSolara: "page" },
-  viewSource: { title: "View Source", keys: ["⌥⌘U"], littleSolara: "page" },
-  back: { title: "Go Back", keys: ["⌘[", "⌘←"], littleSolara: "page" },
-  forward: { title: "Go Forward", keys: ["⌘]", "⌘→"], littleSolara: "page" },
-  nextTab: { title: "Next Tab", keys: ["⇧⌘]", "⌘}", "⌃⇟", "⌥⌘↓", "⌃⇥"] },
-  previousTab: { title: "Previous Tab", keys: ["⇧⌘[", "⌘{", "⌃⇞", "⌥⌘↑", "⌃⇧⇥"] },
+  toggleDevTools: { title: "Toggle Developer Tools", littleSolara: "page" },
+  javaScriptConsole: { title: "JavaScript Console", littleSolara: "page" },
+  inspectElements: { title: "Inspect Elements", littleSolara: "page" },
+  viewSource: { title: "View Source", littleSolara: "page" },
+  back: { title: "Go Back", littleSolara: "page" },
+  forward: { title: "Go Forward", littleSolara: "page" },
+  nextTab: { title: "Next Tab" },
+  previousTab: { title: "Previous Tab" },
   selectTab: {
-    variants: Object.fromEntries([1, 2, 3, 4, 5, 6, 7, 8].map((n) => [String(n), { title: `Select Tab ${n}`, keys: [`⌘${n}`] }])),
+    variants: Object.fromEntries([1, 2, 3, 4, 5, 6, 7, 8].map((n) => [String(n), { title: `Select Tab ${n}` }])),
   },
-  selectLastTab: { title: "Select Last Tab", keys: ["⌘9"] },
+  selectLastTab: { title: "Select Last Tab" },
   togglePin: {
     title: "Move to Top Apps",
     symbol: "pin",
     variants: { tile: { title: "Move Pinned Tab to Top Apps" } },
   },
-  togglePinnedRow: { title: "Move to Pinned", keys: ["⌘D"] },
+  togglePinnedRow: { title: "Move to Pinned" },
   duplicateTab: { title: "Duplicate", barTitle: "Duplicate Tab", symbol: "plus.square.on.square" },
   moveTabToProfile: {},
   moveTabToWindow: {},
-  bookmarkPage: { title: "Add to Bookmarks…", symbol: "bookmark", keys: ["⌥⇧⌘D"], littleSolara: "page" },
+  bookmarkPage: { title: "Add to Bookmarks…", symbol: "bookmark", littleSolara: "page" },
   addBookmarkToFolder: { littleSolara: "page" },
   openBookmark: { littleSolara: "page" },
   addFolderToSidebar: {},
   restoreArcFolders: {},
   toggleMute: { title: "Mute Site", symbol: "speaker.slash", littleSolara: "page" },
   togglePageEngine: { title: "Open Page in WebKit" },
-  downloads: { title: "Downloads", symbol: "arrow.down.circle", keys: ["⇧⌘J", "⌥⌘L"], littleSolara: "page" },
+  downloads: { title: "Downloads", symbol: "arrow.down.circle", littleSolara: "page" },
   mergeAllWindows: { title: "Merge All Windows", symbol: "rectangle.stack" },
   switchProfile: {},
-  nextProfile: { title: "Next Profile", keys: ["⌥⌘→"] },
-  previousProfile: { title: "Previous Profile", keys: ["⌥⌘←"] },
+  nextProfile: { title: "Next Profile" },
+  previousProfile: { title: "Previous Profile" },
   newProfile: { title: "New Profile…", symbol: "person.crop.circle.badge.plus" },
-  openSettings: { title: "Settings…", symbol: "gearshape", keys: ["⌘,"] },
+  openSettings: { title: "Settings…", symbol: "gearshape" },
   importBrowserData: { title: "Import from Another Browser…", barTitle: "Import Browser Data", symbol: "square.and.arrow.down" },
-  showHistory: { title: "Show History…", barTitle: "History", symbol: "clock", keys: ["⌘Y"] },
-  clearBrowsingData: { title: "Clear Browsing Data…", symbol: "trash", keys: ["⇧⌘⌫"] },
-  manageBookmarks: { title: "Manage Bookmarks", barTitle: "Bookmarks", symbol: "book", keys: ["⌥⌘B"] },
-  bookmarkAllTabs: { title: "Bookmark All Tabs…", keys: ["⇧⌘D"] },
+  showHistory: { title: "Show History…", barTitle: "History", symbol: "clock" },
+  clearBrowsingData: { title: "Clear Browsing Data…", symbol: "trash" },
+  manageBookmarks: { title: "Manage Bookmarks", barTitle: "Bookmarks", symbol: "book" },
+  bookmarkAllTabs: { title: "Bookmark All Tabs…" },
   setBookmarksBar: { variants: { always: { title: "Always" }, newTab: { title: "On New Tab Only" }, never: { title: "Never" } } },
-  toggleBookmarksBar: { title: "Toggle Bookmarks Bar", symbol: "menubar.rectangle", keys: ["⇧⌘B"] },
-  newTabInGroup: { title: "New Tab in Group", keys: ["⌥⌘T", "⌃⌘C"] },
-  newGroupWithTabs: { title: "New Group with Tab", symbol: "folder.badge.plus", keys: ["⌃⌘N", "⌃⌘P"] },
-  cleanUpTabs: { title: "Clean Up Tabs", symbol: "sparkles", keys: ["⌥⌘K"] },
+  toggleBookmarksBar: { title: "Toggle Bookmarks Bar", symbol: "menubar.rectangle" },
+  newTabInGroup: { title: "New Tab in Group" },
+  newGroupWithTabs: { title: "New Group with Tab", symbol: "folder.badge.plus" },
+  cleanUpTabs: { title: "Clean Up Tabs", symbol: "sparkles" },
   tidyPins: { title: "Tidy Pins", symbol: "sparkles" },
-  searchTabs: { title: "Search Tabs…", symbol: "magnifyingglass", keys: ["⇧⌘A"] },
+  searchTabs: { title: "Search Tabs…", symbol: "magnifyingglass" },
   renameTab: { title: "Rename…", barTitle: "Rename Tab", symbol: "pencil" },
   changeTabIcon: { title: "Change Icon…" },
-  returnToPinnedUrl: { title: "Back to Pinned URL", keys: ["⌘↩"] },
+  returnToPinnedUrl: { title: "Back to Pinned URL" },
   tabSwitcher: {
     variants: {
-      forward: { title: "Tab Switcher (forward)", keys: ["⌃`"] },
+      forward: { title: "Tab Switcher (forward)" },
       backward: { title: "Tab Switcher (backward)" },
     },
   },
-  share: { title: "Share…", barTitle: "Share", symbol: "square.and.arrow.up", keys: ["⌥⌘S"], littleSolara: "page" },
+  share: { title: "Share…", barTitle: "Share", symbol: "square.and.arrow.up", littleSolara: "page" },
   reportBug: { title: "Report a Bug…", barTitle: "Report a Bug", symbol: "ladybug" },
-  sendFeedback: { title: "Send Feedback…", keys: ["⌥⇧⌘I"] },
+  sendFeedback: { title: "Send Feedback…" },
   keyboardShortcuts: { title: "Keyboard Shortcuts", symbol: "keyboard" },
   copyDiagnostics: { title: "Copy Diagnostics" },
   recordPerformanceIssue: { title: "Record Performance Issue…" },
@@ -135,55 +133,16 @@ export const COMMANDS: Readonly<Record<BrowserCommand, CommandSpec>> = {
     littleSolara: "page",
     variants: { contact: { title: "Contact…" }, passwords: { title: "Passwords…" }, creditCard: { title: "Credit Card…" } },
   },
-  openFile: { title: "Open File…", keys: ["⌘O"] },
+  openFile: { title: "Open File…" },
   savePage: { title: "Save Page As…", littleSolara: "page" },
-  emailPageLocation: { title: "Email Page Location", keys: ["⇧⌘I"], littleSolara: "page" },
-  printWithSystemDialog: { title: "Print Using System Dialog…", keys: ["⌥⌘P"], littleSolara: "page" },
-  stop: { title: "Stop", keys: ["⌘."], littleSolara: "page" },
-  caretBrowsing: { title: "Caret Browsing", keys: ["F7"], littleSolara: "page" },
-  moveTabDown: { title: "Move Tab Down", keys: ["⌃⇧⇟"] },
-  moveTabUp: { title: "Move Tab Up", keys: ["⌃⇧⇞"] },
-  closeTabGroup: { title: "Close Group", keys: ["⌃⌘W"] },
-  openProfileMenu: { title: "Show Profiles Menu", keys: ["⇧⌘M"] },
-};
-
-export const STANDARD_ITEMS: Readonly<Record<string, { keys?: Keys }>> = {
-  "std:quit:": { keys: ["⌘Q"] },
-  "std:hide:": { keys: ["⌘H"] },
-  "std:hideOtherApplications:": { keys: ["⌥⌘H"] },
-  "std:unhideAllApplications:": {},
-  "std:closeWindow:": { keys: ["⇧⌘W"] },
-  "std:undo:": { keys: ["⌘Z"] },
-  "std:redo:": { keys: ["⇧⌘Z"] },
-  "std:cut:": { keys: ["⌘X"] },
-  "std:copy:": { keys: ["⌘C"] },
-  "std:paste:": { keys: ["⌘V"] },
-  "std:pasteAndMatchStyle:": { keys: ["⇧⌘V"] },
-  "std:delete:": {},
-  "std:selectAll:": { keys: ["⌘A"] },
-  "std:showGuessPanel:": { keys: ["⌘:"] },
-  "std:checkSpelling:": { keys: ["⌘;"] },
-  "std:toggleContinuousSpellChecking:": {},
-  "std:toggleGrammarChecking:": {},
-  "std:toggleAutomaticSpellingCorrection:": {},
-  "std:orderFrontSubstitutionsPanel:": {},
-  "std:toggleSmartInsertDelete:": {},
-  "std:toggleAutomaticQuoteSubstitution:": {},
-  "std:toggleAutomaticDashSubstitution:": {},
-  "std:toggleAutomaticLinkDetection:": {},
-  "std:toggleAutomaticDataDetection:": {},
-  "std:toggleAutomaticTextReplacement:": {},
-  "std:uppercaseWord:": {},
-  "std:lowercaseWord:": {},
-  "std:capitalizeWord:": {},
-  "std:startSpeaking:": {},
-  "std:stopSpeaking:": {},
-  "std:toggleFullScreen:": { keys: ["🌐F", "⌃⌘F"] },
-  "std:performMiniaturize:": { keys: ["⌘M"] },
-  "std:miniaturizeAll:": { keys: ["⌥⌘M"] },
-  "std:performZoom:": {},
-  "std:arrangeWindowsInFront:": {},
-  "std:toggleKeepOnTop:": {},
+  emailPageLocation: { title: "Email Page Location", littleSolara: "page" },
+  printWithSystemDialog: { title: "Print Using System Dialog…", littleSolara: "page" },
+  stop: { title: "Stop", littleSolara: "page" },
+  caretBrowsing: { title: "Caret Browsing", littleSolara: "page" },
+  moveTabDown: { title: "Move Tab Down" },
+  moveTabUp: { title: "Move Tab Up" },
+  closeTabGroup: { title: "Close Group" },
+  openProfileMenu: { title: "Show Profiles Menu" },
 };
 
 const ALL_COMMANDS = Object.keys(COMMANDS) as BrowserCommand[];
@@ -202,33 +161,3 @@ export function commandBarTitle(command: BrowserCommand, arg?: string): string {
 }
 
 export const commandSymbol = (command: BrowserCommand, arg?: string): string | undefined => variantOf(command, arg).symbol ?? COMMANDS[command].symbol;
-
-const PROFILE_SHORTCUT_COUNT = 9;
-const OVERRIDABLE_PER_ITEM_COMMANDS: readonly BrowserCommand[] = ["openExtension"];
-
-const source = (id: string, keys: Keys = []): ShortcutSource => ({ id, keys: keys.map(parseShortcut) });
-
-export function staticShortcutSources(): ShortcutSource[] {
-  const sources: ShortcutSource[] = [];
-  for (const command of ALL_COMMANDS) {
-    const spec = COMMANDS[command];
-    sources.push(source(command, spec.keys));
-    for (const [arg, variant] of Object.entries(spec.variants ?? {})) sources.push(source(`${command}:${arg}`, variant.keys));
-  }
-  for (const [id, item] of Object.entries(STANDARD_ITEMS)) sources.push(source(id, item.keys));
-  return sources;
-}
-
-const STATIC_SOURCES = staticShortcutSources();
-
-export function shortcutSources(profileIds: readonly string[], overriddenIds: readonly string[]): ShortcutSource[] {
-  const perItem = overriddenIds.filter((id) => OVERRIDABLE_PER_ITEM_COMMANDS.some((command) => id.startsWith(`${command}:`)));
-  return [
-    ...STATIC_SOURCES,
-    ...profileIds.flatMap((id, i) => [
-      source(`switchProfile:${id}`, i < PROFILE_SHORTCUT_COUNT ? [`⌃${i + 1}`] : []),
-      source(`newLittleSolara:${id}`),
-    ]),
-    ...perItem.map((id) => source(id)),
-  ];
-}

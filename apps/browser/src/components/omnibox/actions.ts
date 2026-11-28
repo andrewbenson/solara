@@ -115,7 +115,7 @@ export function barActions(s: BrowserState, windowId: string, bookmarked = bookm
     if (d.needs === "pins" && !canTidyPins(s, windowId)) continue;
     if (d.needs === "toggleableSite" && !canToggleDeveloperModeFor(tab?.id)) continue;
     const id = actionId(d);
-    const hint = shortcutHint(id, s);
+    const hint = shortcutHint(id);
     out.push({
       id,
       title: d.title?.(c) ?? commandBarTitle(d.command, d.arg),
@@ -129,7 +129,7 @@ export function barActions(s: BrowserState, windowId: string, bookmarked = bookm
       if (id === w.profileId) return;
       const name = s.profiles[id]?.name ?? "";
       const action = `switchProfile:${id}`;
-      out.push({ id: action, title: `Switch to ${name}`, icon: "person.crop.circle", hint: shortcutHint(action, s), keywords: [name, "profile", "space"] });
+      out.push({ id: action, title: `Switch to ${name}`, icon: "person.crop.circle", hint: shortcutHint(action), keywords: [name, "profile", "space"] });
     });
   }
   out.push(...organizeActions(s, windowId));

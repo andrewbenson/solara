@@ -78,3 +78,20 @@ final class ShortcutPrecedenceTests: XCTestCase {
     XCTAssertEqual(ShortcutPrecedence.resolve(shortcutId: "nextProfile", command: "nextProfile", chosen: chosen), .solara)
   }
 }
+
+extension ShortcutPrecedenceTests {
+  func testOverridesReserveOnlyLiveCommandsAndClearEveryAlias() {
+    let settings = MenuShortcutSettings(
+      overrides: [("findInPage", []), ("findNext", ["F", "command"]), ("missing", ["g", "command"])],
+      precedence: [("findNext", "website")]
+    )
+    let reserved = settings.reserved(liveIds: ["findInPage", "findNext", "findPrevious"]) { key, modifiers in
+      key.lowercased() + modifiers.joined()
+    }
+    XCTAssertEqual(reserved, ["fcommand"])
+    XCTAssertEqual(settings.binding(id: "findInPage", carriesOverride: false, defaultBinding: ["g", "command"], defaultCombo: "gcommand", reserved: reserved), [])
+    XCTAssertEqual(settings.binding(id: "findPrevious", carriesOverride: true, defaultBinding: ["f", "command"], defaultCombo: "fcommand", reserved: reserved), [])
+    XCTAssertEqual(settings.binding(id: "findNext", carriesOverride: true, defaultBinding: ["g", "command"], defaultCombo: "gcommand", reserved: reserved), ["F", "command"])
+    XCTAssertEqual(settings.precedence(id: "findNext", command: "findNext"), .website)
+  }
+}

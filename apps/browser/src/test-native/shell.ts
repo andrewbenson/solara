@@ -100,7 +100,7 @@ const shell: Modules["SolaraShell"] = {
 
 const appEvents = nativeEvents();
 const app: Modules["SolaraApp"] & { apiVersion: number } = {
-  apiVersion: 119,
+  apiVersion: 120,
   waitForLaunchIdle: () => Promise.resolve(false),
   cancelLaunchIdle: () => Promise.resolve(),
   launchChromeCommittedAt: () => Promise.resolve(null),
@@ -160,6 +160,7 @@ const system: Modules["SolaraSystem"] = {
   appIcon: () => Promise.resolve(null),
   hapticTick: () => {},
   menuShortcuts: () => Promise.resolve([]),
+  shortcutHints: () => Promise.resolve([]),
   recordShortcut: () => Promise.resolve(null),
   cancelRecording: () => Promise.resolve(),
 };

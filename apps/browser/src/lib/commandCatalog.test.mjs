@@ -1,8 +1,7 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { test } from "node:test";
-const { COMMANDS, shortcutSources, staticShortcutSources } = await import("./commandCatalog.ts");
-const { formatShortcut } = await import("./shortcuts.ts");
+const { COMMANDS } = await import("./commandCatalog.ts");
 const { PRODUCT } = await import("./productName.ts");
 
 const swift = readFileSync(new URL("../../../../packages/shell/ios/Menus.swift", import.meta.url), "utf8").replaceAll("\\(Bundle.main.productName)", PRODUCT);
@@ -83,53 +82,16 @@ function nativeGroups() {
   return new Map(
     [...groups].map(([id, items]) => {
       const primary = items.find((i) => !i.hidden) ?? items[0];
-      const keys = [primary, ...items.filter((i) => i !== primary)].filter((i) => i.key).map((i) => formatShortcut(i));
-      return [id, { title: primary.title, keys: [...new Set(keys)] }];
+      return [id, primary.title];
     }),
   );
 }
 
-test("the menu bar source parses into its known items", () => {
-  const groups = nativeGroups();
-  assert.ok(groups.size > 120, `parsed ${groups.size} shortcut ids`);
-  assert.deepEqual(groups.get("closeTab")?.keys, ["⌘W"]);
-  assert.deepEqual(groups.get("nextTab")?.keys, ["⇧⌘]", "⌘}", "⌃⇟", "⌥⌘↓", "⌃⇥"]);
-  assert.deepEqual(groups.get("tabSwitcher:forward")?.keys, ["⌃`"]);
-  assert.deepEqual(groups.get("nextProfile")?.keys, ["⌥⌘→"]);
-  assert.deepEqual(groups.get("previousProfile")?.keys, ["⌥⌘←"]);
-  assert.deepEqual(groups.get("std:toggleFullScreen:")?.keys, ["🌐F", "⌃⌘F"]);
-});
-
-test("every menu bar shortcut id is in the catalog with the same default keys", () => {
-  const catalog = new Map(staticShortcutSources().map((s) => [s.id, s.keys.map(formatShortcut)]));
-  for (const [id, native] of nativeGroups()) {
-    assert.ok(catalog.has(id), `${id} is missing from commandCatalog.ts`);
-    assert.deepEqual(catalog.get(id), native.keys, `${id} default keys`);
-  }
-});
-
 test("every menu bar command has the catalog's title", () => {
-  for (const [id, native] of nativeGroups()) {
+  for (const [id, title] of nativeGroups()) {
     if (id.startsWith("std:")) continue;
     const [command, arg] = id.split(":");
     const spec = COMMANDS[command];
-    assert.equal((arg ? spec?.variants?.[arg] : spec)?.title, native.title, `${id} title`);
+    assert.equal((arg ? spec?.variants?.[arg] : spec)?.title, title, `${id} title`);
   }
-});
-
-test("every catalog default key is bound by the menu bar", () => {
-  const native = nativeGroups();
-  for (const source of staticShortcutSources()) {
-    if (!source.keys.length) continue;
-    assert.deepEqual(source.keys.map(formatShortcut), native.get(source.id)?.keys ?? [], `${source.id} has keys the menu bar doesn't bind`);
-  }
-});
-
-test("profiles get ⌃1 to ⌃9 in order, as the Profiles menu numbers them", () => {
-  const ids = Array.from({ length: 10 }, (_, i) => `p${i}`);
-  const keys = new Map(shortcutSources(ids, []).map((s) => [s.id, s.keys.map(formatShortcut)]));
-  assert.deepEqual(keys.get("switchProfile:p0"), ["⌃1"]);
-  assert.deepEqual(keys.get("switchProfile:p8"), ["⌃9"]);
-  assert.deepEqual(keys.get("switchProfile:p9"), []);
-  assert.ok(swift.includes(`key: i < 9 ? "\\(i + 1)" : "", .control)`), "Menus.swift still numbers profiles with ⌃");
 });

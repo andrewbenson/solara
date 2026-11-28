@@ -11,7 +11,6 @@ final class NativeToolbarPresenter {
     "sidebar": "toggleSidebar", "back": "back", "forward": "forward", "reload": "reload",
     "bookmark": "bookmarkPage", "split": "openSplitPane",
   ]
-  private static var shortcutProjection: (overrides: JSONValue?, profiles: [String], hints: [String: String])?
   private let host = UUID().uuidString
   private let deliver: (ToolbarState?, SidebarAddressBarState?) -> Void
   private var input: ToolbarPresenter.Input?
@@ -192,7 +191,7 @@ final class NativeToolbarPresenter {
       let data = projection["buttons"].flatMap { try? JSONSerialization.data(withJSONObject: $0.foundation) }
       extensionButtons = data.flatMap { try? JSONDecoder().decode([ToolbarButtonState].self, from: $0) } ?? []
     }
-    input.hints = Self.shortcutHints(state)
+    input.hints = Self.shortcutHints()
     let toolbar = ToolbarPresenter.present(input, state: state, page: page, shell: NativeWindowShell.active(windowId),
       fullscreen: fullscreen ?? ToolbarPresenter.fullscreen(input, state: state),
       engineBack: NativeEngineCommands.hasBack(page.tab.pageIn ?? tabId), bookmarked: bookmarked, extensions: extensionButtons,
@@ -202,15 +201,9 @@ final class NativeToolbarPresenter {
     else { publish(toolbar, nil) }
   }
 
-  private static func shortcutHints(_ state: BrowserState) -> [String: String] {
-    let overrides = state.settings["shortcuts"]
-    if let projection = shortcutProjection, projection.overrides == overrides, projection.profiles == state.profileOrder {
-      return projection.hints
-    }
-    let bindings = CommandShortcutSnapshot().hints(state: state)
-    let hints = shortcutCommands.compactMapValues { bindings[JSKey($0)] }
-    shortcutProjection = (overrides, state.profileOrder, hints)
-    return hints
+  private static func shortcutHints() -> [String: String] {
+    let bindings = ShortcutsAdapter.hints
+    return shortcutCommands.compactMapValues { bindings[JSKey($0)] }
   }
 
   private func resetTarget() {

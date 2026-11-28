@@ -9,7 +9,7 @@ public enum OmniboxCommandSources {
     let context = CommandContext(state: s, windowId: windowId, env: CommandAddressing())
     let tab = context.activeTab
     let host = tab.flatMap { developerHost($0.url) }
-    let hints = shortcuts.hints(state: s)
+    let hints = shortcuts.hints
     var actions: [CommandAction] = []
     for d in OmniboxCommandCatalog.base {
       switch d.needs {

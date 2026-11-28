@@ -16,7 +16,7 @@ const unrelated = {
   "./native/replica": ["replicaHandlers"], "./native/live": ["liveHandlers"],
   "./native/onboarding": ["onboardingHandlers", "publishOnboarding"], "./native/passwords": ["passwordsHandlers", "publishPasswords"],
   "./native/privacy": ["privacyHandlers", "publishPrivacy"], "./native/profiles": ["profilesHandlers", "publishProfiles"],
-  "./native/shortcuts": ["shortcutsHandlers"], "./native/sync": ["syncHandlers", "publishSync"],
+  "./native/sync": ["syncHandlers", "publishSync"],
 };
 registerHooks({
   resolve(specifier, context, next) {

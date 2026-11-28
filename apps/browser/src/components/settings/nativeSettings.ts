@@ -7,7 +7,6 @@ import { onboardingHandlers, publishOnboarding } from "./native/onboarding";
 import { passwordsHandlers, publishPasswords } from "./native/passwords";
 import { privacyHandlers, publishPrivacy } from "./native/privacy";
 import { profilesHandlers, publishProfiles } from "./native/profiles";
-import { shortcutsHandlers } from "./native/shortcuts";
 import { publishSync, syncHandlers } from "./native/sync";
 
 const handlers: Record<string, SettingsHandler> = {};
@@ -51,7 +50,6 @@ export function startNativeSettings(): boolean {
       privacyHandlers,
       passwordsHandlers,
       autofillHandlers,
-      shortcutsHandlers,
       profilesHandlers,
       syncHandlers,
       replicaHandlers,

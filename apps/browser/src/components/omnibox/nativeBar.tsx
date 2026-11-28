@@ -3,6 +3,7 @@ import { onBookmarkProjectionChanged, newTabSources, type NewTabMenuChoice } fro
 import { pickFiles, readDocument, showMenu, startDictation } from "@solara/shell";
 import { useEffect, useRef, useState, type RefObject } from "react";
 import { findNodeHandle } from "react-native";
+import { watchShortcutHints } from "../../lib/commandShortcuts";
 import { claimFocusTag } from "../../lib/focusClaims";
 import { perfProbeEnabled } from "../../lib/perfProbe";
 import type { Theme } from "../../lib/theme";
@@ -55,10 +56,12 @@ export function usePublishSources(windowId: string, profileId: string) {
     publishActions.schedule();
     const off = useBrowser.subscribe(publishActions.schedule);
     const bookmarks = onBookmarkProjectionChanged(publishActions.schedule);
+    const offHints = watchShortcutHints(publishActions.schedule);
     return () => {
       off();
       offWorkspace();
       bookmarks.remove();
+      offHints();
       publishActions.cancel();
     };
   }, [windowId, profileId]);

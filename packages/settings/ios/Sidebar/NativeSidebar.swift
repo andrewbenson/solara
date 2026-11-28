@@ -46,6 +46,10 @@ enum NativeSidebar {
     return hosts[windowId].map { walk($0.view) } ?? []
   }
 
+  static func refreshShortcutHints() {
+    for host in hosts.values { host.presentationChanged() }
+  }
+
   static func renameChanged(_ windowId: String) { hosts[windowId]?.renameChanged() }
 
   static func rowFrame(windowId: String, key: String) -> [String: Double]? {
@@ -276,6 +280,7 @@ final class SidebarHost {
       host = projection.host
       rowProjection = projection
     }
+    host.closeHint = ShortcutsAdapter.hint("closeTab")
     host.cleaned = WorkspaceCleanup.cleanedCount(state: state, windowId: windowId, now: Date().timeIntervalSince1970 * 1000)
     host.upsell = NativeSidebarMaintenance.suggestion(windowId: windowId, state: state)
     host.addressBar = addressBar
@@ -295,7 +300,6 @@ final class SidebarHost {
     host.glow = look.glow
     host.badge = SidebarHostState.badgeColors(dark: look.dark)
     host.product = Bundle.main.productName
-    host.closeHint = CommandShortcutSnapshot().hint("closeTab", state: state)
     let storeId = store.map(ObjectIdentifier.init)
     let previousFacts = rowProjection.flatMap { $0.storeId == storeId && $0.state.settings == state.settings ? $0.facts : nil } ?? [:]
     var facts = Dictionary<String, RowFacts>(minimumCapacity: window.tabIds.count)

@@ -124,10 +124,11 @@ public struct MenuShortcutItem: Hashable, Sendable, Identifiable {
   public let aliases: [[String]]
   public let defaultPrecedence: ShortcutPrecedence?
   public let precedenceFixed: Bool
+  public let bindings: [[String]]?
 
   public init(
     id: String, title: String, path: [String], defaultShortcut: KeyShortcut, remappable: Bool, aliases: [[String]] = [],
-    defaultPrecedence: ShortcutPrecedence? = nil, precedenceFixed: Bool = false
+    defaultPrecedence: ShortcutPrecedence? = nil, precedenceFixed: Bool = false, bindings: [[String]]? = nil
   ) {
     self.id = id
     self.title = title
@@ -137,6 +138,7 @@ public struct MenuShortcutItem: Hashable, Sendable, Identifiable {
     self.aliases = aliases
     self.defaultPrecedence = defaultPrecedence
     self.precedenceFixed = precedenceFixed
+    self.bindings = bindings
   }
 
   var menu: String { path.first ?? "" }
@@ -149,17 +151,20 @@ struct ShortcutSource {
   let id: String
   let keys: [KeyShortcut]
   let fixed: Bool
+  let bindings: [KeyShortcut]?
 
   init(_ item: MenuShortcutItem) {
     id = item.id
     keys = [item.defaultShortcut] + item.aliases.map(KeyShortcut.init(stored:))
     fixed = !item.remappable
+    bindings = item.bindings?.map(KeyShortcut.init(stored:))
   }
 
   init(id: String, keys: [KeyShortcut], fixed: Bool = false) {
     self.id = id
     self.keys = keys
     self.fixed = fixed
+    bindings = nil
   }
 }
 
@@ -177,7 +182,7 @@ struct ResolvedShortcuts {
     var holders: [String: [String]] = [:]
     for source in sources {
       let stored = source.fixed ? nil : overrides[source.id]
-      let candidates = stored.map { [KeyShortcut(stored: $0)] } ?? source.keys.filter { source.fixed || !taken.contains($0.comboKey) }
+      let candidates = source.bindings ?? stored.map { [KeyShortcut(stored: $0)] } ?? source.keys.filter { source.fixed || !taken.contains($0.comboKey) }
       var seen: [String] = []
       var keys: [KeyShortcut] = []
       for candidate in candidates where !candidate.key.isEmpty && !seen.contains(candidate.comboKey) {

@@ -159,6 +159,7 @@ public class SystemModule: Module {
     }
 
     AsyncFunction("menuShortcuts") { () -> [[String: Any]] in MainMenu.shortcutList() }.runOnQueue(.main)
+    AsyncFunction("shortcutHints") { () -> [[String]] in MainMenu.shortcutHints }.runOnQueue(.main)
 
     AsyncFunction("recordShortcut") { (promise: Promise) in ShortcutRecorder.shared.record(promise) }.runOnQueue(.main)
     AsyncFunction("cancelRecording") { ShortcutRecorder.shared.finish(nil) }.runOnQueue(.main)

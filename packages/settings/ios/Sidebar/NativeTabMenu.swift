@@ -157,7 +157,7 @@ enum NativeTabMenu {
   }
 
   static func choose(_ items: [TabMenuItem], store: Store, then action: @escaping @MainActor (String) -> Void) {
-    let hints = CommandShortcutSnapshot().hints(state: store.state)
+    let hints = ShortcutsAdapter.hints
     ShellMenus.choose(items.map { dictionary($0, hints: hints) }) { choice in
       if let choice { action(choice) }
     }
@@ -226,7 +226,7 @@ enum NativeSidebarMenus {
 
   static func profiles(windowId: String) {
     guard let store = WorkspaceWrites.store, let window = store.state.windows[windowId], !window.incognito else { return }
-    let hints = CommandShortcutSnapshot().hints(state: store.state)
+    let hints = ShortcutsAdapter.hints
     let resolved = hints.values.compactMap(GroupMenu.menuKey)
     let profiles = WorkspaceMenuDestinations.profileRows(state: store.state, window: window)
     var menu: [[String: Any]] = []

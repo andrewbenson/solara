@@ -45,14 +45,7 @@ import Testing
     for c in cases {
       let s = try state(c["input"]!)
       let windowId = c["windowId"]!.string!
-      let menu = c["menuRegistry"]!.isNull ? nil : try JSONDecoder().decode([CommandMenuShortcut].self, from: Data(c["menuRegistry"]!.text().utf8))
-      let shortcuts = CommandShortcutSnapshot(menu: menu, revision: c["menuRevision"]!.int!)
-      let hints = shortcuts.hints(state: s)
-      let expectedHints = c["output"]!["shortcutHints"]!.object!
-      let shortcutsMatch = hints.count == expectedHints.count && expectedHints.allSatisfy { key, value in
-        hints[JSKey(key)].map { JSONValue.string($0) == value } == true
-      }
-      #expect(shortcutsMatch, "shortcuts: \(c["name"]!)")
+      let shortcuts = capturedCommandShortcuts(c)
       let actions = OmniboxCommandSources.actions(state: s, windowId: windowId, bookmarked: c["bookmarked"]!.bool!, shortcuts: shortcuts)
       let actionsMatch = json(actions) == c["output"]!["actions"]!
       #expect(actionsMatch, "actions: \(c["name"]!)")
@@ -77,4 +70,12 @@ import Testing
     #expect(orderMatches)
   }
 
+}
+
+
+func capturedCommandShortcuts(_ fixture: JSONValue) -> CommandShortcutSnapshot {
+  let hints = fixture["output"]?["shortcutHints"]?.object?.compactMap { id, value in
+    value.string.map { (JSKey(id), $0) }
+  } ?? []
+  return CommandShortcutSnapshot(resolvedHints: Dictionary(uniqueKeysWithValues: hints))
 }

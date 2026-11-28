@@ -347,6 +347,50 @@ function recordFocus(focusName, late) {
 const results = new Map(shortcuts.map(([name]) => [name, {}]));
 let failures = 0;
 await showPage("t3");
+const bindingRows = () => ac(`return ac.shell.menuShortcuts().then((items) => Object.fromEntries(
+  items.filter((item) => ["findInPage", "findNext", "findPrevious", "focusCommandBar"].includes(item.id)).map((item) => [item.id, item.bindings])
+));`);
+const chooseBindings = async (shortcuts, expected) => {
+  await ac(`ac.store.getState().updateSettings({ shortcuts: ${JSON.stringify(shortcuts)} }); return 1;`);
+  const deadline = Date.now() + 5000;
+  let rows;
+  do {
+    rows = await bindingRows();
+    if (Object.entries(expected).every(([id, keys]) => isDeepStrictEqual(rows[id], keys))) return;
+    await sleep(50);
+  } while (Date.now() < deadline);
+  const observed = await ac(`return ac.shell.menuShortcuts().then((items) => ({
+    settings: ac.store.getState().settings.shortcuts,
+    rows: items.filter((item) => ${JSON.stringify(Object.keys(expected))}.includes(item.id)),
+  }));`);
+  assert.fail(`expected menu bindings ${JSON.stringify(expected)}, got ${JSON.stringify(observed)}`);
+};
+const verifyBindingChanges = async (dry) => {
+  await showPage("t3");
+  await ac(`const s = ac.store.getState(); s.closePanel("w1"); s.setFind("t3", { open: false }); return 1;`);
+  const key = cmd("g", 5);
+  await chooseBindings({ findInPage: ["g", "command"], focusCommandBar: [] }, {
+    findInPage: [["g", "command"]], findNext: [], focusCommandBar: [],
+  });
+  const hints = await ac(`return ac.shell.shortcutHints().then(Object.fromEntries);`);
+  assert.equal(hints.findInPage, "⌘G");
+  assert.equal(hints.findNext, undefined);
+  assert.equal(hints.focusCommandBar, undefined);
+  const remapped = await press(key, { focus: "window", dry });
+  assert.ok(remapped.matched.some((item) => item.command === "findInPage"), JSON.stringify(remapped));
+  assert.ok(!remapped.matched.some((item) => item.command === "findNext"), JSON.stringify(remapped));
+  if (!dry) {
+    await untilSnapshot("remapped Find opens", (s) => s.tabs.find((tab) => tab.id === "t3")?.find?.open === true);
+    await ac(`ac.store.getState().setFind("t3", { open: false }); return 1;`);
+  }
+  await chooseBindings({ findInPage: ["g", "command"], findPrevious: ["g", "command"] }, {
+    findInPage: [["g", "command"]], findNext: [], findPrevious: [["g", "command"]],
+  });
+  await chooseBindings({ findInPage: [] }, {
+    findInPage: [], findNext: [["g", "command"]], focusCommandBar: [["l", "command"], [F(0xf708), "control"]],
+  });
+  rep.record("changed, cleared and conflicting native shortcut bindings", {});
+};
 const onlyFocuses = process.env.SHORTCUTS_FOCUSES?.split(",").filter(Boolean);
 if (part === "matrix") {
   for (const [focusName, focus] of Object.entries(focuses)) {
@@ -381,6 +425,7 @@ if (part === "matrix") {
     rep.log(`${name.padEnd(8)} ${dia.padEnd(26)} ${cols.map((c) => (row[c]?.result ?? "—").padEnd(10)).join(" ")}`);
   }
   await fullShortcutSnapshotFits("after the matrix");
+  await verifyBindingChanges(true);
   await finish(rep.summary() && !failures ? 0 : 1);
 }
 
@@ -529,6 +574,13 @@ if (part === "precedence") {
     };
     check("the menu tells Settings each shortcut's precedence and its default", isDeepStrictEqual(listed, expected), JSON.stringify(listed));
   }
+  await choose({ findInPage: "solara", findPrevious: "website" });
+  await chooseBindings({ findInPage: ["g", "command"], findPrevious: ["g", "command"] }, {
+    findInPage: [["g", "command"]], findNext: [], findPrevious: [["g", "command"]],
+  });
+  await run("Prefer Solara follows Find when it shares ⌘G with Find Previous", cmdKey("g", 5), (a) => a.find && pageGot(a));
+  await chooseBindings({ findInPage: [] }, { findInPage: [], findNext: [["g", "command"]] });
+  await run("clearing Find releases ⌘G and the page receives ⌘F", cmdKey("f", 3), (a) => !a.find && pageGot(a, "⌘f"));
   await choose({});
   await finish(rep.summary() && !failures ? 0 : 1);
 }
@@ -1190,6 +1242,7 @@ for (const busy of [0, 120]) {
       `page ${JSON.stringify(inPage)}, hero ${inHero}, untouched ${untouched}, reclaimed ${reclaimed}, keys ${(postedAt[1] - postedAt[0]).toFixed(1)} ms apart`);
   }
 }
+await verifyBindingChanges(false);
 await press(cmd("q", 12), { focus: "window", wait: 0 });
 let quit = false;
 for (let i = 0; i < 150 && !quit; i++) {

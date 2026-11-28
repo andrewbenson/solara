@@ -75,3 +75,30 @@ public enum BackTabShortcut {
     return bindings.firstIndex { $0.key == "\t" && $0.modifiers == modifiers && $0.enabled }
   }
 }
+
+struct MenuShortcutSettings: Equatable {
+  var overrides: [[UInt8]: [String]]
+  var precedence: [[UInt8]: String]
+
+  init(overrides: [(String, [String])] = [], precedence: [(String, String)] = []) {
+    self.overrides = Dictionary(uniqueKeysWithValues: overrides.map { (Array($0.0.utf8), $0.1) })
+    self.precedence = Dictionary(uniqueKeysWithValues: precedence.map { (Array($0.0.utf8), $0.1) })
+  }
+
+  func reserved(liveIds: [String], combo: (String, ArraySlice<String>) -> String) -> Set<String> {
+    Set(liveIds.compactMap { id in
+      guard let binding = overrides[Array(id.utf8)], let key = binding.first, !key.isEmpty else { return nil }
+      return combo(key, binding.dropFirst())
+    })
+  }
+
+  func binding(id: String, carriesOverride: Bool, defaultBinding: [String], defaultCombo: String, reserved: Set<String>) -> [String] {
+    if let override = overrides[Array(id.utf8)] { return carriesOverride ? override : [] }
+    return reserved.contains(defaultCombo) ? [] : defaultBinding
+  }
+
+  func precedence(id: String, command: String?) -> ShortcutPrecedence {
+    let value = precedence[Array(id.utf8)]
+    return ShortcutPrecedence.resolve(shortcutId: id, command: command, chosen: value.map { [id: $0] } ?? [:])
+  }
+}

@@ -12,10 +12,13 @@ export type MenuShortcut = {
   defaultModifiers: ShortcutModifier[];
   remappable: boolean;
   aliases?: string[][];
+  bindings: [key: string, ...modifiers: ShortcutModifier[]][];
   precedence?: ShortcutPrecedence;
   defaultPrecedence?: ShortcutPrecedence;
   precedenceFixed?: boolean;
 };
+
+export type ShortcutHints = [id: string, hint: string][];
 
 export type ShortcutPrecedence = "solara" | "website" | "both";
 
@@ -37,6 +40,7 @@ export type SystemNative = {
   appIcon(pid: number, size: number): Promise<string | null>;
   hapticTick(): void;
   menuShortcuts(): Promise<MenuShortcut[]>;
+  shortcutHints(): Promise<ShortcutHints>;
   recordShortcut(): Promise<{ key: string; modifiers: ShortcutModifier[] } | null>;
   cancelRecording(): Promise<void>;
   setThinScrollBars?(thin: boolean): Promise<void>;
@@ -58,6 +62,7 @@ export const fileIcon = (path: string, size = 32) => System.fileIcon(path, size)
 export const runningAppIcon = (pid: number, size = 32) => System.appIcon(pid, size);
 export const hapticTick = () => System.hapticTick();
 export const menuShortcuts = () => System.menuShortcuts();
+export const shortcutHints = (): Promise<ShortcutHints> => System.shortcutHints();
 export const recordShortcut = () => System.recordShortcut();
 export const cancelShortcutRecording = () => System.cancelRecording();
 export const setThinScrollBars = (thin: boolean) => System.setThinScrollBars?.(thin) ?? Promise.resolve();

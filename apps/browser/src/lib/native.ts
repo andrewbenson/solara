@@ -7,7 +7,6 @@ import {
   claimFocus,
   closeWindow,
   isDarkAppearance,
-  menuShortcuts,
   onAppEvent,
   onCommand,
   onOpenURLs,
@@ -35,7 +34,7 @@ import { createWindowSync, type WindowPort } from "./windowSync";
 import { openExternalUrls } from "../components/littleSolara/actions";
 import { SMALL_LIGHTS_CENTER } from "../components/littleSolara/SmallChrome";
 import { runCommand } from "./commands";
-import { setMenuBarShortcuts } from "./commandShortcuts";
+import { startShortcutHints } from "./commandShortcuts";
 import { finishAnimatedCloses } from "./closeAnimated";
 import { setFocusSenders } from "./focusClaims";
 import { cancelAbandonedFocusMoves, settlingCommandFocus } from "./focusHandoff";
@@ -124,20 +123,16 @@ export function startNativeSync() {
   });
   windows.listen();
 
+  startShortcutHints();
   let lastMenu = "";
-  let lastProfileOrder: string[] | undefined;
   let menuTimer: ReturnType<typeof setTimeout> | undefined;
   const syncMenu = () => {
     menuTimer = undefined;
-    const current = store.getState();
-    const state = menuState(current);
+    const state = menuState(store.getState());
     const json = JSON.stringify(state);
-    const refreshHints = lastProfileOrder !== current.profileOrder;
-    lastProfileOrder = current.profileOrder;
-    if (lastMenu === json && !refreshHints) return;
+    if (lastMenu === json) return;
     lastMenu = json;
-    const sent = setMenuState(state);
-    if (refreshHints) void sent.then(menuShortcuts).then(setMenuBarShortcuts, () => {});
+    void setMenuState(state);
   };
 
   windows.sync(store.getState());
@@ -160,7 +155,5 @@ export function menuState(s: BrowserState): MenuState {
     warnBeforeClosingWindow: s.settings.warnBeforeClosingWindow,
     undoReopensClosedTab: s.settings.undoReopensClosedTab,
     downloadsInProgress: s.downloads.filter((d) => d.state === "downloading").length,
-    shortcuts: s.settings.shortcuts,
-    shortcutPrecedence: s.settings.shortcutPrecedence,
   };
 }

@@ -223,6 +223,11 @@ enum NativeTopStrip {
     }
   }
 
+  static func refreshShortcutHints() {
+    for host in hosts.values { host.setNeedsRender() }
+    for host in TopStripPeekHost.hosts.values { host.strip.setNeedsRender() }
+  }
+
   static func presentation(state: BrowserState, window: BrowserWindow, look: NativeLayoutAppearance, floating: Bool = false) -> StripHostState {
     var host = StripHostState(profileId: window.profileId, dark: look.dark)
     host.theme = look.tokens
@@ -233,7 +238,7 @@ enum NativeTopStrip {
       let page = id == window.profileId ? look : NativeLayoutAppearance(state: state, profileId: id, incognito: false, strip: true)
       return SidebarPageLook(profileId: id, dark: page.dark, theme: page.tokens, border: page.border, glow: page.glow, tidy: false, incognito: false)
     }
-    host.closeHint = CommandShortcutSnapshot().hint("closeTab", state: state)
+    host.closeHint = ShortcutsAdapter.hint("closeTab")
     let store = NativeStoreHandle.store
     host.applyWorkspace(state: state, windowId: window.id) { store?.pageEngineMark($0, in: state) }
     return host

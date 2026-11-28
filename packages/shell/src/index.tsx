@@ -1,7 +1,7 @@
+import type { ShortcutHints } from "./system";
 import { requireNativeViewManager, type EventSubscription } from "expo-modules-core";
 import { processColor, StyleSheet, View, type ColorValue, type ViewProps } from "react-native";
 import { nativeModule, optionalNativeModule } from "./nativeModules";
-import type { ShortcutPrecedence } from "./system";
 
 export * from "./system";
 export * from "./app";
@@ -149,6 +149,7 @@ export type AppEvent =
   | { type: "switcherKey"; key: "escape" | "next" | "previous" }
   | { type: "switcherMouseUp" }
   | { type: "dragEscape" }
+  | { type: "shortcutHints"; hints: ShortcutHints }
   | { type: "nativeMenu"; open: boolean };
 
 type ShellEvents = {
@@ -194,8 +195,6 @@ export type MenuState = {
   warnBeforeClosingWindow?: boolean;
   undoReopensClosedTab?: boolean;
   downloadsInProgress?: number;
-  shortcuts?: Record<string, string[]>;
-  shortcutPrecedence?: Record<string, ShortcutPrecedence>;
 };
 
 export type ConfirmOptions = {

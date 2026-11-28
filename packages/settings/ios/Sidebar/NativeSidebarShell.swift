@@ -1168,7 +1168,7 @@ struct NativeLayoutAppearance {
   {
     guard let window = state.windows[windowId], let geometry = SidebarChromeGeometry(state: state, windowId: windowId) else { return nil }
     let look = appearance ?? NativeLayoutAppearance(state: state, profileId: window.profileId, incognito: window.incognito)
-    let shortcuts = CommandShortcutSnapshot().hints(state: state)
+    let shortcuts = ShortcutsAdapter.hints
     let dots = SidebarPagerView.profileIDs(state: state, windowId: windowId).enumerated().compactMap { index, id -> SidebarChromeDot? in
       guard let profile = state.profiles[id] else { return nil }
       return SidebarChromeDot(id: id, name: profile.name, slot: Double(index), icon: profile.icon,
@@ -1188,7 +1188,7 @@ struct NativeLayoutAppearance {
   }
 
   func controls(state: BrowserState, window: BrowserWindow) -> StripControlsState {
-    controls(state: state, window: window, downloadsHint: CommandShortcutSnapshot().hint("downloads", state: state))
+    controls(state: state, window: window, downloadsHint: ShortcutsAdapter.hint("downloads"))
   }
 
   private func controls(state: BrowserState, window: BrowserWindow, downloadsHint: String?) -> StripControlsState {
@@ -1378,7 +1378,7 @@ private enum NativeDragCarry {
     if flags.contains(.shift), key == "{" || key == "}" { key = key == "{" ? "[" : "]" }
     let glyphs: [(NSEvent.ModifierFlags, String)] = [(.control, "⌃"), (.option, "⌥"), (.shift, "⇧"), (.command, "⌘"), (.function, "🌐")]
     let shortcut = glyphs.filter { flags.contains($0.0) }.map(\.1).joined() + key.uppercased()
-    let hints = CommandShortcutSnapshot().hints(state: store.state)
+    let hints = ShortcutsAdapter.hints
     let commands = (1...8).map { ("selectTab", String($0), "selectTab:\($0)") }
       + [("selectLastTab", "", "selectLastTab"), ("nextTab", "", "nextTab"), ("previousTab", "", "previousTab")]
     if let match = commands.first(where: { hints[JSKey($0.2)] == shortcut }) {
@@ -1552,7 +1552,7 @@ enum NativeGroupMenu {
 
   static func open(_ groupId: String, windowId: String) -> Bool {
     guard let store = WorkspaceWrites.store, store.state.groups[groupId]?.windowId == windowId else { return false }
-    let shortcut = CommandShortcutSnapshot().hint("newTabInGroup", state: store.state)
+    let shortcut = ShortcutsAdapter.hint("newTabInGroup")
     let items = GroupMenu.items(store.state, groupId: groupId, newTabShortcut: shortcut)
     guard !items.isEmpty else { return true }
     #if DEBUG

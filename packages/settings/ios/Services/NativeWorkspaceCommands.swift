@@ -72,6 +72,7 @@ enum NativeWorkspaceCommands {
   }
 
   static func install() {
+    ShortcutsAdapter.install()
     if menuLifecycle == nil {
       menuLifecycle = NativeStoreHandle.subscribeLifecycle { bindMenus() }
     }
@@ -174,7 +175,7 @@ enum NativeWorkspaceCommands {
       window.isSmall, !store.memory.closingWindows.contains(windowId) else { return }
     let profiles = WorkspaceMenuDestinations.profileRows(state: state, window: window)
     guard !profiles.isEmpty else { return }
-    let shortcuts = CommandShortcutSnapshot().hints(state: state)
+    let shortcuts = ShortcutsAdapter.hints
     let rows: [[String: Any]] = profiles.map { profile in
       var row: [String: Any] = ["id": profile.id, "title": profile.title, "checked": profile.current,
                                  "swatch": NativeLayoutAppearance.profileSwatch(state.profiles[profile.id])]

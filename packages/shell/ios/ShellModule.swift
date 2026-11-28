@@ -390,6 +390,7 @@ public class ShellModule: Module {
         ShellMenus.emit = { name, body in self?.sendEvent(name, body) }
         WindowManager.shared.runtime = self.map(ObjectIdentifier.init)
         NSApp.mainMenu = MainMenu.build()
+        MainMenu.refresh()
         MainMenu.watchBackTab()
         let activation = NotificationCenter.default.addObserver(forName: NSApplication.didBecomeActiveNotification, object: nil, queue: .main) { _ in
           WindowManager.shared.becameActive()
@@ -920,6 +921,15 @@ private enum ShellContextMenuTest {
 public enum ShellMenus {
   public static var extensionCatalog: (() -> [[String: Any]])?
   public static func refreshExtensions() { MainMenu.refresh() }
+
+  public static func setShortcutSettings(overrides: [(String, [String])], precedence: [(String, String)]) {
+    MainMenu.setShortcutSettings(overrides: overrides, precedence: precedence)
+  }
+
+  public static var shortcutHints: [[String]] { MainMenu.shortcutHints }
+
+  public static func menuShortcuts() -> [[String: Any]] { MainMenu.shortcutList() }
+
 
   @MainActor public static func setRecentlyClosed(entries: [(id: String, title: String)], groups: [(id: String, title: String)]) {
     MainMenu.setRecentlyClosed(entries: entries, groups: groups)

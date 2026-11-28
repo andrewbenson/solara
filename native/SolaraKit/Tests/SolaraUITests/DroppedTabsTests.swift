@@ -77,17 +77,41 @@ struct DroppedTabsTests {
   @Test func anExternalDropKeepsItsProfileWhenTheWindowPagesBeforeOpening() throws {
     let (store, window, before) = try window(tabs: 2)
     let original = try #require(store.state.windows[window]?.profileId)
+    let landing = try #require(DroppedTabs.Landing(store, windowId: window, generation: 1))
     let paged = try #require(store.dispatch(Command("createProfile", [["name": "Paged"]])).result?.string)
     try store.dispatch(Command("switchProfile", [.string(window), .string(paged)]))
     let selected = store.state.activeTabId(window)
     let placement: JSONValue = ["pinned": true, "beforeId": .string(before[0])]
 
-    let ids = DroppedTabs.open(store, windowId: window, items: [["kind": "url", "url": "https://x.com/"]],
-      placement: placement, profileAtDrop: original)
+    let ids = landing.open(in: store, generation: 1, items: [["kind": "url", "url": "https://x.com/"]], placement: placement)
     let dropped = try #require(ids.first.flatMap { store.state.tabs[$0] })
     #expect(dropped.profileId == original && !dropped.pinned)
     #expect(store.state.activeTabId(window) == selected)
     #expect(store.state.windows[window]?.profileId == paged)
+  }
+
+  @Test func aQueuedDropRefusesAReplacementOwnerOrChangedGeneration() throws {
+    let (store, window, before) = try window(tabs: 2)
+    let replacement = Store(state: store.state, checksInvariants: true)
+    let landing = try #require(DroppedTabs.Landing(store, windowId: window, generation: 1))
+    let items = [["kind": "url", "url": "https://drop.example/"]]
+
+    #expect(landing.open(in: replacement, generation: 1, items: items, placement: nil).isEmpty)
+    #expect(landing.open(in: store, generation: 2, items: items, placement: nil).isEmpty)
+    #expect(store.state.windows[window]?.tabIds == before)
+    #expect(replacement.state.windows[window]?.tabIds == before)
+    #expect(landing.open(in: store, generation: 1, items: items, placement: nil).count == 1)
+  }
+
+  @Test func aQueuedDropRefusesAWindowThatStartedClosing() throws {
+    let (store, window, before) = try window(tabs: 2)
+    let items = [["kind": "url", "url": "https://drop.example/"]]
+    let landing = try #require(DroppedTabs.Landing(store, windowId: window, generation: 1))
+    try store.dispatch(Command("setWindowClosing", [.string(window), .bool(true)]))
+
+    #expect(landing.open(in: store, generation: 1, items: items, placement: nil).isEmpty)
+    #expect(DroppedTabs.Landing(store, windowId: window, generation: 1) == nil)
+    #expect(store.state.windows[window]?.tabIds == before)
   }
 
   @Test func atMostFiftyTabsOpen() throws {

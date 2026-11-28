@@ -1,4 +1,4 @@
-import { WindowDragRegion } from "@solara/shell";
+import { FileDropArea, WindowDragRegion } from "@solara/shell";
 import { useEffect, useLayoutEffect, useMemo, useState } from "react";
 import { Animated, Easing, Pressable, StyleSheet, Text, View } from "react-native";
 import { layout, useTheme } from "../lib/theme";
@@ -10,7 +10,6 @@ import { DownloadsButton } from "./Downloads";
 import { PROFILE_INDICATOR_X, ProfileIndicator } from "./ProfileIndicator";
 import { PROFILE_DOTS_HEIGHT, ProfileDots, useProfileDotsShown } from "./profiles/ProfileDots";
 import { SidebarAddressRow, SidebarHeaderTools } from "./sidebar/AddressBar";
-import { SidebarDropArea } from "./sidebar/fileDrop";
 import { dismissHoverIn } from "./sidebar/hover";
 import { ResizeHandle } from "./sidebar/ResizeHandle";
 import { NativeSidebar, nativeSidebarShell, shellColumnFitsAddressBar } from "./sidebar/NativeSidebar";
@@ -46,7 +45,7 @@ function SidebarFallback({ width, addressBar }: { width: number; addressBar: boo
   const footer = footerRow + (pending ? UPDATE_PILL_BAND : 0);
 
   return (
-    <SidebarDropArea style={{ width, height: "100%" }}>
+    <FileDropArea windowId={windowId} style={{ width, height: "100%" }}>
       <View
         style={{
           position: "absolute",
@@ -91,7 +90,7 @@ function SidebarFallback({ width, addressBar }: { width: number; addressBar: boo
 
       <ResizeHandle windowId={windowId} />
       <WindowDropHighlight />
-    </SidebarDropArea>
+    </FileDropArea>
   );
 }
 

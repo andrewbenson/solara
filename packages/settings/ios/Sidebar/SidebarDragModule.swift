@@ -13,6 +13,12 @@ public class SidebarDragModule: Module {
       DispatchQueue.main.async {
         MainActor.assumeIsolated {
           SidebarDragHub.bridge = NativeSidebarDrag.shared
+          SidebarFileDrop.handle = { windowId, phase, point, count, items in
+            let placement = NativeSidebarDrag.external(windowId: windowId, phase: phase, at: point, count: count)
+            guard phase == "drop" else { return true }
+            guard !items.isEmpty else { return false }
+            return NativeSidebarShell.dropped(windowId, items: items, placement: placement)
+          }
           ShellDragEscape.swallows = { SidebarDragHub.escapeCaptureSwallows($0, cancel: $1) }
         }
       }
@@ -36,10 +42,6 @@ public class SidebarDragModule: Module {
 
     AsyncFunction("escape") {
       FrameUpdates.readOnMain { SidebarDragHub.escape() }
-    }.runOnQueue(.main)
-
-    AsyncFunction("external") { (windowId: String, phase: String, x: Double, y: Double, count: Int) -> String? in
-      FrameUpdates.readOnMain { NativeSidebarDrag.external(windowId: windowId, phase: phase, at: CGPoint(x: x, y: y), count: count) }
     }.runOnQueue(.main)
 
     AsyncFunction("startProbe") { (windowId: String) -> String in

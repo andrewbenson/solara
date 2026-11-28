@@ -6,6 +6,28 @@ import SolaraStore
 public enum DroppedTabs {
   public static let maxTabs = 50
 
+  public struct Landing {
+    private weak var owner: Store?
+    private let windowId: String
+    private let profileId: String
+    private let generation: Int
+
+    public init?(_ store: Store, windowId: String, generation: Int) {
+      guard let window = store.state.windows[windowId], !store.memory.closingWindows.contains(windowId) else { return nil }
+      owner = store
+      self.windowId = windowId
+      profileId = window.profileId
+      self.generation = generation
+    }
+
+    @discardableResult
+    public func open(in store: Store, generation: Int, items: [[String: String]], placement: JSONValue?,
+                     refused: (Error) -> Void = { _ in }) -> [String] {
+      guard store === owner, generation == self.generation, !store.memory.closingWindows.contains(windowId) else { return [] }
+      return DroppedTabs.open(store, windowId: windowId, items: items, placement: placement, profileAtDrop: profileId, refused: refused)
+    }
+  }
+
   public static func urls(_ items: [[String: String]]) -> [String] {
     var urls: [String] = []
     for item in items {

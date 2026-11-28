@@ -1,5 +1,4 @@
 import { requireNativeViewManager } from "expo-modules-core";
-import { forwardRef, type Ref } from "react";
 import { NativeModules, View, type ViewProps } from "react-native";
 import { nativeModule, optionalNativeModule } from "./nativeModules";
 
@@ -79,19 +78,10 @@ export function MouseArea({ path, onMiddleClick, ...props }: MouseAreaProps) {
   return <NativeMouseArea path={path} onMiddleClick={onMiddleClick && ((e) => onMiddleClick(e.nativeEvent))} {...props} />;
 }
 
-export type DroppedItem = { kind: "file"; url: string } | { kind: "url"; url: string } | { kind: "text"; text: string };
-export type DropUpdate = { phase: "enter" | "move" | "exit" | "drop"; x: number; y: number; count: number; items: DroppedItem[] };
-export type FileDropAreaProps = ViewProps & {
-  onDropUpdate?: (e: DropUpdate) => void;
-};
-
-type NativeFileDropAreaProps = ViewProps & {
-  ref?: (instance: { nativeRef?: { current: View | null } } | null) => void;
-  onDropUpdate?: (e: { nativeEvent: DropUpdate }) => void;
-};
+type FileDropAreaProps = ViewProps & { windowId: string };
 
 const fileDropBuilt = !!NativeModules.NativeUnimoduleProxy?.viewManagersMetadata?.SolaraFileDrop;
-const NativeFileDropArea = fileDropBuilt ? requireNativeViewManager<NativeFileDropAreaProps>("SolaraFileDrop") : null;
+const NativeFileDropArea = fileDropBuilt ? requireNativeViewManager<FileDropAreaProps>("SolaraFileDrop") : null;
 
 export type MagnifyPhase = "began" | "changed" | "ended" | "cancelled";
 export type MagnifyUpdate = { phase: MagnifyPhase; magnification: number };
@@ -118,21 +108,10 @@ export function MagnifyArea({ onMagnify, enabled = true, ...props }: MagnifyArea
 export const devMagnify = (windowId: string, at: { x: number; y: number }, steps: MagnifyUpdate[]) =>
   MagnifyModule ? MagnifyModule.devMagnify(windowId, at.x, at.y, steps) : Promise.resolve({ error: "MagnifyArea isn't built" });
 
-function assignRef<T>(ref: Ref<T> | undefined, value: T | null) {
-  if (typeof ref === "function") ref(value);
-  else if (ref) (ref as { current: T | null }).current = value;
+export function FileDropArea({ windowId, ...props }: FileDropAreaProps) {
+  if (!NativeFileDropArea) return <View {...props} />;
+  return <NativeFileDropArea windowId={windowId} {...props} />;
 }
-
-export const FileDropArea = forwardRef<View, FileDropAreaProps>(function FileDropArea({ onDropUpdate, ...props }, ref) {
-  if (!NativeFileDropArea) return <View ref={ref} {...props} />;
-  return (
-    <NativeFileDropArea
-      ref={(instance) => assignRef(ref, instance?.nativeRef?.current ?? null)}
-      onDropUpdate={onDropUpdate && ((e) => onDropUpdate(e.nativeEvent))}
-      {...props}
-    />
-  );
-});
 
 export type DevDragAction = "move" | "drop" | "cancel" | "end";
 export type DevDragPayload = { files?: string[]; urls?: string[]; publicURLs?: string[]; text?: string; fileDrag?: boolean };

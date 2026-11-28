@@ -85,7 +85,8 @@ enum NativeSidebarShell {
   }
 
   static func openDropped(_ windowId: String, items: [[String: String]], placement: String?) -> Bool {
-    guard let store = WorkspaceWrites.store, let profile = store.state.windows[windowId]?.profileId else { return false }
+    guard let store = WorkspaceWrites.store,
+      let landing = DroppedTabs.Landing(store, windowId: windowId, generation: NativeStoreHandle.ownershipGeneration) else { return false }
     var parsed: JSONValue?
     if let placement {
       do {
@@ -95,14 +96,11 @@ enum NativeSidebarShell {
         return true
       }
     }
-    let generation = NativeStoreHandle.ownershipGeneration
-    let landing = parsed
-    DispatchQueue.main.async { [weak owner = store] in
+    let dropPlacement = parsed
+    DispatchQueue.main.async {
       MainActor.assumeIsolated {
-        guard let store = WorkspaceWrites.store, store === owner, NativeStoreHandle.ownershipGeneration == generation else {
-          return NSLog("[sidebar] drop refused: ownership changed for %@", windowId)
-        }
-        DroppedTabs.open(store, windowId: windowId, items: items, placement: landing, profileAtDrop: profile) { error in
+        guard let store = WorkspaceWrites.store else { return }
+        landing.open(in: store, generation: NativeStoreHandle.ownershipGeneration, items: items, placement: dropPlacement) { error in
           NSLog("[drop] %@: the store refused part of a drop: %@", windowId, String(describing: error))
         }
         FrameUpdates.flush()

@@ -351,7 +351,7 @@ public class FileDropModule: Module {
     Name("SolaraFileDrop")
 
     View(FileDropView.self) {
-      Events("onDropUpdate")
+      Prop("windowId") { (view: FileDropView, windowId: String) in view.windowId = windowId }
     }
 
     AsyncFunction("devDrag") { (windowId: String, action: String, x: Double, y: Double, payload: [String: Any]?) -> String in
@@ -455,11 +455,18 @@ public enum DroppedLinks {
   }
 }
 
+@MainActor
+public enum SidebarFileDrop {
+  public static var handle: ((String, String, CGPoint, Int, [[String: String]]) -> Bool)?
+}
+
 final class FileDropView: ExpoView {
   static let background = ProcessInfo.processInfo.environment["SOLARA_BACKGROUND"] == "1"
   static var lastFileDrag: [URL] = []
 
-  let onDropUpdate = EventDispatcher()
+  var windowId = "" {
+    willSet { if newValue != windowId { leave() } }
+  }
   private var count = 0
 
   required init(appContext: AppContext? = nil) {
@@ -467,9 +474,16 @@ final class FileDropView: ExpoView {
     registerForDraggedTypes([.fileURL, .URL, .string])
   }
 
-  private func emit(_ phase: String, _ info: NSDraggingInfo, items: [[String: String]] = []) {
-    let p = convert(info.draggingLocation, from: nil)
-    onDropUpdate(["phase": phase, "x": p.x, "y": isFlipped ? p.y : bounds.height - p.y, "count": count, "items": items])
+  override func viewWillMove(toWindow newWindow: NSWindow?) {
+    if newWindow !== window { leave() }
+    super.viewWillMove(toWindow: newWindow)
+  }
+
+  @discardableResult
+  private func send(_ phase: String, _ location: CGPoint = .zero, items: [[String: String]] = []) -> Bool {
+    guard !windowId.isEmpty else { return false }
+    let point = CGPoint(x: location.x, y: (window?.contentView?.bounds.height ?? 0) - location.y)
+    return SidebarFileDrop.handle?(windowId, phase, point, count, items) ?? false
   }
 
   private func operation(_ info: NSDraggingInfo) -> NSDragOperation {
@@ -481,28 +495,29 @@ final class FileDropView: ExpoView {
   }
 
   override func draggingEntered(_ sender: NSDraggingInfo) -> NSDragOperation {
+    leave()
     count = DroppedLinks.count(sender.draggingPasteboard)
-    guard count > 0 else { return [] }
-    emit("enter", sender)
+    guard !operation(sender).isEmpty, send("enter", sender.draggingLocation) else {
+      count = 0
+      return []
+    }
     return operation(sender)
   }
 
   override func draggingUpdated(_ sender: NSDraggingInfo) -> NSDragOperation {
     guard count > 0 else { return [] }
-    emit("move", sender)
+    send("move", sender.draggingLocation)
     return operation(sender)
   }
 
-  override func draggingExited(_ sender: NSDraggingInfo?) {
-    guard count > 0 else { return }
-    if let sender { emit("exit", sender) } else { onDropUpdate(["phase": "exit", "x": 0, "y": 0, "count": count, "items": []]) }
-    count = 0
-  }
+  override func draggingExited(_ sender: NSDraggingInfo?) { leave() }
 
-  override func draggingEnded(_ sender: NSDraggingInfo) {
+  override func draggingEnded(_ sender: NSDraggingInfo) { leave() }
+
+  private func leave() {
     guard count > 0 else { return }
-    emit("exit", sender)
     count = 0
+    send("leave")
   }
 
   override func prepareForDragOperation(_ sender: NSDraggingInfo) -> Bool {
@@ -512,9 +527,8 @@ final class FileDropView: ExpoView {
   override func performDragOperation(_ sender: NSDraggingInfo) -> Bool {
     guard count > 0 else { return false }
     let items = DroppedLinks.items(sender.draggingPasteboard)
-    emit("drop", sender, items: items)
-    count = 0
-    return !items.isEmpty
+    defer { count = 0 }
+    return send("drop", sender.draggingLocation, items: items)
   }
 
 }

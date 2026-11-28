@@ -1,6 +1,5 @@
 import { hapticTick, onAppEvent, setDragEscapeCapture } from "@solara/shell";
 import { requireOptionalNativeModule } from "expo-modules-core";
-import type { TabPlacement } from "../../store/organize";
 import { addNativeSettingsHandlers } from "../settings/nativeSettings";
 import "../layout/nativeTabDrag";
 import { mirrorFolderPanel } from "./tileFolderUi";
@@ -38,7 +37,6 @@ type NativeMarks = {
 
 type DragModule = {
   escape(): Promise<void>;
-  external(windowId: string, phase: string, x: number, y: number, count: number): Promise<string | null>;
   startProbe(windowId: string): Promise<string>;
   probe(windowId: string): string;
   clearLanded(windowId: string): Promise<void>;
@@ -54,13 +52,6 @@ addNativeSettingsHandlers({
 });
 
 if (native) onAppEvent((e) => e.type === "dragEscape" && void native.escape());
-
-export const nativeSidebarDrag = {
-  external(windowId: string, phase: "enter" | "move" | "leave" | "drop", [x, y]: [number, number], count = 0): Promise<TabPlacement | null> {
-    if (!native) return Promise.resolve(null);
-    return native.external(windowId, phase, x, y, count).then((text) => (text ? (JSON.parse(text) as TabPlacement) : null));
-  },
-};
 
 type ViewLike = {
   measureInWindow(cb: (x: number, y: number, w: number, h: number) => void): void;

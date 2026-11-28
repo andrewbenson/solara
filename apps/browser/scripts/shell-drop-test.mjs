@@ -11,7 +11,7 @@ import { launch, reporter, session, sleep } from "../../../scripts/lib/instance.
 const args = process.argv.slice(2);
 const appArg = args.find((a) => !a.startsWith("--"));
 if (!appArg || resolve(appArg).startsWith("/Applications/")) {
-  console.error("usage: node shell-drop-test.mjs <Debug Solara.app under apps/browser/build-*> [--keep-data]");
+  console.error("usage: node shell-drop-test.mjs <Debug Solara.app under apps/browser/build-*> [--keep-data] [--guest-only]");
   process.exit(2);
 }
 const keep = args.includes("--keep-data");
@@ -77,7 +77,42 @@ async function open(env, dir) {
     return frame;
   };
   const zoom = (on) => app.eval(`ac.pageState.setState({ popover: expo.modules.SolaraSettings.setPanePopover(${JSON.stringify(tab)}, ${on ? '"zoom"' : "null"}) }); return true`);
-  return { app, read, w, h, tab, windowId, target, frameOf, zoom, untilSnapshot };
+  return { app, read, w, h, tab, win, windowId, target, frameOf, zoom, untilSnapshot };
+}
+
+if (args.includes("--guest-only")) {
+  let guest;
+  try {
+    guest = await open({ SOLARA_NATIVE_SHELL: "0" }, "guest-data");
+    await rep.check("the compatibility sidebar opens dropped URLs through its AppKit view", async () => {
+      const host = JSON.parse(await guest.read(`return globalThis.expo.modules.SolaraPages.devViewFrame(${guest.win}, "FileDropView")`));
+      assert.ok(host.found && host.width > 0, "the compatibility drop view is visible");
+      const x = Math.round(host.x + host.width / 2);
+      const y = Math.round(host.y + 30);
+      const urls = ["http://127.0.0.1:1/first-drop", "http://127.0.0.1:1/second-drop"];
+      const call = (action, payload) => guest.app.eval(
+        `return ac.shell.devFileDrag.drag(${JSON.stringify(guest.windowId)}, ${JSON.stringify(action)}, ${x}, ${y}, ${JSON.stringify(payload)});`,
+      );
+
+      assert.match(await call("move", { urls }), /FileDropView [1-9]/);
+      assert.equal(await call("cancel"), "cancelled");
+      const cancelled = await guest.app.snapshot({ windowId: guest.windowId });
+      assert.ok(cancelled.consistent && cancelled.tabs.every((tab) => !urls.includes(tab.url)));
+
+      assert.match(await call("drop", { urls }), /FileDropView performed/);
+      const state = await guest.untilSnapshot("dropped page order and selection", {}, (window, snapshot) => {
+        const dropped = urls.map((url) => snapshot.tabs.find((tab) => tab.url === url));
+        if (!window || dropped.some((tab) => !tab)) return false;
+        const indices = dropped.map((tab) => window.tabIds.indexOf(tab.id));
+        return window.selectedTabId === dropped[0].id && indices[0] >= 0 && indices[1] === indices[0] + 1;
+      });
+      return state.tabs.filter((tab) => urls.includes(tab.url)).map((tab) => tab.id);
+    });
+  } finally {
+    await guest?.app.quit();
+    if (!keep) rmSync(join(scratch, "guest-data"), { recursive: true, force: true });
+  }
+  process.exit(rep.summary() ? 0 : 1);
 }
 
 let shell = null;

@@ -65,34 +65,38 @@ import Testing
 }
 
 @MainActor @Suite struct PrimitivesHoverIntentTests {
-  @Test func firstShowWaitsThenSwitchesAtOnce() async throws {
+  @Test func firstShowWaitsThenSwitchesAtOnce() throws {
     let intent = HoverIntent()
     var shown: [String] = []
     intent.onShow = { shown.append($0) }
     intent.enter("a")
     #expect(shown.isEmpty)
-    await LiveSettingsWait.until { shown == ["a"] }
+    try #require(intent.showTimer).fire()
     #expect(shown == ["a"])
     intent.enter("b")
     #expect(shown == ["a", "b"])
   }
 
-  @Test func leaveHidesAfterDelayUnlessCardKeeps() async throws {
+  @Test func leaveHidesAfterDelayUnlessCardKeeps() throws {
     let intent = HoverIntent()
     var hidden = 0
-    var shown = false
-    intent.onShow = { _ in shown = true }
     intent.onHide = { hidden += 1 }
     intent.enter("a")
-    await LiveSettingsWait.until { shown }
-    #expect(shown)
+    try #require(intent.showTimer).fire()
+    #expect(intent.shown == "a")
     intent.leave(from: "a")
+    let canceledHide = try #require(intent.hideTimer)
+    #expect(canceledHide.isValid)
     intent.cardEntered()
-    try await Task.sleep(for: .milliseconds(250))
+    #expect(!canceledHide.isValid)
     #expect(hidden == 0)
     intent.cardLeft()
-    await LiveSettingsWait.until { hidden == 1 }
+    let nextHide = try #require(intent.hideTimer)
+    #expect(nextHide.isValid)
+    #expect(hidden == 0)
+    nextHide.fire()
     #expect(hidden == 1)
+    #expect(intent.shown == nil)
   }
 }
 

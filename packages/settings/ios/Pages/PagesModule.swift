@@ -16,7 +16,22 @@ public class PagesModule: Module {
       NativeSettingsHandle.active
     }
 
-    Events("onMeetingAlertEvent")
+    Events("onMeetingAlertEvent", "onHistoryAction")
+
+    OnStartObserving("onHistoryAction") {
+      let sink = PagesEventSink(self)
+      DispatchQueue.main.async {
+        NativePageView.historyAction = { body in sink.module?.sendEvent("onHistoryAction", body) }
+      }
+    }
+
+    AsyncFunction("historyActionCurrent") { (token: String) -> Bool in
+      MainActor.assumeIsolated { NativePageView.historyView(token) != nil }
+    }.runOnQueue(.main)
+
+    AsyncFunction("finishHistoryAction") { (token: String, action: String) in
+      MainActor.assumeIsolated { NativePageView.historyView(token)?.finishHistoryAction(action) }
+    }.runOnQueue(.main)
 
     AsyncFunction("showMeetingAlert") { (windowId: String, json: String, left: Double, top: Double) -> Bool in
       let sink = PagesEventSink(self)
@@ -59,13 +74,14 @@ public class PagesModule: Module {
       MainActor.assumeIsolated { NativePageView.devHover(key) }
     }.runOnQueue(.main)
 
-    View(NativePageView.self) {
+    View(NativePageExpoView.self) {
       Events("onPageEvent")
 
-      Prop("kind") { (view: NativePageView, v: String) in MainActor.assumeIsolated { view.setKind(v) } }
-      Prop("state") { (view: NativePageView, v: String) in MainActor.assumeIsolated { view.setState(v) } }
+      Prop("kind") { (view: NativePageExpoView, v: String) in MainActor.assumeIsolated { view.page.setKind(v) } }
+      Prop("internalTabId") { (view: NativePageExpoView, v: String?) in MainActor.assumeIsolated { view.page.setInlineTab(v) } }
+      Prop("state") { (view: NativePageExpoView, v: String) in MainActor.assumeIsolated { view.page.setState(v) } }
 
-      AsyncFunction("focusSearch") { (view: NativePageView) in MainActor.assumeIsolated { view.focusSearch() } }.runOnQueue(.main)
+      AsyncFunction("focusSearch") { (view: NativePageExpoView) in MainActor.assumeIsolated { view.page.focusSearch() } }.runOnQueue(.main)
     }
   }
 }
@@ -79,13 +95,30 @@ enum PageNetwork {
     bundled: { name in NativeSettingsWindow.bundledSiteIcon(name) })
 }
 
-final class NativePageView: ExpoView {
+final class NativePageExpoView: ExpoView {
   let onPageEvent = EventDispatcher()
+  let page = NativePageView(frame: .zero)
+
+  required init(appContext: AppContext? = nil) {
+    super.init(appContext: appContext)
+    page.onPageEvent = { [weak self] body in self?.onPageEvent(body) }
+    page.frame = bounds
+    page.autoresizingMask = [.width, .height]
+    addSubview(page)
+  }
+
+  override func hitTest(_ point: NSPoint) -> NSView? {
+    page.isDisplaying ? super.hitTest(point) : nil
+  }
+}
+
+final class NativePageView: NSView {
+  var onPageEvent: ([String: Any]) -> Void = { _ in }
+  var isDisplaying: Bool { !kind.isEmpty }
   private var kind = ""
   private var json = ""
   private var host: NSView?
-  private let downloads = DownloadsPageModel()
-  private var downloadTabId: String?
+  private lazy var downloads = DownloadsPageModel()
   private var displayedDownloads: DownloadScope?
 
   private struct DownloadScope: Equatable {
@@ -95,9 +128,8 @@ final class NativePageView: ExpoView {
   private var downloadsLifecycle: Int?
   private weak var observedDownloadStore: Store?
   private var downloadsListener: Int?
-  private let history = HistoryPageModel(catalog: NativeHistoryCatalog.catalog)
+  private lazy var history = HistoryPageModel(catalog: NativeHistoryCatalog.catalog)
   private let bookmarks = BookmarksPageModel(catalog: NativeHistoryCatalog.catalog)
-  private var bookmarkTabId: String?
   private var bookmarkEditing: NativeBookmarkEditing?
   private var bookmarkLifecycle: Int?
   private weak var observedBookmarkStore: Store?
@@ -105,11 +137,35 @@ final class NativePageView: ExpoView {
   private var observedBookmarkTab: String?
   private var observedBookmarkWindow: String?
 
-  private struct ScopedPageState: Decodable {
+  private var inlineTabId: String?
+  private var inline = false
+  private var internalTabId: String?
+  private var internalScope: InternalScope?
+  private var historyToken = UUID().uuidString
+  private weak var scopeStore: Store?
+  private var scopeOwnership = 0
+  private var inlineLifecycle: Int?
+  private weak var inlineStore: Store?
+  private var inlineListener: Int?
+
+  private struct InternalScope: Equatable {
     let tabId: String
-    let dark: Bool
-    let theme: [String: String]
-    let panelShadowOpacity: Double?
+    let windowId: String
+    let profileId: String
+    let engineProfile: String
+    let destination: InternalPageDestination
+
+    @MainActor init?(state: BrowserState, tabId: String, window: NSWindow) {
+      guard let tab = state.tabs[tabId], !((tab.unloaded ?? false) || (tab.pageIn?.isEmpty == false)),
+        ShellDrag.window(tab.windowId) === window,
+        state.windows[tab.windowId]?.profileId == tab.profileId,
+        let destination = InternalPageDestination(tab: tab) else { return nil }
+      self.tabId = tab.id
+      windowId = tab.windowId
+      profileId = tab.profileId
+      engineProfile = state.engineProfile(tab.profileId)
+      self.destination = destination
+    }
   }
   private let createProfile = CreateProfileFormModel()
   private let liveCard = LiveCardModel()
@@ -117,6 +173,17 @@ final class NativePageView: ExpoView {
   override var isFlipped: Bool { true }
 
   static let live = NSHashTable<NativePageView>.weakObjects()
+  static var historyAction: ([String: Any]) -> Void = { _ in }
+
+  static func historyView(_ token: String) -> NativePageView? {
+    live.allObjects.first { $0.historyToken == token && $0.currentHistoryScope != nil }
+  }
+
+  func finishHistoryAction(_ action: String) {
+    if action == "selection" { history.selected = [] }
+    if action == "clear" { history.clearOpen = false }
+    if action == "clear" || action == "clearFailed" { history.clearBusy = false }
+  }
   private struct ClearDataRequest {
     let store: Store
     let generation: Int
@@ -134,9 +201,14 @@ final class NativePageView: ExpoView {
 
   override func viewDidMoveToWindow() {
     super.viewDidMoveToWindow()
-    consumeClearDataRequest()
+    bindInlinePage()
     bindBookmarkScope()
     bindDownloadsScope()
+    consumeClearDataRequest()
+  }
+
+  override func hitTest(_ point: NSPoint) -> NSView? {
+    kind.isEmpty ? nil : super.hitTest(point)
   }
 
   private func consumeClearDataRequest() {
@@ -144,31 +216,28 @@ final class NativePageView: ExpoView {
       NativeStoreHandle.ownsWorkspace && NativeStoreHandle.store === request.store
         && NativeStoreHandle.ownershipGeneration == request.generation && request.store.state.windows[windowId]?.profileId == request.profileId
         && request.store.state.activeTabId(windowId) == request.tabId
-        && request.store.state.tabs[request.tabId].map { tab in
-          if case .page(.history)? = SolaraOmnibox.appUrlRoute(tab.navigation?.url ?? tab.url) { return true }
-          return false
-        } == true
+        && request.store.state.tabs[request.tabId].flatMap(InternalPageDestination.init(tab:))?.page == .history
     }
-    guard kind == "history", !isHiddenOrHasHiddenAncestor, let window,
-      let entry = Self.pendingClearData.first(where: { ShellDrag.window($0.key) === window && $0.value.profileId == history.profileId }) else { return }
-    Self.pendingClearData.removeValue(forKey: entry.key)
+    guard let scope = currentHistoryScope, Self.pendingClearData[scope.windowId]?.tabId == scope.tabId else { return }
+    Self.pendingClearData.removeValue(forKey: scope.windowId)
     history.clearOpen = true
   }
 
-  required init(appContext: AppContext? = nil) {
-    super.init(appContext: appContext)
+  override init(frame: NSRect) {
+    super.init(frame: frame)
     downloads.onEvent = { [weak self] event in
       guard let self, let window = self.window, !self.isHiddenOrHasHiddenAncestor,
         let scope = self.displayedDownloads, scope == self.downloadScope else { return }
       NativeDownloadActions.perform(event, windowId: scope.windowId, profileId: scope.profileId, in: window)
     }
-    history.onEvent = { [weak self] event in self?.send(event) }
     bookmarks.onEvent = { [weak self] event in self?.send(event) }
     createProfile.onEvent = { [weak self] event in self?.send(event) }
     liveCard.onEvent = { [weak self] event in self?.send(event) }
     Self.live.add(self)
     PageProbe.enabled = ProcessInfo.processInfo.environment["SOLARA_BACKGROUND"] == "1"
   }
+
+  required init?(coder: NSCoder) { fatalError() }
 
   static func bookmarkScale(_ operation: String, _ value: String?) -> String {
     let environment = ProcessInfo.processInfo.environment
@@ -216,8 +285,9 @@ final class NativePageView: ExpoView {
   }
 
   static func devState() -> String {
-    let pages: [[String: Any]] = live.allObjects.filter { $0.window != nil }.map { view in
+    let pages: [[String: Any]] = live.allObjects.filter { $0.window != nil && !$0.kind.isEmpty }.map { view in
       var page: [String: Any] = ["kind": view.kind]
+      if let id = view.internalTabId { page["tabId"] = id }
       switch view.kind {
       case "downloads":
         page["query"] = view.downloads.query
@@ -267,10 +337,16 @@ final class NativePageView: ExpoView {
 
   func setKind(_ next: String) {
     guard next != kind else { return }
+    if kind == "history" { history.leaveScope() }
     kind = next
     bindBookmarkScope()
     bindDownloadsScope()
     host?.removeFromSuperview()
+    host = nil
+    if next == "history" {
+      history = HistoryPageModel(catalog: NativeHistoryCatalog.catalog)
+      history.onEvent = { [weak self] event in self?.send(event) }
+    }
     let made: NSView? =
       switch next {
       case "downloads": NSHostingView(rootView: DownloadsPageView(model: downloads))
@@ -299,6 +375,95 @@ final class NativePageView: ExpoView {
     apply()
   }
 
+  func setInlineTab(_ tabId: String?) {
+    guard inlineTabId != tabId else { return }
+    inline = true
+    if let inlineListener { inlineStore?.unsubscribe(inlineListener) }
+    inlineListener = nil
+    inlineStore = nil
+    inlineTabId = tabId
+    bindInlinePage()
+  }
+
+  private func bindInlinePage() {
+    guard inline else { return }
+    if window != nil && inlineTabId != nil {
+      if inlineLifecycle == nil {
+        inlineLifecycle = NativeStoreHandle.subscribeLifecycle { [weak self] in self?.refreshInlinePage() }
+      }
+    } else {
+      if let inlineLifecycle { NativeStoreHandle.unsubscribeLifecycle(inlineLifecycle) }
+      inlineLifecycle = nil
+    }
+    refreshInlinePage()
+  }
+
+  private func refreshInlinePage() {
+    let store = window != nil && inlineTabId != nil && NativeStoreHandle.ownsWorkspace ? NativeStoreHandle.store : nil
+    if inlineStore !== store {
+      if let inlineListener { inlineStore?.unsubscribe(inlineListener) }
+      inlineStore = store
+      if let store, let tabId = inlineTabId {
+        inlineListener = store.subscribe { [weak self, weak store] commit in
+          guard commit.changes.tabs.upserted.contains(tabId) || commit.changes.tabs.removed.contains(tabId)
+            || ThemeScopeProjection.mayChange(commit.changes) else { return }
+          DispatchQueue.main.async {
+            guard let self, let store, self.inlineStore === store else { return }
+            self.refreshInlinePage()
+          }
+        }
+      } else {
+        inlineListener = nil
+      }
+    }
+    if let inlineTabId, let state = store?.state {
+      updateInternalPage(tabId: inlineTabId, state: state)
+    } else {
+      internalScope = nil
+      internalTabId = nil
+      scopeStore = nil
+      historyToken = UUID().uuidString
+      setKind("")
+    }
+  }
+
+  func updateInternalPage(tabId: String, state: BrowserState) {
+    let scope = window.flatMap { InternalScope(state: state, tabId: tabId, window: $0) }
+    let store = NativeStoreHandle.store
+    let ownership = NativeStoreHandle.ownershipGeneration
+    if internalScope != scope || scopeStore !== store || scopeOwnership != ownership {
+      scopeStore = store
+      scopeOwnership = ownership
+      let old = internalScope
+      internalScope = scope
+      historyToken = UUID().uuidString
+      if kind == "history" {
+        history.clearBusy = false
+        history.clearOpen = false
+      }
+      if old?.profileId != scope?.profileId || old?.engineProfile != scope?.engineProfile { setKind("") }
+    }
+    internalTabId = tabId
+    let next = scope?.destination.page.rawValue ?? ""
+    setKind(next)
+    guard let scope, let window = state.windows[scope.windowId] else { return }
+    let dark = ThemeScopeProjection.project(state, windowId: window.id, pageProfileId: scope.profileId).dark
+    let theme = PageTheme(dark: dark, tokens: [:])
+    switch scope.destination.page {
+    case .bookmarks:
+      if bookmarks.theme != theme { bookmarks.theme = theme }
+    case .downloads:
+      if downloads.theme != theme { downloads.theme = theme }
+    case .history:
+      let profileName = state.profileOrder.count > 1
+        ? (window.incognito ? "Incognito" : state.profiles[scope.profileId]?.name ?? state.profiles[state.settings.defaultProfileId]?.name)
+        : nil
+      history.setScope(profileId: scope.profileId, engineProfile: scope.engineProfile, profileName: profileName,
+        query: scope.destination.query, theme: theme)
+    }
+    consumeClearDataRequest()
+  }
+
   func focusSearch() {
     switch kind {
     case "downloads": downloads.focusRequest += 1
@@ -310,21 +475,6 @@ final class NativePageView: ExpoView {
 
   private func apply() {
     switch kind {
-    case "downloads":
-      if let state = try? JSONDecoder().decode(ScopedPageState.self, from: Data(json.utf8)) {
-        downloadTabId = state.tabId
-        let theme = PageTheme(dark: state.dark, tokens: state.theme, panelShadowOpacity: state.panelShadowOpacity)
-        if downloads.theme != theme { downloads.theme = theme }
-        refreshDownloads()
-      }
-    case "history": history.apply(json: json)
-    case "bookmarks":
-      if let state = try? JSONDecoder().decode(ScopedPageState.self, from: Data(json.utf8)) {
-        bookmarkTabId = state.tabId
-        let theme = PageTheme(dark: state.dark, tokens: state.theme, panelShadowOpacity: state.panelShadowOpacity)
-        if bookmarks.theme != theme { bookmarks.theme = theme }
-        bindBookmarkScope()
-      }
     case "createProfile": createProfile.apply(json: json)
     case "calendarPreview": liveCard.apply(json: json)
     case "meetingAlert": (host as? MeetingAlertFrameView)?.apply(json: json)
@@ -335,9 +485,9 @@ final class NativePageView: ExpoView {
 
   private var downloadScope: DownloadScope? {
     guard kind == "downloads", NativeStoreHandle.ownsWorkspace, let state = NativeStoreHandle.store?.state,
-      let window, let tab = downloadTabId.flatMap({ state.tabs[$0] }), ShellDrag.window(tab.windowId) === window,
+      let window, let tab = internalTabId.flatMap({ state.tabs[$0] }), ShellDrag.window(tab.windowId) === window,
       state.windows[tab.windowId]?.profileId == tab.profileId,
-      case .page(.downloads)? = SolaraOmnibox.appUrlRoute(tab.navigation?.url ?? tab.url) else { return nil }
+      InternalPageDestination(tab: tab)?.page == .downloads else { return nil }
     return DownloadScope(windowId: tab.windowId, profileId: tab.profileId)
   }
 
@@ -376,13 +526,35 @@ final class NativePageView: ExpoView {
     if downloads.downloads != next { downloads.downloads = next }
   }
 
+  private var currentHistoryScope: InternalScope? {
+    guard kind == "history", !isHiddenOrHasHiddenAncestor, NativeStoreHandle.ownsWorkspace, !NativeStoreHandle.frozen,
+      scopeOwnership == NativeStoreHandle.ownershipGeneration, let scopeStore, scopeStore === NativeStoreHandle.store,
+      let window, let tabId = internalTabId,
+      let scope = InternalScope(state: scopeStore.state, tabId: tabId, window: window), scope == internalScope else { return nil }
+    return scope
+  }
+
   private func send(_ event: HistoryPageEvent) {
+    guard let scope = currentHistoryScope else { return }
+    var info: [String: Any] = ["token": historyToken, "profileId": scope.profileId, "windowId": scope.windowId]
     switch event {
-    case .open(let url, let mode): onPageEvent(["kind": "open", "url": url, "mode": mode.rawValue])
-    case .remove(let urls): onPageEvent(["kind": "remove", "urls": urls])
-    case .deleteSelected(let urls): onPageEvent(["kind": "deleteSelected", "urls": urls])
-    case .clearData(let request): onPageEvent(["kind": "clearData", "range": request.range, "history": request.history, "siteData": request.siteData])
+    case .open(let url, let mode):
+      guard let data = try? JSONSerialization.data(withJSONObject: ["url": url, "mode": mode.rawValue]) else { return }
+      _ = NativeWorkspaceCommands.perform("openBookmarkItems", arg: String(decoding: data, as: UTF8.self), windowId: scope.windowId)
+      return
+    case .remove(let urls):
+      info["kind"] = "remove"
+      info["urls"] = urls
+    case .deleteSelected(let urls):
+      info["kind"] = "deleteSelected"
+      info["urls"] = urls
+    case .clearData(let request):
+      info["kind"] = "clearData"
+      info["range"] = request.range
+      info["history"] = request.history
+      info["siteData"] = request.siteData
     }
+    Self.historyAction(info)
   }
 
   private func bindBookmarkScope() {
@@ -417,13 +589,13 @@ final class NativePageView: ExpoView {
 
   private func refreshBookmarkScope() {
     let store = kind == "bookmarks" && window != nil && NativeStoreHandle.ownsWorkspace ? NativeStoreHandle.store : nil
-    let tab = bookmarkTabId.flatMap { store?.state.tabs[$0] }
-    observeBookmarkScope(store, tabId: store == nil ? nil : bookmarkTabId, windowId: tab?.windowId)
+    let tab = internalTabId.flatMap { store?.state.tabs[$0] }
+    observeBookmarkScope(store, tabId: store == nil ? nil : internalTabId, windowId: tab?.windowId)
     if kind == "bookmarks", window == nil { return }
     guard let window, let tab, ShellDrag.window(tab.windowId) === window,
       let editing = NativeBookmarkEditing(windowId: tab.windowId),
       editing.store.state.windows[tab.windowId]?.profileId == tab.profileId,
-      case .page(.bookmarks)? = SolaraOmnibox.appUrlRoute(tab.navigation?.url ?? tab.url) else {
+      InternalPageDestination(tab: tab)?.page == .bookmarks else {
       if bookmarkEditing != nil { bookmarks.clearScope() }
       bookmarkEditing = nil
       return
@@ -490,12 +662,12 @@ final class NativePageView: ExpoView {
   private func writeBookmarks(_ mutations: [BookmarkMutation], editing: NativeBookmarkEditing, binding: BookmarkWriterBinding? = nil,
     onError: @escaping (BookmarksPageModel) -> Void = { _ in }, onSuccess: @escaping (BookmarksPageModel, BookmarkReceipt) -> Void = { _, _ in }
   ) {
-    let tabId = bookmarkTabId
+    let tabId = internalTabId
     let pageScope = bookmarks.scopeGeneration
     let currentBinding = binding ?? (try? NativeBookmarkOwner.displayCurrent?.binding(profile: editing.profile))
     Task { [weak self] in
       @MainActor func model() -> BookmarksPageModel? {
-        guard let self, bookmarkTabId == tabId, bookmarks.scopeGeneration == pageScope, editing.live else { return nil }
+        guard let self, internalTabId == tabId, bookmarks.scopeGeneration == pageScope, editing.live else { return nil }
         return bookmarks
       }
       do {

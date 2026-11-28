@@ -7,7 +7,6 @@ import { newTileFolder } from "../../store/tileFolders";
 import { nativeOwnsWorkspace, nativeWrite } from "../../store/nativeStore";
 import { useBrowser } from "../../store/browser";
 import { encodeCommand } from "@solara/store";
-import { useClearDataRequest } from "./ClearDataDialog";
 import { openInternalPage } from "./urls";
 
 const makeTileFolder = (ids: string[]) => {
@@ -21,7 +20,6 @@ export const pagesDrivers = {
   openInternalPage,
   openSettings,
   openImport,
-  clearDataRequest: useClearDataRequest,
   meetingAlert: useMeetingAlert,
   calendar: useCalendar,
   setSidebarUi,

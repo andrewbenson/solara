@@ -55,6 +55,7 @@ public struct Command: Sendable, Equatable {
 public enum Effect: Sendable, Hashable {
   case swapTabs(a: String, b: String)
   case startNavigation(tabId: String, navigation: Navigation)
+  case openSettings(pane: String?)
   case profileCreated(profileId: String, sharedWith: String?)
   case profileDeleted(profileId: String, shared: Bool, engineProfile: String)
   case cancelDownload(id: String)
@@ -66,6 +67,7 @@ public enum Effect: Sendable, Hashable {
     switch self {
     case .swapTabs(let a, let b): ["type": "swapTabs", "a": .string(a), "b": .string(b)]
     case .startNavigation(let tabId, let navigation): ["type": "startNavigation", "tabId": .string(tabId), "navigation": navigation.jsonValue]
+    case .openSettings(let pane): ["type": "openSettings", "pane": JSONValue(pane)]
     case .profileCreated(let profileId, let sharedWith): ["type": "profileCreated", "profileId": .string(profileId), "sharedWith": JSONValue(sharedWith)]
     case .profileDeleted(let profileId, let shared, _): ["type": "profileDeleted", "profileId": .string(profileId), "shared": .bool(shared)]
     case .cancelDownload(let id): ["type": "cancelDownload", "id": .string(id)]

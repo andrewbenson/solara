@@ -877,6 +877,62 @@ try {
     assert.equal(result.after.calls, result.before.calls);
     assert.equal(result.after.blocked, result.before.blocked);
   });
+  await rep.check("native Library panes keep independent tabs and replace a History query in place", async () => {
+    const fixture = await app.eval(`const s = ac.store.getState();
+      const w = Object.values(s.windows)[0];
+      const history = w.activeTabIds[w.profileId];
+      s.navigate(history, "chrome://history?q=one%2Btwo");
+      const split = s.openSplitPane(w.id, { url: "about:bookmarks", anchorTabId: history });
+      return { windowId: w.id, history, split };`);
+    assert.equal(fixture.split.ok, true);
+    const { windowId, history, split } = fixture;
+    const shown = () => readPages(app);
+    const first = await until(async () => {
+      const rows = await shown();
+      return { ok: rows.some((row) => row.tabId === history && row.kind === "history" && row.query === "one+two")
+        && rows.some((row) => row.tabId === split.tabId && row.kind === "bookmarks"), rows };
+    }, 5000);
+    assert.ok(first.ok, "both native pages are mounted in the split");
+    await app.eval(`ac.store.getState().navigate(${JSON.stringify(history)}, "solara://history?q=second%20query"); return true;`);
+    const updated = await until(async () => {
+      const rows = await shown();
+      return { ok: rows.some((row) => row.tabId === history && row.query === "second query"), rows };
+    });
+    assert.ok(updated.ok);
+    await app.eval(`const s = ac.store.getState();
+      s.closeTab(${JSON.stringify(split.tabId)}); s.activate(${JSON.stringify(history)});
+      return s.windows[${JSON.stringify(windowId)}] != null;`);
+    const closed = await until(async () => ({ ok: !(await shown()).some((row) => row.tabId === split.tabId) }));
+    assert.ok(closed.ok, "the closed pane no longer has a Library view");
+  });
+  await rep.check("native navigation sends Settings and New Tab aliases to their own surfaces", async () => {
+    const source = await app.eval(`const s = ac.store.getState();
+      const w = Object.values(s.windows)[0];
+      const id = w.activeTabIds[w.profileId];
+      s.navigate(id, "chrome://settings/searchEngines");
+      return { windowId: w.id, id, url: s.tabs[id].url, count: w.tabIds.length };`);
+    try {
+      const settings = await until(async () => {
+        const state = await app.eval(`return expo.modules.SolaraSettings.devSettings("search", null).then(JSON.parse);`);
+        return { ok: state.pane === "search", state };
+      }, 5000);
+      assert.ok(settings.ok, JSON.stringify(settings.state));
+    } finally {
+      await app.eval(`return expo.modules.SolaraSettings.devSettings("close", null);`);
+    }
+    const routed = await app.eval(`const { windowId, id } = ${JSON.stringify(source)};
+      const before = ac.store.getState();
+      const sourceUrl = before.tabs[id].url;
+      const sourceCount = before.windows[windowId].tabIds.length;
+      before.navigate(id, "about:newtab");
+      const after = ac.store.getState(), w = after.windows[windowId];
+      return { sourceUrl, sourceCount, count: w.tabIds.length, active: after.tabs[w.activeTabIds[w.profileId]].url };`);
+    assert.equal(routed.sourceUrl, source.url);
+    assert.equal(routed.sourceCount, source.count);
+    assert.equal(routed.count, source.count + 1);
+    assert.equal(routed.active, "");
+  });
+
 } finally {
   await app?.quit();
   if (!keep && !rep.failed.length) for (const dir of [data, files]) rmSync(dir, { recursive: true, force: true });

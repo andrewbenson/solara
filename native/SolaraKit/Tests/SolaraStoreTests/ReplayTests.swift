@@ -1,6 +1,6 @@
 import Foundation
 import SolaraModel
-import SolaraStore
+@testable import SolaraStore
 import Synchronization
 import Testing
 
@@ -140,6 +140,7 @@ func withoutCommandIds(_ chromeTabs: JSONValue) -> JSONValue {
 
 func replayConfig(_ json: JSONValue?) -> StoreConfig {
   var config = StoreConfig()
+  config.routesApplicationURLs = false
   config.handOffPinsImmediately = json?["handOffPinsImmediately"]?.bool ?? true
   if let names = json?["listeners"]?.array?.compactMap(\.string) { config.listeners = names.compactMap(SettleListener.init(rawValue:)) }
   return config

@@ -2,12 +2,13 @@ import { requireNativeViewManager, requireOptionalNativeModule, type EventSubscr
 import { forwardRef, type ComponentType, type Ref } from "react";
 import type { NativeSyntheticEvent, ViewProps } from "react-native";
 
-export type NativePageKind = "downloads" | "history" | "bookmarks" | "createProfile" | "calendarPreview" | "meetingAlert";
+export type NativePageKind = "createProfile" | "calendarPreview" | "meetingAlert";
 export type NativePageEvent = { kind: string } & Record<string, unknown>;
 
 export type NativePageProps = ViewProps & {
-  kind: NativePageKind;
-  state: string;
+  kind?: NativePageKind;
+  state?: string;
+  internalTabId?: string;
   onPageEvent?(e: NativeSyntheticEvent<NativePageEvent>): void;
 };
 
@@ -15,12 +16,25 @@ export type NativePageHandle = { focusSearch(): Promise<void> };
 
 export type MeetingAlertEvent = { windowId: string; kind: "dismiss" | "join" | "view"; all?: boolean };
 
+export type NativeHistoryAction = { token: string; profileId: string; windowId: string } & (
+  | { kind: "remove" | "deleteSelected"; urls: string[] }
+  | { kind: "clearData"; range: string; history: boolean; siteData: boolean }
+);
+
 const native = requireOptionalNativeModule<{
   available(): boolean;
   showMeetingAlert(windowId: string, json: string, left: number, top: number): Promise<boolean>;
   hideMeetingAlert(windowId: string): Promise<void>;
+  historyActionCurrent(token: string): Promise<boolean>;
+  finishHistoryAction(token: string, action: "selection" | "clear" | "clearFailed"): Promise<void>;
+  addListener(event: "onHistoryAction", listener: (e: NativeHistoryAction) => void): EventSubscription;
   addListener(event: "onMeetingAlertEvent", listener: (e: MeetingAlertEvent) => void): EventSubscription;
 }>("SolaraPages");
+
+export const onNativeHistoryAction = (listener: (e: NativeHistoryAction) => void) => native?.addListener("onHistoryAction", listener);
+export const nativeHistoryActionCurrent = (token: string) => native?.historyActionCurrent(token) ?? Promise.resolve(false);
+export const finishNativeHistoryAction = (token: string, action: "selection" | "clear" | "clearFailed") =>
+  native?.finishHistoryAction(token, action) ?? Promise.resolve();
 
 const meetingAlertFrame = typeof native?.showMeetingAlert === "function" ? native : null;
 

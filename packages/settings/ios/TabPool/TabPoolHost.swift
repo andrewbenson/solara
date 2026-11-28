@@ -611,15 +611,7 @@ final class TabPoolHost {
     return window.profileId != tab.profileId
   }
 
-  static func isInternal(_ tab: Tab) -> Bool {
-    let url = tab.navigation?.url ?? tab.url
-    guard let colon = url.range(of: "://") else { return false }
-    let scheme = String(url[..<colon.lowerBound])
-    guard isAppScheme(scheme) else { return false }
-    let rest = url[colon.upperBound...]
-    let host = rest.prefix { $0 != "/" && $0 != "?" && $0 != "#" }.lowercased()
-    return ["history", "bookmarks", "downloads"].contains(host)
-  }
+  static func isInternal(_ tab: Tab) -> Bool { InternalPageDestination(tab: tab) != nil }
 }
 
 @MainActor

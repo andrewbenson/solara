@@ -48,6 +48,36 @@ public func fromLegacyUrl(_ url: String) -> String {
   return url
 }
 
+public struct InternalPageDestination: Equatable, Sendable {
+  public let page: AppPageHost
+  public let url: String
+
+  public init?(tab: Tab) { self.init(url: tab.navigation?.url ?? tab.url) }
+
+  public init?(url: String) {
+    let url = if case .page? = appUrlRoute(url) { url } else { toAppUrl(url) }
+    guard case .page(let page)? = appUrlRoute(url) else { return nil }
+    self.page = page
+    self.url = url
+  }
+
+  public var query: String {
+    guard let match = url.range(of: "[?&]q=[^&#]*", options: .regularExpression) else { return "" }
+    let value = String(url[match].dropFirst(3))
+    return value.removingPercentEncoding ?? value
+  }
+
+  func apply(to tab: inout Tab) {
+    tab.url = url
+    if var navigation = tab.navigation, navigation.url != url {
+      navigation.url = url
+      tab.navigation = navigation
+    }
+    tab.title = page.title
+    tab.favicon = nil
+  }
+}
+
 extension Session {
   func resolved(_ input: String, _ s: BrowserState) -> String {
     env.resolveInput(fromLegacyUrl(input.jsTrim()), searchUrlPrefix: env.searchUrlPrefix(s.settings))
@@ -84,6 +114,7 @@ extension Session {
     } else if lazy {
       wake(&nextTab)
     }
+    if config.routesApplicationURLs { InternalPageDestination(tab: nextTab)?.apply(to: &nextTab) }
     var window = w
     if !w.incognito { window.profileId = tab.profileId }
     window.activeTabIds[tab.profileId] = id
@@ -311,6 +342,7 @@ extension Session {
       tab.wakeAdoptId = o.wakeAdoptId
       tab.navigation = nil
     }
+    if config.routesApplicationURLs { InternalPageDestination(tab: tab)?.apply(to: &tab) }
     var tabs = s.tabs
     tabs[tab.id] = tab
     var tabIds = w.tabIds
@@ -363,6 +395,18 @@ extension Session {
       o.profileId = profileId
       o.index = nil
       return newTab(main, o)
+    }
+    if config.routesApplicationURLs, let options, let input = options.url, !truthy(options.adoptId), !truthy(options.wakeAdoptId), options.snapshot == nil,
+      state.windows[windowId] != nil, let action = AppURLAction(url: resolved(input, state)) {
+      switch action {
+      case .settings(let pane):
+        emit(.openSettings(pane: pane))
+        return ""
+      case .newTab:
+        var blank = options
+        blank.url = nil
+        return newTab(windowId, blank)
+      }
     }
     var o = options ?? NewTabOptions()
     let placeholder = o.newTabCommand == true && !truthy(o.url) && o.background != true && o.snapshot == nil && !truthy(o.adoptId)
@@ -462,14 +506,23 @@ extension Session {
     let s = state
     let url = resolved(input, s)
     guard !url.isEmpty, let tab = s.tabs[id] else { return }
+    if config.routesApplicationURLs, let action = AppURLAction(url: url) {
+      switch action {
+      case .settings(let pane): emit(.openSettings(pane: pane))
+      case .newTab: _ = newTab(tab.windowId)
+      }
+      closePanel(tab.windowId)
+      return
+    }
     if (tab.navigation?.url ?? tab.url).isEmpty, SettingsOpening.internalPage(of: url, isAppScheme: isAppScheme) != nil {
       memory.internalPageFromNewTab.insert(id)
     }
     let base = userInitiated && !tab.url.isEmpty ? forgetOpeners(s, tab.windowId) : s
-    let navigation = navigationTo(url, userInitiated: userInitiated)
+    let internalPage = config.routesApplicationURLs ? InternalPageDestination(url: url) : nil
+    let navigation = navigationTo(internalPage?.url ?? url, userInitiated: userInitiated)
     let engine = userInitiated ? typedNavigationEngine(s, tab, url) : nil
     let switching = engine != nil && engine != tabEngine(s, id)
-    if !switching { emit(.startNavigation(tabId: id, navigation: navigation)) }
+    if internalPage == nil && !switching { emit(.startNavigation(tabId: id, navigation: navigation)) }
     var t = tab
     t.unloaded = nil
     t.wakeAdoptId = nil
@@ -479,6 +532,14 @@ extension Session {
     if let engine { t.engine = engine }
     if switching { t.adoptId = nil }
     var next = base
+    if let internalPage {
+      let change = onUrlChange(s, tab, internalPage.url)
+      if let muted = change.muted { t.muted = muted }
+      if let pinnedUrl = change.pinnedUrl { t.pinnedUrl = pinnedUrl }
+      internalPage.apply(to: &t)
+      next.live[id] = PageLiveFacts()
+      memory.pages[id] = nil
+    }
     next.tabs[id] = t
     next.closePanel(tab.windowId)
     set(next)

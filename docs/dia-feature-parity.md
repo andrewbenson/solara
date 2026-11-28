@@ -512,7 +512,7 @@ own sign-ins instead.
 | Feature | Dia | Solara | Gap |
 |---|---|---|---|
 | History recorded | ✓ | ✅ | per profile, 5 000 pages, history.json; never for incognito |
-| History page (⌘Y, `dia://history`) | ✓ | ✅ | `solara://history` (our page, also when Chrome opens chrome://history): by day, search, bulk delete. SwiftUI reads window-scoped downloads from the native Store and uses the same actions as the popover. Show History opens and reuses its tab in Swift. |
+| History page (⌘Y, `dia://history`) | ✓ | ✅ | `solara://history` (our page, also when Chrome opens chrome://history): by day, search, bulk delete. Show History opens and reuses its tab in Swift. The native pane host selects and scopes the Library pages from the workspace. |
 | History menu | ✓ | ✅ | Show History, Clear Browsing Data, Recently Closed, Recently Closed Groups |
 | Clear browsing data | ✓ | ✅ | our history by visit time and its favicons, plus Chrome's BrowsingDataRemover for the same range: Chrome's history database (what `chrome.history` shows), cookies and every kind of site storage, cached files, live. Form data and passwords stay, as in the dialog's two options SwiftUI reads window-scoped downloads from the native Store and uses the same actions as the popover. |
 | Synced devices' tabs | ✓ | ✅ | each device publishes its 30 most recent open tabs per profile (not pinned tabs, which sync as pinned tabs); the others list them in the overflow menu, and a device that stops syncing takes its record away (`docs/sync.md`). Verified with two and three hidden instances (2026-09-26) |

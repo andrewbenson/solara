@@ -39,16 +39,38 @@ enum NativeWorkspaceCommands {
   private static var menuListener: Int?
   private static var menuStore: Store?
 
+  private static weak var urlStore: Store?
+  private static var urlStoreListener: Int?
+  private static var urlLifecycle: Int?
+
+  private static func observeApplicationURLs() {
+    let store = NativeStoreHandle.ownsWorkspace ? NativeStoreHandle.store : nil
+    guard urlStore !== store else { return }
+    if let urlStoreListener { urlStore?.unsubscribe(urlStoreListener) }
+    urlStore = store
+    let generation = NativeStoreHandle.ownershipGeneration
+    urlStoreListener = store?.subscribe { [weak store] commit in
+      for case .openSettings(let pane) in commit.effects {
+        DispatchQueue.main.async {
+          guard let store, store === NativeStoreHandle.store, NativeStoreHandle.ownsWorkspace,
+            NativeStoreHandle.ownershipGeneration == generation, !NativeStoreHandle.frozen else { return }
+          NativeSettingsWindow.openFromURL(pane: pane)
+        }
+      }
+    }
+  }
+
   static func install() {
     if menuLifecycle == nil {
       menuLifecycle = NativeStoreHandle.subscribeLifecycle { bindMenus() }
     }
     NativeBookmarkCommands.installMenu()
+    if urlLifecycle == nil { urlLifecycle = NativeStoreHandle.subscribeLifecycle { observeApplicationURLs() } }
     NativePinnedPageCommands.start()
     NativeDownloadsPanel.start()
     ToolbarView.commandURLFocusAllowed = { NativeCommandBarFocus.developerAllowed($0, field: $1) }
     ToolbarView.commandURLDidFocus = { NativeCommandBarFocus.developerDidFocus($0, field: $1) }
-    for command in WorkspaceMenuCommand.commands.union(ViewMenuCommand.commands).union(PageMenuCommand.commands).union(FindMenuCommand.commands).union(BookmarkMenuCommand.commands).union(NativeBookmarkCommands.formCommands).union(CopyLinkCommand.commands).union(BrowserServiceCommand.commands).union(TabFocusCommand.commands).union(["togglePageEngine"]).union(PinnedPageCommand.commands).union(NativeSidebarMenus.commands).union(["focusCommandBar", "cast", "restoreArcFolders", "showHistory", "manageBookmarks"]) {
+    for command in WorkspaceMenuCommand.commands.union(ViewMenuCommand.commands).union(PageMenuCommand.commands).union(FindMenuCommand.commands).union(BookmarkMenuCommand.commands).union(NativeBookmarkCommands.formCommands).union(CopyLinkCommand.commands).union(BrowserServiceCommand.commands).union(TabFocusCommand.commands).union(["togglePageEngine"]).union(PinnedPageCommand.commands).union(NativeSidebarMenus.commands).union(["focusCommandBar", "cast", "restoreArcFolders", "showHistory", "manageBookmarks", "clearBrowsingData"]) {
       NativeMenuCommands.argumentHandlers[command] = { arg, windowId in perform(command, arg: arg, windowId: windowId) }
     }
     NativeMenuCommands.keepsMenuDispatch = ViewMenuCommand.commands.union(PageMenuCommand.commands).union(BookmarkMenuCommand.commands).union(NativeBookmarkCommands.formCommands).union(CopyLinkCommand.commands).union(BrowserServiceCommand.commands).union(TabFocusCommand.commands).union(["showHistory", "manageBookmarks"])
@@ -363,13 +385,15 @@ enum NativeWorkspaceCommands {
       }
       return true
     }
-    if command == "showHistory" || command == "manageBookmarks" {
+    if command == "showHistory" || command == "manageBookmarks" || command == "clearBrowsingData" {
       if let store = SettingsDirectWrites.store {
         let route = CommandRoute.resolve(command, windowId: windowId, state: store.state, closing: store.memory.closingWindows)
         if let target = route.windowId {
-          let page = command == "showHistory" ? "history" : "bookmarks"
-          SettingsDirectWrites.opening?.openInternalPage(page, windowId: target, focusTarget: route.focusWindow == target,
-            scheme: appScheme(), isAppScheme: isAppScheme)
+          let page = command == "manageBookmarks" ? "bookmarks" : "history"
+          if SettingsDirectWrites.opening?.openInternalPage(page, windowId: target, focusTarget: route.focusWindow == target,
+            scheme: appScheme(), isAppScheme: isAppScheme) == true, command == "clearBrowsingData" {
+            NativePageView.requestClearData(windowId: target)
+          }
         }
       }
       return true

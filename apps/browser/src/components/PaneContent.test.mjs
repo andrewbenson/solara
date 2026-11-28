@@ -63,7 +63,7 @@ async function fixture() {
   };
   state.popover = {};
   for (const [module, names] of [
-    ["./PooledPageProps", ["PooledPageProps"]], ["./media/ShareBar", ["ShareBar"]], ["./pages", ["InternalPage"]],
+    ["./PooledPageProps", ["PooledPageProps"]], ["./media/ShareBar", ["ShareBar"]],
     ["./NewTabPage", ["NewTabPage"]], ["./EmptyCard", ["EmptyCard"]], ["./FindBar", ["FindBar"]],
     ["./layout/PaneOverlays", ["StatusBubble", "SadTab"]], ["./site/SitePanelHost", ["SiteControls"]],
     ["./media/SharePicker", ["SharePicker"]], ["./layout/SwipeOverlay", ["NavigationOverlays"]],
@@ -104,7 +104,7 @@ test("navigation updates the native page guest without redrawing sibling overlay
 test("focus and layout parent renders do not redraw unchanged native page guests", async () => {
   const f = await fixture();
   try {
-    const guests = ["PooledPageProps", "ShareBar", "InternalPage"];
+    const guests = ["PooledPageProps", "ShareBar"];
     const before = Object.fromEntries(guests.map((name) => [name, f.renders[name]]));
     for (const count of Object.values(before)) assert.ok(count > 0);
     await f.update({ focused: "b" });
@@ -112,7 +112,6 @@ test("focus and layout parent renders do not redraw unchanged native page guests
     assert.deepEqual(Object.fromEntries(guests.map((name) => [name, f.renders[name]])), before);
     await f.update({ fullscreen: "a" });
     assert.equal(f.renders.PooledPageProps, before.PooledPageProps + 1);
-    assert.equal(f.renders.InternalPage, before.InternalPage + 1);
     assert.equal(f.renders.ShareBar, before.ShareBar);
     await f.update({ fullscreen: null });
     assert.equal(f.renders.ShareBar, before.ShareBar + 1);

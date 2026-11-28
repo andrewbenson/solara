@@ -12,10 +12,7 @@ enum NativeOmniboxActions {
 
   static func controller(view: @escaping () -> NSView?) -> OmniboxActionController {
     let controller = OmniboxActionController()
-    controller.openSettings = { pane in
-      if let pane { NativeSettingsWindow.navigate(pane: pane, profileId: nil, detail: nil) }
-      WindowHost.openAuxiliary(id: "settings", kind: "settings", title: "Settings")
-    }
+    controller.openSettings = { NativeSettingsWindow.openFromURL(pane: $0) }
     controller.performAction = { id, windowId in perform(id, windowId: windowId, view: view()) }
     controller.presentContextMenu = { model in
       guard let anchor = view() else { return }
@@ -218,9 +215,7 @@ enum NativeOmniboxActions {
       WindowHost.openAuxiliary(id: "import", kind: "import", title: "Import from Another Browser")
       return true
     case "clearBrowsingData":
-      _ = try? store.dispatch(Command("omniboxCommand", [.string(windowId), "showHistory"]), origin: .native)
-      NativePageView.requestClearData(windowId: windowId)
-      return true
+      return NativeWorkspaceCommands.perform(id, windowId: windowId)
     case "newProfile":
       guard store.state.windows[windowId]?.incognito != true else { return true }
       let generation = NativeStoreHandle.ownershipGeneration

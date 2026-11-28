@@ -53,11 +53,6 @@ export const setPinHandoff = (handoff: typeof pinHandoff) => {
   pinHandoff = handoff;
 };
 
-let openOutsideTab: (url: string, windowId: string) => boolean = () => false;
-export const setAppUrlOpener = (open: typeof openOutsideTab) => {
-  openOutsideTab = open;
-};
-
 export type TabsSlice = {
   tabs: Record<string, Tab>;
   live: Record<string, TabLive>;
@@ -383,7 +378,6 @@ export const createTabsSlice: StateCreator<BrowserState, [], [], TabsSlice> = (s
       }
       return get().newTab(main, { ...options, profileId, index: undefined });
     }
-    if (options?.url && !options.adoptId && openOutsideTab(resolveInput(fromLegacyUrl(options.url.trim()), searchUrlPrefix(get().settings)), windowId)) return "";
     const beside = options?.newTabCommand && !options.openerId ? nextToActive(get(), windowId, options.profileId) : undefined;
     let [next, id] = withNewTab(get(), windowId, beside ? { ...options, ...beside } : options);
     const typed = beside && next.tabs[id]?.navigation;
@@ -462,10 +456,6 @@ export const createTabsSlice: StateCreator<BrowserState, [], [], TabsSlice> = (s
     const url = resolveInput(fromLegacyUrl(input.trim()), searchUrlPrefix(s.settings));
     const tab = s.tabs[id];
     if (!url || !tab) return;
-    if (openOutsideTab(url, tab.windowId)) {
-      if (get().windowUi[tab.windowId]?.panel.open) get().closePanel(tab.windowId);
-      return;
-    }
     const { unloaded: _, wakeAdoptId: _kept, ...rest } = tab;
     const base = userInitiated && tab.url ? forgetOpeners(s, tab.windowId) : s;
     const navigation = navigationTo(url, userInitiated);

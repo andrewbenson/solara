@@ -38,8 +38,8 @@ public final class HoverIntent {
   private var exitPoint: CGPoint?
   private var waiting: String??
   private var held = false
-  private var showTimer: Timer?
-  private var hideTimer: Timer?
+  private(set) var showTimer: Timer?
+  private(set) var hideTimer: Timer?
   private var aimTimer: Timer?
   private var ticket = 0
 

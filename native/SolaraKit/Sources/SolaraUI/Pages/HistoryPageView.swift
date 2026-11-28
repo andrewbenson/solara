@@ -81,7 +81,7 @@ public final class HistoryPageModel {
   @ObservationIgnored var lastClicked: String?
   @ObservationIgnored public var onEvent: (HistoryPageEvent) -> Void = { _ in }
   @ObservationIgnored private var searchTexts: [String: String] = [:]
-  @ObservationIgnored private var seen: State?
+  @ObservationIgnored private var initialQuery: String?
   @ObservationIgnored private let catalog: LibraryCatalog?
   @ObservationIgnored private var historyObserver: Task<Void, Never>?
 
@@ -147,19 +147,6 @@ public final class HistoryPageModel {
     PageMenuTarget.show(menu, in: view, at: point)
   }
 
-  public struct State: Decodable, Equatable, Sendable {
-    public var engineProfile: String
-    public var profileId: String
-    public var profileName: String?
-    public var initialQuery: String
-    public var selectionReset: Int
-    public var clearRequest: Int
-    public var clearDone: Int
-    public var dark: Bool
-    public var theme: [String: String]
-    public var panelShadowOpacity: Double?
-  }
-
   public func apply(snapshot: HistorySnapshot) {
     let next = snapshot.ready ? snapshot.entries.map { entry in
       PageHistoryEntry(url: entry.url, title: entry.title, favicon: nil, lastVisit: entry.lastVisit)
@@ -182,24 +169,30 @@ public final class HistoryPageModel {
     }
   }
 
-  public func apply(json: String) {
-    guard let data = json.data(using: .utf8), let state = try? JSONDecoder().decode(State.self, from: data) else { return }
-    let previous = seen
-    seen = state
-    let next = PageTheme(dark: state.dark, tokens: state.theme, panelShadowOpacity: state.panelShadowOpacity)
-    if theme != next { theme = next }
-    profileId = state.profileId
-    profileName = state.profileName
-    if previous?.engineProfile != state.engineProfile {
-      engineProfile = state.engineProfile
+  public func leaveScope() {
+    historyObserver?.cancel()
+    historyObserver = nil
+  }
+
+  public func setScope(profileId: String, engineProfile: String, profileName: String?, query: String, theme: PageTheme) {
+    if self.theme != theme { self.theme = theme }
+    if self.profileName != profileName { self.profileName = profileName }
+    let changedProfile = self.profileId != profileId
+    if changedProfile {
+      self.profileId = profileId
+      selected = []
+      lastClicked = nil
+      clearOpen = false
+      clearBusy = false
+    }
+    if changedProfile || self.engineProfile != engineProfile {
+      self.engineProfile = engineProfile
+      entries = []
       observeHistory()
     }
-    if previous?.initialQuery != state.initialQuery { query = state.initialQuery }
-    if let previous, previous.selectionReset != state.selectionReset { selected = [] }
-    if let previous, previous.clearRequest != state.clearRequest { clearOpen = true }
-    if let previous, previous.clearDone != state.clearDone {
-      clearBusy = false
-      clearOpen = false
+    if changedProfile || initialQuery != query {
+      initialQuery = query
+      self.query = query
     }
   }
 }

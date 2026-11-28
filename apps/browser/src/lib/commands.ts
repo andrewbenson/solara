@@ -22,8 +22,6 @@ import {
   switchProfile,
   toggleMute,
 } from "./actions";
-import { useClearDataRequest } from "../components/pages/ClearDataDialog";
-import { openInternalPage } from "../components/pages/urls";
 import { openImport, openSettings } from "../components/settings/windows";
 import { focusSettingsSearch } from "../components/settings/searchState";
 import { closePanelToHeroBar } from "../components/omnibox/barState";
@@ -61,7 +59,7 @@ export const commandHandlers = {
 };
 
 export function runCommand({ command, arg, windowId: requested }: CommandEvent) {
-  if (command === "addFolderToSidebar" || command === "restoreArcFolders" || command === "openBookmark" || command === "jumpToSelection" || ["copyUrl", "copyUrlAsMarkdown", "copyQuoteLink", "share", "openFile", "autofill", "searchTabs", "tabSwitcher", "focusCommandBar", "cast", "reload", "forceReload", "returnToPinnedUrl", "togglePageEngine", "openExtension", "addExtension", "pinExtensions", "manageExtensions", "showHistory", "manageBookmarks", "bookmarkPage", "bookmarkAllTabs"].includes(command)) return void nativeWorkspaceCommand(command, arg, requested);
+  if (command === "addFolderToSidebar" || command === "restoreArcFolders" || command === "openBookmark" || command === "jumpToSelection" || ["copyUrl", "copyUrlAsMarkdown", "copyQuoteLink", "share", "openFile", "autofill", "searchTabs", "tabSwitcher", "focusCommandBar", "cast", "reload", "forceReload", "returnToPinnedUrl", "togglePageEngine", "openExtension", "addExtension", "pinExtensions", "manageExtensions", "showHistory", "manageBookmarks", "clearBrowsingData", "bookmarkPage", "bookmarkAllTabs"].includes(command)) return void nativeWorkspaceCommand(command, arg, requested);
   if (nativeOwnsWorkspace() && nativeWorkspaceCommand(command, arg, requested)) return;
   if (__DEV__ && !commandHandlersEnabled) { commandHandlerBlocked++; return; }
   if (__DEV__) commandHandlerCalls++;
@@ -228,9 +226,6 @@ export function runCommand({ command, arg, windowId: requested }: CommandEvent) 
       return page ? toggleMute(page.id) : undefined;
     case "downloads":
       return s.setDownloadsOpen(windowId, !ui?.downloadsOpen);
-    case "clearBrowsingData":
-      openInternalPage("history", windowId);
-      return useClearDataRequest.getState().request(windowId);
     case "mergeAllWindows":
       return s.mergeAllWindows(windowId);
     case "switchProfile":

@@ -194,6 +194,11 @@ enum NativeSettingsWindow {
     context.navigation.go(target, profileId: profileId, detail: detail)
   }
 
+  static func openFromURL(pane: String?) {
+    navigate(pane: pane, profileId: nil, detail: nil)
+    WindowHost.openAuxiliary(id: windowId, kind: "settings", title: "Settings")
+  }
+
   static func focusSearch() {
     makeContext()?.search.requestFocus()
   }

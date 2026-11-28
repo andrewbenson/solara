@@ -15,6 +15,7 @@ import { startNativeSync } from "./lib/native";
 import { startPersistence } from "./lib/persist";
 import { startProfileLoading } from "./lib/lazyProfiles";
 import { startNewTabBar } from "./components/omnibox/newTabBar";
+import { startHistoryPageActions } from "./components/pages/historyPageActions";
 import { startPooledPages } from "./components/pooledPages";
 import { perfMark, perfProbeEnabled, probeStore } from "./lib/perfProbe";
 import { startNativeKeepAlive } from "./lib/nativeKeepAlive";
@@ -37,6 +38,7 @@ if (perfProbeEnabled) afterFirstWindow(() => {
 });
 startProfileLoading();
 startPersistence();
+startHistoryPageActions();
 startNotifications();
 startNewTabBar();
 startTabPages();

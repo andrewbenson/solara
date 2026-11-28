@@ -3,11 +3,6 @@ import SolaraModel
 import SolaraOmnibox
 import SolaraStore
 
-public enum OmniboxApplicationAction: Sendable, Equatable {
-  case newTab
-  case settings(pane: String?)
-}
-
 @MainActor
 public final class OmniboxActionController {
   public var ownsWorkspace: () -> Bool
@@ -110,24 +105,7 @@ public final class OmniboxActionController {
     return events
   }
 
-  private static let settingsPanes: [String: String] = [
-    "general": "general", "profiles": "profiles", "people": "profiles", "manageprofile": "profiles",
-    "sync": "sync", "syncsetup": "sync", "tabs": "tabs", "appearance": "appearance", "privacy": "privacy",
-    "passwords": "passwords", "autofill": "autofill", "addresses": "autofill", "payments": "autofill",
-    "extensions": "extensions", "search": "search", "searchengines": "search", "engines": "engines",
-    "shortcuts": "shortcuts", "livefolders": "liveFolders", "calendar": "calendar", "advanced": "advanced",
-  ]
-
-  public static func applicationAction(for url: String) -> OmniboxApplicationAction? {
-    switch appUrlRoute(url) {
-    case .newTab?: return .newTab
-    case .settings(let section)?:
-      guard let section else { return .settings(pane: nil) }
-      guard let known = settingsPanes[section.lowercased()] else { return nil }
-      return .settings(pane: known)
-    default: return nil
-    }
-  }
+  public static func applicationAction(for url: String) -> AppURLAction? { AppURLAction(url: url) }
 
   private func openAppURL(_ url: String, disposition: Disposition, model: HeroBarModel, store: Store) -> Bool {
     guard disposition != .newWindow, let action = Self.applicationAction(for: url) else { return false }

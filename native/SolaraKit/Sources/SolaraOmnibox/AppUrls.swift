@@ -5,6 +5,8 @@ public let upstreamAppScheme = "solara"
 
 public enum AppPageHost: String, Sendable, Equatable, CaseIterable {
   case history, bookmarks, downloads
+
+  public var title: String { rawValue.capitalized }
 }
 
 public enum AppUrlRoute: Sendable, Equatable {
@@ -163,4 +165,31 @@ public func appUrlRoute(_ url: String) -> AppUrlRoute? {
     return .settings(section: section)
   }
   return .engine(url: toEngineUrl(url))
+}
+
+public enum AppURLAction: Sendable, Equatable {
+  case newTab
+  case settings(pane: String?)
+
+  private static let settingsPanes: [String: String] = [
+    "general": "general", "profiles": "profiles", "people": "profiles", "manageprofile": "profiles",
+    "sync": "sync", "syncsetup": "sync", "tabs": "tabs", "appearance": "appearance", "privacy": "privacy",
+    "passwords": "passwords", "autofill": "autofill", "addresses": "autofill", "payments": "autofill",
+    "extensions": "extensions", "search": "search", "searchengines": "search", "engines": "engines",
+    "shortcuts": "shortcuts", "livefolders": "liveFolders", "calendar": "calendar", "advanced": "advanced",
+  ]
+
+  public init?(url: String) {
+    switch appUrlRoute(toAppUrl(url)) {
+    case .newTab?: self = .newTab
+    case .settings(let section)?:
+      if let section {
+        guard let pane = Self.settingsPanes[section.lowercased()] else { return nil }
+        self = .settings(pane: pane)
+      } else {
+        self = .settings(pane: nil)
+      }
+    default: return nil
+    }
+  }
 }

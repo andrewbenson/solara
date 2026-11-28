@@ -46,6 +46,7 @@ public struct StoreConfig: Sendable, Equatable {
   public var persistenceRefusal: String?
   public var handOffPinsImmediately = true
   public var earlyLaunchTab = true
+  var routesApplicationURLs = true
   public var listeners: [SettleListener] = SettleListener.app
   public var syncOrigins = false
   public var replicaProfilesFromDisk = false

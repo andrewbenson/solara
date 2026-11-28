@@ -317,6 +317,14 @@ extension Session {
       applyPageLiveEffect(effect, report: report, page: &page)
       switch effect {
       case .navigated(let url, let title, _, _, _):
+        if config.routesApplicationURLs, let destination = InternalPageDestination(url: url) {
+          updateTab(id, TabUpdate(set: [
+            "url": .string(destination.url), "title": .string(destination.page.title), "favicon": .null,
+            "navigation": navigationTo(destination.url).jsonValue,
+          ], unset: ["adoptId"]), live: PageLiveFacts())
+          memory.pages[id] = nil
+          return
+        }
         memory.pages[id] = page
         updateTab(id, TabUpdate(set: ["url": .string(url), "title": .string(title)]), live: page.live.facts)
       case .adoptNavigation(let url):

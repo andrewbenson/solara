@@ -473,6 +473,7 @@ final class NativePaneLayoutHost {
   private var frozenURIs: [String: String] = [:]
   private var paintedTokens: [String: Int] = [:]
   private var bookmarks: BookmarksBarHost?
+  private var libraryPages: [String: NativePageView] = [:]
   private var features: PaneOverlayHost?
   private var featuresInstalled = false
   #if DEBUG
@@ -523,6 +524,7 @@ final class NativePaneLayoutHost {
         let paneGeometryTrace = LayoutTrace.begin("paneGeometry", shell.windowId)
         #endif
         panes.install(snapshot, state: state)
+        placeLibraryPages(snapshot, state: state)
         #if DEBUG || SOLARA_PERF_TRACE
         LayoutTrace.end(paneGeometryTrace)
         #endif
@@ -570,6 +572,25 @@ final class NativePaneLayoutHost {
     self.theme = theme
     self.covered = covered
     NativeWindowShell.host(shell.windowId)?.scheduleLayoutProjection()
+  }
+
+  private func placeLibraryPages(_ snapshot: WindowLayoutSnapshot, state: BrowserState) {
+    let wanted = snapshot.pages.keys.filter { id in
+      guard let tab = state.tabs[id], let window = state.windows[shell.windowId] else { return false }
+      return tab.windowId == window.id && tab.profileId == window.profileId && InternalPageDestination(tab: tab) != nil
+    }
+    for id in Array(libraryPages.keys) where !wanted.contains(id) {
+      libraryPages.removeValue(forKey: id)?.removeFromSuperview()
+    }
+    for id in wanted {
+      guard let slot = panes.container(id), let size = snapshot.pages[id]?.size else { continue }
+      let view = libraryPages[id] ?? NativePageView(frame: .zero)
+      let frame = CGRect(origin: .zero, size: size)
+      if view.frame != frame { view.frame = frame }
+      if view.superview !== slot { slot.addSubview(view) }
+      libraryPages[id] = view
+      view.updateInternalPage(tabId: id, state: state)
+    }
   }
 
   private func placeBookmarks(_ snapshot: WindowLayoutSnapshot, state: BrowserState) {
@@ -645,6 +666,8 @@ final class NativePaneLayoutHost {
   func stop() {
     guard !stopped else { return }
     stopped = true
+    for view in libraryPages.values { view.removeFromSuperview() }
+    libraryPages.removeAll()
     TabDragSession.unregister(zone)
     zone.clear()
     TabSlots.shared.performBatch {

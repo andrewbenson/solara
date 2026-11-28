@@ -9,6 +9,65 @@ import Testing
     Store(state: BrowserState(settings: Settings.hydrated(from: nil)), memory: StoreMemory(ids: IdSource(launch: "writes")), checksInvariants: true, clock: { 1_000 })
   }
 
+  @Test func settingsAliasLeavesTheSourceTabAndWindowIntact() throws {
+    let s = store()
+    let window = try #require(s.dispatch(Command("createWindow")).result?.string)
+    let tab = try #require(s.state.activeTabId(window))
+    let before = s.state.tabs[tab]
+    let routed = try s.dispatch(Command("navigate", [.string(tab), "chrome://settings/manageProfile"]), origin: .native)
+    #expect(s.state.tabs[tab] == before)
+    #expect(routed.effects.map(\.json).contains(["type": "openSettings", "pane": "profiles"]))
+  }
+
+  @Test func newTabAliasOpensABlankTabInTheSourceWindow() throws {
+    let s = store()
+    let window = try #require(s.dispatch(Command("createWindow")).result?.string)
+    let tab = try #require(s.state.activeTabId(window))
+    try s.dispatch(Command("navigate", [.string(tab), "about:newtab"]), origin: .native)
+    let opened = try #require(s.state.activeTabId(window))
+    #expect(opened != tab)
+    #expect(s.state.tabs[opened]?.url == "")
+    #expect(s.state.tabs[opened]?.navigation == nil)
+  }
+
+  @Test func unrecognizedSettingsAndRestoredSettingsKeepTheirWebDestination() throws {
+    let s = store()
+    let window = try #require(s.dispatch(Command("createWindow")).result?.string)
+    let tab = try #require(s.state.activeTabId(window))
+    try s.dispatch(Command("navigate", [.string(tab), "solara://settings/content"]), origin: .native)
+    #expect(s.state.tabs[tab]?.navigation?.url == "solara://settings/content")
+    let restored = try s.dispatch(Command("newTab", [.string(window), ["url": "solara://settings/sync", "snapshot": ["title": "Settings"]]]))
+    #expect(s.state.tabs[restored.result?.string ?? ""]?.url == "solara://settings/sync")
+  }
+
+  @Test func internalNavigationCommitsTheTitleAndQueryWithoutAnEngineLoad() throws {
+    let s = store()
+    let window = try #require(s.dispatch(Command("createWindow")).result?.string)
+    let tab = try #require(s.state.activeTabId(window))
+    try s.dispatch(Command("updateTab", [.string(tab), ["url": "https://example.org", "title": "Example", "favicon": "icon"]]))
+    let url = "solara://history?q=a%2Bb%20c"
+    let routed = try s.dispatch(Command("navigate", [.string(tab), .string(url)]), origin: .native)
+    #expect(s.state.tabs[tab]?.url == url)
+    #expect(s.state.tabs[tab]?.title == "History")
+    #expect(s.state.tabs[tab]?.favicon == nil)
+    #expect(s.state.tabs[tab].flatMap(InternalPageDestination.init(tab:))?.query == "a+b c")
+    #expect(!routed.effects.contains { if case .startNavigation = $0 { return true }; return false })
+  }
+
+  @Test func restoredInternalAliasKeepsItsQueryAndNativeTitle() throws {
+    let s = store()
+    let window = try #require(s.dispatch(Command("createWindow")).result?.string)
+    let restored = try s.dispatch(Command("newTab", [.string(window), [
+      "url": "chrome://history?q=%bogus", "snapshot": ["title": "Stored title"],
+    ]]))
+    let id = try #require(restored.result?.string)
+    let tab = try #require(s.state.tabs[id])
+    #expect(tab.url == "solara://history?q=%bogus")
+    #expect(tab.navigation?.url == tab.url)
+    #expect(tab.title == "History")
+    #expect(InternalPageDestination(tab: tab)?.query == "%bogus")
+  }
+
   private func bridged(_ text: String) throws -> Command {
     try Command(json: JSONValue.parse(text))
   }

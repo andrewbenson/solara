@@ -1,5 +1,4 @@
 import { clearBrowsingData, type BrowsingDataType } from "@solara/solaracore";
-import { create } from "zustand";
 import { pruneProfileFavicons } from "../../lib/favicons";
 import { useBrowser } from "../../store/browser";
 import { engineProfile, isIncognitoProfile } from "../../store/model";
@@ -13,11 +12,6 @@ const RANGES = [
   { value: "all", title: "All time", ms: Infinity },
 ] as const;
 type Range = (typeof RANGES)[number]["value"];
-
-export const useClearDataRequest = create<{ windowId: string | null; request(windowId: string | null): void }>((set) => ({
-  windowId: null,
-  request: (windowId) => set({ windowId }),
-}));
 
 export type ClearRange = Range;
 

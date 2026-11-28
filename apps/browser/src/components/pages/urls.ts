@@ -2,7 +2,7 @@ import { nativeWorkspaceCommand } from "@solara/settings";
 import type { Tab } from "../../store/types";
 import { internalPageOf, type InternalPageId } from "./internalUrls";
 
-export { INTERNAL_PAGES, internalPageOf, internalQuery } from "./internalUrls";
+export { internalPageOf } from "./internalUrls";
 
 export const tabDestination = (t: Pick<Tab, "url" | "navigation">) => t.navigation?.url ?? t.url;
 

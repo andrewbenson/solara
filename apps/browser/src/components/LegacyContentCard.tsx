@@ -1,5 +1,5 @@
 import { WebView, type PageEngine } from "@solara/solaracore";
-import { littleSolaraShellActive, nativeToolbarAvailable, tabPool, windowPaneRootsActive, windowShellActive } from "@solara/settings";
+import { littleSolaraShellActive, NativePage, nativeToolbarAvailable, tabPool, windowPaneRootsActive, windowShellActive } from "@solara/settings";
 import { memo, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { StyleSheet, View, type NativeSyntheticEvent, type ViewProps } from "react-native";
 import { requireNativeViewManager } from "expo-modules-core";
@@ -44,7 +44,6 @@ import { notePageEventHandled, acceptPageReport, currentPageContext, followNavig
 import { NewTabPage } from "./NewTabPage";
 import { EmptyCard } from "./EmptyCard";
 import { SmallWindowCard } from "./SmallWindowCard";
-import { InternalPage } from "./pages";
 import { ShareBar } from "./media/ShareBar";
 import { Toolbar, ToolbarBackdrop, urlFieldRight } from "./Toolbar";
 import { WindowToolbar } from "./WindowToolbar";
@@ -463,7 +462,7 @@ const TabPane = memo(function TabPane({
             {pooled && tabPool && <PooledPageProps pool={tabPool} tabId={tabId} />}
             {!pooled && (mounted || prewarmed) && <TabWebView tabId={tabId} visible={visible && !newTabShown && !isNewTab} warm={!!warm && !newTabShown && !isNewTab} />}
             {visible && isNewTab && !small && !nativePane && (inSplit ? <SplitEmptyState tabId={tabId} focused={focused} /> : emptyCard ? <EmptyCard windowId={windowId} tabId={tabId} /> : <NewTabPage key={tabId} windowId={windowId} tabId={tabId} toolbar={toolbar} />)}
-            {visible && <InternalPage tabId={tabId} />}
+            {visible && <NativePage internalTabId={tabId} style={StyleSheet.absoluteFill} />}
             {visible && overlays && (
               <PageOverlays
                 tabId={tabId}

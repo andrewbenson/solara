@@ -274,7 +274,7 @@ is `fallback`, `reserved` with the original session, or `rejected` with an optio
 events never become fallback. WebView checks disposition before decoding and checks current native authority again
 when each held handler actually executes, including its captured registration. JS retains navigation following for
 RN and UI effects for both hosts (history/favicon/prompts/status/media/overlay); pooled navigation following is native.
-There are no duplicate JS created/gone/navigation/media/download/discard/ready writes on the owned path. Ready still records loaded profiles for resource release. Sleeping hooks read owned live.discarded; internal React pages complete semantic URL/title through updateTab without writing live facts.
+There are no duplicate JS created/gone/navigation/media/download/discard/ready writes on the owned path. Ready still records loaded profiles for resource release. Sleeping hooks read owned live.discarded; native Library destinations settle their URL and title without issuing a renderer navigation.
 
 Automatic sleeping is native by default (`LaunchSwitch.nativeTabSleep`). `status().nativeTabSleep` is the runner's
 lock-backed running value, not just the launch switch; JS's `nativeTabSleepRunning()` also requires native workspace
@@ -506,8 +506,9 @@ ordered transaction that names its cause. There are no echo windows, timers or "
   and `.sidebar(windowId)` play synthetic trackpad gestures through the real tracker (pages scroll and ack for real); `acSwipe.history` opens the back/forward list.
 
 ## Internal pages, Settings, Import (components/pages, settings, import)
-- `solara://history|bookmarks|downloads` tabs render React pages instead of a web view
-  (`openInternalPage(page, windowId)`, `isInternalTab(tab)` in components/pages).
+- `solara://history|bookmarks|downloads` tabs render in the native pane host. It selects the page, window, profile,
+  appearance and History query from the native tab destination. The legacy layout mounts the same Swift host through
+  a tab-ID view. History deletion and browsing-data actions retain their JavaScript service bridge.
 - Settings (⌘,) and Import are utility NSWindows with ids `settings` / `import` (`openSettings(pane)`,
   `openImport()` in components/settings/windows.ts); `runCommand` routes ⌘W there to close them.
 
@@ -530,16 +531,16 @@ ordered transaction that names its cause. There are no echo windows, timers or "
 
   | URL | Opens |
   | --- | --- |
-  | `solara://history`, `bookmarks`, `downloads` | Our React pages in the tab (components/pages). They take precedence over Chrome's pages, and `chrome://history` typed or reported lands here too. |
-  | `solara://settings` | Our Settings window (components/pages/appUrls.ts). The tab doesn't change. |
+  | `solara://history`, `bookmarks`, `downloads` | Our SwiftUI pages in the tab. They take precedence over Chrome's pages, and `chrome://history` typed or reported lands here too. |
+  | `solara://settings` | Our Settings window. The tab doesn't change. |
   | `solara://settings/<pane>` | Our Settings window at that pane: general, profiles (also `people`, `manageProfile`), sync (also `syncSetup`), tabs, appearance, privacy, passwords, autofill (also `addresses`, `payments`), extensions, search (also `searchEngines`), shortcuts, liveFolders, calendar, advanced. |
   | `solara://settings/<anything else>` | Chrome's settings page (e.g. `settings/languages`, `settings/content`). |
   | `solara://newtab` | A New Tab page (a new tab). |
   | `solara://extensions` | Chrome's extensions page (as dia://extensions is in Dia): developer mode, load unpacked, errors, shortcuts. Our Settings › Extensions stays at `solara://settings/extensions`. |
   | Everything else: `version`, `gpu`, `net-internals`, `flags`, `inspect`, `about`, `chrome-urls`, `password-manager`, `downloads-internals`, … | Chrome's WebUI page, shown as `solara://<host>`. |
-- `settings` and `newtab` are handled in the store's `navigate` / `newTab` through `setAppUrlOpener`
-  (store/tabs.ts). That covers every way a URL gets in: the bar, bookmarks, history, AppleScript,
-  opened URLs and links. A restored tab at `solara://settings/…` loads Chrome's page.
+- Native navigation and new-tab commands dispatch recognised Settings addresses to the native Settings window and
+  open New Tab addresses as blank tabs. The omnibox uses the same address routing. Restored Settings tabs and unknown
+  Settings sections load Chromium WebUI.
 - The OS doesn't route `solara:` to us. Like Dia and Brave, the app doesn't register the scheme,
   so a web page can't open `solara://quit` through Launch Services. `open -a Solara 'solara://version'`
   and AppleScript work, because those go to the app directly.

@@ -21,7 +21,6 @@ import { markPaneRootDrawn, usePaneStatusStyle, usePopoversOverCard } from "./la
 import { useAddressBarInSidebar, useTabLayout } from "./layout/windowLayout";
 import { NewTabPage } from "./NewTabPage";
 import { EmptyCard } from "./EmptyCard";
-import { InternalPage } from "./pages";
 import { AutofillPrompt, PasswordPrompt } from "./site/Prompts";
 import { SiteControls } from "./site/SitePanelHost";
 import { ZOOM_POPOVER_WIDTH, ZoomPopover } from "./site/ZoomHost";
@@ -164,7 +163,6 @@ const NativePageContent = memo(function NativePageContent({ windowId, tabId, ful
       {tabPool && <PooledPageProps pool={tabPool} tabId={tabId} />}
       {!fullscreen && <ShareBar tabId={tabId} />}
       {!own.url && !inSplit && (emptyCard ? <EmptyCard windowId={windowId} tabId={tabId} /> : <NewTabPage key={tabId} windowId={windowId} tabId={tabId} toolbar={toolbar} />)}
-      <InternalPage tabId={tabId} />
     </>
   );
 });

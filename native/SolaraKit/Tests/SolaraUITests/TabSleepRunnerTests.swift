@@ -105,6 +105,28 @@ import Testing
     }
   }
 
+  @Test func nativePageProtectionDoesNotNeedAnAcknowledgementFromJavaScript() async throws {
+    let fixture = try Fixture(registerPages: false)
+    let issuer = PageIssuer(store: fixture.store, registry: fixture.pages)
+    let owner = NSObject()
+    issuer.beginRuntime(UUID())
+    let context = PageHostContext(navigationSeq: 2, contextRevision: 1, wasNewTab: false, newTabShownUrl: nil)
+    let binding = try #require(issuer.attach(tabId: "target0", engine: .chromium, host: .pooled, owner: owner, context: context) { command, finish in
+      fixture.commands["target0", default: []].append(command)
+      finish(.success(command == .reasonsNotToSleep ? .array([]) : .string("discarded")))
+    })
+    issuer.noteDelivery(binding)
+    #expect(issuer.report(binding, report: ["type": "ready", "browserId": 100]))
+    #expect(issuer.reserveEvent(binding, name: "onMediaAccess", payload: ["camera": true]) != nil)
+    let runner = fixture.runner()
+    runner.start()
+    defer { runner.stop() }
+    #expect(!(await runner.sleepOnRequest("target0")))
+    #expect(fixture.commands["target0"] == nil)
+    #expect(issuer.reserveEvent(binding, name: "onMediaAccess", payload: ["camera": false]) != nil)
+    #expect(await runner.sleepOnRequest("target0"))
+  }
+
   @Test(arguments: [false, true])
   func runtimeHistoryProtectsReloadSurvivorsUntilANewSession(_ reload: Bool) async throws {
     let fixture = try Fixture(pinned: true, registerPages: false)
@@ -122,25 +144,21 @@ import Testing
     issuer.beginRuntime(firstRuntime)
     issuer.noteDelivery(binding)
     #expect(issuer.report(binding, report: ["type": "ready", "browserId": 100]))
-    let mediaEvent = try #require(issuer.reserveEvent(binding, name: "onMediaAccess", payload: [:]))
+    #expect(issuer.reserveEvent(binding, name: "onMediaAccess", payload: ["camera": true]) != nil)
     issuer.noteDelivery(binding)
-    fixture.epoch = fixture.store.registerKeepAliveRuntime()
-    try fixture.feed("target0", handled: mediaEvent, keep: ["capturing": false, "newTabShown": false,
-      "pip": false, "displayRequest": false, "media": "present"], generation: binding.sessionGeneration)
     let runner = fixture.runner()
     #expect(runner.start())
     defer { runner.stop() }
     #expect(await runner.sweep().isEmpty)
+    #expect(issuer.reserveEvent(binding, name: "onMediaAccess", payload: ["camera": false]) != nil)
     if reload {
       issuer.endRuntime(firstRuntime)
       let nextRuntime = UUID()
       issuer.beginRuntime(nextRuntime)
       issuer.endRuntime(firstRuntime)
-      fixture.epoch = fixture.store.registerKeepAliveRuntime()
       issuer.noteDelivery(binding)
-      let status = try #require(issuer.reserveEvent(binding, name: "onStatus", payload: ["status": "ready"]))
+      #expect(issuer.reserveEvent(binding, name: "onStatus", payload: ["status": "ready"]) != nil)
       issuer.noteDelivery(binding)
-      try fixture.feed("target0", handled: status, generation: binding.sessionGeneration)
       #expect(await runner.sweep().isEmpty)
       runner.setMemoryPressure(.critical)
       #expect(await runner.sweep().isEmpty)
@@ -150,12 +168,10 @@ import Testing
         owner: replacementOwner, context: context, perform: perform))
       issuer.noteDelivery(replacement)
       #expect(issuer.report(replacement, report: ["type": "ready", "browserId": 101]))
-      try fixture.feed("target0", generation: replacement.sessionGeneration)
       #expect(await runner.sweep() == ["target0"])
     } else {
-      let status = try #require(issuer.reserveEvent(binding, name: "onStatus", payload: ["status": "ready"]))
+      #expect(issuer.reserveEvent(binding, name: "onStatus", payload: ["status": "ready"]) != nil)
       issuer.noteDelivery(binding)
-      try fixture.feed("target0", handled: status, generation: binding.sessionGeneration)
       #expect(await runner.sweep() == ["target0"])
     }
   }

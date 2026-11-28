@@ -111,6 +111,22 @@ final class LaterQueue {
     return ["strip": JSONValue(number), "window": JSONValue(10 * number), "profile": "", "tabs": .array(tabs)]
   }
 
+  @Test func aCloseEchoCannotSelectChromiumsFallbackOverTheWorkspaceSuccessor() throws {
+    let f = try fixture(actual: [0, 1, 2])
+    let (first, fallback, successor) = (f.keys[0], f.keys[1], f.keys[2])
+    let window = f.store.state.windowOrder[0]
+    f.transport.start()
+    try f.store.dispatch(Command("closeTab", [.string(first), .string(successor)]))
+    let tabs: [JSONValue] = [
+      ["key": .string(fallback), "browser": 701, "index": 0, "active": true, "pinned": false],
+      ["key": .string(successor), "browser": 702, "index": 1, "active": false, "pinned": false],
+    ]
+    f.engine.emit(cmd: nil, strips: [["strip": 7, "window": 70, "profile": "", "activePickedOnClose": false, "tabs": .array(tabs)]])
+    #expect(f.store.state.activeTabId(window) == successor)
+    #expect(f.store.state.tabs[first] == nil)
+    f.transport.stop()
+  }
+
   func arranges(_ engine: FakeStripEngine) -> [JSONValue] { engine.sent.map(\.command).filter { $0["op"] == "arrange" } }
 
   @Test func startTakesTheSnapshotAndProjectsOnce() throws {

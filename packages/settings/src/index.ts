@@ -12,6 +12,7 @@ type NativeSettingsModule = {
   setPreferredImportSource?(browserId: string | null): void;
   engineCommand?(tabId: string, action: string, options: string): Promise<boolean>;
   engineBackAvailable?(tabId: string): boolean;
+  startWorkspaceWindows?(focusedFirst: boolean): Promise<void>;
   closeWorkspaceTab?(tabId: string, successor: string | null): Promise<boolean>;
   workspaceCommand?(command: string, arg: string | null, windowId: string | null): boolean;
   openSplitPane?(windowId: string, options: string): string | null;
@@ -512,6 +513,10 @@ export * from "./pages";
 
 export const nativeOpenSplitPane = (windowId: string, options: object) => native?.openSplitPane?.(windowId, JSON.stringify(options)) ?? null;
 export const nativeOpenLinkInSplit = (sourceTabId: string, url: string, adoptId?: string) => native?.openLinkInSplit?.(sourceTabId, url, adoptId ?? null);
+
+export function startNativeWorkspaceWindows(focusedFirst: boolean): Promise<void> | undefined {
+  return native?.startWorkspaceWindows?.(focusedFirst);
+}
 
 export function closeNativeWorkspaceTab(tabId: string, successor?: string): Promise<boolean> {
   return native?.closeWorkspaceTab?.(tabId, successor ?? null) ?? Promise.resolve(false);

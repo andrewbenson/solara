@@ -25,12 +25,46 @@ public struct PageRegistration: Equatable, Hashable, Sendable {
   }
 }
 
+public struct PageRuntimeState: Equatable, Sendable {
+  public var capturing = false
+  public var newTabShown = false
+  public var fullscreen = false
+  public var crashed = false
+  public var unresponsive = false
+
+  public init() {}
+
+  mutating func receive(_ event: String, payload: JSONValue) {
+    switch event {
+    case "onMediaAccess":
+      capturing = ["camera", "microphone", "screen"].contains { payload[$0]?.bool == true }
+    case "onFullscreen":
+      fullscreen = payload["fullscreen"]?.bool == true
+    case "onCrashed":
+      crashed = true
+      unresponsive = false
+      fullscreen = false
+    case "onDocumentCommitted":
+      crashed = false
+    case "onUnresponsive":
+      unresponsive = true
+    case "onResponsive":
+      unresponsive = false
+    case "onDiscarded":
+      self = Self()
+    default:
+      break
+    }
+  }
+}
+
 public struct PageDescriptor: Equatable, Sendable {
   public let registration: PageRegistration
   public let engine: PageEngine
   public let host: PageHost
   public let nativeTag: Int?
   public let sessionGeneration: String?
+  public var runtimeState: PageRuntimeState?
   public var protectionKnown = false
   public var ready: PageReadyFacts? = nil
   public var navigation: JSONValue? = nil

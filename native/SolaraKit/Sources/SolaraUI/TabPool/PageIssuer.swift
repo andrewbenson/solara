@@ -78,6 +78,7 @@ public final class PageHostBinding {
   fileprivate var movedNavigationSeq: Int?
   fileprivate var sameProfileMove = false
   fileprivate var associatedNativePage = false
+  fileprivate var runtimeState = PageRuntimeState()
   fileprivate var reportedMedia: Set<NowPlayingStore.Field> = []
   fileprivate let perform: PageRegistry.Perform
   fileprivate let onCreated: @MainActor (PageHostBinding, Bool) -> Void
@@ -121,6 +122,7 @@ public final class PageIssuer {
   public static var shared: PageIssuer?
   public static var consumeLittleWindowEvent: (@MainActor (PageIssuer, PageHostBinding, String) -> Bool)?
   public static var consumePageOpen: (@MainActor (PageIssuer, PageHostBinding, JSONObject) -> Void)?
+  public static var rendererCloseAllowed: (@MainActor (Store) -> Bool)?
   public static var consumePeekEscape: (@MainActor (PageIssuer, PageHostBinding) -> Bool)?
   public static var consumeLifecycleEvent: (@MainActor (PageIssuer, PageHostBinding, String, JSONValue) -> Bool)?
   public static var consumePromptEvent: (@MainActor (PageIssuer, PageHostBinding, String, JSONValue) -> Bool)?
@@ -192,6 +194,7 @@ public final class PageIssuer {
           guard self.currentInScope(binding, requirePage: true),
             let snapshot = try? self.store.pageHostSnapshotInScope(binding.tabId, generation: binding.sessionGeneration) else { return nil }
           var copy = descriptor
+          copy.runtimeState = self.runtimeState(binding)
           copy.protectionKnown = self.protectionKnown(binding)
           copy.ready = snapshot.facts?.ready
           copy.navigation = binding.navigation
@@ -323,6 +326,20 @@ public final class PageIssuer {
       currentInScope(binding, requirePage: true) && !binding.protectionHistoryLost &&
         protectionRuntimeID != nil && binding.firstDeliveryRuntimeID == protectionRuntimeID
     }
+  }
+
+  public func runtimeState(tabId: String) -> PageRuntimeState? {
+    store.sequence {
+      guard let binding = bindings[tabId], currentInScope(binding, requirePage: true) else { return nil }
+      return runtimeState(binding)
+    }
+  }
+
+  private func runtimeState(_ binding: PageHostBinding) -> PageRuntimeState {
+    var result = binding.runtimeState
+    result.newTabShown = binding.context.newTabShownUrl != nil
+    result.capturing = result.capturing || NowPlayingStore.shared.capture[binding.tabId] != nil
+    return result
   }
 
   public func afterSequence(_ work: @escaping @MainActor () -> Void) { deliver(work) }
@@ -519,6 +536,14 @@ public final class PageIssuer {
     if sequence != nil {
       Self.lifecycleEvent?(self, binding, name, payload)
       for observer in Self.lifecycleObservers { observer(self, binding, name, payload) }
+      if name == "onWindowClose" {
+        store.sequence {
+          guard Self.rendererCloseAllowed?(store) == true, currentInScope(binding, requirePage: true) else { return }
+          let options: JSONValue = ["lastClosesWindow": true, "windowClosedByChrome": .bool(payload["withWindow"]?.bool == true)]
+          _ = try? store.dispatch(Command("closeTabs", [JSONValue([binding.tabId]), options]), origin: .engine)
+        }
+        return nil
+      }
     }
     return sequence
   }
@@ -534,6 +559,7 @@ public final class PageIssuer {
         report["eventSeq"] = JSONValue(sequence)
         guard self.report(binding, report: .object(report)) else { return nil }
       }
+      binding.runtimeState.receive(name, payload: payload)
       applyRendererEventInScope(binding, name: name, payload: payload)
       store.enqueuePageReport(id: binding.tabId, report: ["type": "latch",
         "generation": .string(binding.sessionGeneration), "eventSeq": JSONValue(sequence)])
@@ -597,6 +623,7 @@ public final class PageIssuer {
       let previous = nativeExecutions[key]
       let replaced = binding.associatedNativePage && (previous?.binding !== binding || previous?.page !== page)
       if replaced {
+        binding.runtimeState = PageRuntimeState()
         nativeExecutions = nativeExecutions.filter { $0.value.binding !== binding }
         binding.reportedMedia.removeAll()
         if !mediaEnded { NowPlayingStore.shared.end(tabId: binding.tabId) }

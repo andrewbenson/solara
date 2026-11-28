@@ -2,7 +2,7 @@ import { mediaProtectionReason } from "@solara/settings";
 import { listTasks, onSystemState, releaseProfile, setBatterySaver, systemState, type SystemState, type WebViewHandle } from "@solara/solaracore";
 import { onAppEvent, onWindowEvent } from "@solara/shell";
 import { create } from "zustand";
-import { onTabSleepRunningChanged } from "@solara/store";
+import { onTabSleepRunningChanged, sleepNativeTab } from "@solara/store";
 import { pageOf, usePages } from "../components/layout/pageState";
 import { showToast } from "../components/layout/splitActions";
 import { isInternalTab } from "../components/pages";
@@ -17,7 +17,6 @@ import { splitOf } from "../store/splits";
 import { nativeOwnsWorkspace, nativeTabSleepRunning } from "../store/nativeStore";
 import { switchOn } from "./killSwitches";
 import { applyHeldReports } from "./nativeEvents";
-import { keepAliveBrowserChanged } from "./nativeKeepAlive";
 import { everySlowly, reschedule } from "./slowTimers";
 import { webviews } from "./webviews";
 import { tabSleepCandidates, unusedTabSleepProfiles } from "./tabSleepPolicy";
@@ -141,7 +140,8 @@ async function hasUnsavedInput(handle: WebViewHandle): Promise<boolean | null> {
 }
 
 export async function sleepTab(id: string): Promise<boolean> {
-  return sleepTabIfSafe(id, false);
+  const native = await sleepNativeTab(id);
+  return native ?? sleepTabIfSafe(id, false);
 }
 
 async function sleepTabIfSafe(id: string, automatic: boolean): Promise<boolean> {
@@ -158,7 +158,7 @@ async function sleepTabIfSafe(id: string, automatic: boolean): Promise<boolean> 
 
 export function noteReady(tabId: string, factsOwner: "js" | "native" = "js") {
   const tab = store().tabs[tabId];
-  if (tab) loadedProfiles.add(engineProfile(tab.profileId));
+  if (tab && !nativeOwnsWorkspace()) loadedProfiles.add(engineProfile(tab.profileId));
   if (factsOwner === "js") forget(tabId, false);
   else busyStreak.delete(tabId);
 }
@@ -408,7 +408,6 @@ export function startTabLifecycle() {
   nativeSleeping = nativeTabSleepRunning();
   track(store(), nativeSleeping);
   useBrowser.subscribe((s, prev) => {
-    keepAliveBrowserChanged(s, prev);
     if (s.windows !== prev.windows || s.splits !== prev.splits) track(s, nativeOwnsWorkspace() && nativeSleeping);
     if (s.settings.sleepInactiveTabs !== prev.settings.sleepInactiveTabs) {
       track(s, nativeOwnsWorkspace() && nativeSleeping);
@@ -451,6 +450,7 @@ export function startTabLifecycle() {
   everySlowly({
     every: PROFILE_RELEASE_MS,
     separateEvery: 15_000,
+    needed: () => !nativeOwnsWorkspace(),
     run: releaseUnusedProfiles,
   });
   everySlowly({

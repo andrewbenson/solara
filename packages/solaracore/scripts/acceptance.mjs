@@ -3038,7 +3038,7 @@ try {
       out.again = await raw();
       const other = await openTab(`${base}/e?refused`, "Page E", true);
       try {
-        out.refusedSlept = await evalApp(`const h = ac.webviews.get("${other.id}"); h.discard = () => Promise.resolve("refused"); return globalThis.acLifecycle.sleepTab("${other.id}")`);
+        out.refusedSlept = await evalApp(`ac.actions.switchToTab("${other.id}"); return globalThis.acLifecycle.sleepTab("${other.id}")`);
         out.refusedFlags = await evalApp(`return !!ac.store.getState().live["${other.id}"]?.discarded`);
       } finally {
         await closeTab(other.id);

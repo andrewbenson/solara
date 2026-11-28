@@ -20,6 +20,7 @@ enum NativeWorkspaceCommands {
   #endif
 
   private static var pending: Set<String> = []
+  private static var sheetReceipts: [String: UUID] = [:]
   private static var sheetWindowObservers: [String: NSObjectProtocol] = [:]
   private struct NewTabFocus {
     let tabId: String
@@ -119,6 +120,7 @@ enum NativeWorkspaceCommands {
       }
     }
     NativePinnedPageCommands.start()
+    NativeTabReveal.install()
     NativeDownloadsPanel.start()
     ToolbarView.commandURLFocusAllowed = { NativeCommandBarFocus.developerAllowed($0, field: $1) }
     ToolbarView.commandURLDidFocus = { NativeCommandBarFocus.developerDidFocus($0, field: $1) }
@@ -149,7 +151,23 @@ enum NativeWorkspaceCommands {
       guard let store = WorkspaceWrites.store else { return }
       _ = try? store.dispatch(Command("updateSettings", [["warnBeforeQuitting": false]]), origin: .native)
     }
+    PageIssuer.rendererCloseAllowed = { store in
+      NativeStoreHandle.ownsWorkspace && !NativeStoreHandle.frozen && NativeStoreHandle.store === store && WindowHost.canSyncWorkspaceWindows
+    }
     WindowHost.closeRequest = { id in perform("closeWindow", windowId: id) }
+    WindowHost.workspaceEvent = { id, event in
+      guard NativeStoreHandle.ownsWorkspace, !NativeStoreHandle.frozen, let store = NativeStoreHandle.store,
+        store.state.windows[id] != nil else { return }
+      let window = JSONValue.string(id)
+      let command: Command
+      switch event {
+      case .focused: command = Command("setFocusedWindow", [window])
+      case .frame(let frame): command = Command("setWindowFrame", [window, .array(frame.map(JSONValue.number))])
+      case .fullScreen(let on): command = Command("setWindowFullScreen", [window, .bool(on)])
+      case .closed: command = Command("closeWindow", [window])
+      }
+      store.enqueueSequenced(command, origin: .native)
+    }
   }
 
   private static func browserMenuRow(_ command: String, arg: String?, windowId: String?) -> BrowserMenuRow? {
@@ -761,14 +779,7 @@ enum NativeWorkspaceCommands {
   }
 
   static func materializeChanges(before: BrowserState, after: BrowserState) {
-    for id in after.windowOrder where before.windows[id] == nil {
-      guard let window = after.windows[id], !window.isSmall else { continue }
-      let title = after.activeTab(id).map { $0.customTitle ?? $0.title } ?? "New Tab"
-      WindowHost.openBrowserWindow(id, frame: window.frame, incognito: window.incognito,
-        profile: after.engineProfile(window.profileId), title: title, focus: after.ui.focusedWindowId == id,
-        chromeWindow: window.chromeWindow, small: false, size: nil)
-    }
-    for id in before.windowOrder where after.windows[id] == nil && before.windows[id]?.isSmall != true { WindowHost.closeBrowserWindow(id) }
+    NativeWorkspaceWindows.materializeChanges(before: before, after: after)
     if let store = WorkspaceWrites.store, before.windowOrder != after.windowOrder,
       after.windowOrder.contains(where: { before.windows[$0] == nil && after.windows[$0]?.isSmall == true }) ||
       before.windowOrder.contains(where: { after.windows[$0] == nil && before.windows[$0]?.isSmall == true }) {
@@ -954,15 +965,18 @@ enum NativeWorkspaceCommands {
     _ alert: NSAlert, windowId: String, setting: String?, store: Store, then proceed: @escaping @MainActor () -> Void
   ) -> Bool {
     guard WorkspaceSheetGuard.claim(&pending, windowId: windowId, closing: store.memory.closingWindows) else { return false }
+    let receipt = UUID()
+    sheetReceipts[windowId] = receipt
     let window = ShellDrag.window(windowId)
     if let window {
       sheetWindowObservers[windowId] = NotificationCenter.default.addObserver(forName: NSWindow.willCloseNotification, object: window, queue: .main) { _ in
-        MainActor.assumeIsolated { settleSheet(windowId) }
+        MainActor.assumeIsolated { _ = settleSheet(windowId, receipt: receipt) }
       }
     }
+    let generation = NativeStoreHandle.ownershipGeneration
     let decide: (NSApplication.ModalResponse) -> Void = { response in
-      settleSheet(windowId)
-      guard NativeStoreHandle.ownsWorkspace, NativeStoreHandle.store === store else { return }
+      guard settleSheet(windowId, receipt: receipt), NativeStoreHandle.ownsWorkspace, NativeStoreHandle.store === store,
+        NativeStoreHandle.ownershipGeneration == generation else { return }
       if let setting, alert.showsSuppressionButton, alert.suppressionButton?.state == .on {
         _ = try? store.dispatch(Command("updateSettings", [[setting: false]]), origin: .native)
       }
@@ -983,9 +997,12 @@ enum NativeWorkspaceCommands {
     return true
   }
 
-  private static func settleSheet(_ windowId: String) {
+  private static func settleSheet(_ windowId: String, receipt: UUID) -> Bool {
+    guard sheetReceipts[windowId] == receipt else { return false }
+    sheetReceipts[windowId] = nil
     pending.remove(windowId)
     if let observer = sheetWindowObservers.removeValue(forKey: windowId) { NotificationCenter.default.removeObserver(observer) }
+    return true
   }
 
   static func moveFromSidebar(_ tabId: String, windowId: String, target: String, store: Store) {

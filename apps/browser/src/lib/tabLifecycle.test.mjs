@@ -19,7 +19,7 @@ const stubs = {
     export const systemState = async () => { throw new Error("unavailable"); };
     export const releaseProfile = async (id) => { globalThis.releasedProfiles.push(id); };
     export const setBatterySaver = (mode) => globalThis.batterySaverReply(mode);`,
-  "@solara/store": "export const onTabSleepRunningChanged = (run) => { globalThis.lifecycleRunningListeners.push(run); return () => {}; };",
+  "@solara/store": "export const onTabSleepRunningChanged = (run) => { globalThis.lifecycleRunningListeners.push(run); return () => {}; }; export const sleepNativeTab = async () => globalThis.nativeSleepResult ?? null;",
   "../store/nativeStore": "export const nativeOwnsWorkspace = () => globalThis.lifecycleOwned; export const nativeTabSleepRunning = () => { globalThis.lifecycleStatusReads++; return globalThis.nativeTabSleepRunning; };",
   "./slowTimers": "export const everySlowly = (job) => { globalThis.lifecycleSlowJobs.push(job); return () => {}; }; export const reschedule = () => { globalThis.lifecycleReschedules++; };",
   "../components/layout/splitActions": "export const showToast = () => {};",

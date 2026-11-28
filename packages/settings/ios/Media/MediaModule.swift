@@ -21,10 +21,12 @@ public class MediaModule: Module {
 
     View(DisplayShareBarHost.self) {
       Prop("windowId") { (view: DisplayShareBarHost, value: String) in
-        MainActor.assumeIsolated { view.windowID = value }
+        nonisolated(unsafe) let host = view
+        MainActor.assumeIsolated { host.windowID = value }
       }
       Prop("tabId") { (view: DisplayShareBarHost, value: String) in
-        MainActor.assumeIsolated { view.tabID = value }
+        nonisolated(unsafe) let host = view
+        MainActor.assumeIsolated { host.tabID = value }
       }
       Events("onBandHeight")
     }

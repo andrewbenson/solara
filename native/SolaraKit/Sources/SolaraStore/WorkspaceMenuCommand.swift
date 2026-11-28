@@ -174,7 +174,8 @@ public enum WorkspaceClosePolicy {
   }
 
   public static func tabs(_ ids: [String], windowId: String, state: BrowserState, lastTabKeepsWindow: Bool = false) -> WorkspaceCloseDecision {
-    let open = ids.filter { state.tabs[$0]?.windowId == windowId }
+    var seen: Set<String> = []
+    let open = ids.filter { state.tabs[$0]?.windowId == windowId && seen.insert($0).inserted }
     guard let window = state.windows[windowId], let last = open.last else {
       return WorkspaceCloseDecision(tabIds: [], closesWindow: false, warningSetting: nil)
     }

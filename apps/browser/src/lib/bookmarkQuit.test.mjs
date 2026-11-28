@@ -3,7 +3,7 @@ import { readFileSync } from "node:fs";
 import { test } from "node:test";
 
 const source = readFileSync(new URL("./native.ts", import.meta.url), "utf8");
-const wiring = source.slice(source.indexOf("  onAppEvent(("), source.indexOf("\n  const windows ="));
+const wiring = source.slice(source.indexOf("  onAppEvent(("), source.indexOf("\n  const nativeWindows ="));
 const deferred = () => {
   let resolve;
   let reject;

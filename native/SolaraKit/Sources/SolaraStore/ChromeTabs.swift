@@ -144,6 +144,7 @@ public struct ChromeTabsMemory: Sendable, Equatable {
   public var changedAt = OrderedDict<Int, Int>()
   public var madeInFront = OrderedDict<Int, MadeInFront>()
   public var lastCommand = 0
+  var explicitSuccessorCloses = Set<String>()
 
   public struct Tried: Sendable, Equatable {
     public var sig: String
@@ -520,6 +521,7 @@ extension Session {
     }
     for strip in memo.changedAt.keys where memo.mirror[strip] == nil { memo.changedAt[strip] = nil }
     for strip in memo.madeInFront.keys where memo.mirror[strip] == nil { memo.madeInFront[strip] = nil }
+    memo.explicitSuccessorCloses.formIntersection(memo.mirror.values.flatMap { $0.tabs.compactMap(\.key) })
     memo.lastRev = json["rev"]?.int ?? memo.lastRev
     memory.chromeTabs = memo
   }
@@ -558,13 +560,21 @@ extension Session {
         pending.arranged = Set(waiting?.kind == "arrange" ? waiting?.keys ?? [] : [])
         pending.regrouped = Set(waiting?.kind == "group" && waiting?.moves == true ? waiting?.keys ?? [] : [])
         pending.grouped = Set(waiting?.kind == "group" ? waiting?.keys ?? [] : [])
-        pending.active = waiting?.kind == "activate" && waiting?.successor != true
+        let previousActiveKey = before?.tabs.first(where: \.active)?.key
+        let explicitClose = previousActiveKey.map { memo.explicitSuccessorCloses.contains($0) } ?? false
+        pending.active = explicitClose || (waiting?.kind == "activate" && waiting?.successor != true)
         let seen = memo.seen
         var groups = memo.groups
         let next = chromeChanged(s, before, strip, seen: seen, siblings: siblings, pending: pending, groups: &groups)
         memo.groups = groups
         if !sameRef(next, s) { changed = true }
         s = next
+      }
+      if !memo.explicitSuccessorCloses.isEmpty, let before {
+        let remaining = Set(strip.tabs.map(\.browser))
+        for tab in before.tabs where strip.closed == true || !remaining.contains(tab.browser) {
+          if let key = tab.key { memo.explicitSuccessorCloses.remove(key) }
+        }
       }
       for t in strip.tabs { if let key = t.key, !key.isEmpty { memo.seen.insert(key) } }
     }

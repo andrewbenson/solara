@@ -6,6 +6,7 @@ type StoreStatus = ({ active: true; frozen?: boolean } | { active: false; reason
 
 type NativeStoreModule = {
   status(): StoreStatus;
+  sleepTab?(tabId: string): Promise<boolean | null>;
   snapshot(): string | null;
   dispatch(commandJSON: string, sinceRev: number): string | null;
   catchUp(sinceRev: number): string | null;
@@ -154,10 +155,8 @@ export function pageReport(tabId: string, report: PageReport): DispatchResponse 
   return pageReportWriter?.({ name: "pageReport", args: [tabId, report] }) ?? null;
 }
 
-export function registerKeepAliveRuntime(): number {
-  const response = pageReportWriter?.({ name: "registerKeepAliveRuntime", args: [] });
-  if (!response || response.error || !Number.isSafeInteger(response.result) || Number(response.result) <= 0) throw new Error(response?.error ?? "keepalive runtime registration failed");
-  return response.result as number;
+export function sleepNativeTab(tabId: string): Promise<boolean | null> {
+  return native?.sleepTab?.(tabId) ?? Promise.resolve(null);
 }
 
 export function nativePageFacts(tabId: string): PageFacts | null {

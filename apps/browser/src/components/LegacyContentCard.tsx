@@ -41,7 +41,7 @@ import { dockMoving, useDockMotion, usePeekEdge } from "./layout/dockMotion";
 import { FrozenPage } from "./layout/frozenPage";
 import { holderOf } from "../store/pinShare";
 import { setCardAnchor, setUrlAnchor, useCardAnchors, useNativePopoverAnchors, useAddressBarInSidebar, useNativeWindowPreferences, useToolbarExtensionsWidths, useWindowReplicaFallback } from "./layout/windowLayout";
-import { notePageEventHandled, acceptPageReport, currentPageContext, followNavigation, newPageSession, pageEventHandlers, releasePageSession } from "./pageEvents";
+import { acceptPageReport, currentPageContext, followNavigation, newPageSession, pageEventHandlers, releasePageSession } from "./pageEvents";
 import { NewTabPage } from "./NewTabPage";
 import { EmptyCard } from "./EmptyCard";
 import { SmallWindowCard } from "./SmallWindowCard";
@@ -578,7 +578,6 @@ function EngineWebView({ tabId, visible, warm, peekOf, engine }: TabWebViewProps
       contentsBackgroundColor={backdrop}
       shownUrl={shownUrl}
       acceptStoreReport={(report) => acceptPageReport(session, report)}
-      onStoreEventHandled={(report) => notePageEventHandled(session, report)}
       {...handlers}
     />
   );

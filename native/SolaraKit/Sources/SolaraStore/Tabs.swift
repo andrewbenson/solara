@@ -440,7 +440,11 @@ extension Session {
   }
 
   public func closeTab(_ id: String, successor: String? = nil) {
+    let windowId = state.tabs[id]?.windowId
     closeTabs([id], lastClosesWindow: true, successor: successor)
+    guard let successor, let windowId, state.tabs[id] == nil, state.activeTabId(windowId) == successor,
+      memory.chromeTabs.mirror.values.contains(where: { strip in strip.tabs.contains { $0.key == id && $0.active } }) else { return }
+    memory.chromeTabs.explicitSuccessorCloses.insert(id)
   }
 
   public func closeTabs(_ ids: [String], lastClosesWindow: Bool = false, windowClosedByChrome: Bool = false, successor: String? = nil) {

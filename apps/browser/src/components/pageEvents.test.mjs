@@ -80,8 +80,8 @@ function harness({ owned = true, pooled = false, quitting = false } = {}) {
   const events = load("pageEvents", source);
   const session = events.newPageSession("t", "chromium", null);
   const handlers = events.pageEventHandlers(session);
-  if (owned) events.observePageIdentity(session, identity, pooled ? "pool" : "rn");
-  const props = { transferKey: "t", acceptStoreReport: (report) => events.acceptPageReport(session, report), onStoreEventHandled: (report) => events.notePageEventHandled(session, report), ...handlers };
+  if (owned) events.observePageIdentity(session, identity);
+  const props = { transferKey: "t", acceptStoreReport: (report) => events.acceptPageReport(session, report), ...handlers };
   const report = { kind: "reserved", sessionGeneration: "G", registrationGeneration: 1 };
   const emit = (name, payload, disposition = owned ? report : { kind: "fallback" }) => webView.deliverWebViewEvent(props, name, { ...payload, storeReport: disposition });
   const nativeEvents = load("nativeEvents", holdSource);
@@ -293,7 +293,7 @@ test("sleeping consumers follow native live facts and retain JS fallback", () =>
   assert.equal(fallback.lifecycle.useIsSleeping("t"), true);
 });
 
-test("native ready preserves profile release bookkeeping without changing discarded facts", async () => {
+test("native ready leaves profile release and discarded facts with Swift", () => {
   const h = harness();
   h.state.live.t.discarded = true;
   h.lifecycle.noteDiscarded("t");
@@ -304,9 +304,7 @@ test("native ready preserves profile release bookkeeping without changing discar
   h.webviews.clear();
   h.state.windows = {};
   h.lifecycle.releaseUnusedProfiles();
-  assert.equal(h.calls.filter(({ name, args }) => name === "releaseProfile" && args[0] === "p").length, 1);
-  h.lifecycle.releaseUnusedProfiles();
-  assert.equal(h.calls.filter(({ name }) => name === "releaseProfile").length, 1);
+  assert.equal(h.calls.filter(({ name }) => name === "releaseProfile").length, 0);
 });
 
 test("RN context prop setters do not attach before the complete prop batch", () => {
@@ -327,7 +325,7 @@ test("unowned native store cannot enable the native pool", () => {
 
 test("pooled reload seeds the native context revision clock", () => {
   const h = harness({ pooled: true });
-  h.events.observePageIdentity(h.session, h.identity, "native", 40);
+  h.events.observePageIdentity(h.session, h.identity, 40);
   const context = h.events.publishPageContext("t");
   assert.equal(context.contextRevision, 41);
   assert.equal(h.calls.at(-1).args[1].contextRevision, 41);
@@ -383,70 +381,26 @@ test("sleep eligibility forwards the optional pin waiver as its first boolean ar
 });
 
 
-test("RN acknowledges the native event stamp after its UI facts handler", () => {
+test("RN applies media UI only for the current native registration", () => {
   const h = harness();
-  h.emit("onMediaAccess", { camera: true, microphone: false, screen: false }, { ...h.report, eventSeq: 7 });
-  const patched = h.calls.findIndex((call) => call.name === "patchPage");
-  const handled = h.calls.findIndex((call) => call.name === "keepAliveHandled");
-  assert.ok(patched >= 0);
-  assert.ok(handled > patched);
-  assert.equal(h.calls[handled].args[1], 7);
-  const count = h.calls.filter((call) => call.name === "keepAliveHandled").length;
-  h.emit("onMediaAccess", { camera: false, microphone: false, screen: false }, { ...h.report, registrationGeneration: 99, eventSeq: 8 });
-  assert.equal(h.calls.filter((call) => call.name === "keepAliveHandled").length, count);
+  h.emit("onMediaAccess", { camera: true }, { ...h.report, eventSeq: 7 });
+  assert.equal(h.page.mediaAccess.camera, true);
+  h.emit("onMediaAccess", { camera: false }, { ...h.report, registrationGeneration: 99, eventSeq: 8 });
+  assert.equal(h.page.mediaAccess.camera, true);
 });
 
-test("pooled created acknowledges its own stamp and requests a complete feed", () => {
-  const h = harness({ pooled: true });
-  const pool = h.startPool();
-  pool.emit({ ...h.identity, name: "onPageCreated", payload: { engine: "chromium", seq: 1 }, eventSeq: 12 });
-  const created = h.calls.findIndex((call) => call.name === "keepAliveCreated");
-  const handled = h.calls.findIndex((call) => call.name === "keepAliveHandled");
-  assert.ok(created >= 0);
-  assert.ok(handled > created);
-  assert.equal(h.calls[handled].args[1], 12);
-  pool.stop();
-});
-
-
-test("a throwing UI handler marks the session protective before a later event can acknowledge it", () => {
+test("a replacement clears old transient UI before applying an early media event", () => {
   const h = harness();
-  h.webviews.get("t").setMuted = () => { throw new Error("UI failure"); };
-  assert.throws(() => h.emit("onReady", { browserId: 12, tabId: 34 }, { ...h.report, eventSeq: 5 }), /UI failure/);
-  assert.equal(h.calls.filter((call) => call.name === "keepAliveFailed").length, 1);
-  assert.equal(h.calls.filter((call) => call.name === "keepAliveHandled").length, 0);
-});
-
-
-test("a replacement identity begins its feed session before an early media event updates UI facts", () => {
-  const h = harness();
+  h.emit("onFullscreen", { fullscreen: true }, h.report);
+  assert.equal(h.page.fullscreen, true);
   const next = { ...h.identity, sessionGeneration: "next", registrationGeneration: 2 };
   h.setAuthority(next);
-  h.calls.length = 0;
-  h.emit("onMediaAccess", { camera: true, microphone: false, screen: false }, { kind: "reserved", sessionGeneration: "next", registrationGeneration: 2, eventSeq: 1 });
-  const created = h.calls.findIndex((call) => call.name === "keepAliveCreated");
-  const patched = h.calls.findIndex((call) => call.name === "patchPage");
-  assert.ok(created >= 0);
-  assert.ok(patched > created);
+  h.emit("onMediaAccess", { camera: true }, { kind: "reserved", sessionGeneration: "next", registrationGeneration: 2, eventSeq: 1 });
+  assert.equal(h.page.fullscreen, false);
   assert.equal(h.page.mediaAccess.camera, true);
   h.emit("onPageCreated", { ...next, generation: "next" }, { kind: "reserved", sessionGeneration: "next", registrationGeneration: 2 });
   assert.equal(h.page.mediaAccess.camera, true);
-  assert.equal(h.calls.filter((call) => call.name === "keepAliveCreated").length, 2);
 });
-
-
-test("a same-identity pool created resend preserves handled feed authority", () => {
-  const h = harness({ pooled: true });
-  const pool = h.startPool();
-  const created = { ...h.identity, name: "onPageCreated", payload: { engine: "chromium", seq: 1 } };
-  pool.emit(created);
-  h.calls.length = 0;
-  pool.emit(created);
-  assert.equal(h.calls.filter((call) => call.name === "keepAliveGone").length, 0);
-  assert.ok(h.calls.some((call) => call.name === "keepAliveCreated"));
-  pool.stop();
-});
-
 
 test("engine activation preserves a retained workspace before and after cancelled quit", () => {
   const h = harness();

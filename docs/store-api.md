@@ -277,16 +277,16 @@ main queue. It follows only the exact mounted registration and session. Swift al
 counts, focus between visible split panes, and dismissal of a Peek whose navigation only started a download.
 JS retains presentation projections for both hosts, including favicon, prompts, status, media, and overlays.
 There are no duplicate JS created/gone/navigation/media/download/discard/ready writes on the owned path.
-Ready still records loaded profiles for resource release. Sleeping hooks read owned live.discarded.
+The page issuer marks profiles loaded on page readiness for native resource release. Sleeping hooks read owned live.discarded.
 
 Automatic sleeping is native by default (`LaunchSwitch.nativeTabSleep`). `status().nativeTabSleep` is the runner's
 lock-backed running value, not just the launch switch; JS's `nativeTabSleepRunning()` also requires native workspace
 ownership. While it is true, `lib/tabLifecycle` makes no automatic sleep decisions. The runner runs only while
 `TabSleepPermissionFeed.servesPages`: its permission feed knows only pooled pages, so with the pool or the shell off
 it stays off and the JS fallback decides, as it does with `SOLARA_NATIVE_TAB_SLEEP=0` in development or without native
-workspace ownership. The `sleepInactiveTabs` setting is checked by both paths: a saved false stays off. JS still
-feeds transient protections through `lib/nativeKeepAlive`, and retains battery saver, manual sleep and profile resource
-release.
+workspace ownership. Both paths honor `sleepInactiveTabs`. The native page attachment protects capture and the
+New Tab Forward overlay before any presentation events reach JavaScript. Manual sleep uses the runner while it is
+available. Swift releases unused profiles in the owned workspace. Battery saver still has JavaScript callers.
 
 `updateRNPageContext(tabId, sessionGeneration, context): boolean` publishes only to the exact current attachment;
 `isRNPageCurrent(tabId, sessionGeneration): boolean` is nonactivating. The shared RN/pool helpers
@@ -329,7 +329,10 @@ max(newestEventSeq, eventSeq). Feed/latch/runtime registration change Store memo
 persistence, effects or live listeners. Step 6 owns feed production and lifecycle policy; RN stays exempt from that
 policy. 5b adds no JS lifecycle runner or download-started policy.
 
-A keep fact the runner relies on must be set inside a page-event handler, before that event's `handled` is acknowledged, or be native. The runner refuses a page until `handled` reaches `newestEventSeq`, which native bumps when the event is emitted, so a fact set that way protects from the moment the page emits it. A fact set anywhere else can lag behind a sweep. `lib/nativeKeepAlive` flushes only when a tracked page's own inputs change, and retries pages still waiting on native facts (1 s, backing off to 30 s).
+The native runner reads current registration facts from `PageIssuer` under the store sequence. The issuer applies
+renderer capture and recovery events before publishing them to the UI and reads the Forward overlay from the same
+page context used to issue navigation. Registration snapshots without native runtime facts still require a current
+keep-alive report whose handled cursor covers all stamped events.
 
 Unload/hydrate clears active page memory and live presentation; normalization restores idle entries and holder facts.
 Nonretired producer fences and same-session watermarks survive retained ids; tab removal drops them, except bounded

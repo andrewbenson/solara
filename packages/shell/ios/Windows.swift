@@ -5,7 +5,15 @@ public enum LittleWindowEvent: Sendable {
   case focused, frame([Double]), closed
 }
 
+public enum WorkspaceWindowEvent: Sendable {
+  case focused
+  case frame([Double])
+  case fullScreen(Bool)
+  case closed
+}
+
 public enum WindowHost {
+  @MainActor public static var workspaceEvent: ((String, WorkspaceWindowEvent) -> Void)?
   public static var makeWindow: (() -> NSWindow)?
   @MainActor public static var littleWindowEvent: ((String, LittleWindowEvent) -> Void)?
   @MainActor public static var closeRequest: ((String) -> Bool)?
@@ -36,8 +44,20 @@ public enum WindowHost {
     FocusHandoff.shared.cancel(in: window)
   }
   @MainActor public static func contentView(_ id: String) -> NSView? { WindowManager.shared.windows[id]?.contentView }
-  @MainActor public static func openBrowserWindow(_ id: String, frame: [Double]?, incognito: Bool, profile: String, title: String, focus: Bool, chromeWindow: String?, small: Bool, size: [Double]?, claim: String? = nil, pointer: NSPoint? = nil) {
-    WindowManager.shared.open(id: id, frame: frame, incognito: incognito, title: title, focus: focus, kind: small ? "small" : "browser", profile: profile, size: size, chromeWindow: chromeWindow, claim: claim, pointer: pointer, animated: true)
+  @MainActor public static func openBrowserWindow(
+    _ id: String, frame: [Double]?, incognito: Bool, profile: String, title: String, focus: Bool, chromeWindow: String?,
+    small: Bool, size: [Double]?, claim: String? = nil, pointer: CGPoint? = nil, behind: String? = nil,
+    animated: Bool = true, lightsCenter: CGPoint? = nil
+  ) {
+    if let lightsCenter { WindowManager.shared.setTrafficLightsCenter(id: id, center: lightsCenter) }
+    WindowManager.shared.open(id: id, frame: frame, incognito: incognito, title: title, focus: focus,
+      kind: small ? "small" : "browser", profile: profile, size: size, behind: behind, chromeWindow: chromeWindow,
+      claim: claim, pointer: pointer, animated: animated)
+  }
+  @MainActor public static var browserWindowIDs: Set<String> { WindowManager.shared.workspaceWindowIDs }
+  @MainActor public static var canSyncWorkspaceWindows: Bool { !WindowManager.shared.isTerminating }
+  @MainActor public static func restoreBrowserFullScreen(_ ids: [String], focus: String?) {
+    WindowManager.shared.restoreFullScreen(ids: ids, focus: focus)
   }
   @MainActor public static func setBrowserWindowTitle(_ id: String, title: String) { WindowManager.shared.setTitle(id: id, title: title) }
   @MainActor public static func closeBrowserWindow(_ id: String) { WindowManager.shared.close(id: id) }
@@ -98,6 +118,11 @@ final class WindowManager: NSObject, NSWindowDelegate {
   private var closingIntents = Set<String>()
   private var termination = WindowTerminationLifecycle()
   var publishesWindowTeardown: Bool { termination.publishesWindowTeardown }
+  var isTerminating: Bool { termination.isTerminating }
+  var workspaceWindowIDs: Set<String> {
+    Set(windows.keys.filter { auxKinds[$0] == nil && !smallIds.contains($0) })
+      .union(pendingOrder.filter { pendingOpens[$0]?.kind == "browser" })
+  }
   private var retainedPresentation: LastWindowPresentation?
   var retainedWindowId: String? { retention.id }
 
@@ -282,6 +307,7 @@ final class WindowManager: NSObject, NSWindowDelegate {
     if kind != "browser" && !small { return openAux(id: id, kind: kind, title: title) }
     guard let makeWindow = WindowHost.makeWindow, let makeContentView = WindowHost.makeContentView else { return }
     if !small, ChromeWindows.takeDismissed(appWindow: id) {
+      reportWorkspaceEvent(id, .closed)
       NotificationCenter.default.post(name: Notification.Name("SolaraPrivateWindowClosed"), object: nil, userInfo: ["id": id])
       emit?("onWindowEvent", ["type": "close", "id": id])
       return
@@ -409,8 +435,16 @@ final class WindowManager: NSObject, NSWindowDelegate {
     DispatchQueue.main.async { [weak self] in self?.nextFullScreen() }
   }
 
+  private func reportWorkspaceEvent(_ id: String, _ event: WorkspaceWindowEvent) {
+    guard !termination.isTerminating else { return }
+    MainActor.assumeIsolated { WindowHost.workspaceEvent?(id, event) }
+  }
+
   private func giveUpFullScreen(_ id: String) {
-    if !fullScreenIds.contains(id) { emit?("onWindowEvent", ["type": "fullScreen", "id": id, "on": false]) }
+    if !fullScreenIds.contains(id) {
+      reportWorkspaceEvent(id, .fullScreen(false))
+      emit?("onWindowEvent", ["type": "fullScreen", "id": id, "on": false])
+    }
     fullScreenQueue.removeAll { $0 == id }
     nextFullScreen()
   }
@@ -433,7 +467,9 @@ final class WindowManager: NSObject, NSWindowDelegate {
     let entered = notification.name == NSWindow.didEnterFullScreenNotification
     if entered { fullScreenIds.insert(id) } else { fullScreenIds.remove(id) }
     if isMainWindow(window) {
-      emit?("onWindowEvent", ["type": "fullScreen", "id": id, "on": entered && !ChromeWindows.fullScreenIsForPage(window)])
+      let fullScreen = entered && !ChromeWindows.fullScreenIsForPage(window)
+      reportWorkspaceEvent(id, .fullScreen(fullScreen))
+      emit?("onWindowEvent", ["type": "fullScreen", "id": id, "on": fullScreen])
     }
     if entered, fullScreenEntering == id { enteredFullScreen(id) }
     if fullScreenExits.contains(id) {
@@ -853,6 +889,7 @@ final class WindowManager: NSObject, NSWindowDelegate {
   func windowDidBecomeKey(_ notification: Notification) {
     guard let window = notification.object as? NSWindow, let id = id(of: window) else { return }
     if isMainWindow(window) { lastPlaced = window }
+    if !smallIds.contains(id) { reportWorkspaceEvent(id, .focused) }
     if !smallIds.contains(id) || !reportLittle(id, .focused) { emit?("onWindowEvent", ["type": "focus", "id": id]) }
   }
 
@@ -873,6 +910,7 @@ final class WindowManager: NSObject, NSWindowDelegate {
     auxKinds[id] = nil
     let small = smallIds.remove(id) != nil
     if closingFromJS.remove(id) == nil, !small || !reportLittle(id, .closed) {
+      if !small { reportWorkspaceEvent(id, .closed) }
       emit?("onWindowEvent", ["type": "close", "id": id])
     }
     DispatchQueue.main.async {
@@ -951,7 +989,8 @@ final class WindowManager: NSObject, NSWindowDelegate {
       UserDefaults.standard.set(lastFrame, forKey: Self.lastFrameKey)
     }
     let f = window.frame
-    let frame = [f.minX, f.minY, f.width, f.height].map { Double($0) }
+    let frame: [Double] = [f.minX, f.minY, f.width, f.height]
+    if !smallIds.contains(id) { reportWorkspaceEvent(id, .frame(frame)) }
     if !smallIds.contains(id) || !reportLittle(id, .frame(frame)) {
       emit?("onWindowEvent", ["type": "frame", "id": id, "frame": frame])
     }

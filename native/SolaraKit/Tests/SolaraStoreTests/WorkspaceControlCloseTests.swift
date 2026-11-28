@@ -17,6 +17,22 @@ import Testing
     return WorkspaceClosePolicy.controlWarning(close, state: next)
   }
 
+  @Test func repeatedCloseTargetsAreArchivedOnceAndDoNotCloseTheWindow() throws {
+    let store = makeStore()
+    let window = try store.dispatch(Command("createWindow", [["url": "https://a.example/"]])).result!.string!
+    let first = store.state.activeTabId(window)!
+    let second = try store.dispatch(Command("newTab", [.string(window), ["url": "https://b.example/"]])).result!.string!
+    let decision = WorkspaceClosePolicy.tabs([second, first, second, first], windowId: window, state: store.state)
+    #expect(decision.tabIds == [second, first])
+    #expect(!decision.closesWindow)
+    try store.dispatch(Command("closeCommandTabs", [JSONValue(decision.tabIds)]))
+    #expect(store.state.closedTabs.count == 2)
+    try store.dispatch(Command("reopenCommandClosed", [.string(window)]))
+    let restored = store.state.windows[window]?.tabIds.compactMap { store.state.tabs[$0]?.url } ?? []
+    #expect(restored.filter { !$0.isEmpty }.sorted() == ["https://a.example/", "https://b.example/"])
+    #expect(store.state.closedTabs.isEmpty)
+  }
+
   @Test func anEmptyLastTabClosesItsWindowAndWarnsOnlyWithTheSetting() throws {
     let store = makeStore()
     let window = try store.dispatch(Command("createWindow")).result!.string!

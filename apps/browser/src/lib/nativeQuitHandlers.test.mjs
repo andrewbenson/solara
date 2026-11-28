@@ -13,7 +13,7 @@ for (const dev of [false, true]) test(`quit handler counters and lazy persistenc
   let flushes = 0;
   let resumes = 0;
   const source = native.slice(native.indexOf("let quitting ="), native.indexOf("export const shellWindowPort"))
-    + native.slice(native.indexOf("  onAppEvent((e) =>"), native.indexOf("  const windows = createWindowSync"));
+    + native.slice(native.indexOf("  onAppEvent((e) =>"), native.indexOf("  const nativeWindows ="));
   const api = runInNewContext(transpileModule(source.replace(/^export /gm, "") + "\n({devQuitHandlerCounts,isQuitting})", { compilerOptions: { target: 9 } }).outputText, {
     __DEV__: dev, store: { getState: () => ({}) }, onAppEvent: (fn) => { listener = fn; },
     finishAnimatedCloses() {}, flushPersistence: () => { flushes++; }, resumePersistence: () => { resumes++; },

@@ -1,5 +1,3 @@
-import { keepAlivePagesChanged } from "./nativeKeepAlive";
-import { usePages } from "../components/layout/pageState";
 import { lastTabClosesWindow, onDownload, releaseProfile } from "@solara/solaracore";
 import {
   cancelFocusMove,
@@ -20,7 +18,7 @@ import {
   windowIds,
 } from "@solara/shell";
 import { Appearance } from "react-native";
-import { cancelBookmarkQuit, flushBookmarkJournal } from "@solara/settings";
+import { cancelBookmarkQuit, flushBookmarkJournal, startNativeWorkspaceWindows } from "@solara/settings";
 import { nativeOwnsWorkspace } from "../store/nativeStore";
 import { useBrowser } from "../store/browser";
 import { setLastTabKeepsWindow } from "../store/newTabBar";
@@ -35,6 +33,7 @@ import { finishAnimatedCloses } from "./closeAnimated";
 import { setFocusSenders } from "./focusClaims";
 import { cancelAbandonedFocusMoves } from "./focusHandoff";
 import { flushPersistence, resumePersistence } from "./persist";
+import { switchOn } from "./killSwitches";
 import { startWindowCloseGuard } from "./windowClose";
 
 let quitting = false;
@@ -64,9 +63,8 @@ export function startNativeSync() {
   cancelAbandonedFocusMoves();
   onCommand(runCommand);
   startWindowCloseGuard();
-  usePages.subscribe(keepAlivePagesChanged);
   if (!nativeOwnsWorkspace()) onOpenURLs((urls, _pointer, profile) => openExternalUrls(urls, profile));
-  void lastTabClosesWindow().then((closes) => setLastTabKeepsWindow(!closes));
+  if (!nativeOwnsWorkspace()) void lastTabClosesWindow().then((closes) => setLastTabKeepsWindow(!closes));
   onDownload((d) => store.getState().upsertDownload(d));
 
   if (!nativeOwnsWorkspace()) store.getState().setAppDark(Appearance.getColorScheme() === "dark");
@@ -108,24 +106,25 @@ export function startNativeSync() {
     }
   });
 
-  const windows = createWindowSync({
+  const nativeWindows = nativeOwnsWorkspace() && startNativeWorkspaceWindows(switchOn("focusedWindowFirst"));
+  const windows = nativeWindows ? null : createWindowSync({
     port: shellWindowPort,
     getState: store.getState,
     isQuitting,
     lightsCenter: openingLightsCenter,
     isUtilityWindow: isUtilityWindowId,
   });
-  windows.listen();
+  windows?.listen();
 
   startShortcutHints();
-  windows.sync(store.getState());
-  windows.restoreFullScreen(store.getState());
+  windows?.sync(store.getState());
+  windows?.restoreFullScreen(store.getState());
   store.subscribe((s, prev) => {
-    windows.sync(s, prev);
+    windows?.sync(s, prev);
   });
   store.subscribe((s, prev) => {
     if (s.settings.appearance !== prev.settings.appearance) void setAppearance(s.settings.appearance);
     if (s.settings.pageScrollBars !== prev.settings.pageScrollBars) void setThinScrollBars(s.settings.pageScrollBars === "thin");
   });
-  void windows.sweep();
+  void windows?.sweep();
 }

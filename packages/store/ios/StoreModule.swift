@@ -42,6 +42,10 @@ public class StoreModule: Module {
       }
     }
 
+    AsyncFunction("sleepTab") { (tabId: String) async -> Bool? in
+      await NativeStore.shared?.tabSleep.sleepOnRequest(tabId)
+    }
+
     AsyncFunction("devTabSleep") { (action: String) async -> String in
       await devTabSleep(action)
     }

@@ -114,6 +114,10 @@ public class SettingsModule: Module {
       return DispatchQueue.main.sync { MainActor.assumeIsolated { NativeWorkspaceCommands.perform(command, arg: arg, windowId: windowId) } }
     }
 
+    AsyncFunction("startWorkspaceWindows") { (focusedFirst: Bool) in
+      MainActor.assumeIsolated { NativeWorkspaceWindows.start(focusedFirst: focusedFirst) }
+    }.runOnQueue(.main)
+
     AsyncFunction("closeWorkspaceTab") { (tabId: String, successor: String?) -> Bool in
       MainActor.assumeIsolated { NativeWorkspaceCommands.closeWorkspaceTab(tabId, successor: successor) }
     }.runOnQueue(.main)

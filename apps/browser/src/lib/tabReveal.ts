@@ -4,6 +4,7 @@ import { pageOf } from "../components/layout/pageState";
 import { toolbarScrolledDown } from "../components/layout/nativeToolbarPresentation";
 import { useBrowser, type BrowserState } from "../store/browser";
 import { activeTabId } from "../store/model";
+import { nativeOwnsWorkspace } from "../store/nativeStore";
 import { hasPage } from "../store/pageSession";
 import { splitOf } from "../store/splits";
 import type { Tab } from "../store/types";
@@ -51,6 +52,7 @@ export function switchedTabs(s: BrowserState, prev: BrowserState): Switch[] {
 }
 
 export function startTabReveal() {
+  if (nativeOwnsWorkspace()) return;
   useBrowser.subscribe((s, prev) => {
     for (const change of switchedTabs(s, prev)) {
       if (change.tabId === null) dropTabReveals(change.over);

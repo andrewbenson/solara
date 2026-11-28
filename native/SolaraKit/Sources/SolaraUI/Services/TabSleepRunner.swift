@@ -323,15 +323,19 @@ public final class TabSleepRunner {
     if live.isLoading { return "loading" }
     if let reason = CaptureSleepProtection.reason?(id) { return reason }
     if pendingPermission(id) { return "asking for permission" }
-    guard let facts = store.pageFacts(id), facts.generation == descriptor.sessionGeneration,
-      facts.ready != nil, let feed = facts.keepAlive,
-      feed.handled >= max(facts.latchedThrough, facts.newestEventSeq) else { return "awaiting page facts" }
-    if feed.keep.capturing { return "capturing" }
-    if feed.keep.newTabShown { return "kept for Forward" }
-    if NowPlayingStore.shared.pictureInPicture[id] != nil || feed.keep.pip { return "picture in picture" }
-    if feed.keep.displayRequest { return "choosing a screen to share" }
+    guard let facts = store.pageFacts(id), facts.generation == descriptor.sessionGeneration, facts.ready != nil else { return "awaiting page facts" }
+    if let runtime = descriptor.runtimeState {
+      if runtime.capturing { return "capturing" }
+      if runtime.newTabShown { return "kept for Forward" }
+    } else {
+      guard let feed = facts.keepAlive, feed.handled >= max(facts.latchedThrough, facts.newestEventSeq) else { return "awaiting page facts" }
+      if feed.keep.capturing { return "capturing" }
+      if feed.keep.newTabShown { return "kept for Forward" }
+      if feed.keep.pip { return "picture in picture" }
+      if feed.keep.displayRequest { return "choosing a screen to share" }
+      if feed.keep.media == .playing || (tab.pinned && feed.keep.media == .present) { return "media" }
+    }
     if let reason = NowPlayingStore.shared.protectionReason(tabId: id, pinned: tab.pinned) { return reason }
-    if feed.keep.media == .playing || (tab.pinned && feed.keep.media == .present) { return "media" }
     return nil
   }
 

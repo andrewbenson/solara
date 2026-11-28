@@ -8,7 +8,7 @@ import SolaraUI
 
 extension NativeSidebarLive {
   static func action(_ action: String, windowId: String, folderId: String, id: String?, background: Bool) {
-    guard let store = WorkspaceWrites.store, let window = store.state.windows[windowId], !window.incognito,
+    guard let store = WorkspaceWrites.store, let window = store.state.windows[windowId], !window.incognito, !store.memory.closingWindows.contains(windowId),
       let live = SidebarLiveFeed.shared.live, let folder = live.state.folders[folderId], folder.profileId == window.profileId
     else { return }
     let payload: LiveAnyJSON = .object(["folderId": .string(folderId)])
@@ -19,7 +19,7 @@ extension NativeSidebarLive {
     case "settings": openSettings("liveFolders")
     case "folderMenu": folderMenu(folder, live: live, windowId: windowId, store: store)
     case "open":
-      if let item { open(item, folder: folder, windowId: windowId, background: background, store: store) }
+      if let item { _ = open(item, folder: folder, windowId: windowId, background: background, store: store) }
     case "itemMenu":
       if let item { itemMenu(item, folder: folder, live: live, windowId: windowId, store: store) }
     case "close":
@@ -33,7 +33,7 @@ extension NativeSidebarLive {
       if let id { showMore(folderId: folderId, itemId: id) }
     case "openCompleted":
       if let item = live.state.completed[folderId]?.first(where: { $0.item.id == id })?.item {
-        open(item, folder: folder, windowId: windowId, background: false, store: store)
+        _ = open(item, folder: folder, windowId: windowId, background: false, store: store)
       }
     default: break
     }
@@ -45,23 +45,18 @@ extension NativeSidebarLive {
       then: refresh ? .refreshFolder(.object(["folderId": id])) : nil)
   }
 
-  private static func openedTab(_ item: LiveItem, folder: LiveFolder, windowId: String, state: BrowserState) -> String? {
-    state.viewTabIds(windowId, folder.profileId).first {
-      let ref = state.tabs[$0]?.liveItem
-      return ref?["folderId"]?.string == folder.id && ref?["itemId"]?.string == item.id
-    }
-  }
-
-  private static func open(_ item: LiveItem, folder: LiveFolder, windowId: String, background: Bool, store: Store) {
-    perform(.markRead(.object(["folderId": .string(folder.id), "itemIds": .array([.string(item.id)])])))
-    if let existing = openedTab(item, folder: folder, windowId: windowId, state: store.state) {
-      if !background { _ = try? store.dispatch(Command("activate", [.string(existing)]), origin: .native) }
-    } else {
-      _ = try? store.dispatch(Command("openSidebarLiveItem", [
+  static func open(_ item: LiveItem, folder: LiveFolder, windowId: String, background: Bool, store: Store) -> String? {
+    guard WorkspaceWrites.store === store else { return nil }
+    let tabId = try? store.sequence {
+      guard store.state.windows[windowId]?.profileId == folder.profileId else { return nil as String? }
+      return try store.dispatch(Command("openSidebarLiveItem", [
         .string(windowId), .string(folder.id), .string(item.id), .string(item.url), .bool(background),
-      ]), origin: .native)
+      ]), origin: .native).result?.string
     }
+    guard let tabId else { return nil }
+    perform(.markRead(.object(["folderId": .string(folder.id), "itemIds": .array([.string(item.id)])])))
     FrameUpdates.flush()
+    return tabId
   }
 
   private static func current(_ folder: LiveFolder, windowId: String, store: Store) -> (SidebarLive, LiveFolder)? {
@@ -73,7 +68,7 @@ extension NativeSidebarLive {
 
   private static func itemMenu(_ item: LiveItem, folder: LiveFolder, live: SidebarLive, windowId: String, store: Store) {
     let unread = live.state.unread[folder.id]?.contains(item.id) == true
-    let tabId = openedTab(item, folder: folder, windowId: windowId, state: store.state)
+    let tabId = store.state.sidebarLiveTab(windowId: windowId, folderId: folder.id, itemId: item.id)
     var items: [TabMenuItem] = [
       .init(id: "open", title: tabId == nil ? "Open" : "Show Tab", symbol: "arrow.up.forward.square"),
       .init(id: "background", title: "Open in Background", enabled: tabId == nil),
@@ -88,7 +83,7 @@ extension NativeSidebarLive {
       guard let store, let (latest, folder) = current(folder, windowId: windowId, store: store),
         let item = latest.state.items[folder.id]?.first(where: { $0.id == item.id }) else { return }
       switch choice {
-      case "open", "background": open(item, folder: folder, windowId: windowId, background: choice == "background", store: store)
+      case "open", "background": _ = open(item, folder: folder, windowId: windowId, background: choice == "background", store: store)
       case "copy": SettingsAdapters.copyText(cleanUrl(item.url))
       case "copyMd": SettingsAdapters.copyText(markdownLink(title: item.title, url: item.url))
       case "unread":
@@ -100,7 +95,7 @@ extension NativeSidebarLive {
         }
       case "hide": hide([item], folderId: folder.id)
       case "close":
-        if let tab = openedTab(item, folder: folder, windowId: windowId, state: store.state) {
+        if let tab = store.state.sidebarLiveTab(windowId: windowId, folderId: folder.id, itemId: item.id) {
           NativeWorkspaceCommands.closeFromControl(tab, store: store)
         }
       default: break
@@ -130,10 +125,9 @@ extension NativeSidebarLive {
 
   static func createFolder(_ kind: LiveFolderKind, window: BrowserWindow) {
     guard !window.incognito else { return }
-    var payload: [String: LiveAnyJSON] = ["profileId": .string(window.profileId), "kind": .string(kind.rawValue)]
-    let connected = sources(kind).filter { SidebarLiveFeed.shared.live?.state.accounts[$0] != nil }
-    if !connected.isEmpty { payload["sources"] = .array(connected.map { .string($0.rawValue) }) }
-    perform(.newProfileLiveFolder(.object(payload)))
+    perform(.newProfileLiveFolder(.object([
+      "profileId": .string(window.profileId), "kind": .string(kind.rawValue),
+    ])))
   }
 
   private static func folderMenu(_ folder: LiveFolder, live: SidebarLive, windowId: String, store: Store) {
@@ -203,12 +197,7 @@ extension NativeSidebarLive {
     case "icon":
       NativeSidebarIconPicker.open(windowId: windowId, kind: "live", id: "livefolder|\(id)")
     case "up", "down":
-      var order = sequence(live, folder: folder, windowId: windowId, store: store)
-      guard let i = order.firstIndex(of: SidebarLive.prefix + id) else { return }
-      let target = i + (choice == "up" ? -1 : 1)
-      guard order.indices.contains(target) else { return }
-      order.swapAt(i, target)
-      arrange(live.placements(order, browser: store.state, windowId: windowId))
+      arrange(live.movedFolder(id, by: choice == "up" ? -1 : 1, browser: store.state, windowId: windowId))
     default:
       guard choice.hasPrefix("source:"), let source = LiveSourceId(rawValue: String(choice.dropFirst(7))),
         sources(folder.kind).contains(source) else { return }

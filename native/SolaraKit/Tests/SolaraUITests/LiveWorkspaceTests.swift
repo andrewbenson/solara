@@ -60,6 +60,48 @@ import Testing
     #expect(store.state.tabs[retained]?.liveItem?["folderId"]?.string == "keep")
   }
 
+  @Test func openingAnItemReusesItsTabInTheSameWindowAndProfile() throws {
+    let store = fixture()
+    let window = try makeWindow(store)
+    let other = try makeWindow(store)
+    let initial = store.state.activeTabId(window)
+    func open(_ target: String, _ folder: String = "folder", background: Bool) throws -> String {
+      try #require(try store.dispatch(Command("openSidebarLiveItem", [
+        .string(target), .string(folder), "item", "https://example.test/", .bool(background),
+      ])).result?.string)
+    }
+
+    let first = try open(window, background: true)
+    #expect(store.state.activeTabId(window) == initial)
+    try store.dispatch(Command("updateTab", [.string(first), ["url": "https://example.test/navigated"]]))
+    let again = try open(window, background: true)
+    #expect(again == first)
+    #expect(store.state.activeTabId(window) == initial)
+    let shown = try open(window, background: false)
+    #expect(shown == first)
+    #expect(store.state.activeTabId(window) == first)
+    #expect(store.state.tabs[first]?.url == "https://example.test/navigated")
+    let separateWindow = try open(other, background: true)
+    let separateFolder = try open(window, "another", background: true)
+    #expect(separateWindow != first && separateFolder != first)
+  }
+
+  @Test func openingAnItemSkipsPinnedLinksAndPrivateWindows() throws {
+    let store = fixture()
+    let window = try makeWindow(store)
+    let privateWindow = try makeWindow(store, ["incognito": true])
+    func open(_ target: String) throws -> String? {
+      try store.dispatch(Command("openSidebarLiveItem", [
+        .string(target), "folder", "item", "https://example.test/", true,
+      ])).result?.string
+    }
+    let pinned = try #require(try open(window))
+    try store.dispatch(Command("togglePin", [.string(pinned)]))
+    let opened = try #require(try open(window))
+    #expect(opened != pinned)
+    #expect(try open(privateWindow) == nil)
+  }
+
   @Test func deactivationOnlyNudgesAStillOpenLiveItem() throws {
     let store = fixture()
     let window = try makeWindow(store)

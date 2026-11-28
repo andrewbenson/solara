@@ -1,4 +1,5 @@
 import CoreGraphics
+import SolaraLive
 import SolaraModel
 import SolaraStore
 
@@ -34,6 +35,17 @@ extension SidebarLayout {
       }
     }
     return top + block.height
+  }
+}
+
+extension SidebarLive {
+  public func movedFolder(_ folderId: String, by offset: Int, browser: BrowserState, windowId: String) -> [FolderPlacement] {
+    guard let window = browser.windows[windowId], !window.incognito else { return [] }
+    let pinned = SidebarQuery(browser).entries(windowId: windowId, profileId: window.profileId).pinned
+    var order = sequence(pinned, state: browser, windowId: windowId, profileId: window.profileId)
+    guard let index = order.firstIndex(of: Self.prefix + folderId), order.indices.contains(index + offset) else { return [] }
+    order.swapAt(index, index + offset)
+    return placements(order, browser: browser, windowId: windowId)
   }
 }
 

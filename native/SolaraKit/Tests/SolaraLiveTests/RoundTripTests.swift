@@ -105,15 +105,19 @@ import Testing
 }
 
 @Suite struct ReplicaTests {
-  @Test func theReplicaCarriesSessionStateThePersistedDocumentLeavesOut() async throws {
+  @Test func theReplicaOnlyCarriesMeetingFields() async throws {
     let rig = Rig()
     let id = await rig.engine.createFolder(profileId: "p", kind: .documents, sources: [])
     await rig.engine.setShowAll("\(id):documents", true)
+    let group = MeetingGroup(groupId: "group", callTabId: "tab", occurrence: nil, title: "Call", start: nil, end: nil, endedAt: nil)
+    await rig.engine.setMeetingGroup(group)
     let state = await rig.engine.state
     let replica = jsonObject(Data(try state.replicaJSON().utf8))
     let persisted = jsonObject(Data(try state.persistedJSON().utf8))
-    #expect(Set(replica.keys) == Set(persisted.keys).union(["completing", "status", "showAll"]))
-    #expect((replica["status"] as? [String: Any])?[id] != nil)
+    #expect(Set(replica.keys) == ["calendar", "meetingGroups"])
+    #expect((replica["calendar"] as? [String: Bool]) == ["prompted": false])
+    #expect((replica["meetingGroups"] as? [String: [String: Any]])?["group"]?["callTabId"] as? String == "tab")
+    #expect((persisted["folders"] as? [String: Any])?[id] != nil)
     #expect(persisted["status"] == nil)
   }
 

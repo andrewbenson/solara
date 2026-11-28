@@ -80,11 +80,11 @@ try {
   if (mode !== "folders") await listen(redirect, 53682);
   const base = `http://127.0.0.1:${server.address().port}`;
   app = await launch(appPath, {
-    data: join(scratch, "data"), onboarded: true,
+    data: join(scratch, "data"), onboarded: true, probe: true,
     env: { SOLARA_LIVE_MOCK: base },
   });
   const native = () => app.eval("return ac.native.state()");
-  const live = () => app.eval("return globalThis.expo.modules.SolaraSettings.devLiveSnapshot()");
+  const live = () => app.probe("live.snapshot");
   const control = (key, value) => until(`Settings control unavailable: ${key}`, () => app.eval(
     `return globalThis.expo.modules.SolaraSettings.devSettings("liveControl", ${q(value === undefined ? key : `${key} ${value}`)}).then(x => JSON.parse(x).accepted)`
   ));
@@ -93,17 +93,19 @@ try {
   if (mode !== "drive") await rep.check("Settings Delete closes Live items and reconciles their open group", async () => {
     const windowId = initial.windowOrder[0];
     const profileId = initial.windows[windowId].profileId;
-    const folderId = await app.eval(`
-      return ac.live.engine.newProfileLiveFolder(${q(profileId)}, "documents", []).then((id) =>
-        ac.live.store.updateFolder(id, { collapsed: true }).then(() => id));
-    `);
-    await until("fixture Live folder did not collapse", () => app.eval(
-      `return ac.live.store.live().folders[${q(folderId)}]?.collapsed === true`
-    ));
+    const { folderId } = await app.probe("live.fixture", {
+      seed: {
+        profileId, kind: "documents", sources: [], collapsed: true,
+        items: [{ id: "fixture", source: "notion", url: base + "/live-item", title: "Fixture", subtitle: "", updatedAt: Date.now() }],
+      },
+    });
+    await until("fixture Live folder did not collapse", async () => (await live()).folders.some((f) => f.id === folderId && f.collapsed));
+    const { tabId: first } = await app.probe("live.fixture", {
+      open: { windowId, folderId, itemId: "fixture", background: false },
+    });
     const fixture = await app.eval(`
       const s = ac.store.getState();
-      const first = s.newTab(${q(windowId)}, {url: ${q(base + "/live-item")}});
-      s.updateTab(first, {liveItem: {folderId: ${q(folderId)}, itemId: "fixture"}});
+      const first = ${q(first)};
       const keep = s.newTab(${q(windowId)}, {url: ${q(base + "/keep")}});
       const group = s.groupTabs([first, keep], {pinned: false, name: "Live group"});
       return {folderId: ${q(folderId)}, first, keep, group};

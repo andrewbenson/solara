@@ -79,6 +79,13 @@ public extension BrowserState {
     return w.tabIds.filter { tabs[$0]?.profileId == profile }
   }
 
+  func sidebarLiveTab(windowId: String, folderId: String, itemId: String) -> String? {
+    viewTabIds(windowId).first {
+      guard let tab = tabs[$0], !tab.pinned, let ref = tab.liveItem else { return false }
+      return ref["folderId"]?.string == folderId && ref["itemId"]?.string == itemId
+    }
+  }
+
   func hasPinnedTiles(_ windowId: String) -> Bool {
     guard let w = windows[windowId] else { return false }
     return viewTabIds(windowId).contains { inPinnedContainer($0) }

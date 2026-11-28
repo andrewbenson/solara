@@ -78,7 +78,7 @@ final class ProbeHost {
         switch request.command {
         case "probe.hello":
           guard request.args.isEmpty else { throw ProbeFailure.invalidArgument }
-          response = ["id": id, "protocol": 1, "result": ["protocol": 1, "capabilities": ["probe.hello", "state.snapshot", "input.swipe", "input.hover", "view.capture", "onboarding.sync", "sync.enable", "pairing.trusted.arm", "pairing.trusted.select", "pairing.trusted.state", "pairing.trusted.decide", "storeUnavailable.state", "storeUnavailable.press", "earlyWindow.decision"], "pid": getpid()]]
+          response = ["id": id, "protocol": 1, "result": ["protocol": 1, "capabilities": ["probe.hello", "state.snapshot", "input.swipe", "input.hover", "view.capture", "onboarding.sync", "sync.enable", "pairing.trusted.arm", "pairing.trusted.select", "pairing.trusted.state", "pairing.trusted.decide", "storeUnavailable.state", "storeUnavailable.press", "earlyWindow.decision", "live.snapshot", "live.fixture"], "pid": getpid()]]
         case "earlyWindow.decision":
           guard request.args.isEmpty else { throw ProbeFailure.invalidArgument }
           response = ["id": id, "protocol": 1, "result": SolaraCoreHost.devEarlyWindowDecision]
@@ -107,6 +107,31 @@ final class ProbeHost {
               self.reply(["id": id, "protocol": 1, "error": ["code": (error as? ProbeFailure)?.code ?? ProbeFailure.invalidEnvelope.code]], id: id, expiresAtMs: request.expiresAtMs)
             }
           })
+          continue
+        case "live.snapshot", "live.fixture":
+          let fixture: Data?
+          if request.command == "live.fixture" {
+            let keys = Set(request.args.keys)
+            guard keys == ["seed"] || keys == ["open"] else { throw ProbeFailure.invalidArgument }
+            fixture = try JSONSerialization.data(withJSONObject: request.args)
+          } else {
+            guard request.args.isEmpty else { throw ProbeFailure.invalidArgument }
+            fixture = nil
+          }
+          try checkGate(request)
+          begin(request)
+          snapshotTasks[id] = Task { @MainActor in
+            defer { self.snapshotTasks[id] = nil }
+            do {
+              let data: [String: Any]
+              if let fixture { data = try await LiveFolderProbes.apply(fixture) }
+              else { data = await LiveFolderProbes.snapshot() }
+              self.finish(request, response: ["id": id, "protocol": 1, "result": data])
+            } catch {
+              NSLog("[solara-probe] Live fixture refused: %@", String(describing: error))
+              self.finish(request, response: ["id": id, "protocol": 1, "error": ["code": ProbeFailure.invalidArgument.code]])
+            }
+          }
           continue
         case "view.capture":
           guard Set(request.args.keys) == ["windowId"],

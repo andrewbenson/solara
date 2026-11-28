@@ -86,11 +86,12 @@ async function snapshot(inst, testCase) {
         });
       });
     }, Promise.resolve()).then(function() {
-      const live = Object.values(ac.live.store.useLive.getState().folders).map(function(f) { return { profile: f.profileId, kind: f.kind, sources: f.sources }; }).sort(function(a, b) { return a.profile.localeCompare(b.profile); });
       const adoption = JSON.parse(ac.shell.readDocument("sync.json") ?? "null")?.profiles?.default?.themeAdopting ?? false;
-      return { profileOrder: s.profileOrder, profiles: s.profiles, windowOrder: s.windowOrder, windows: s.windows, tabs: s.tabs, groups: s.groups, splits: s.splits, parkedPins: s.parkedPins, bookmarks, history, nativeIcons, cache, live, adoption };
+      return { profileOrder: s.profileOrder, profiles: s.profiles, windowOrder: s.windowOrder, windows: s.windows, tabs: s.tabs, groups: s.groups, splits: s.splits, parkedPins: s.parkedPins, bookmarks, history, nativeIcons, cache, adoption };
     });
   `);
+  const { folders } = await inst.probe("live.snapshot");
+  raw.live = folders.map(({ profileId, kind, sources }) => ({ profile: profileId, kind, sources })).sort((a, b) => a.profile.localeCompare(b.profile));
   return canonical(raw);
 }
 

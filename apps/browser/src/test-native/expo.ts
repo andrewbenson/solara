@@ -2,7 +2,6 @@ import type * as Expo from "expo-modules-core";
 import { solaraCoreNativeModules, solaraCoreOptionalNativeModules } from "./solaracore";
 import { shellNativeModules, shellOptionalNativeModules } from "./shell";
 import { nativeEvents } from "./events";
-import type { LiveFolder } from "../live/types";
 
 const settingsCommands: Record<string, string> = {
   deleteHistory: "ac_history_delete_urls",
@@ -12,11 +11,7 @@ const settingsCommands: Record<string, string> = {
   storeFavicon: "ac_favicons_set",
 };
 
-const testLive = { folders: {} as Record<string, LiveFolder>, folderOrder: [] as string[] };
 const liveListeners = new Map<string, (value: unknown) => void>();
-let liveRevision = 0;
-let liveCounter = 0;
-const publishLive = () => liveListeners.get("onLiveReplica")?.({ revision: ++liveRevision, replicaJSON: JSON.stringify(testLive) });
 
 export const emitBookmarkProjection = () => liveListeners.get("onBookmarkProjectionChanged")?.({});
 
@@ -65,41 +60,12 @@ const settingsModule = {
     const { document: _document, ...receipt } = await writer.submit(...args) as Record<string, unknown>;
     return receipt;
   },
-  liveInitialReplica: () => ({ revision: liveRevision, replicaJSON: JSON.stringify(testLive) }),
+  liveInitialReplica: () => ({ revision: 0, replicaJSON: "{}" }),
   addListener: (name: string, listener: (value: unknown) => void) => {
     liveListeners.set(name, listener);
     return { remove: () => { liveListeners.delete(name); } };
   },
-  liveCommand: async (name: string, payloadJSON: string) => {
-    const payload = JSON.parse(payloadJSON) as Record<string, any>;
-    let folderId: string | undefined;
-    if (name === "createFolder" || name === "newProfileLiveFolder" || name === "importFolder") {
-      folderId = `lf-test-${++liveCounter}`;
-      testLive.folders[folderId] = {
-        id: folderId, profileId: payload.profileId, kind: payload.kind, name: payload.kind === "pullRequests" ? "Pull Requests" : "Documents",
-        icon: null, collapsed: false, sources: payload.sources ?? ["github"], filters: { authored: true, reviewRequests: true },
-        groupStacks: true, showCompleted: true, createdAt: Date.now(),
-      };
-      testLive.folderOrder.push(folderId);
-    } else if (name === "updateFolder") {
-      const folder = testLive.folders[payload.folderId];
-      if (folder) testLive.folders[payload.folderId] = { ...folder, ...payload.patch };
-    } else if (name === "removeFolder") {
-      delete testLive.folders[payload.folderId];
-      testLive.folderOrder = testLive.folderOrder.filter((id) => id !== payload.folderId);
-    } else if (name === "arrangeFolders") {
-      const placed = payload.placed as { id: string; after: string | null }[];
-      const ids = placed.map((entry) => entry.id).filter((id) => testLive.folders[id]);
-      for (const entry of placed) {
-        const folder = testLive.folders[entry.id];
-        if (folder) testLive.folders[entry.id] = { ...folder, after: entry.after };
-      }
-      const slots = testLive.folderOrder.flatMap((id, index) => ids.includes(id) ? [index] : []);
-      for (const [index, slot] of slots.entries()) testLive.folderOrder[slot] = ids[index]!;
-    }
-    publishLive();
-    return JSON.stringify({ revision: liveRevision, folderId });
-  },
+  liveCommand: async () => JSON.stringify({ revision: 0 }),
   libraryCommand: async (kind: string, profile: string, payload: Record<string, unknown>) => {
     const name = settingsCommands[kind];
     if (!name) throw new Error(`unknown library command ${kind}`);

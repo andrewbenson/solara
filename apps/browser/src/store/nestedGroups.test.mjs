@@ -4,9 +4,6 @@ const { useBrowser } = await import("./browser.ts");
 const { groupEntries, sidebarEntries, numberedTabs } = await import("../components/sidebar/entries.ts");
 const { nestGroups, orderSections } = await import("./groups.ts");
 const { canMoveGroup } = await import("./organize.ts");
-const { keepLiveAnchors, liveAnchors, withLiveFolders } = await import("../components/sidebar/pinnedOrder.ts");
-useBrowser.subscribe(keepLiveAnchors);
-const { createFolder, removeFolder, updateFolder, useLive } = await import("../live/store.ts");
 
 const S = () => useBrowser.getState();
 const reset = () => S().hydrate({});
@@ -186,25 +183,6 @@ test("saved groups without parentId load as before; a dangling parentId is dropp
   assert.equal(S().groups[inner].parentId, undefined);
   assert.deepEqual(sidebarEntries(S(), w).list[0], `t:${S().windows[w].tabIds[0]}`);
   assert.ok(sidebarEntries(S(), w).list.includes(`g:${inner}`));
-});
-
-test("live folders sit after their anchor, at the top for null, at the end when the anchor is gone", () => {
-  const entries = ["t:r1", "g:g1", "t:r2"];
-  const keys = ["t:R1", "g:G1", "t:R2"];
-  const folders = [
-    { id: "top", after: null },
-    { id: "mid", after: "g:G1" },
-    { id: "old" },
-    { id: "lost", after: "t:gone" },
-  ];
-  assert.deepEqual(withLiveFolders(entries, keys, folders), ["lf:top", "t:r1", "g:g1", "lf:mid", "t:r2", "lf:old", "lf:lost"]);
-  const keyOf = (e) => keys[entries.indexOf(e)];
-  assert.deepEqual(liveAnchors(["t:r1", "lf:mid", "lf:top", "g:g1", "t:r2", "lf:old"], keyOf), [
-    { id: "mid", after: "t:R1" },
-    { id: "top", after: "t:R1" },
-    { id: "old", after: "t:R2" },
-  ]);
-  assert.deepEqual(liveAnchors(["lf:a", "t:r1"], keyOf), [{ id: "a", after: null }]);
 });
 
 const chainsOf = (url) =>
@@ -404,17 +382,4 @@ test("nesting repair breaks a parent cycle without leaving an empty group", () =
   assert.ok(Object.values(looped).every((v) => !v.parentId || looped[v.parentId]));
   const holders = Object.values(looped).filter((v) => v.tabIds.includes(ids[1]));
   assert.ok(holders.length >= 1);
-});
-
-test("a live folder whose pinned anchor goes keeps its place under the item above it", async () => {
-  reset();
-  const liveStore = useLive.getState;
-  const folder = await createFolder("default", "pullRequests");
-  const { w, ids } = windowWith("home", "r1", "r2", "r3");
-  S().placeTabs([ids[1], ids[2], ids[3]], { pinned: true, row: true, beforeId: null });
-  await updateFolder(folder, { after: `t:${ids[2]}` });
-  S().placeTabs([ids[2]], { pinned: false, beforeId: null });
-  assert.equal(liveStore().folders[folder].after, `t:${ids[1]}`, "it stays under r1, not at the end");
-  assert.deepEqual(sidebarEntries(S(), w).pinned, [`t:${ids[1]}`, `t:${ids[3]}`]);
-  await removeFolder(folder);
 });

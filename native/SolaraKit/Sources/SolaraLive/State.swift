@@ -216,19 +216,14 @@ public struct LiveState: Codable, Sendable, Equatable {
   }
 
   public func replicaJSON() throws -> String {
-    try LiveJSON.text(Replica(state: self))
+    try LiveJSON.text(MeetingReplica(calendar: .init(prompted: calendar.prompted), meetingGroups: meetingGroups))
   }
 
-  struct Replica: Encodable {
-    let state: LiveState
+  private struct MeetingReplica: Encodable {
+    struct Calendar: Encodable { var prompted: Bool }
 
-    func encode(to encoder: Encoder) throws {
-      try state.encode(to: encoder)
-      var c = encoder.container(keyedBy: CodingKeys.self)
-      try c.encode(state.completing, forKey: .completing)
-      try c.encode(state.status, forKey: .status)
-      try c.encode(state.showAll, forKey: .showAll)
-    }
+    var calendar: Calendar
+    var meetingGroups: [String: MeetingGroup]
   }
 
   var persistedPart: PersistedPart {

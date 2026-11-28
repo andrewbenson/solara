@@ -524,15 +524,6 @@ public class SettingsModule: Module {
       }
     }.runOnQueue(.main)
 
-    #if DEBUG
-    AsyncFunction("devLiveSnapshot") { (promise: Promise) in
-      nonisolated(unsafe) let reply = promise
-      MainActor.assumeIsolated {
-        Task { @MainActor in reply.resolve(await NativeLiveEngine.shared.devSnapshot()) }
-      }
-    }.runOnQueue(.main)
-    #endif
-
     AsyncFunction("publish") { (topic: String, json: String) in
       MainActor.assumeIsolated { SettingsJS.shared.publish(topic, json: json) }
     }.runOnQueue(.main)

@@ -134,6 +134,44 @@ private func layout(_ state: BrowserState, _ liveState: LiveState) -> SidebarPag
     #expect(sidebar.placements(["t:a", "t:b", "lf:f1"], browser: after, windowId: "w1") == expected)
   }
 
+  @Test func movingAFolderAndThenUnpinningItsAnchorKeepsItWithThePrecedingRow() throws {
+    let pinned = #", "pinned": true, "pinnedAsRow": true"#
+    let before = try browser([tab("a", pinned), tab("b", pinned), tab("c", pinned)].joined(separator: ","), ids: ["a", "b", "c"], active: "a")
+    let after = try browser([tab("a", pinned), tab("b"), tab("c", pinned)].joined(separator: ","), ids: ["a", "b", "c"], active: "a")
+    var sidebar = SidebarLive(state: live(items: []))
+    let moved = sidebar.movedFolder("f1", by: -1, browser: before, windowId: "w1")
+    #expect(moved == [FolderPlacement(id: "f1", after: "t:b")])
+    #expect(sidebar.movedFolder("f1", by: 1, browser: before, windowId: "w1").isEmpty)
+    sidebar.state.arrangeFolders(moved)
+    let repaired = sidebar.removedAnchorPlacements(before: before, after: after)
+    #expect(repaired == [FolderPlacement(id: "f1", after: "t:a")])
+    sidebar.state.arrangeFolders(repaired)
+    #expect(sidebar.sequence(["t:a", "t:c"], state: after, windowId: "w1", profileId: "p") == ["t:a", "lf:f1", "t:c"])
+  }
+
+  @Test func mergedAnchorsKeepTheOrderVisibleBeforeTheRemoval() throws {
+    let pinned = #", "pinned": true, "pinnedAsRow": true"#
+    let before = try browser([tab("b", pinned), tab("a", pinned), tab("c", pinned)].joined(separator: ","), ids: ["b", "a", "c"], active: "a")
+    let after = try browser([tab("b", pinned), tab("a"), tab("c", pinned)].joined(separator: ","), ids: ["b", "a", "c"], active: "a")
+    var sidebar = SidebarLive(state: live(items: [], after: #", "after": "t:a""#))
+    sidebar.state.createFolder(id: "f2", profileId: "p", kind: .documents, sources: [], now: 1)
+    sidebar.state.updateFolder("f2", FolderPatch(after: .some("t:b")))
+    sidebar.state.arrangeFolders(sidebar.removedAnchorPlacements(before: before, after: after))
+    #expect(sidebar.state.folderOrder == ["f2", "f1"])
+    #expect(sidebar.sequence(["t:b", "t:c"], state: after, windowId: "w1", profileId: "p") == ["t:b", "lf:f2", "lf:f1", "t:c"])
+  }
+
+  @Test func aHeldOrderIgnoresAFolderDeletedMidDragAndAnAnchorThatChangedProfiles() throws {
+    let pinned = #", "pinned": true, "pinnedAsRow": true"#
+    let before = try browser([tab("a", pinned), tab("b", pinned)].joined(separator: ","), ids: ["a", "b"], active: "a")
+    var after = before
+    after.tabs["b"]?.profileId = "other"
+    let sidebar = SidebarLive(state: live(items: []))
+    #expect(sidebar.placements(["t:a", "lf:deleted", "t:b", "lf:f1"], browser: after, windowId: "w1") == [
+      FolderPlacement(id: "f1", after: "t:a"),
+    ])
+  }
+
   @Test func livePinOrderRefusesPrivateAndForeignFolders() throws {
     let pinned = #", "pinned": true, "pinnedAsRow": true"#
     var state = try browser(tab("a", pinned), ids: ["a"], active: "a")

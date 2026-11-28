@@ -6,13 +6,13 @@ import { documentWrites } from "../test-native/shell.ts";
 
 const calls = [];
 const listeners = new Map();
-let current = { revision: 0, replicaJSON: JSON.stringify({ folders: {}, folderOrder: [], items: {}, known: {}, unread: {}, hidden: {}, completed: {}, expandedStacks: {}, accounts: {}, config: {}, calendar: {}, meetingGroups: {}, dismissedAlerts: [] }) };
+let current = { revision: 0, replicaJSON: "{}" };
 globalThis.acTestNativeModules = {
   SolaraSettings: {
     liveInitialReplica: () => current,
     liveCommand: async (name, payloadJSON) => {
       calls.push({ name, payload: JSON.parse(payloadJSON) });
-      return JSON.stringify({ revision: current.revision, folderId: name === "createFolder" ? "f" : undefined });
+      return JSON.stringify({ revision: current.revision });
     },
     addListener: (name, listener) => { listeners.set(name, listener); return { remove: () => listeners.delete(name) }; },
   },
@@ -22,16 +22,6 @@ const store = await import("./store.ts");
 
 test("each persisted store action sends one command and never writes live.json", async () => {
   const actions = [
-    ["createFolder", () => store.createFolder("p", "pullRequests", ["github"]), { profileId: "p", kind: "pullRequests", sources: ["github"] }],
-    ["updateFolder", () => store.updateFolder("f", { name: "Renamed" }), { folderId: "f", patch: { name: "Renamed" } }],
-    ["removeFolder", () => store.removeFolder("f"), { folderId: "f" }],
-    ["arrangeFolders", () => store.arrangeFolders([{ id: "f", after: null }]), { placed: [{ id: "f", after: null }] }],
-    ["applyFetch", () => store.applyFetch("f", [], {}), { folderId: "f", items: [], gone: {} }],
-    ["setStatus", () => store.setStatus("f", { state: "idle" }), { folderId: "f", status: { state: "idle" } }],
-    ["markRead", () => store.markRead("f", ["i"]), { folderId: "f", itemIds: ["i"] }],
-    ["markUnread", () => store.markUnread("f", "i"), { folderId: "f", itemId: "i" }],
-    ["hideItems", () => store.hideItems("f", []), { folderId: "f", items: [] }],
-    ["setExpandedStack", () => store.setExpandedStack("i", true), { key: "i", expanded: true }],
     ["updateCalendarSettings", () => store.updateCalendarSettings({ prompted: true }), { patch: { prompted: true } }],
     ["setCalendarHidden", () => store.setCalendarHidden("c", true), { id: "c", hidden: true }],
     ["dismissAlert", () => store.dismissAlert("o"), { occurrence: "o" }],
@@ -45,25 +35,22 @@ test("each persisted store action sends one command and never writes live.json",
   assert.equal(documentWrites.includes("live.json"), false);
 });
 
-test("replicas apply only increasing revisions, preserve showAll and unchanged fields", () => {
-  store.setLive({ showAll: { "f:x": true } });
+test("only newer meeting fields replace the replica, and unchanged fields keep their identity", () => {
   const before = store.live();
-  current = { revision: 2, replicaJSON: JSON.stringify({ folders: { f: { id: "f", profileId: "p", kind: "pullRequests", name: "Pull Requests", sources: ["github"] } }, folderOrder: ["f"] }) };
-  listeners.get("onLiveReplica")(current);
+  const calendar = { prompted: true };
+  listeners.get("onLiveReplica")({ revision: 2, replicaJSON: JSON.stringify({ calendar }) });
   const applied = store.live();
-  assert.equal(applied.showAll["f:x"], true);
-  assert.equal(applied.accounts, before.accounts);
-  listeners.get("onLiveReplica")({ revision: 1, replicaJSON: JSON.stringify({ folderOrder: [] }) });
+  assert.deepEqual(applied.calendar, calendar);
+  assert.equal(applied.meetingGroups, before.meetingGroups);
+  listeners.get("onLiveReplica")({ revision: 1, replicaJSON: '{"calendar":{"prompted":false}}' });
+  listeners.get("onLiveReplica")({ revision: 3, replicaJSON: '{"folders":{"f":{}},"calendar":{"prompted":true}}' });
   assert.equal(store.live(), applied);
-  listeners.get("onLiveReplica")({ revision: 3, replicaJSON: JSON.stringify({ folderOrder: ["f"] }) });
-  assert.equal(store.live(), applied);
-  assert.equal(documentWrites.includes("live.json"), false);
 });
 
 test("a command's own change is in the store when it resolves, even before its replica event", async () => {
-  current = { revision: 10, replicaJSON: JSON.stringify({ folders: { f: { id: "f", profileId: "p", kind: "pullRequests", name: "Renamed", sources: ["github"] } }, folderOrder: ["f"] }) };
-  await store.updateFolder("f", { name: "Renamed" });
-  assert.equal(store.live().folders.f.name, "Renamed");
+  current = { revision: 10, replicaJSON: '{"calendar":{"prompted":false}}' };
+  await store.updateCalendarSettings({ prompted: false });
+  assert.equal(store.live().calendar.prompted, false);
 });
 
 test("source tree has no live.json write through a literal or alias", () => {

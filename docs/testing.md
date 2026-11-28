@@ -819,6 +819,11 @@ document model, the open tab and the surviving group member. The Drive case uses
 loopback consent and token endpoints, submits fixture credentials through the
 native sheet, checks the PKCE exchange and confirms that the authorization tab closes.
 
+Run `hover-shift`, `hover-card`, Pages, `sidebar-parity`, `sidebar-reuse`, `sidebar-scroll`,
+`tab-drag` and `folder-panel` in both layouts under the UI test lock. Live Folder drivers use
+`live.fixture` for setup and item opening and `live.snapshot` for native state. The hover-shift
+fixture checks that reopening a Live item returns the existing tab.
+
 ## E8 Arc bookmark-holder restoration
 
 Run `BookmarkHolderRestorationTests`, `BookmarkMenuCommandTests`, `ImportSidebarRunTests`

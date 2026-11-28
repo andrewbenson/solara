@@ -41,7 +41,7 @@ const tab = (id) => {
 let app;
 try {
   app = await launch(resolve(appArg), {
-    data, port, files: { "report.pdf": "%PDF-1.4\n" },
+    data, port, probe: true, files: { "report.pdf": "%PDF-1.4\n" },
     session: session(sidebarSession({ profiles: ["Personal", "Work"], windows: [{ id: "w1", tabIds: ids, activeTabIds: { default: "t2" } }], tabs: ids.map(tab) })),
     ready: "return !!ac.hoverShift",
   });
@@ -99,12 +99,11 @@ try {
     return { hovered: r.hovered, shifts: r.shifts, forced: r.forced ?? null };
   };
 
-  await ac(`
+  const items = await ac(`
     const s = ac.store.getState();
     s.createGroup(["a1", "a2", "a3"], { name: "Open group" });
     const shut = s.createGroup(["b1", "b2"], { name: "Shut group", color: "blue" });
     s.updateGroup(shut, { collapsed: true });
-    const { store, engine } = ac.live;
     const pr = (n, extra) => ({ number: n, repo: "solara/app", author: "a", authorAvatar: null, draft: false, headRef: "h" + n, baseRef: "main",
       review: null, mergeable: "mergeable", checks: [], comments: 0, unresolvedThreads: 0, additions: 1, deletions: 1, changedFiles: 1, ...extra });
     const item = (n, extra) => ({ id: "pr" + n, source: "github", url: "https://example.com/pr/" + n, title: "Pull request " + n + " with a long title",
@@ -113,15 +112,16 @@ try {
     s.upsertDownload({ id: "d1", url: "https://example.com/report.pdf", filename: "report.pdf", path: ${JSON.stringify(file)},
       state: "finished", paused: false, received: 9, total: 9, speed: 0, mimeType: "application/pdf" });
     s.setDownloadsOpen("w1", false);
-    return store.createFolder("default", "pullRequests").then((folder) =>
-      store.applyFetch(folder, items, {})
-        .then(() => store.setStatus(folder, { state: "idle", lastFetch: Date.now(), error: null }))
-        .then(() => {
-          engine.openLiveItem("w1", folder, items[1], { background: true });
-          engine.openLiveItem("w1", folder, items[2], { background: true });
-          return true;
-        }));
+    return items;
   `);
+  const { folderId } = await app.probe("live.fixture", {
+    seed: { profileId: "default", kind: "pullRequests", sources: ["github"], items, collapsed: false },
+  });
+  const openItem = (itemId) => app.probe("live.fixture", { open: { windowId: "w1", folderId, itemId, background: true } });
+  const first = await openItem(items[1].id);
+  assert.ok(first.tabId);
+  assert.equal((await openItem(items[1].id)).tabId, first.tabId);
+  assert.notEqual((await openItem(items[2].id)).tabId, first.tabId);
   await sleep(1500);
 
   const surfaces = [

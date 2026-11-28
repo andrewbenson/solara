@@ -459,7 +459,7 @@ enum NativeSidebarLive {
   private static var ownershipListener: Int?
   private static var storeListener: Int?
   private static weak var orderStore: Store?
-  private static var orderState: BrowserState?
+  private static var orderTask: Task<Void, Never>?
 
   static func start() {
     guard ownershipListener == nil else { return }
@@ -472,17 +472,34 @@ enum NativeSidebarLive {
     let current = WorkspaceWrites.store
     guard current !== orderStore else { return }
     if let storeListener { orderStore?.unsubscribe(storeListener) }
+    orderTask?.cancel()
+    orderTask = nil
+    storeListener = nil
     orderStore = current
-    orderState = current?.state
-    storeListener = current?.subscribe { [weak current] commit in
-      let changes = commit.changes
-      guard !changes.windows.isEmpty || !changes.tabs.isEmpty || !changes.groups.isEmpty else { return }
-      Task { @MainActor in
-        guard let current, current === orderStore else { return }
-        let before = orderState
-        orderState = commit.state
-        if let before, let live = SidebarLiveFeed.shared.live {
-          arrange(live.removedAnchorPlacements(before: before, after: commit.state))
+    guard let current else { return }
+    let (commits, observed) = AsyncStream<Commit>.makeStream()
+    let initial = current.sequence {
+      storeListener = current.subscribe { commit in
+        let changes = commit.changes
+        if !changes.windows.isEmpty || !changes.tabs.isEmpty || !changes.groups.isEmpty {
+          observed.yield(commit)
+        }
+      }
+      return current.snapshot
+    }
+    orderTask = Task { @MainActor [weak current] in
+      defer { observed.finish() }
+      var previous = initial
+      let engine = NativeLiveEngine.shared.engine
+      for await commit in commits {
+        guard let current, current === WorkspaceWrites.store, !Task.isCancelled else { return }
+        guard commit.rev > previous.rev else { continue }
+        let before = previous.state
+        previous = (commit.rev, commit.state)
+        let after = commit.state
+        await engine.update { state in
+          guard !Task.isCancelled else { return }
+          state.arrangeFolders(SidebarLive(state: state).removedAnchorPlacements(before: before, after: after))
         }
       }
     }

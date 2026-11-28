@@ -151,12 +151,6 @@ actor PausedRetiredSecrets: LiveSecretStore {
     #expect(state.extra["futureSection"] == .object(["version": .number(3)]))
     let saved = try #require(JSONSerialization.jsonObject(with: Data(try state.persistedJSON().utf8)) as? [String: Any])
     #expect(canonical(saved) == canonical(Self.expected(raw)))
-    let replica = try LiveEngine.initialReplica(documentText: text)
-    var replicaRaw = try #require(JSONSerialization.jsonObject(with: Data(replica.replicaJSON.utf8)) as? [String: Any])
-    #expect((replicaRaw["completing"] as? [String: Any])?.isEmpty == true)
-    #expect((replicaRaw["status"] as? [String: Any])?.isEmpty == true)
-    for key in ["completing", "status", "showAll"] { replicaRaw[key] = nil }
-    #expect(canonical(replicaRaw) == canonical(Self.expected(raw)))
     let clean = try LiveJSON.decode(LiveState.self, from: state.persistedJSON())
     #expect(try clean.persistedJSON() == state.persistedJSON())
   }

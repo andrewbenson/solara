@@ -75,7 +75,7 @@ import Testing
     #expect(await iterator.next()?.revision == created.revision)
     let current = try await rig.engine.currentReplica()
     #expect(current.revision == created.revision)
-    #expect(current.replicaJSON.contains(created.folderId!))
+    #expect(!current.replicaJSON.contains(created.folderId!))
     let next = try await rig.engine.perform(command("setExpandedStack", #"{"key":"stack","expanded":true}"#))
     #expect(next.revision > created.revision)
     #expect(await iterator.next()?.revision == next.revision)
@@ -151,13 +151,13 @@ import Testing
   }
 
   @Test func synchronousInitialReplicaMatchesLoadedState() async throws {
-    let text = #"{"calendar":{"showPreview":false},"future":{"flag":true}}"#
+    let text = #"{"calendar":{"prompted":true,"showPreview":false},"future":{"flag":true}}"#
     let rig = Rig(documents: [LiveState.documentName: text])
     let initial = try LiveEngine.initialReplica(documentText: text)
     let loaded = try await rig.engine.currentReplica()
     #expect(initial.revision == loaded.revision)
     #expect(initial.replicaJSON == loaded.replicaJSON)
-    #expect(initial.replicaJSON.contains("future"))
+    #expect(initial.replicaJSON == #"{"calendar":{"prompted":true},"meetingGroups":{}}"#)
     #expect(throws: (any Error).self) { _ = try LiveEngine.initialReplica(documentText: "not json") }
   }
 

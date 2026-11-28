@@ -256,13 +256,69 @@ final class NativeLiveEngine: @unchecked Sendable {
       }
     }
   }
+}
 
-  #if DEBUG
-  func devSnapshot() async -> [String: Any] {
-    let state = await engine.snapshot.live
-    let folders: [[String: Any]] = state.folders.keys.sorted().map { id in
-      [
-        "id": id,
+#if SOLARA_PROBES
+@MainActor
+public enum LiveFolderProbes {
+  private struct Fixture: Decodable {
+    struct Seed: Decodable {
+      let profileId: String
+      let kind: LiveFolderKind
+      let sources: [LiveSourceId]
+      let items: [LiveItem]
+      let collapsed: Bool
+    }
+
+    struct Open: Decodable {
+      let windowId: String
+      let folderId: String
+      let itemId: String
+      let background: Bool
+    }
+
+    let seed: Seed?
+    let open: Open?
+  }
+
+  public static func apply(_ data: Data) async throws -> [String: Any] {
+    let fixture = try LiveJSON.decode(Fixture.self, from: data)
+    let native = NativeLiveEngine.shared
+    guard !DocumentStore.safeMode, let store = WorkspaceWrites.store else {
+      throw LiveError(.other, "Live workspace unavailable")
+    }
+    try Task.checkCancellation()
+    switch (fixture.seed, fixture.open) {
+    case (let seed?, nil):
+      guard store.state.profiles[seed.profileId] != nil else { throw LiveError(.other, "Unknown fixture profile") }
+      let created = try await native.perform(.createFolder(.object([
+        "profileId": .string(seed.profileId), "kind": .string(seed.kind.rawValue),
+        "sources": .array(seed.sources.map { .string($0.rawValue) }),
+      ])))
+      guard let folderId = created.folderId else { throw LiveError(.other, "Fixture folder creation failed") }
+      await native.engine.updateFolder(folderId, FolderPatch(collapsed: seed.collapsed))
+      await native.engine.applyFetch(folderId, seed.items, gone: [:])
+      return ["folderId": folderId]
+    case (nil, let open?):
+      let state = await native.engine.snapshot.live
+      try Task.checkCancellation()
+      guard let folder = state.folders[open.folderId],
+        let item = state.items[folder.id]?.first(where: { $0.id == open.itemId }),
+        let tabId = NativeSidebarLive.open(item, folder: folder, windowId: open.windowId, background: open.background, store: store)
+      else { throw LiveError(.other, "Fixture item could not be opened") }
+      return ["tabId": tabId]
+    default:
+      throw LiveError(.other, "Expected one Live Folder fixture action")
+    }
+  }
+
+  public static func snapshot() async -> [String: Any] {
+    let state = await NativeLiveEngine.shared.engine.snapshot.live
+    let folders: [[String: Any]] = state.folderOrder.compactMap { id in
+      guard let folder = state.folders[id] else { return nil }
+      return [
+        "id": id, "profileId": folder.profileId, "kind": folder.kind.rawValue,
+        "sources": folder.sources.map(\.rawValue), "collapsed": folder.collapsed,
         "items": state.items[id]?.count ?? 0,
         "hidden": state.hidden[id]?.count ?? 0,
         "completed": state.completed[id]?.count ?? 0,
@@ -283,10 +339,8 @@ final class NativeLiveEngine: @unchecked Sendable {
       ],
     ]
   }
-  #endif
 }
 
-#if SOLARA_PROBES
 public enum PageCalendarRead {
   public static func snapshot() -> [String: Any] {
     let replica = NativeLiveEngine.shared.initialReplica()

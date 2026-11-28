@@ -182,15 +182,23 @@ extension Session {
     case "closeCommandTabs": closeCommandTabs(a.strings(0))
     case "openSidebarLiveItem":
       let windowId = try a.requireString(0)
-      guard state.windows[windowId]?.incognito == false else { break }
+      guard state.windows[windowId]?.incognito == false, !memory.closingWindows.contains(windowId) else { break }
       let folderId = try a.requireString(1)
       let itemId = try a.requireString(2)
-      var options = NewTabOptions()
-      options.url = try a.requireString(3)
-      options.background = a.bool(4)
-      let id = newTab(windowId, options)
-      updateTab(id, TabUpdate(set: ["liveItem": ["folderId": .string(folderId), "itemId": .string(itemId)]]))
-      result = .string(id)
+      let url = try a.requireString(3)
+      let background = a.bool(4)
+      if let existing = state.sidebarLiveTab(windowId: windowId, folderId: folderId, itemId: itemId) {
+        if !background { activate(existing) }
+        result = .string(existing)
+      } else {
+        var options = NewTabOptions()
+        options.url = url
+        options.background = background
+        let id = newTab(windowId, options)
+        guard !id.isEmpty else { break }
+        updateTab(id, TabUpdate(set: ["liveItem": ["folderId": .string(folderId), "itemId": .string(itemId)]]))
+        result = .string(id)
+      }
     case "reopenCommandClosed": reopenCommandClosed(a.string(0))
     case "restoreCommandWindow": result = JSONValue(restoreCommandWindow(try a.requireString(0), chromeWindow: try a.requireString(1), live: a[2]?.array ?? []))
     case "closeTabs":

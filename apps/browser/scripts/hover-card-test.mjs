@@ -279,14 +279,14 @@ try {
   await rep.check("a live pull request's card shows natively, and its comments line opens the pull request", async () => {
     await point(900, 600);
     await gone("hover away");
-    const folder = await run(`
-      const { store } = ac.live;
+    const items = await run(`
       const pr = { number: 7, repo: "solara/app", author: "octocat", authorAvatar: null, draft: false, headRef: "h7", baseRef: "main", review: "approved",
         mergeable: "mergeable", checks: [{ name: "lint", state: "failure", url: "https://ci.example/lint" }], comments: 2, unresolvedThreads: 0, additions: 4, deletions: 1, changedFiles: 1 };
-      return store.createFolder("default", "pullRequests").then((folder) =>
-        store.applyFetch(folder, [{ id: "pr7", source: "github", url: "https://example.com/pr/7", title: "Pull request 7", subtitle: "", icon: null, updatedAt: Date.now(), section: "authored", pr }], {})
-          .then(() => store.setStatus(folder, { state: "idle", lastFetch: Date.now(), error: null }))
-          .then(() => folder));`);
+      return [{ id: "pr7", source: "github", url: "https://example.com/pr/7", title: "Pull request 7", subtitle: "", icon: null, updatedAt: Date.now(), section: "authored", pr }];
+    `);
+    const { folderId: folder } = await app.probe("live.fixture", {
+      seed: { profileId: "default", kind: "pullRequests", sources: ["github"], items, collapsed: false },
+    });
     await sleep(800);
     const key = `live|${folder}|pr7`;
     const r = await row(key);
@@ -311,6 +311,7 @@ try {
     await run(`const state = ac.store.getState(); state.updateSettings({ sidebarMediaControls: true }); state.togglePin("t0"); state.activate("t0"); state.navigate("t0", ${JSON.stringify(mediaURL)}, { userInitiated: true }); return true`);
     const page = await app.page(mediaURL);
     try {
+      await until("the media fixture's audio element", () => page.eval('!!document.getElementById("tone")', { timeout: 1000 }).catch(() => false), 5000);
       await page.eval(`document.getElementById("tone").play().then(() => true)`, { userGesture: true });
     } finally {
       page.close();

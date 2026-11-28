@@ -138,6 +138,19 @@ void InstallSink() {
 
 @implementation SolaraCoreEngineBridge
 
++ (void)answerDesktopCapture:(NSString *)receipt tab:(SolaraCoreTab *)tab
+                      source:(NSString *)source audio:(BOOL)audio {
+  auto answer = reinterpret_cast<decltype(&ac_desktop_capture_answer_v1)>(
+      dlsym(RTLD_DEFAULT, "ac_desktop_capture_answer_v1"));
+  if (answer) answer(tab, receipt, source, audio);
+}
+
++ (NSDictionary<NSString *, id> *)displayCaptureStateForTab:(SolaraCoreTab *)tab {
+  auto state = reinterpret_cast<decltype(&ac_desktop_capture_state_v1)>(
+      dlsym(RTLD_DEFAULT, "ac_desktop_capture_state_v1"));
+  return state && tab ? state(tab) : nil;
+}
+
 + (NSString *)canonicalBookmarkURL:(NSString *)url error:(NSError **)error {
   return SolaraCanonicalBookmarkURL(url, error);
 }

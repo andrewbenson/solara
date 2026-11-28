@@ -1,6 +1,7 @@
 import AppKit
 
 public struct DeviceChooserOption: Decodable, Equatable, Sendable {
+  public var optionId: Int?
   public var name: String
   public var detail: String?
   public var signal: Int
@@ -207,7 +208,8 @@ public final class DeviceChooserView: NSView, PromptInputProtectionOwner {
         let row = PromptPressable(frame: CGRect(x: 0, y: ry, width: listWidth, height: m.rowHeight))
         row.wantsLayer = true
         row.layer?.cornerRadius = m.rowRadius
-        let selected = s.selected == i
+        let optionId = option.optionId ?? i
+        let selected = s.selected == optionId
         let selectedFill = (s.dark ? NSColor(white: 1, alpha: 0.14) : NSColor(white: 0, alpha: 0.08)).cgColor
         row.fill = { hovered, _ in selected ? selectedFill : hovered ? theme.rowHover.cg : nil }
         row.refresh()
@@ -244,8 +246,8 @@ public final class DeviceChooserView: NSView, PromptInputProtectionOwner {
           mark.frame.origin = CGPoint(x: listWidth - m.rowPadding - 16, y: (m.rowHeight - 16) / 2)
           row.addSubview(mark)
         }
-        row.onPress = { [weak self] in self?.onEvent(.select(i)) }
-        row.onDoublePress = { [weak self] in self?.onEvent(.choose(i)) }
+        row.onPress = { [weak self] in self?.onEvent(.select(optionId)) }
+        row.onDoublePress = { [weak self] in self?.onEvent(.choose(optionId)) }
         row.setAccessibilityRole(.button)
         row.setAccessibilityLabel(option.name)
         rows.addSubview(row)

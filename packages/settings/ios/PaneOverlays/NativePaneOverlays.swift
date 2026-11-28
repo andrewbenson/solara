@@ -450,7 +450,7 @@ final class PaneOverlayHost {
       choosing.insert(found.tabId)
       if choosers[found.tabId]?.id != found.id {
         choosers[found.tabId]?.popover.wrap.removeFromSuperview()
-        choosers[found.tabId] = PaneChooserEntry(id: found.id, tabId: found.tabId, popover: makeChooser(found.tabId))
+        choosers[found.tabId] = PaneChooserEntry(id: found.id, tabId: found.tabId, popover: makeChooser(found.tabId, found.id))
       }
       let entry = choosers[found.tabId]!
       entry.placement = placement
@@ -520,12 +520,12 @@ final class PaneOverlayHost {
     return prompt
   }
 
-  private func makeChooser(_ tabId: String) -> PanePopover<DeviceChooserView> {
+  private func makeChooser(_ tabId: String, _ chooserId: Int) -> PanePopover<DeviceChooserView> {
     let chooser = PanePopover(DeviceChooserView(frame: .zero))
     chooser.body.onHeight = { [weak chooser] h in chooser?.setHeight(h) }
     chooser.body.onEvent = { [weak self] event in
       if case .choose = event, self?.choosers[tabId]?.allowInput() != true { return }
-      PanePrompts.chooserAction(tabId, event)
+      PanePrompts.chooserAction(tabId, chooserId, event)
     }
     return chooser
   }

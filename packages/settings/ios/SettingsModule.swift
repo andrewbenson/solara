@@ -279,6 +279,10 @@ public class SettingsModule: Module {
     }.runOnQueue(.main)
 
     #if DEBUG
+    AsyncFunction("devCloseWarning") { (windowId: String, action: String) -> String? in
+      MainActor.assumeIsolated { NativeWorkspaceCommands.devCloseWarning(windowId, action: action) }
+    }.runOnQueue(.main)
+
     AsyncFunction("devBookmarkConfirmation") { (cancel: Bool) -> [[String: String]] in
       MainActor.assumeIsolated {
         NativeBookmarkCommands.cancelConfirmation = cancel

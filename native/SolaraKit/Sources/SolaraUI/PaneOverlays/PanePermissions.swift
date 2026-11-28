@@ -19,6 +19,7 @@ public struct PanePermissionRequest: Equatable, Sendable {
 
 public struct PaneDeviceChooser: Equatable, Sendable {
   public struct Option: Equatable, Sendable {
+    public var id: Int
     public var name: String
     public var connected: Bool
     public var paired: Bool
@@ -59,19 +60,20 @@ public struct PaneDeviceChooser: Equatable, Sendable {
     unauthorized = flag("unauthorized")
     bothButtonsEnabled = flag("bothButtonsEnabled")
     showSignal = flag("showSignal")
-    options = (payload["options"] as? [[String: Any]] ?? []).map {
-      Option(name: $0["name"] as? String ?? "", connected: ($0["connected"] as? NSNumber)?.boolValue ?? false, paired: ($0["paired"] as? NSNumber)?.boolValue ?? false, signal: ($0["signal"] as? NSNumber)?.intValue ?? 0)
+    options = (payload["options"] as? [[String: Any]] ?? []).enumerated().map { index, option in
+      Option(id: (option["optionId"] as? NSNumber)?.intValue ?? index, name: option["name"] as? String ?? "", connected: (option["connected"] as? NSNumber)?.boolValue ?? false, paired: (option["paired"] as? NSNumber)?.boolValue ?? false, signal: (option["signal"] as? NSNumber)?.intValue ?? 0)
     }
   }
 
   public var scanning: Bool { bothButtonsEnabled }
   public var blocked: Bool { adapterOff || unauthorized }
 
-  public func valid(_ selected: Int?) -> Bool { scanning || (selected.map { $0 < options.count } ?? false) }
+  public func valid(_ selected: Int?) -> Bool { scanning || options.contains { $0.id == selected } }
 
-  public func choice(_ index: Int?, selected: Int?) -> Int? {
+  public func choice(_ option: Int?, selected: Int?) -> Int? {
     if scanning { return -1 }
-    return index ?? selected
+    guard let id = option ?? selected, valid(id) else { return nil }
+    return id
   }
 }
 
@@ -255,7 +257,7 @@ extension PanePromptSpecs {
       "title": chooser.title,
       "icon": chooser.showSignal || scanning ? "dot.radiowaves.left.and.right" : "cable.connector",
       "options": chooser.options.map { option -> [String: Any] in
-        ["name": option.name, "detail": option.connected ? "Connected" : option.paired ? "Paired" : NSNull() as Any, "signal": chooser.showSignal ? option.signal : -1]
+        ["optionId": option.id, "name": option.name, "detail": option.connected ? "Connected" : option.paired ? "Paired" : NSNull() as Any, "signal": chooser.showSignal ? option.signal : -1]
       },
       "selected": selected ?? NSNull(),
       "scanning": scanning,

@@ -3,6 +3,7 @@ import { WebKit, isWebKitExternalApp } from "./webkit";
 
 export type ExternalAppRequest = {
   id: string;
+  closed?: boolean;
   url: string;
   scheme: string;
   origin: string | null;

@@ -121,6 +121,14 @@ public class ToolbarModule: Module {
       return snapshot.foundation as? [String: Any] ?? [:]
     }.runOnQueue(.main)
 
+    AsyncFunction("devExtensionActionState") { (tabId: String, extensionId: String) -> [String: Any]? in
+      let snapshot: JSONValue? = MainActor.assumeIsolated {
+        guard SolaraCoreTestHooksAllowed() else { return nil }
+        return NativeExtensionCatalog.actionState(tab: tabId)?[extensionId]
+      }
+      return snapshot?.foundation as? [String: Any]
+    }.runOnQueue(.main)
+
     AsyncFunction("devExtensionPopup") { (windowId: String) -> String in
       MainActor.assumeIsolated {
         guard SolaraCoreTestHooksAllowed(), let snapshot = ExtensionActionPopupRead.snapshot(windowId: windowId) else { return "null" }

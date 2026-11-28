@@ -33,7 +33,11 @@ test("SolaraCoreHost refuses loaded and unloaded profile deletion with a reason 
   const helpers = ["NSMutableSet<NSString *> *ScheduledProfileDeletions()", "SolaraCoreProfile *ChromeProfileAtPath(SolaraCoreEngine *engine, NSString *path)", "NSDictionary *DeletionLocation(NSString *profile)"].map((signature) => declaration(host, signature));
   const method = declaration(host, "+ (void)deleteProfileData:");
   const results = runNative("Profile.mm", [...helpers, "@implementation SolaraCoreHost", method, "@end"].join("\n"));
-  assert.equal(results.length, 7);
+  assert.equal(results.length, 8);
+  const passkeys = results[7];
+  assert.deepEqual(passkeys, {
+    failure: ["Chromium Touch ID passkeys"], preferencesKept: true, retry: [], directoryRemoved: true,
+  });
   const chromeHeld = results[6];
   assert.equal(chromeHeld.chromeHeld, true);
   assert.equal(chromeHeld.callbacks, 1);

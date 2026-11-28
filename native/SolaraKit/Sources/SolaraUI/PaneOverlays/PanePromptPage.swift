@@ -148,8 +148,15 @@ public struct PanePromptPage: Equatable, Sendable {
         popups.append(popup)
       }
     case "onExternalApp":
-      externalApp = PaneExternalApp(payload)
-      alwaysOpen = false
+      if payload["closed"] as? Bool == true {
+        if let id = payload["id"] as? String, externalApp?.id == id {
+          externalApp = nil
+          alwaysOpen = false
+        }
+      } else {
+        externalApp = PaneExternalApp(payload)
+        alwaysOpen = false
+      }
     case "onPageMessage":
       if payload["kind"] as? String == "selection" { selection = PaneSelection(payload["data"]) }
     case "onNavigationChange":

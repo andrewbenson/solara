@@ -5,9 +5,14 @@
 
 #include <string>
 
+namespace content {
+class WebContents;
+}
+
 namespace solaracore {
 
 void InstallExternalAppPrompts();
+void RetireStaleExternalApps(content::WebContents* closing);
 void ResolveExternalApp(const std::string& request_id, bool open, bool remember);
 NSArray<NSDictionary*>* TestExternalLaunches();
 bool TestNoLaunch();

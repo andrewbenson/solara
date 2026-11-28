@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { runNative, source } from "../test-native/safe-host/run.mjs";
+import { desktopCaptureDeclarations, runNative, source } from "../test-native/safe-host/run.mjs";
 
 const writes = [
   ["bookmarks", "ac_bookmarks_apply", { ops: [{ op: "update", id: "bookmark-id", t: "Edited in safe mode", u: "https://edited.example/" }] }],
@@ -27,7 +27,7 @@ function bridge(name, args) {
     .replace('#import "SolaraCoreBookmarkURL.h"', "static NSString *SolaraCanonicalBookmarkURL(NSString *url, NSError **error) { return nil; }\nstatic NSString *SolaraCanonicalBookmarkURLUTF16(NSData *units, NSError **error) { return nil; }")
     .replace('#import "SolaraCoreInternal.h"', "")
     .replace('#include "../../../engine/chromium/src/chrome/browser/solara/public/ac_engine.h"', "");
-  return runNative("Engine.mm", `${abi}\n${header}\n${implementation}`, [name, JSON.stringify(args)]);
+  return runNative("Engine.mm", `${abi}\n${header}\n${desktopCaptureDeclarations()}\n${implementation}`, [name, JSON.stringify(args)]);
 }
 
 for (const [category, name, args] of writes) {

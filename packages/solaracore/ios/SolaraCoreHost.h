@@ -53,6 +53,8 @@ NS_ASSUME_NONNULL_BEGIN
 + (void)beginTracing:(void (^)(BOOL started))completion;
 + (void)endTracing:(BOOL)keep completion:(void (^)(NSString *_Nullable path))completion NS_SWIFT_NAME(endTracing(keep:completion:));
 @property(class, readonly) BOOL isTracing;
++ (BOOL)removeDefaultProfilePasskeysIfAllowed:(BOOL (^)(void))deletionAllowed
+    NS_SWIFT_NAME(removeDefaultProfilePasskeys(deletionAllowed:));
 + (void)deleteProfileData:(NSString *)profile deletionAllowed:(BOOL (^)(void))deletionAllowed completion:(void (^)(NSArray<NSString *> *remaining))completion
     NS_SWIFT_NAME(deleteProfileData(_:deletionAllowed:completion:));
 + (void)releaseProfile:(NSString *)profile;
@@ -62,6 +64,7 @@ NS_ASSUME_NONNULL_BEGIN
 @property(class, readonly) NSNotificationName windowSeenDidChange;
 + (void)activateForPictureInPicture:(NSString *)why NS_SWIFT_NAME(activateForPictureInPicture(_:));
 + (BOOL)stopCapture:(int)browserId NS_SWIFT_NAME(stopCapture(browserId:));
++ (nullable NSDictionary<NSString *, id> *)displayCaptureState:(int)browserId NS_SWIFT_NAME(displayCaptureState(browserId:));
 + (BOOL)showAutofillSuggestions:(int)browserId passwords:(BOOL)passwords NS_SWIFT_NAME(showAutofillSuggestions(browserId:passwords:));
 + (void)resolvePermission:(NSString *)requestId result:(NSString *)result remember:(BOOL)remember
     NS_SWIFT_NAME(resolvePermission(_:result:remember:));

@@ -2,6 +2,7 @@
 #import "ACChromeWindow.h"
 #import "SolaraCoreWebViewInternal.h"
 #import "SolaraCoreEarlyWindow.h"
+#import "SolaraCoreEngineBridge.h"
 #import "SolaraCorePictureInPicture.h"
 #import "SolaraCoreServices.h"
 #import "SolaraCoreTabParking.h"
@@ -575,13 +576,6 @@ static NSDictionary *DisplayMediaAudioOffer(NSDictionary *message) {
   return @{@"tab" : @YES, @"screen" : @(system && Flag(message, @"systemAudio")), @"window" : window ?: NSNull.null};
 }
 
-static NSString *DisplayMediaAudioFor(NSDictionary *offer, NSString *sourceId) {
-  if ([sourceId hasPrefix:@"screen:"]) return Flag(offer, @"screen") ? @"system" : nil;
-  if ([sourceId hasPrefix:@"window:"]) return Field<NSString>(offer, @"window");
-  if ([sourceId hasPrefix:@"web-contents-media-stream://"]) return Flag(offer, @"tab") ? @"tab" : nil;
-  return nil;
-}
-
 static void AnswerHello(SolaraCoreTab *tab, NSString *profile, NSString *frameId, BOOL main, NSString *verifiedOrigin) {
   const BOOL verified = verifiedOrigin.length && ![verifiedOrigin isEqualToString:@"null"];
   NSString *origin = main && verified ? verifiedOrigin : OriginOf(tab.url);
@@ -591,7 +585,7 @@ static void AnswerHello(SolaraCoreTab *tab, NSString *profile, NSString *frameId
     if (!frameId.length || !to) return;
     NSMutableDictionary *config = [NSMutableDictionary dictionary];
     if (blockAutoplay) config[@"blockAutoplay"] = @YES;
-    if (gDisplayMediaPicker && [SolaraCoreEngine respondsToSelector:@selector(allowDesktopCapture:tab:frame:origin:audio:)])
+    if (gDisplayMediaPicker && [SolaraCoreEngineBridge exports:@"ac_desktop_capture_answer_v1"])
       config[@"displayMediaPicker"] = @YES;
     if (main && ACFieldTimingEnabled()) config[@"fieldTiming"] = @YES;
     if (main) config[@"selectionPopover"] = @(gSelectionPopover);
@@ -852,7 +846,6 @@ static void (^gPageLoadHook)(NSDictionary<NSString *, id> *);
   CFTimeInterval _linkDropAt;
   NSMutableDictionary<NSString *, NSDictionary *> *_nowPlaying;
   NSString *_nowPlayingFrame;
-  NSMutableDictionary<NSString *, NSDictionary *> *_displayRequests;
   double _pinchScale;
   BOOL _autoPictureInPictureActive;
   BOOL _inPictureInPicture;
@@ -1461,6 +1454,14 @@ static SolaraCoreTab *StartParkedPage(NSString *url, NSString *profileName, NSSt
   if (_extensionHost.length && tab && tab.preferredSize.width > 0)
     [self tab:tab preferredSizeDidChange:tab.preferredSize];
   [self emitMedia];
+  NSDictionary *capture = [SolaraCoreEngineBridge displayCaptureStateForTab:tab];
+  if (capture) {
+    [self tab:tab didChangeMediaAccess:@{
+      @"camera" : capture[@"camera"],
+      @"microphone" : capture[@"microphone"],
+      @"screen" : capture[@"screen"]
+    }];
+  }
   [self tabDidChangeFavicon:tab];
   if (_tabIndex >= 0) [self placeTab];
   if (SolaraCoreWindowController *controller = self.controller)
@@ -1508,7 +1509,6 @@ static SolaraCoreTab *StartParkedPage(NSString *url, NSString *profileName, NSSt
   reports[@"lastBlocked"] = _lastBlocked;
   reports[@"nowPlaying"] = _nowPlaying;
   reports[@"nowPlayingFrame"] = _nowPlayingFrame;
-  reports[@"displayRequests"] = _displayRequests;
   reports[@"pinch"] = @(_pinchScale);
   reports[@"capturing"] = @(_capturing);
   reports[@"crashed"] = @(_crashed);
@@ -1533,7 +1533,6 @@ static SolaraCoreTab *StartParkedPage(NSString *url, NSString *profileName, NSSt
   _lastBlocked = reports[@"lastBlocked"];
   _nowPlaying = reports[@"nowPlaying"];
   _nowPlayingFrame = reports[@"nowPlayingFrame"];
-  _displayRequests = reports[@"displayRequests"];
   _pinchScale = [reports[@"pinch"] doubleValue];
   _capturing = [reports[@"capturing"] boolValue];
   _crashed = [reports[@"crashed"] boolValue];
@@ -2896,13 +2895,9 @@ static BOOL PinnedLinkGestureBypassed() {
       [_tab tracePictureInPicture:[NSString stringWithFormat:@"page (%@): %@", main ? @"main frame" : @"subframe", JSONString(dict ?: @{})]
                        withInputs:NO];
   } else if ([kind isEqualToString:@"displayMedia"] && dict) {
-    double pageId;
-    if (!Finite(dict, @"id", &pageId) || pageId < 1 || pageId > INT_MAX || pageId != floor(pageId) || !sender) return;
-    if (!_displayRequests) _displayRequests = [NSMutableDictionary dictionary];
-    if (_displayRequests.count >= 16) return;
-    NSString *requestId = NSUUID.UUID.UUIDString;
+    NSString *requestId = Text(dict, @"receipt", 128);
+    if (!requestId.length || !sender) return;
     NSDictionary *audio = DisplayMediaAudioOffer(dict);
-    _displayRequests[requestId] = @{@"frame" : frameId, @"id" : @((int)pageId), @"audio" : audio ?: NSNull.null, @"origin" : sender};
     [self emit:@"displayMediaRequest"
         payload:@{
           @"id" : requestId,
@@ -3505,18 +3500,8 @@ static NSString *LinkKeyAction(NSString *key) {
 }
 
 - (void)resolveDisplayMedia:(NSString *)requestId sourceId:(NSString *)sourceId audio:(BOOL)shareAudio {
-  NSDictionary *request = requestId ? _displayRequests[requestId] : nil;
-  if (!request) return;
-  [_displayRequests removeObjectForKey:requestId];
-  NSString *audio = shareAudio && sourceId.length ? DisplayMediaAudioFor(Field<NSDictionary>(request, @"audio"), sourceId) : nil;
-  if (sourceId.length && _tab && [SolaraCoreEngine respondsToSelector:@selector(allowDesktopCapture:tab:frame:origin:audio:)])
-    [SolaraCoreEngine allowDesktopCapture:sourceId
-                                  tab:_tab
-                                frame:[request[@"frame"] length] ? request[@"frame"] : nil
-                               origin:request[@"origin"]
-                                audio:audio];
-  [self callFrame:request[@"frame"] kind:@"displayMedia"
-             json:JSONString(@{@"id" : request[@"id"], @"sourceId" : sourceId.length ? sourceId : NSNull.null, @"audio" : @(audio != nil)})];
+  if (_tab && requestId.length)
+    [SolaraCoreEngineBridge answerDesktopCapture:requestId tab:_tab source:sourceId audio:shareAudio];
 }
 
 - (NSString *)mediaCaptureSourceId {

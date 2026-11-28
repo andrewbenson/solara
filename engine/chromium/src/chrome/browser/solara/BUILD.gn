@@ -1,5 +1,7 @@
 # Copyright 2026 Solara. Apache-2.0.
 
+import("//testing/test.gni")
+
 assert(is_mac)
 
 source_set("solara") {
@@ -162,4 +164,11 @@ config("exports_config") {
 group("exports") {
   all_dependent_configs = [ ":exports_config" ]
   public_deps = [ ":solara" ]
+}
+
+test("solara_os_crypt_unittests") {
+  deps = [
+    "//base/test:run_all_unittests",
+    "//components/os_crypt/async/browser:unit_tests",
+  ]
 }

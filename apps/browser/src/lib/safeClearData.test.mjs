@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { declaration, runNative, source } from "../test-native/safe-host/run.mjs";
+import { declaration, desktopCaptureDeclarations, runNative, source } from "../test-native/safe-host/run.mjs";
 
 function nativeClears() {
   const bridge = source("packages/solaracore/ios/SolaraCoreEngineBridge.mm")
@@ -17,7 +17,7 @@ function nativeClears() {
   ].map((signature) => declaration(services, signature)).join("\n");
   return runNative("ClearData.mm", [
     source("engine/chromium/src/chrome/browser/solara/public/ac_engine.h"),
-    source("packages/solaracore/ios/SolaraCoreEngineBridge.h"), bridge, helpers,
+    source("packages/solaracore/ios/SolaraCoreEngineBridge.h"), desktopCaptureDeclarations(), bridge, helpers,
     "@implementation SolaraCoreServices", methods, "@end",
   ].join("\n"));
 }

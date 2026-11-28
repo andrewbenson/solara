@@ -16,7 +16,7 @@ export type DeviceChooser = {
   unauthorized: boolean;
   bothButtonsEnabled: boolean;
   showSignal: boolean;
-  options: { name: string; connected: boolean; paired: boolean; signal: number }[];
+  options: { optionId?: number; name: string; connected: boolean; paired: boolean; signal: number }[];
 };
 
 export type ActionPopupRequest = { browserId: number; extensionId: string };

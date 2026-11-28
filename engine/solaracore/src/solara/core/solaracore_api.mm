@@ -8,6 +8,7 @@
 #include <vector>
 
 #include "base/files/file_path.h"
+#include "solara/core/ac_passkey_cleanup.h"
 #include "base/files/file_util.h"
 #include "base/task/thread_pool.h"
 #include "content/public/browser/browser_thread.h"
@@ -401,16 +402,17 @@ class BrowsingDataDone : public content::BrowsingDataRemover::Observer {
 
 namespace {
 
-const char* BrowserTypeName(BrowserWindowInterface::Type type) {
-  switch (type) {
+const char* BrowserTypeName(BrowserWindowInterface* browser) {
+  if (DesktopBrowserWindowCapabilities::IsDocumentPictureInPicture(browser)) {
+    return "picture_in_picture";
+  }
+  switch (browser->GetType()) {
     case BrowserWindowInterface::TYPE_NORMAL:
       return "normal";
     case BrowserWindowInterface::TYPE_POPUP:
       return "popup";
     case BrowserWindowInterface::TYPE_DEVTOOLS:
       return "devtools";
-    case BrowserWindowInterface::TYPE_PICTURE_IN_PICTURE:
-      return "picture_in_picture";
     default:
       return "app";
   }
@@ -418,7 +420,7 @@ const char* BrowserTypeName(BrowserWindowInterface::Type type) {
 
 BrowserWindow* WindowForChromeBrowser(Browser* browser) {
   if (solaracore::ACBrowserWindow::IsOurs(browser) ||
-      browser->GetType() == BrowserWindowInterface::TYPE_PICTURE_IN_PICTURE ||
+      DesktopBrowserWindowCapabilities::IsDocumentPictureInPicture(browser) ||
       ![g_delegate respondsToSelector:@selector
                    (engineWindowForNewBrowserOfProfile:type:)]) {
     return nullptr;
@@ -426,7 +428,7 @@ BrowserWindow* WindowForChromeBrowser(Browser* browser) {
   SolaraCoreWindow* window = [g_delegate
       engineWindowForNewBrowserOfProfile:[SolaraCoreProfile
                                              wrapperFor:browser->GetProfile()]
-                                    type:@(BrowserTypeName(browser->GetType()))];
+                                    type:@(BrowserTypeName(browser))];
   solaracore::WindowHost* host = window.host;
   return host ? host->HostChromeBrowser(browser) : nullptr;
 }
@@ -1032,7 +1034,10 @@ void WatchTracingStart(std::shared_ptr<TracingStart> start, int checks_left) {
 }
 
 + (void)selectDevice:(int)chooserId index:(int)index {
-  solaracore::SelectDevice(chooserId, index);
+}
+
++ (void)selectDevice:(int)chooserId optionId:(int)optionId {
+  solaracore::SelectDevice(chooserId, optionId);
 }
 
 + (void)cancelDeviceChooser:(int)chooserId {
@@ -1051,7 +1056,15 @@ void WatchTracingStart(std::shared_ptr<TracingStart> start, int checks_left) {
   solaracore::ResolveExtensionInstallPrompt(base::SysNSStringToUTF8(requestId), accepted);
 }
 
-- (void)deleteProfile:(SolaraCoreProfile*)profile completion:(void (^)(BOOL admitted))completion {
+- (BOOL)removeProfilePasskeysAtPath:(NSString*)path {
+  ProfileManager* manager = g_browser_process ? g_browser_process->profile_manager() : nullptr;
+  return manager && !browser_shutdown::HasShutdownStarted() &&
+      solaracore::RemoveProfilePasskeys(*manager, base::FilePath(base::SysNSStringToUTF8(path)));
+}
+
+- (void)deleteProfile:(SolaraCoreProfile*)profile
+      deletionAllowed:(BOOL (^)(void))deletionAllowed
+           completion:(void (^)(NSString* _Nullable failure))completion {
   Profile* chrome_profile = profile.chromeProfile;
   ProfileManager* manager = g_browser_process ? g_browser_process->profile_manager() : nullptr;
   if (!manager || browser_shutdown::HasShutdownStarted() || !chrome_profile ||
@@ -1061,24 +1074,25 @@ void WatchTracingStart(std::shared_ptr<TracingStart> start, int checks_left) {
       IsProfileDirectoryMarkedForDeletion(chrome_profile->GetPath()) ||
       chrome_profile->GetPath() ==
           manager->user_data_dir().Append(ProfileManager::GetInitialProfileDir())) {
-    if (completion) completion(NO);
+    completion(@"data");
     return;
   }
   struct Deletion : public std::enable_shared_from_this<Deletion> {
     base::WeakPtr<Profile> profile;
     base::FilePath path;
-    void (^completion)(BOOL) = nil;
+    BOOL (^deletion_allowed)(void) = nil;
+    void (^completion)(NSString* _Nullable) = nil;
     std::unique_ptr<ScopedKeepAlive> browser_keep_alive;
     std::unique_ptr<ScopedProfileKeepAlive> profile_keep_alive;
     int attempts = 0;
     bool finished = false;
 
-    void Finish(bool admitted) {
+    void Finish(NSString* failure) {
       if (finished) return;
       finished = true;
       auto reply = completion;
       completion = nil;
-      if (reply) reply(admitted);
+      if (reply) reply(failure);
       profile_keep_alive.reset();
       browser_keep_alive.reset();
     }
@@ -1089,7 +1103,7 @@ void WatchTracingStart(std::shared_ptr<TracingStart> start, int checks_left) {
           profile->ShutdownStarted() || manager->GetProfileByPath(path) != profile.get() ||
           IsProfileDirectoryMarkedForDeletion(path) ||
           solaracore::IsProfileDeleting(profile.get())) {
-        Finish(false);
+        Finish(@"data");
         return;
       }
       bool has_browsers = false;
@@ -1099,7 +1113,7 @@ void WatchTracingStart(std::shared_ptr<TracingStart> start, int checks_left) {
       });
       if (has_browsers) {
         if (++attempts == 100) {
-          Finish(false);
+          Finish(@"data");
           return;
         }
         content::GetUIThreadTaskRunner({})->PostDelayedTask(
@@ -1112,12 +1126,31 @@ void WatchTracingStart(std::shared_ptr<TracingStart> start, int checks_left) {
       solara::ReleaseNotificationProfilePath(
           path, solara::NotificationReleaseReason::kProfileDelete,
           base::BindOnce([](std::shared_ptr<Deletion> request, bool admitted) {
-            if (!admitted) {
-              request->Finish(false);
+            Profile* profile = request->profile.get();
+            ProfileManager* manager = g_browser_process ? g_browser_process->profile_manager() : nullptr;
+            if (!admitted || !profile || !manager || browser_shutdown::HasShutdownStarted() ||
+                profile->ShutdownStarted() || manager->GetProfileByPath(request->path) != profile ||
+                IsProfileDirectoryMarkedForDeletion(request->path) ||
+                solaracore::IsProfileDeleting(profile) || !request->deletion_allowed()) {
+              request->Finish(@"data");
               return;
             }
-            Profile* profile = request->profile.get();
-            ProfileManager* manager = g_browser_process->profile_manager();
+            bool has_browsers = false;
+            GlobalBrowserCollection::GetInstance()->ForEach([&](BrowserWindowInterface* browser) {
+              has_browsers |= browser->GetProfile()->GetOriginalProfile() == profile;
+              return !has_browsers;
+            });
+            if (has_browsers) {
+              request->Finish(@"data");
+              return;
+            }
+            NSString* canonical_path = base::SysUTF8ToNSString(request->path.value())
+                                           .stringByStandardizingPath.stringByResolvingSymlinksInPath;
+            if (!solaracore::RemoveProfilePasskeys(
+                    *manager, base::FilePath(base::SysNSStringToUTF8(canonical_path)))) {
+              request->Finish(@"Chromium Touch ID passkeys");
+              return;
+            }
             solaracore::NoteProfileDeleting(profile);
             manager->GetDeleteProfileHelper().MaybeScheduleProfileForDeletion(
                 request->path, base::DoNothing(), ProfileMetrics::DELETE_PROFILE_SETTINGS);
@@ -1137,13 +1170,14 @@ void WatchTracingStart(std::shared_ptr<TracingStart> start, int checks_left) {
                         base::BindOnce(base::IgnoreResult(&base::DeletePathRecursively), dir));
                   }, request->path), delay);
             }
-            request->Finish(true);
+            request->Finish(nil);
           }, shared_from_this()));
     }
   };
   auto request = std::make_shared<Deletion>();
   request->profile = chrome_profile->GetWeakPtr();
   request->path = chrome_profile->GetPath();
+  request->deletion_allowed = deletionAllowed;
   request->completion = completion;
   request->browser_keep_alive = std::make_unique<ScopedKeepAlive>(
       KeepAliveOrigin::PROFILE_MANAGER, KeepAliveRestartOption::DISABLED);
@@ -1155,7 +1189,7 @@ void WatchTracingStart(std::shared_ptr<TracingStart> start, int checks_left) {
         request->Commit();
       }, request),
       base::BindRepeating([](std::shared_ptr<Deletion> request, const base::FilePath&) {
-        request->Finish(false);
+        request->Finish(@"data");
       }, request));
 }
 
@@ -1201,17 +1235,6 @@ void WatchTracingStart(std::shared_ptr<TracingStart> start, int checks_left) {
       ProfileDestroyer::DestroyOTRProfileWhenAppropriate(weak.get());
     }
   }
-}
-
-+ (void)allowDesktopCapture:(NSString*)sourceId
-                        tab:(SolaraCoreTab*)tab
-                      frame:(NSString*)frameId
-                     origin:(NSString*)origin
-                      audio:(NSString*)audio {
-  solaracore::AllowDesktopCapture(tab.contents, base::SysNSStringToUTF8(sourceId ?: @""),
-                              base::SysNSStringToUTF8(frameId ?: @""),
-                              base::SysNSStringToUTF8(origin ?: @""),
-                              base::SysNSStringToUTF8(audio ?: @""));
 }
 
 + (NSDictionary<NSString*, NSNumber*>*)desktopCaptureAudio {
@@ -1521,8 +1544,8 @@ void WatchTracingStart(std::shared_ptr<TracingStart> start, int checks_left) {
   const bool ahead = !url.length;
   NavigateParams params(browser, GURL(ahead ? "about:blank" : base::SysNSStringToUTF8(url)),
                         ui::PAGE_TRANSITION_TYPED);
-  params.disposition = foreground ? WindowOpenDisposition::NEW_FOREGROUND_TAB
-                                  : WindowOpenDisposition::NEW_BACKGROUND_TAB;
+  params.disposition = foreground ? WindowOpenDisposition::kNewForegroundTab
+                                  : WindowOpenDisposition::kNewBackgroundTab;
   params.window_action = NavigateParams::WindowAction::kNoAction;
   base::AutoReset<solaracore::WindowHost::PendingOpen> pending(
       &_host->pending_open(), solaracore::WindowHost::PendingOpen{params.disposition, nullptr});
@@ -1725,8 +1748,8 @@ void WatchTracingStart(std::shared_ptr<TracingStart> start, int checks_left) {
   base::AutoReset<solaracore::WindowHost::PendingOpen> pending(
       &_host->pending_open(),
       solaracore::WindowHost::PendingOpen{
-          foreground ? WindowOpenDisposition::NEW_FOREGROUND_TAB
-                     : WindowOpenDisposition::NEW_BACKGROUND_TAB,
+          foreground ? WindowOpenDisposition::kNewForegroundTab
+                     : WindowOpenDisposition::kNewBackgroundTab,
           nullptr});
   content::WebContents* contents = chrome::AddRestoredTab(
       browser, navigations, browser->GetTabStripModel()->count(), selected,
@@ -1759,8 +1782,8 @@ void WatchTracingStart(std::shared_ptr<TracingStart> start, int checks_left) {
   base::AutoReset<solaracore::WindowHost::PendingOpen> pending(
       &_host->pending_open(),
       solaracore::WindowHost::PendingOpen{
-          foreground ? WindowOpenDisposition::NEW_FOREGROUND_TAB
-                     : WindowOpenDisposition::NEW_BACKGROUND_TAB,
+          foreground ? WindowOpenDisposition::kNewForegroundTab
+                     : WindowOpenDisposition::kNewBackgroundTab,
           contents->GetWeakPtr()});
   TabStripModel* model = browser->GetTabStripModel();
   model->InsertWebContentsAt(model->count(), std::move(copy),
@@ -2478,10 +2501,10 @@ const performance_manager::PageNode* PageNodeOf(content::WebContents* contents) 
   if (host) {
     pending.emplace(&host->pending_open(),
                     solaracore::WindowHost::PendingOpen{
-                        WindowOpenDisposition::NEW_FOREGROUND_TAB,
+                        WindowOpenDisposition::kNewForegroundTab,
                         _contents->GetWeakPtr()});
   }
-  popups->ShowBlockedPopup(id_number, WindowOpenDisposition::NEW_FOREGROUND_TAB);
+  popups->ShowBlockedPopup(id_number, WindowOpenDisposition::kNewForegroundTab);
 }
 
 - (BOOL)executeChromeCommand:(int)command {
@@ -2614,6 +2637,7 @@ const performance_manager::PageNode* PageNodeOf(content::WebContents* contents) 
   if (!_contents) {
     return NO;
   }
+  const bool cancelled = solaracore::CancelDesktopCaptures(_contents);
   scoped_refptr<MediaStreamCaptureIndicator> indicator =
       MediaCaptureDevicesDispatcher::GetInstance()->GetMediaStreamCaptureIndicator();
   const bool capturing = indicator->IsCapturingTab(_contents) ||
@@ -2621,7 +2645,7 @@ const performance_manager::PageNode* PageNodeOf(content::WebContents* contents) 
                          indicator->IsCapturingDisplay(_contents);
   indicator->StopMediaCapturing(_contents,
                                 MediaStreamCaptureIndicator::MediaType::kDisplayMedia);
-  return capturing;
+  return cancelled || capturing;
 }
 
 - (void)noteShownByHost:(BOOL)shown {
@@ -3173,3 +3197,31 @@ TabSharingInfoBarDelegate* TabSharingDelegateFor(content::WebContents* contents,
 }
 
 @end
+
+void ac_desktop_capture_answer_v1(SolaraCoreTab* tab, NSString* receipt,
+                                  NSString* source, BOOL shareAudio) {
+  solaracore::AnswerDesktopCapture(
+      tab.contents, base::SysNSStringToUTF8(receipt),
+      base::SysNSStringToUTF8(source ?: @""), shareAudio);
+}
+
+NSDictionary<NSString*, id>* ac_desktop_capture_state_v1(SolaraCoreTab* tab) {
+  auto* contents = tab.contents;
+  if (!contents) {
+    return nil;
+  }
+  const auto state = solaracore::GetDesktopCaptureState(contents);
+  auto indicator = MediaCaptureDevicesDispatcher::GetInstance()
+                       ->GetMediaStreamCaptureIndicator();
+  const bool screen = state.active || indicator->IsCapturingTab(contents) ||
+                      indicator->IsCapturingWindow(contents) ||
+                      indicator->IsCapturingDisplay(contents);
+  return @{
+    @"state" : screen ? @"active" : state.starting ? @"starting" :
+        state.ended ? @"ended" : @"idle",
+    @"screen" : @(screen),
+    @"camera" : @(indicator->IsCapturingVideo(contents)),
+    @"microphone" : @(indicator->IsCapturingAudio(contents)),
+    @"waitingForStart" : @(state.waiting_for_start_for_testing),
+  };
+}

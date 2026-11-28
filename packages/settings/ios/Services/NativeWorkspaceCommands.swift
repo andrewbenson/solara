@@ -8,6 +8,17 @@ import SolaraUI
 
 @MainActor
 enum NativeWorkspaceCommands {
+  #if DEBUG
+  private static var closeWarningProbe: (windowId: String, title: String?)?
+
+  static func devCloseWarning(_ windowId: String, action: String) -> String? {
+    guard SolaraCoreTestHooksAllowed(), ProcessInfo.processInfo.environment["SOLARA_BACKGROUND"] == "1" else { return nil }
+    if action == "arm" { closeWarningProbe = (windowId, nil) }
+    if action == "clear" { closeWarningProbe = nil }
+    return closeWarningProbe?.windowId == windowId ? closeWarningProbe?.title : nil
+  }
+  #endif
+
   private static var pending: Set<String> = []
   private static var sheetWindowObservers: [String: NSObjectProtocol] = [:]
   private struct NewTabFocus {
@@ -849,6 +860,13 @@ enum NativeWorkspaceCommands {
       }
       if response == .alertFirstButtonReturn { proceed() }
     }
+    #if DEBUG
+    if setting == "warnBeforeClosingWindow", closeWarningProbe?.windowId == windowId, closeWarningProbe?.title == nil {
+      closeWarningProbe?.title = alert.messageText
+      decide(.alertFirstButtonReturn)
+      return true
+    }
+    #endif
     if let window, window.isVisible {
       alert.beginSheetModal(for: window, completionHandler: decide)
     } else {

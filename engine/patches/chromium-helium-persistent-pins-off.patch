@@ -1,0 +1,41 @@
+diff --git a/chrome/browser/ui/tabs/helium_pins_util.cc b/chrome/browser/ui/tabs/helium_pins_util.cc
+--- a/chrome/browser/ui/tabs/helium_pins_util.cc
++++ b/chrome/browser/ui/tabs/helium_pins_util.cc
+@@ -257,9 +257,9 @@
+   return true;
+ }
+ 
+-bool ArePersistentPinsEnabled(Profile* profile) {
+-  return profile->GetPrefs()->GetBoolean(prefs::kHeliumPersistentPins);
++bool ArePersistentPinsEnabled(Profile*) {
++  return false;
+ }
+ 
+ bool HasPersistentPins(BrowserWindowInterface* browser) {
+   return browser && browser->GetType() == BrowserWindowInterface::TYPE_NORMAL &&
+diff --git a/chrome/browser/ui/tabs/pinned_tab_codec.cc b/chrome/browser/ui/tabs/pinned_tab_codec.cc
+--- a/chrome/browser/ui/tabs/pinned_tab_codec.cc
++++ b/chrome/browser/ui/tabs/pinned_tab_codec.cc
+@@ -82,7 +82,7 @@
+ void PinnedTabCodec::RegisterProfilePrefs(
+     user_prefs::PrefRegistrySyncable* registry) {
+   registry->RegisterListPref(prefs::kPinnedTabs);
+-  registry->RegisterBooleanPref(prefs::kHeliumPersistentPins, true);
++  registry->RegisterBooleanPref(prefs::kHeliumPersistentPins, false);
+ }
+ 
+ // static
+diff --git a/chrome/browser/resources/settings/appearance_page/appearance_behavior_page.html b/chrome/browser/resources/settings/appearance_page/appearance_behavior_page.html
+--- a/chrome/browser/resources/settings/appearance_page/appearance_behavior_page.html
++++ b/chrome/browser/resources/settings/appearance_page/appearance_behavior_page.html
+@@ -31,10 +31,4 @@
+       label="$i18n{allowSplitViewDragAndDrop}">
+   </settings-toggle-button>
+ 
+-  <settings-toggle-button class="hr" id="persistentPins"
+-      pref-key="helium.browser.persistent_pins"
+-      label="$i18n{keepPins}"
+-      sub-label="$i18n{keepPinsDescription}">
+-  </settings-toggle-button>
+-
+ </settings-section>

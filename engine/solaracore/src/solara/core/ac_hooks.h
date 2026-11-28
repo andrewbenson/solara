@@ -146,7 +146,7 @@ extern void (*g_solara_autofill_suggestions_shown)(
 extern bool (*g_solara_password_bubble)(content::WebContents* web_contents);
 
 extern bool (*g_solara_device_chooser)(
-    content::WebContents* contents,
+    content::RenderFrameHost* requester,
     std::unique_ptr<permissions::ChooserController>* controller,
     base::ScopedClosureRunner* fullscreen_blocker,
     base::OnceClosure* close_closure);

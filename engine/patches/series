@@ -44,12 +44,15 @@ chromium chromium-helium-rlz-for-cdm-storage-id.patch
 chromium chromium-helium-ntp-third-party.patch
 chromium chromium-helium-context-menu-cast.patch
 chromium chromium-helium-devtools-inspect-shortcut.patch
+chromium chromium-helium-maps-canvas-noise.patch
+chromium chromium-helium-blink-test-helpers.patch
 chromium chromium-neterror-game.patch
 chromium chromium-branding.patch
 # Load-bearing for every user's data: the Safe Storage item ("Solara Safe Storage" / "Solara") holds the key to
 # their saved passwords and cookies. It must survive any re-sync (plain Chromium for SolaraCore, a version bump), unchanged.
 chromium chromium-safe-storage-name.patch
 chromium chromium-safe-storage-no-silent-reset.patch
+chromium chromium-touch-id-profile-cleanup.patch
 chromium chromium-password-bubble-hook.patch
 chromium chromium-password-string-secure-clear.patch
 chromium chromium-password-generation-local.patch
@@ -60,6 +63,7 @@ chromium chromium-extension-installed-bubble.patch
 chromium chromium-pip-overlay-window.patch
 chromium chromium-tab-sharing-capturer.patch
 chromium chromium-desktop-capture-window-audio.patch
+chromium chromium-desktop-capture-receipt.patch
 chromium chromium-video-super-resolution.patch
 chromium chromium-begin-frame-warm-up.patch
 chromium chromium-main-frame-throttle-after-show.patch
@@ -67,7 +71,9 @@ chromium chromium-main-frame-full-rate-on-input.patch
 chromium chromium-thaw-live-connections.patch
 chromium chromium-temporary-tab-restore-hook.patch
 chromium chromium-hosted-browsers-no-session-service.patch
+chromium chromium-helium-persistent-pins-off.patch
 chromium chromium-auto-pip-global-switch.patch
+chromium chromium-auto-pip-setting-inherits-in-incognito.patch
 chromium chromium-media-session-main-frame-handler.patch
 chromium chromium-battery-saver-full-rate-on-input.patch
 chromium chromium-angle-metal-shader-cache.patch
@@ -85,6 +91,7 @@ chromium chromium-helper-name.patch
 chromium chromium-bookmark-confirmed-save.patch
 chromium chromium-tab-app-badge-hook.patch
 chromium chromium-download-folder-hook.patch
+chromium chromium-prompt-document-identity.patch
 
 layer engine/chromium
 layer engine/solaracore

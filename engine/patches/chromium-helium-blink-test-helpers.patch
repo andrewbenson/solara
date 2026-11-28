@@ -1,0 +1,14 @@
+diff --git a/third_party/blink/renderer/core/testing/dummy_page_holder.cc b/third_party/blink/renderer/core/testing/dummy_page_holder.cc
+index e0c9f80..cde66bd 100644
+--- a/third_party/blink/renderer/core/testing/dummy_page_holder.cc
++++ b/third_party/blink/renderer/core/testing/dummy_page_holder.cc
+@@ -101,7 +101,8 @@ DummyPageHolder::DummyPageHolder(
+   page_ = Page::CreateOrdinary(*chrome_client, /*opener=*/nullptr,
+                                *agent_group_scheduler_,
+                                base::UnguessableToken::Create(),
+-                               /*color_provider_colors=*/nullptr);
++                               /*color_provider_colors=*/nullptr,
++                               /*noise_tokens=*/{});
+   Settings& settings = page_->GetSettings();
+   if (setting_overrider)
+     std::move(setting_overrider).Run(settings);

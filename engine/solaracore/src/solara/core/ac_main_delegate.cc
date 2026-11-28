@@ -110,6 +110,8 @@ constexpr const char* kSwitchesThatOpenTheProfile[] = {
     "remote-debugging-socket-name",
     "remote-debugging-targets",
     "silent-debugger-extension-api",
+    "solara-test-hold-capture-reply",
+    "solara-test-hold-capture-start",
     "ssl-key-log-file",
     "unsafely-treat-insecure-origin-as-secure",
     "webtransport-developer-mode",

@@ -9,6 +9,20 @@ NS_ASSUME_NONNULL_BEGIN
 @class SolaraCoreTab;
 @class SolaraCoreWindow;
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
+SOLARACORE_EXPORT void ac_desktop_capture_answer_v1(
+    SolaraCoreTab* tab, NSString* receipt, NSString* _Nullable source,
+    BOOL shareAudio);
+SOLARACORE_EXPORT NSDictionary<NSString*, id>* _Nullable
+ac_desktop_capture_state_v1(SolaraCoreTab* _Nullable tab);
+
+#ifdef __cplusplus
+}
+#endif
+
 @protocol SolaraCoreEngineDelegate <NSObject>
 - (void)engineDidStart;
 @optional
@@ -78,6 +92,7 @@ SOLARACORE_EXPORT
 + (void)reservedShortcutsChanged;
 + (BOOL)isReservedGlobalShortcut:(NSString*)shortcut;
 + (void)selectDevice:(int)chooserId index:(int)index;
++ (void)selectDevice:(int)chooserId optionId:(int)optionId;
 + (void)cancelDeviceChooser:(int)chooserId;
 + (void)refreshDeviceChooser:(int)chooserId;
 + (void)openDeviceChooserSettings:(int)chooserId;
@@ -85,7 +100,9 @@ SOLARACORE_EXPORT
 + (void)endTracing:(BOOL)keep completion:(void (^)(NSString* _Nullable path))completion;
 @property(class, readonly) BOOL isTracing;
 - (void)deleteProfile:(SolaraCoreProfile*)profile
-           completion:(nullable void (^)(BOOL admitted))completion;
+      deletionAllowed:(BOOL (^)(void))deletionAllowed
+           completion:(void (^)(NSString* _Nullable failure))completion;
+- (BOOL)removeProfilePasskeysAtPath:(NSString*)path;
 - (void)fenceNotificationsForProfileDeletionAtPath:(NSString*)path
                                       completion:(void (^)(BOOL admitted))completion;
 - (void)fenceNotificationsForPrivateProfile:(SolaraCoreProfile*)profile;
@@ -93,11 +110,6 @@ SOLARACORE_EXPORT
 + (void)resolveExternalApp:(NSString*)requestId open:(BOOL)open remember:(BOOL)remember;
 @property(class, readonly) NSArray<NSDictionary*>* testExternalLaunches;
 @property(class, readonly) NSArray<NSDictionary*>* testChooserEvents;
-+ (void)allowDesktopCapture:(NSString*)sourceId
-                        tab:(SolaraCoreTab*)tab
-                      frame:(nullable NSString*)frameId
-                     origin:(nullable NSString*)origin
-                      audio:(nullable NSString*)audio;
 @property(class, readonly) NSDictionary<NSString*, NSNumber*>* desktopCaptureAudio;
 - (void)offTheRecordProfileFor:(SolaraCoreProfile*)profile
                     completion:(void (^)(SolaraCoreProfile* _Nullable offTheRecord,

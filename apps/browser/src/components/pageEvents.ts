@@ -333,7 +333,10 @@ export function pageEventHandlers(session: PageSession): PageEventHandlers {
     },
     onPasswordPrompt: (prompt) => showPasswordPrompt(tabId, prompt),
     onAutofillPrompt: (prompt, id) => showAutofillPrompt(tabId, prompt, id),
-    onExternalApp: (externalApp) => patchPage(tabId, { externalApp }),
+    onExternalApp: (externalApp) => {
+      if (!externalApp.closed) patchPage(tabId, { externalApp });
+      else if (pageOf(tabId).externalApp?.id === externalApp.id) patchPage(tabId, { externalApp: null });
+    },
     onDisplayMediaRequest: (request) => requestDisplayMedia(tabId, request),
     onOpenWindow: (request: OpenWindowRequest) => {
       const t = tab();

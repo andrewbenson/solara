@@ -375,8 +375,8 @@ enum PanePrompts {
     update(tabId, page)
   }
 
-  static func chooserAction(_ tabId: String, _ event: DeviceChooserEvent) {
-    guard var page = pages[tabId], let chooser = page.chooser else { return }
+  static func chooserAction(_ tabId: String, _ chooserId: Int, _ event: DeviceChooserEvent) {
+    guard var page = pages[tabId], let chooser = page.chooser, chooser.id == chooserId else { return }
     let id = Int32(chooser.id)
     switch event {
     case .select(let index):
@@ -720,7 +720,7 @@ enum PanePrompts {
       case "settings": event = .openSettings
       default: return false
       }
-      chooserAction(tabId, event)
+      chooserAction(tabId, chooser.id, event)
       return true
     }
     guard let kind = PanePromptKind(rawValue: kind) else { return false }

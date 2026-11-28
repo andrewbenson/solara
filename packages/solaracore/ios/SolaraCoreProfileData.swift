@@ -34,6 +34,9 @@ enum SolaraCoreProfileData {
       ("site settings", { resetSiteSettings(deletionAllowed: deletionAllowed, $0) }),
       ("zoom levels", { resetZoom(deletionAllowed: deletionAllowed, $0) }),
       ("bookmarks", { deleteBookmarks(deletionAllowed: deletionAllowed, $0) }),
+      ("Chromium Touch ID passkeys", { ok in
+        ok(SolaraCoreHost.removeDefaultProfilePasskeys(deletionAllowed: deletionAllowed))
+      }),
     ]
     var remaining: [String] = []
     func run(_ i: Int) {

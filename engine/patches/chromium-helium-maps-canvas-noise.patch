@@ -1,0 +1,430 @@
+SPDX-License-Identifier: GPL-3.0-only
+
+diff --git a/content/browser/BUILD.gn b/content/browser/BUILD.gn
+index 89ef3ef..6185183 100644
+--- a/content/browser/BUILD.gn
++++ b/content/browser/BUILD.gn
+@@ -168,6 +168,7 @@ source_set("browser") {
+     "//components/embedder_support:user_agent",
+     "//components/file_access",
+     "//components/filename_generation",
++    "//components/google/core/common",
+     "//components/input",
+     "//components/lens:buildflags",
+     "//components/language/core/common",
+diff --git a/content/browser/DEPS b/content/browser/DEPS
+index d77a458..702b2db 100644
+--- a/content/browser/DEPS
++++ b/content/browser/DEPS
+@@ -14,6 +14,7 @@ include_rules = [
+   "+components/embedder_support/user_agent_utils.h",
+   "+components/file_access",
+   "+components/filename_generation",
++  "+components/google/core/common/google_util.h",
+   "+components/grit",
+   "+components/language_detection/content/common",
+   "+components/power_monitor",
+diff --git a/content/browser/renderer_host/navigation_controller_impl.cc b/content/browser/renderer_host/navigation_controller_impl.cc
+index 63d8024..b05aa6d 100644
+--- a/content/browser/renderer_host/navigation_controller_impl.cc
++++ b/content/browser/renderer_host/navigation_controller_impl.cc
+@@ -4776,7 +4776,8 @@ NavigationControllerImpl::CreateNavigationRequestFromLoadParams(
+           url::Origin(),
+           // The correct storage key will be computed before committing the
+           // navigation.
+-          blink::StorageKey(), override_user_agent, params.redirect_chain,
++          blink::StorageKey(), override_user_agent, std::nullopt,
++          params.redirect_chain,
+           std::vector<blink::mojom::NavigationRedirectParamsPtr>(),
+           params.post_content_type, original_url_for_renderer,
+           common_params->method, params.can_load_local_resources,
+diff --git a/content/browser/renderer_host/navigation_entry_impl.cc b/content/browser/renderer_host/navigation_entry_impl.cc
+index b17da22..ada150a 100644
+--- a/content/browser/renderer_host/navigation_entry_impl.cc
++++ b/content/browser/renderer_host/navigation_entry_impl.cc
+@@ -1048,7 +1048,8 @@ NavigationEntryImpl::ConstructCommitNavigationParams(
+           url::Origin(),
+           // The correct storage key will be computed before committing the
+           // navigation.
+-          blink::StorageKey(), GetIsOverridingUserAgent(), redirects,
++          blink::StorageKey(), GetIsOverridingUserAgent(), std::nullopt,
++          redirects,
+           std::vector<blink::mojom::NavigationRedirectParamsPtr>(),
+           std::string(), original_url_for_renderer, original_method,
+           GetCanLoadLocalResources(), frame_entry.page_state().ToEncodedData(),
+diff --git a/content/browser/renderer_host/navigation_request.cc b/content/browser/renderer_host/navigation_request.cc
+index c342382..2abcd3d 100644
+--- a/content/browser/renderer_host/navigation_request.cc
++++ b/content/browser/renderer_host/navigation_request.cc
+@@ -48,6 +48,7 @@
+ #include "base/types/pass_key.h"
+ #include "build/build_config.h"
+ #include "build/buildflag.h"
++#include "components/google/core/common/google_util.h"
+ #include "components/viz/host/host_frame_sink_manager.h"
+ #include "content/browser/agent_cluster_key.h"
+ #include "content/browser/back_forward_cache/back_forward_cache_impl.h"
+@@ -480,6 +481,19 @@ void AddAdditionalRequestHeaders(
+   }
+ }
+ 
++bool IsSolaraGoogleMapsURL(const GURL& url) {
++  if (!url.SchemeIs(url::kHttpsScheme) || url.EffectiveIntPort() != 443 ||
++      (url.path() != "/maps" && !url.path().starts_with("/maps/"))) {
++    return false;
++  }
++
++  std::string_view host = url.host();
++  if (host.starts_with("www.")) {
++    host.remove_prefix(4);
++  }
++  return std::ranges::contains(google_util::GetGoogleRegistrableDomains(), host);
++}
++
+ bool ShouldPropagateUserActivation(const url::Origin& previous_origin,
+                                    const url::Origin& new_origin) {
+   if ((previous_origin.scheme() != "http" &&
+@@ -1391,7 +1405,7 @@ std::unique_ptr<NavigationRequest> NavigationRequest::CreateRendererInitiated(
+           url::Origin(),
+           // The correct storage key will be computed before committing the
+           // navigation.
+-          blink::StorageKey(), override_user_agent,
++          blink::StorageKey(), override_user_agent, std::nullopt,
+           /*redirects=*/std::vector<GURL>(),
+           /*redirect_params=*/
+           std::vector<blink::mojom::NavigationRedirectParamsPtr>(),
+@@ -1568,7 +1582,8 @@ NavigationRequest::CreateForSynchronousRendererCommit(
+           url::Origin(),
+           // The correct storage key is computed right after creating the
+           // NavigationRequest below.
+-          blink::StorageKey(), is_overriding_user_agent, redirects,
++          blink::StorageKey(), is_overriding_user_agent, std::nullopt,
++          redirects,
+           /*redirect_params=*/
+           std::vector<blink::mojom::NavigationRedirectParamsPtr>(),
+           /*post_content_type=*/std::string(), original_url_for_renderer,
+@@ -10301,6 +10316,14 @@ void NavigationRequest::ReadyToCommitNavigation(bool is_error) {
+     noise_tokens_ = HeliumNoiseTokenData::GetTokensForMainFrame(
+         frame_tree_node()->navigator().controller().GetBrowserContext(),
+         origin_to_commit.value());
++    if (!is_error && IsInOutermostMainFrame() &&
++        origin_to_commit->IsSameOriginWith(GetURL()) &&
++        IsSolaraGoogleMapsURL(GetURL()) &&
++        noise_tokens_.contains(blink::HeliumNoiseFeature::kCanvas)) {
++      auto document_tokens = noise_tokens_;
++      document_tokens.erase(blink::HeliumNoiseFeature::kCanvas);
++      commit_params_->document_helium_noise_tokens = std::move(document_tokens);
++    }
+   }
+ 
+   if (ready_to_commit_callback_for_testing_) {
+diff --git a/content/browser/renderer_host/navigation_request_browsertest.cc b/content/browser/renderer_host/navigation_request_browsertest.cc
+index fb2023f..7ba50c3 100644
+--- a/content/browser/renderer_host/navigation_request_browsertest.cc
++++ b/content/browser/renderer_host/navigation_request_browsertest.cc
+@@ -20,6 +20,7 @@
+ #include "base/strings/utf_string_conversions.h"
+ #include "base/test/bind.h"
+ #include "base/test/metrics/histogram_tester.h"
++#include "base/test/scoped_feature_list.h"
+ #include "base/values.h"
+ #include "build/build_config.h"
+ #include "content/browser/process_lock.h"
+@@ -621,6 +622,190 @@ class NavigationRequestBrowserTest_IsolateAllSites
+   }
+ };
+ 
++class SolaraMapsCanvasNoiseBrowserTest
++    : public NavigationRequestBrowserTest_IsolateAllSites {
++ public:
++  SolaraMapsCanvasNoiseBrowserTest() {
++    features_.InitWithFeatures(
++        {blink::features::kHeliumNoise, blink::features::kHeliumNoiseCanvas,
++         blink::features::kHeliumNoiseAudio},
++        {});
++  }
++
++ protected:
++  static constexpr char kReadPixels[] = R"JS(
++    (canvas) => {
++      canvas.width = canvas.height = 32;
++      const ctx = canvas.getContext('2d', {willReadFrequently: true});
++      const pixels = ctx.createImageData(canvas.width, canvas.height);
++      for (let i = 0; i < pixels.data.length; i += 4) {
++        pixels.data[i] = ((i * 13) + 33) % 251;
++        pixels.data[i + 1] = ((i * 17) + 71) % 251;
++        pixels.data[i + 2] = ((i * 31) + 89) % 251;
++        pixels.data[i + 3] = 255;
++      }
++      ctx.putImageData(pixels, 0, 0);
++      return ctx.getImageData(0, 0, canvas.width, canvas.height).data
++          .some((byte, offset) => byte !== pixels.data[offset]);
++    }
++  )JS";
++
++  static bool ServeFixture(URLLoaderInterceptor::RequestParams* params) {
++    const GURL& url = params->url_request.url;
++    if (url.path() == "/canvas-worker.js") {
++      URLLoaderInterceptor::WriteResponse(
++          "HTTP/1.1 200 OK\nContent-Type: application/javascript\n\n",
++          JsReplace(R"JS(
++            const readPixels = () =>
++                (eval($1))(new OffscreenCanvas(32, 32));
++            if ('onconnect' in self) {
++              onconnect = event => event.ports[0].postMessage(readPixels());
++            } else if ('registration' in self) {
++              onmessage = event => event.ports[0].postMessage(readPixels());
++            } else {
++              postMessage(readPixels());
++            }
++          )JS", kReadPixels),
++          params->client.get(), std::nullopt, url);
++    } else {
++      URLLoaderInterceptor::WriteResponse(
++          "HTTP/1.1 200 OK\nContent-Type: text/html\n\n",
++          "<!doctype html><body></body>", params->client.get(), std::nullopt,
++          url);
++    }
++    return true;
++  }
++
++  EvalJsResult ReadDocumentCanvas(RenderFrameHost* frame) {
++    return EvalJs(frame, JsReplace(R"JS(
++      (eval($1))(document.createElement('canvas'))
++    )JS", kReadPixels));
++  }
++
++ private:
++  base::test::ScopedFeatureList features_;
++};
++
++IN_PROC_BROWSER_TEST_F(SolaraMapsCanvasNoiseBrowserTest, CommitURLScope) {
++  URLLoaderInterceptor interceptor(base::BindRepeating(&ServeFixture));
++  const char* exempt_urls[] = {
++      "https://www.google.com/maps",
++      "https://www.google.com/maps/dir/?q=test",
++      "https://www.google.co.uk/maps/",
++      "https://google.de/maps",
++  };
++  for (const char* url : exempt_urls) {
++    SCOPED_TRACE(url);
++    ASSERT_TRUE(NavigateToURL(shell(), GURL(url)));
++    EXPECT_EQ(false, ReadDocumentCanvas(
++                         shell()->web_contents()->GetPrimaryMainFrame()));
++  }
++  const char* noised_urls[] = {
++      "https://www.google.com/search?q=/maps",
++      "https://www.google.com/mapstuff",
++      "https://www.google.com/Maps",
++      "https://www.google.com:444/maps",
++      "https://a.google.com/maps",
++      "https://www.google.com.example.test/maps",
++      "https://www.google.off.ai.test/maps",
++      "http://www.google.com/maps",
++  };
++  for (const char* url : noised_urls) {
++    SCOPED_TRACE(url);
++    ASSERT_TRUE(NavigateToURL(shell(), GURL(url)));
++    EXPECT_EQ(true, ReadDocumentCanvas(
++                        shell()->web_contents()->GetPrimaryMainFrame()));
++  }
++}
++
++IN_PROC_BROWSER_TEST_F(SolaraMapsCanvasNoiseBrowserTest, FramesAndWorkers) {
++  URLLoaderInterceptor interceptor(base::BindRepeating(&ServeFixture));
++  ASSERT_TRUE(NavigateToURL(shell(), GURL("https://www.google.com/maps")));
++  auto* frame = shell()->web_contents()->GetPrimaryMainFrame();
++  EXPECT_EQ(false, ReadDocumentCanvas(frame));
++  EXPECT_EQ(true, EvalJs(frame, R"JS(
++    (async () => {
++      const context = new OfflineAudioContext(1, 1024, 44100);
++      const source = new ConstantSourceNode(context, {offset: 0.5});
++      source.connect(context.destination);
++      source.start();
++      const buffer = await context.startRendering();
++      return buffer.getChannelData(0).some(sample => sample !== 0.5);
++    })()
++  )JS"));
++  constexpr char kDedicatedWorker[] = R"JS(
++    new Promise(resolve => {
++      const worker = new Worker('/canvas-worker.js');
++      worker.onmessage = event => resolve(event.data);
++      worker.onerror = () => resolve('worker failed');
++    })
++  )JS";
++  EXPECT_EQ(false, EvalJs(frame, kDedicatedWorker));
++
++  constexpr char kSharedWorker[] = R"JS(
++    new Promise(resolve => {
++      const worker = new SharedWorker('/canvas-worker.js');
++      worker.port.onmessage = event => resolve(event.data);
++      worker.onerror = () => resolve('worker failed');
++    })
++  )JS";
++  EXPECT_EQ(true, EvalJs(frame, kSharedWorker));
++
++  EXPECT_EQ(true, EvalJs(frame, R"JS(
++    (async () => {
++      const registration =
++          await navigator.serviceWorker.register('/canvas-worker.js');
++      const {active} = await navigator.serviceWorker.ready;
++      const channel = new MessageChannel();
++      const response = new Promise(resolve => {
++        channel.port1.onmessage = event => resolve(event.data);
++      });
++      active.postMessage(null, [channel.port2]);
++      const result = await response;
++      await registration.unregister();
++      return result;
++    })()
++  )JS"));
++
++  for (const char* child_url : {"https://embed.google.com/maps",
++                                "https://third-party.test/maps",
++                                "https://www.google.com/maps"}) {
++    SCOPED_TRACE(child_url);
++    const int child_index = EvalJs(frame, JsReplace(R"JS(
++      new Promise(resolve => {
++        const iframe = document.createElement('iframe');
++        iframe.src = $1;
++        iframe.onload = () => resolve(window.length - 1);
++        document.body.append(iframe);
++      })
++    )JS", child_url)).ExtractInt();
++    auto* child = ChildFrameAt(frame, child_index);
++    ASSERT_TRUE(child);
++    ASSERT_EQ(GURL(child_url), child->GetLastCommittedURL());
++    EXPECT_EQ(true, ReadDocumentCanvas(child));
++    EXPECT_EQ(true, EvalJs(child, kDedicatedWorker));
++    if (child->GetLastCommittedOrigin() != frame->GetLastCommittedOrigin()) {
++      EXPECT_EQ(true, EvalJs(child, R"JS(
++        (() => {
++          try {
++            void parent.document;
++            return false;
++          } catch (error) {
++            return error.name === "SecurityError";
++          }
++        })()
++      )JS"));
++    }
++  }
++
++  ASSERT_TRUE(ExecJs(frame, "history.pushState({}, '', '/search');"));
++  EXPECT_EQ(false, ReadDocumentCanvas(frame));
++  ASSERT_TRUE(NavigateToURL(shell(), GURL("https://www.google.com/search?q=test")));
++  frame = shell()->web_contents()->GetPrimaryMainFrame();
++  EXPECT_EQ(true, ReadDocumentCanvas(frame));
++  EXPECT_EQ(true, EvalJs(frame, kDedicatedWorker));
++}
++
+ class NavigationRequestDownloadBrowserTest
+     : public NavigationRequestBrowserTest {
+  protected:
+diff --git a/content/renderer/render_frame_impl.cc b/content/renderer/render_frame_impl.cc
+index 97060c3..46bf804 100644
+--- a/content/renderer/render_frame_impl.cc
++++ b/content/renderer/render_frame_impl.cc
+@@ -1019,6 +1019,8 @@ void FillMiscNavigationParams(
+     const blink::mojom::CommonNavigationParams& common_params,
+     blink::mojom::CommitNavigationParams& commit_params,
+     blink::WebNavigationParams* navigation_params) {
++  navigation_params->document_helium_noise_tokens =
++      std::move(commit_params.document_helium_noise_tokens);
+   navigation_params->navigation_timings = BuildNavigationTimings(
+       common_params.navigation_start, *commit_params.navigation_timing,
+       common_params.input_start);
+diff --git a/third_party/blink/public/mojom/navigation/navigation_params.mojom b/third_party/blink/public/mojom/navigation/navigation_params.mojom
+index ab7cc45..a821519 100644
+--- a/third_party/blink/public/mojom/navigation/navigation_params.mojom
++++ b/third_party/blink/public/mojom/navigation/navigation_params.mojom
+@@ -26,6 +26,7 @@ import "third_party/blink/public/mojom/fetch/fetch_api_request.mojom";
+ import "third_party/blink/public/mojom/frame/agent_cluster_key.mojom";
+ import "third_party/blink/public/mojom/frame/frame_policy.mojom";
+ import "third_party/blink/public/mojom/frame/view_transition_state.mojom";
++import "third_party/blink/public/mojom/helium_noise/noise_token.mojom";
+ import "third_party/blink/public/mojom/lcp_critical_path_predictor/lcp_critical_path_predictor.mojom";
+ import "third_party/blink/public/mojom/loader/mixed_content.mojom";
+ import "third_party/blink/public/mojom/loader/referrer.mojom";
+@@ -435,6 +436,8 @@ struct CommitNavigationParams {
+   // Whether or not the user agent override string should be used.
+   bool is_overriding_user_agent = false;
+ 
++  map<HeliumNoiseFeature, HeliumNoiseToken>? document_helium_noise_tokens;
++
+   // The complete list of redirect URLs in chronological order that occurred
+   // during the lifecycle of this navigation. This includes both "prior"
+   // redirects (e.g. those that happened prior to starting this navigation
+diff --git a/third_party/blink/public/web/web_navigation_params.h b/third_party/blink/public/web/web_navigation_params.h
+index 392fd85..b838654 100644
+--- a/third_party/blink/public/web/web_navigation_params.h
++++ b/third_party/blink/public/web/web_navigation_params.h
+@@ -25,6 +25,7 @@
+ #include "third_party/blink/public/common/fenced_frame/redacted_fenced_frame_config.h"
+ #include "third_party/blink/public/common/frame/frame_policy.h"
+ #include "third_party/blink/public/common/frame/view_transition_state.h"
++#include "third_party/blink/public/common/helium_noise/noise_token.h"
+ #include "third_party/blink/public/common/storage_key/storage_key.h"
+ #include "third_party/blink/public/common/tokens/tokens.h"
+ #include "third_party/blink/public/mojom/blob/blob_url_store.mojom-shared.h"
+@@ -595,6 +596,8 @@ struct BLINK_EXPORT WebNavigationParams {
+   // will inherit the Accept-Language header value of the top-level document.
+   WebString reduced_accept_language;
+ 
++  std::optional<HeliumNoiseTokenMap> document_helium_noise_tokens;
++
+   // Carries on the `navigational_delivery_type` in `NavigationParam` on the
+   // renderer side.
+   network::mojom::NavigationDeliveryType navigation_delivery_type =
+diff --git a/third_party/blink/renderer/core/loader/document_loader.cc b/third_party/blink/renderer/core/loader/document_loader.cc
+index 6bd9689..2fb743a 100644
+--- a/third_party/blink/renderer/core/loader/document_loader.cc
++++ b/third_party/blink/renderer/core/loader/document_loader.cc
+@@ -456,6 +456,7 @@ struct SameSizeAsDocumentLoader
+   std::optional<Vector<KURL>> ad_auction_components;
+   std::unique_ptr<ExtraData> extra_data;
+   AtomicString reduced_accept_language;
++  const std::optional<HeliumNoiseTokenMap> document_helium_noise_tokens;
+   network::mojom::NavigationDeliveryType navigation_delivery_type;
+   std::optional<ViewTransitionState> view_transition_state;
+   std::optional<FencedFrame::RedactedFencedFrameProperties>
+@@ -628,6 +629,8 @@ DocumentLoader::DocumentLoader(
+       navigation_api_previous_entry_(params_->navigation_api_previous_entry),
+       extra_data_(std::move(extra_data)),
+       reduced_accept_language_(params_->reduced_accept_language),
++      document_helium_noise_tokens_(
++          std::move(params_->document_helium_noise_tokens)),
+       navigation_delivery_type_(params_->navigation_delivery_type),
+       view_transition_state_(std::move(params_->view_transition_state)),
+       storage_access_api_status_(params_->load_with_storage_access),
+@@ -823,6 +826,7 @@ DocumentLoader::CreateWebNavigationParamsToCloneDocument() {
+     }
+   }
+   params->reduced_accept_language = reduced_accept_language_;
++  params->document_helium_noise_tokens = document_helium_noise_tokens_;
+   params->navigation_delivery_type = navigation_delivery_type_;
+   params->load_with_storage_access = storage_access_api_status_;
+   params->can_use_device_bound_session_js_api =
+@@ -3123,7 +3127,9 @@ void DocumentLoader::CommitNavigation() {
+   frame_->DomWindow()->SetCanvasNoiseToken(std::nullopt);
+ 
+   frame_->DomWindow()->SetHeliumNoiseTokens(
+-      frame_->GetPage()->GetHeliumNoiseTokens());
++      document_helium_noise_tokens_
++          ? *document_helium_noise_tokens_
++          : frame_->GetPage()->GetHeliumNoiseTokens());
+ 
+   // Previous same-document navigation tasks are not relevant once a
+   // cross-document navigation has happened.
+diff --git a/third_party/blink/renderer/core/loader/document_loader.h b/third_party/blink/renderer/core/loader/document_loader.h
+index eec8825..7a39a74 100644
+--- a/third_party/blink/renderer/core/loader/document_loader.h
++++ b/third_party/blink/renderer/core/loader/document_loader.h
+@@ -905,6 +905,7 @@ class CORE_EXPORT DocumentLoader : public GarbageCollected<DocumentLoader>,
+   // Reduced accept language for top-level frame.
+   const AtomicString reduced_accept_language_;
+ 
++  const std::optional<HeliumNoiseTokenMap> document_helium_noise_tokens_;
+   const network::mojom::NavigationDeliveryType navigation_delivery_type_;
+ 
+   // Provides state from the previous Document that will be replaced by this

@@ -36,6 +36,7 @@
 #include "mojo/public/cpp/bindings/callback_helpers.h"
 #include "solara/core/ac_browser.h"
 #include "solara/core/ac_content_hooks.h"
+#include "solara/core/ac_desktop_capture.h"
 #include "solara/core/ac_page_limits.h"
 #import "solara/core/solaracore_internal.h"
 #include "third_party/blink/public/common/associated_interfaces/associated_interface_provider.h"
@@ -362,7 +363,37 @@ void PageChannel::Post(const std::string& kind, const std::string& json) {
   if (kind == "notification" || kind == "notificationClose") {
     return;
   }
-  if (kind == "displayMedia" && !MayRequestDisplayMedia(frame)) {
+  if (kind == "displayMediaStarted") {
+    auto value = base::JSONReader::Read(json, base::JSON_PARSE_RFC);
+    const auto* fields = value ? value->GetIfDict() : nullptr;
+    const auto* receipt = fields ? fields->FindString("receipt") : nullptr;
+    if (receipt && receipt->size() <= 128) {
+      ConfirmDesktopCapture(frame, *receipt);
+    }
+    return;
+  }
+  if (kind == "displayMedia") {
+    if (!MayRequestDisplayMedia(frame)) {
+      return;
+    }
+    auto value = base::JSONReader::Read(json, base::JSON_PARSE_RFC);
+    auto* fields = value ? value->GetIfDict() : nullptr;
+    auto id = fields ? fields->FindInt("id") : std::nullopt;
+    if (!id || *id < 1) {
+      return;
+    }
+    auto* window_audio = fields->FindString("windowAudio");
+    const std::string receipt = OfferDesktopCapture(
+        frame, *id, fields->FindBool("audio").value_or(false),
+        fields->FindBool("systemAudio").value_or(false),
+        window_audio ? *window_audio : "");
+    if (!receipt.empty()) {
+      fields->Set("receipt", receipt);
+      std::string offer;
+      if (base::JSONWriter::Write(*fields, &offer) && !Deliver(frame, kind, offer)) {
+        AnswerDesktopCapture(&GetWebContents(), receipt, {}, false);
+      }
+    }
     return;
   }
   if (!Deliver(frame, kind, json)) {

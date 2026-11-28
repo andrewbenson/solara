@@ -367,12 +367,24 @@
   addEventListener("pagehide", conceal);
 
   const displayRequests = new Map();
+  const startingCaptures = new Map();
+  const { get: mapGet, set: mapSet, has: mapHas, delete: mapDelete } = Map.prototype;
+  const CapturePromise = Promise;
+  const captureThen = Promise.prototype.then;
+  const captureDevices = navigator.mediaDevices;
+  const capturePrototype = captureDevices && Object.getPrototypeOf(captureDevices);
+  const getUserMedia = capturePrototype?.getUserMedia;
+  const getTracks = window.MediaStream?.prototype.getTracks;
+  const stopTrack = window.MediaStreamTrack?.prototype.stop;
   let displaySeq = 0;
   const installDisplayMedia = () => {
-    const devices = navigator.mediaDevices;
-    const proto = devices && Object.getPrototypeOf(devices);
-    if (!proto || !proto.getDisplayMedia || proto.getDisplayMedia.__ac) return;
-    const getUserMedia = proto.getUserMedia;
+    const proto = capturePrototype;
+    if (!proto?.getDisplayMedia || proto.getDisplayMedia.__ac || !getUserMedia || !getTracks || !stopTrack) return;
+    const stopStream = (stream) => {
+      const tracks = apply(getTracks, stream, []);
+      for (let i = 0; i < tracks.length; i++) apply(stopTrack, tracks[i], []);
+    };
+    const denyCapture = (request) => request.reject(new DOMException("Permission denied", "NotAllowedError"));
     const activation = navigator.userActivation;
     const activationProto = activation && Object.getPrototypeOf(activation);
     const activationState = activationProto && Object.getOwnPropertyDescriptor(activationProto, "isActive");
@@ -385,32 +397,54 @@
       if (activation && isActive && !apply(isActive, activation, []))
         return Promise.reject(new DOMException("getDisplayMedia() requires transient activation (user gesture).", "InvalidStateError"));
       const self = this;
-      return new Promise((resolve, reject) => {
+      return new CapturePromise((resolve, reject) => {
         const id = ++displaySeq;
         const options = constraints || {};
-        displayRequests.set(id, { self, resolve, reject, constraints: options });
+        apply(mapSet, displayRequests, [id, { self, resolve, reject, constraints: options }]);
         const windowAudio = options.windowAudio === "exclude" || options.windowAudio === "window" ? options.windowAudio : "system";
         send("displayMedia", { id, audio: !!options.audio, systemAudio: options.systemAudio !== "exclude", windowAudio });
       });
     } }.getDisplayMedia;
     Object.defineProperty(getDisplayMedia, "__ac", { value: true });
     proto.getDisplayMedia = getDisplayMedia;
-    handlers.displayMedia = ({ id, sourceId, audio }) => {
-      const request = displayRequests.get(id);
+    handlers.displayMedia = ({ id, receipt, audio }) => {
+      const request = apply(mapGet, displayRequests, [id]);
       if (!request) return;
-      displayRequests.delete(id);
-      if (!sourceId) {
-        request.reject(new DOMException("Permission denied", "NotAllowedError"));
+      apply(mapDelete, displayRequests, [id]);
+      if (!receipt) {
+        denyCapture(request);
         return;
       }
+      apply(mapSet, startingCaptures, [receipt, request]);
       const video = request.constraints.video;
       const frameRate = (video && video.frameRate && (video.frameRate.max || video.frameRate.ideal || video.frameRate)) || 30;
-      apply(getUserMedia, request.self, [
+      const media = apply(getUserMedia, request.self, [
         {
           audio: audio === true ? { mandatory: { chromeMediaSource: "desktop" } } : false,
-          video: { mandatory: { chromeMediaSource: "desktop", chromeMediaSourceId: sourceId, maxWidth: 3840, maxHeight: 2160, maxFrameRate: +frameRate || 30 } },
+          video: { mandatory: { chromeMediaSource: "desktop", chromeMediaSourceId: receipt, maxWidth: 3840, maxHeight: 2160, maxFrameRate: +frameRate || 30 } },
         },
-      ]).then(request.resolve, request.reject);
+      ]);
+      apply(captureThen, media, [(stream) => {
+        if (!apply(mapHas, startingCaptures, [receipt])) {
+          stopStream(stream);
+          return;
+        }
+        request.stream = stream;
+        send("displayMediaStarted", { receipt });
+      }, (error) => {
+        if (apply(mapDelete, startingCaptures, [receipt])) request.reject(error);
+      }]);
+    };
+    handlers.displayMediaReady = ({ receipt, allowed }) => {
+      const request = apply(mapGet, startingCaptures, [receipt]);
+      if (!request) return;
+      apply(mapDelete, startingCaptures, [receipt]);
+      if (allowed === true && request.stream) {
+        request.resolve(request.stream);
+      } else {
+        if (request.stream) stopStream(request.stream);
+        denyCapture(request);
+      }
     };
   };
 

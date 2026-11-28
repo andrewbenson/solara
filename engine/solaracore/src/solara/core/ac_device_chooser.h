@@ -19,11 +19,13 @@ class ChooserController;
 
 namespace solaracore {
 
-bool HandleDeviceChooser(content::WebContents* contents,
+bool HandleDeviceChooser(content::RenderFrameHost* requester,
                          std::unique_ptr<permissions::ChooserController>* controller,
                          base::ScopedClosureRunner* fullscreen_blocker,
                          base::OnceClosure* close_closure);
-void SelectDevice(int chooser_id, int index);
+void RetireStaleDeviceChoosers();
+void RetireDeviceChoosersForTab(content::WebContents* contents);
+void SelectDevice(int chooser_id, int option_id);
 void CancelDeviceChooser(int chooser_id);
 void RefreshDeviceChooser(int chooser_id);
 void OpenDeviceChooserSettings(int chooser_id);

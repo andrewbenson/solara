@@ -10,6 +10,10 @@ import Foundation
 struct SolaraCoreHost {
   static let safeMode = false
   static let dataDirectory = "/unused"
+  static var passkeyRemoval = true
+  static func removeDefaultProfilePasskeys(deletionAllowed: () -> Bool) -> Bool {
+    deletionAllowed() && passkeyRemoval
+  }
   static func deleteProfileData(_ p: String, deletionAllowed: @escaping () -> Bool, completion: @escaping ([String]) -> Void) { completion([]) }
 }
 struct ChromiumProfileData {
@@ -87,6 +91,14 @@ while SolaraCoreServices.pending != nil { SolaraCoreServices.commit(true) }
 precondition(result?.isEmpty == true)
 precondition(!SolaraCoreServices.live && !SolaraCoreServices.durable)
 precondition(SolaraCoreServices.clearCalls == 2)
+`));
+test("Default reports incomplete Touch ID cleanup", () => run(`
+SolaraCoreHost.passkeyRemoval = false
+SolaraCoreServices.enabled = false
+var result: [String]?
+SolaraCoreProfileData.deleteDefault { result = $0 }
+while SolaraCoreServices.pending != nil { SolaraCoreServices.commit(true) }
+precondition(result == ["Chromium Touch ID passkeys"])
 `));
 test("Default cleanup can remove a tree that the depth limited reader rejects", () => run(`
 SolaraCoreServices.deep = true

@@ -10,7 +10,12 @@ typedef NS_ERROR_ENUM(SolaraCoreBookmarkURLErrorDomain, SolaraCoreBookmarkURLErr
   SolaraCoreBookmarkURLBadReply = 3,
 };
 
+@class SolaraCoreTab;
+
 @interface SolaraCoreEngineBridge : NSObject
++ (void)answerDesktopCapture:(NSString *)receipt tab:(SolaraCoreTab *)tab
+                      source:(nullable NSString *)source audio:(BOOL)audio;
++ (nullable NSDictionary<NSString *, id> *)displayCaptureStateForTab:(nullable SolaraCoreTab *)tab;
 + (nullable NSString *)canonicalBookmarkURL:(NSString *)url
                                      error:(NSError * _Nullable * _Nullable)error NS_SWIFT_NAME(canonicalBookmarkURL(_:));
 + (nullable NSString *)canonicalBookmarkURLUTF16:(NSData *)units

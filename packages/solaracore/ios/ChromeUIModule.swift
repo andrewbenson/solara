@@ -36,6 +36,11 @@ public class ChromeUIModule: Module {
     AsyncFunction("changeCaptureSource") { (capturer: Int, target: Int) -> Bool in
       SolaraCoreHost.shareTabInstead(capturer: Int32(capturer), target: Int32(target))
     }.runOnQueue(.main)
+#if DEBUG
+    AsyncFunction("displayCaptureState") { (capturer: Int) in
+      SolaraCoreHost.displayCaptureState(browserId: Int32(capturer))
+    }.runOnQueue(.main)
+#endif
     AsyncFunction("stopCapture") { (capturer: Int) in SolaraCoreHost.stopCapture(browserId: Int32(capturer)) }.runOnQueue(.main)
     AsyncFunction("showAutofillSuggestions") { (browserId: Int, passwords: Bool) in
       SolaraCoreHost.showAutofillSuggestions(browserId: Int32(browserId), passwords: passwords)

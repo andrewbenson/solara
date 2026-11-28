@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { declaration, runNative, source } from "../test-native/safe-host/run.mjs";
+import { declaration, desktopCaptureDeclarations, runNative, source } from "../test-native/safe-host/run.mjs";
 
 function bridge(name) {
   const header = source("packages/solaracore/ios/SolaraCoreEngineBridge.h");
@@ -10,7 +10,7 @@ function bridge(name) {
     .replace('#import "SolaraCoreBookmarkURL.h"', "static NSString *SolaraCanonicalBookmarkURL(NSString *url, NSError **error) { return nil; }\nstatic NSString *SolaraCanonicalBookmarkURLUTF16(NSData *units, NSError **error) { return nil; }")
     .replace('#import "SolaraCoreInternal.h"', "")
     .replace('#include "../../../engine/chromium/src/chrome/browser/solara/public/ac_engine.h"', "");
-  return runNative("Engine.mm", `${abi}\n${header}\n${implementation}`, [name]);
+  return runNative("Engine.mm", `${abi}\n${header}\n${desktopCaptureDeclarations()}\n${implementation}`, [name]);
 }
 
 function assertRefusalAndDispatch(results, name) {

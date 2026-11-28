@@ -6,6 +6,7 @@
 
 #include "base/check.h"
 #include "base/functional/callback.h"
+#include "base/memory/self_deleting.h"
 #include "chrome/browser/lifetime/browser_shutdown.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/solara/ac_notifications.h"
@@ -66,8 +67,9 @@ class TabBadgeService final
     : public content::DocumentService<blink::mojom::BadgeService> {
  public:
   TabBadgeService(content::RenderFrameHost& frame,
-                  mojo::PendingReceiver<blink::mojom::BadgeService> receiver)
-      : DocumentService(frame, std::move(receiver)) {}
+                  mojo::PendingReceiver<blink::mojom::BadgeService> receiver,
+                  base::SelfDeletingPassKey key)
+      : DocumentService(frame, std::move(receiver), key) {}
 
   void SetBadge(blink::mojom::BadgeValuePtr value) override {
     if (!value || (value->is_number() && value->get_number() == 0)) {
@@ -89,6 +91,9 @@ class TabBadgeService final
       TabBridge::GetOrCreate(contents)->SetAppBadge(@{ @"kind" : @"clear" });
     }
   }
+
+ private:
+  ~TabBadgeService() override = default;
 };
 
 bool BindTabBadge(content::RenderFrameHost* frame,
@@ -96,7 +101,7 @@ bool BindTabBadge(content::RenderFrameHost* frame,
   if (!OwnedBadgeContents(frame) || BadgesAnInstalledApp(frame)) {
     return false;
   }
-  new TabBadgeService(*frame, std::move(*receiver));
+  base::MakeSelfDeleting<TabBadgeService>(*frame, std::move(*receiver));
   return true;
 }
 

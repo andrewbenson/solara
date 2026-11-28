@@ -4,7 +4,7 @@ import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
-import { declaration, source } from "../test-native/safe-host/run.mjs";
+import { declaration, desktopCaptureDeclarations, source } from "../test-native/safe-host/run.mjs";
 
 function persistence(category) {
   const directory = mkdtempSync(join(tmpdir(), "solara-safe-engine-persistence-"));
@@ -28,6 +28,7 @@ function persistence(category) {
     const production = [
       source("engine/chromium/src/chrome/browser/solara/public/ac_engine.h"),
       source("packages/solaracore/ios/SolaraCoreEngineBridge.h"),
+      desktopCaptureDeclarations(),
       "typedef void (^SolaraCoreResult)(NSDictionary *);",
       "@interface SolaraCoreServices : NSObject",
       ...methods.map((method) => `${method.slice(0, method.indexOf("{")).trim()};`),

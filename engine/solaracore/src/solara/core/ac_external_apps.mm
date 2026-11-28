@@ -3,6 +3,7 @@
 #import <AppKit/AppKit.h>
 
 #include <map>
+#include <utility>
 #include <optional>
 #include <string>
 
@@ -27,6 +28,7 @@
 #include "url/origin.h"
 #include "services/network/public/cpp/is_potentially_trustworthy.h"
 #include "content/public/browser/render_frame_host.h"
+#include "content/public/browser/page.h"
 
 namespace solaracore {
 
@@ -38,6 +40,21 @@ struct Pending {
   std::optional<url::Origin> origin;
   content::WeakDocumentPtr initiator;
   bool can_remember = false;
+  bool can_open = false;
+  __weak SolaraCoreWindow* presenter = nil;
+
+  bool IsCurrent() const {
+    content::WebContents* tab = contents.get();
+    auto* frame = initiator.AsRenderFrameHostIfValid();
+    if (!tab || !frame || !frame->IsActive() || !frame->IsRenderFrameLive() ||
+        !frame->GetPage().IsPrimary() ||
+        content::WebContents::FromRenderFrameHost(frame) != tab) {
+      return false;
+    }
+    auto* browser = GlobalBrowserCollection::GetInstance()->FindBrowserWithTab(tab);
+    auto* host = browser ? WindowHost::ForBrowser(browser) : nullptr;
+    return presenter && host && host->owner() == presenter;
+  }
 };
 
 std::map<std::string, Pending>& PendingRequests() {
@@ -107,10 +124,13 @@ bool AskHost(const GURL& url,
 
   static int last_id = 0;
   const std::string request_id = "x" + std::to_string(++last_id);
-  if (app) {
-    PendingRequests()[request_id] = {url, contents->GetWeakPtr(), initiating_origin,
-                             initiator_document, can_remember};
+  Pending pending{url, contents->GetWeakPtr(), initiating_origin, initiator_document,
+                  can_remember, app != nil, WindowHost::ForBrowser(browser)->owner()};
+  if (!pending.IsCurrent()) {
+    return true;
   }
+  RetireStaleExternalApps(contents);
+  PendingRequests().emplace(request_id, std::move(pending));
   NSString* title = app ? [NSString stringWithFormat:@"Open “%@”?", name]
                         : @"No application is set to open this link";
   NSString* message =
@@ -138,18 +158,23 @@ bool AskHost(const GURL& url,
   };
   base::SingleThreadTaskRunner::GetCurrentDefault()->PostTask(
       FROM_HERE, base::BindOnce(
-                     [](base::WeakPtr<content::WebContents> contents,
-                        NSDictionary* request) {
-                       if (!contents) {
+                     [](const std::string& request_id, NSDictionary* request) {
+                       auto it = PendingRequests().find(request_id);
+                       if (it == PendingRequests().end()) {
                          return;
                        }
-                       SolaraCoreTab* tab = TabBridge::GetOrCreate(contents.get())->tab();
+                       if (!it->second.IsCurrent()) {
+                         PendingRequests().erase(it);
+                         return;
+                       }
+                       SolaraCoreTab* tab =
+                           TabBridge::GetOrCreate(it->second.contents.get())->tab();
                        id<SolaraCoreTabDelegate> delegate = tab.delegate;
                        if ([delegate respondsToSelector:@selector(tab:externalAppRequest:)]) {
                          [delegate tab:tab externalAppRequest:request];
                        }
                      },
-                     contents->GetWeakPtr(), request));
+                     request_id, request));
   return true;
 }
 
@@ -170,6 +195,30 @@ void InstallExternalAppPrompts() {
   g_solara_external_protocol_dialog = &AskHost;
 }
 
+void RetireStaleExternalApps(content::WebContents* superseded) {
+  for (auto it = PendingRequests().begin(); it != PendingRequests().end();) {
+    if ((!superseded || it->second.contents.get() != superseded) &&
+        it->second.IsCurrent()) {
+      ++it;
+      continue;
+    }
+    NSString* request_id = base::SysUTF8ToNSString(it->first);
+    auto contents = it->second.contents;
+    it = PendingRequests().erase(it);
+    base::SingleThreadTaskRunner::GetCurrentDefault()->PostTask(
+        FROM_HERE, base::BindOnce(
+            [](base::WeakPtr<content::WebContents> contents, NSString* request_id) {
+              auto* bridge = contents ? TabBridge::FromWebContents(contents.get()) : nullptr;
+              SolaraCoreTab* tab = bridge ? bridge->tab() : nil;
+              id<SolaraCoreTabDelegate> delegate = tab.delegate;
+              if ([delegate respondsToSelector:@selector(tab:externalAppRequest:)]) {
+                [delegate tab:tab externalAppRequest:@{@"id" : request_id, @"closed" : @YES}];
+              }
+            },
+            contents, request_id));
+  }
+}
+
 void ResolveExternalApp(const std::string& request_id, bool open, bool remember) {
   auto it = PendingRequests().find(request_id);
   if (it == PendingRequests().end()) {
@@ -178,7 +227,7 @@ void ResolveExternalApp(const std::string& request_id, bool open, bool remember)
   Pending pending = std::move(it->second);
   PendingRequests().erase(it);
   content::WebContents* contents = pending.contents.get();
-  if (!open || !contents || !pending.initiator.AsRenderFrameHostIfValid()) {
+  if (!open || !pending.can_open || !pending.IsCurrent()) {
     return;
   }
   Profile* profile = Profile::FromBrowserContext(contents->GetBrowserContext());

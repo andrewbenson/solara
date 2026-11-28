@@ -11,7 +11,7 @@ import { rekeyPage } from "../../../scripts/lib/fixture-html.mjs";
 const USAGE = `usage:
   node apps/browser/scripts/rekey-e2e.mjs fixture <Debug app> <fixture dir> [--other-key-only]
   node apps/browser/scripts/rekey-e2e.mjs run <Debug app> <fixture dir> [check…] [--keep]
-  node apps/browser/scripts/rekey-e2e.mjs scan <user data dir> [--key <secret> | --key-file <file>]
+  node apps/browser/scripts/rekey-e2e.mjs scan <user data dir> [--format v10|v11] [--key <secret> | --key-file <file>]
   node apps/browser/scripts/rekey-e2e.mjs --list
 
 The Safe Storage re-key (option D) end to end, on scratch dirs and the file keychain only (SOLARA_TEST_KEYCHAIN=file):
@@ -27,7 +27,7 @@ fixture  makes <fixture dir>/template, a read-only data dir made by the app on C
 run      clones the app and, per check, the template (APFS clones) and launches the clone hidden on it, one at a
          time; --list names the checks, crash:<point> runs one crash point. Run dirs are removed when all pass,
          unless --keep.
-scan     decrypts every v10 value under a key (default mock_password) and prints the counts per column.`;
+scan     decrypts values of one format (default v10) under a key (default mock_password) and prints the counts per column.`;
 
 const CHECKS = {
   "baseline-a": "the template with the file keychain seeded with mock_password and no re-key: everything reads back (validates the harness; option A by hand)",
@@ -61,13 +61,14 @@ const CHECKS = {
 
 const IV = Buffer.alloc(16, 0x20);
 const MOCK = "mock_password";
-const keyOf = (secret) => pbkdf2Sync(Buffer.from(secret), "saltysalt", 1003, 16, "sha1");
+const legacyKeySwitch = "--disable-features=KeychainKeyProviderUserDataDirProtection";
+const keyOf = (secret, format = "v10") => pbkdf2Sync(Buffer.from(secret), format === "v11" ? "pepper" : "saltysalt", 1003, 16, "sha1");
 const encrypt = (key, plain) => {
   const c = createCipheriv("aes-128-cbc", key, IV);
   return Buffer.concat([Buffer.from("v10"), c.update(plain), c.final()]);
 };
-const decrypt = (key, blob) => {
-  if (!blob || blob.length < 19 || (blob.length - 3) % 16 || blob.subarray(0, 3).toString("latin1") !== "v10") return null;
+const decrypt = (key, blob, format) => {
+  if (!blob || blob.length < 19 || (blob.length - 3) % 16 || blob.subarray(0, 3).toString("latin1") !== format) return null;
   try {
     const d = createDecipheriv("aes-128-cbc", key, IV);
     return Buffer.concat([d.update(blob.subarray(3)), d.final()]);
@@ -114,8 +115,8 @@ function walk(dir, out = []) {
 }
 const openRead = (file) => new DatabaseSync(`file:${encodeURI(file)}?immutable=1`, { readOnly: true });
 
-function scan(userDataDir, secret = MOCK) {
-  const key = keyOf(secret);
+function scan(userDataDir, secret = MOCK, format = "v10") {
+  const key = keyOf(secret, format);
   const hits = {};
   const values = {};
   const unreadable = [];
@@ -131,11 +132,11 @@ function scan(userDataDir, secret = MOCK) {
         for (const col of cols) {
           let rows;
           try {
-            rows = db.prepare(`SELECT ${table === "cookies" ? "host_key, " : ""}${q(col)} AS v FROM ${q(table)} WHERE substr(CAST(${q(col)} AS BLOB), 1, 3) = CAST('v10' AS BLOB)`).all();
+            rows = db.prepare(`SELECT ${table === "cookies" ? "host_key, " : ""}${q(col)} AS v FROM ${q(table)} WHERE substr(CAST(${q(col)} AS BLOB), 1, 3) = CAST(? AS BLOB)`).all(format);
           } catch { continue; }
           for (const row of rows) {
             const blob = typeof row.v === "string" ? Buffer.from(row.v, "utf8") : Buffer.from(row.v);
-            const plain = decrypt(key, blob);
+            const plain = decrypt(key, blob, format);
             if (!plain) continue;
             let text;
             if (table === "cookies" && col === "encrypted_value" && version >= 24) {
@@ -159,7 +160,7 @@ function scan(userDataDir, secret = MOCK) {
     try { json = JSON.parse(readFileSync(file, "utf8")); } catch (e) { unreadable.push(`${rel}: ${e.message}`); continue; }
     for (const [path, value] of leaves(json)) {
       if (typeof value !== "string" || value.length < 28 || !/^[A-Za-z0-9+/]+={0,2}$/.test(value)) continue;
-      const plain = decrypt(key, Buffer.from(value, "base64"));
+      const plain = decrypt(key, Buffer.from(value, "base64"), format);
       if (!plain || (plain.length !== 32 && strictUtf8(plain) === null)) continue;
       const where = `${rel} prefs`;
       hits[where] = (hits[where] ?? 0) + 1;
@@ -425,7 +426,7 @@ async function makeFixture(app, dir) {
   mkdirSync(work, { recursive: true });
   const { server, origin } = await serve();
   const env = { SOLARA_TEST_REAUTH: "granted", SOLARA_TEST_KEYCHAIN: null, SOLARA_TEST_REKEY: null };
-  const opts = (log) => ({ data, onboarded: true, env, log: join(work, log), switches: "--disable-backgrounding-occluded-windows" });
+  const opts = (log) => ({ data, onboarded: true, env, log: join(work, log), switches: ["--disable-backgrounding-occluded-windows", legacyKeySwitch] });
   const profiles = [];
   const extension = join(dir, "extension");
   execFileSync("cp", ["-R", resolve(new URL("../../../packages/solaracore/scripts/fixtures/ext", import.meta.url).pathname), extension]);
@@ -484,6 +485,16 @@ async function makeFixture(app, dir) {
     server.close();
   }
   const scanned = scan(userDataDir);
+  for (const { name, dir: profileDir, plant } of profiles) {
+    for (const [column, expected] of [
+      [`${profileDir}/Login Data logins.password_value`, plant.passwords.length],
+      [`${profileDir}/Web Data credit_cards.card_number_encrypted`, plant.cards.length],
+    ]) {
+      if ((scanned.hits[column] ?? 0) !== expected) {
+        throw new Error(`${name} ${column}: expected ${expected} v10 values, found ${scanned.hits[column] ?? 0}`);
+      }
+    }
+  }
   const manifest = {
     made: new Date().toISOString(),
     app,
@@ -517,7 +528,7 @@ async function makeOtherKey(app, dir) {
   const userDataDir = join(data, "Chromium");
   mkdirSync(work, { recursive: true });
   const { server, origin } = await serve();
-  const instance = await launch(app, { data, onboarded: true, env: { SOLARA_TEST_REAUTH: "granted", SOLARA_TEST_KEYCHAIN: "file", SOLARA_TEST_REKEY: null }, log: join(work, "make.app.log") });
+  const instance = await launch(app, { data, onboarded: true, env: { SOLARA_TEST_REAUTH: "granted", SOLARA_TEST_KEYCHAIN: "file", SOLARA_TEST_REKEY: null }, switches: legacyKeySwitch, log: join(work, "make.app.log") });
   try {
     await waitWindow(instance);
     const page = await pageIn(instance, "default", `${origin}/other.html`);
@@ -534,8 +545,10 @@ async function makeOtherKey(app, dir) {
     server.close();
   }
   const secret = readFileSync(join(userDataDir, "Test Safe Storage Key"), "latin1");
-  const hits = scan(userDataDir, secret).hits;
-  if (!Object.keys(hits).some((w) => w.endsWith("logins.password_value")) || Object.keys(scan(userDataDir, MOCK).hits).length) throw new Error(`the other-key data isn't under its own key: ${JSON.stringify(hits)}`);
+  const { hits, values } = scan(userDataDir, secret);
+  const hasPassword = (values["Default/Login Data logins.password_value"] ?? []).includes("pw-other-key");
+  const hasCookie = Object.entries(values).some(([column, entries]) => column.endsWith(" cookies.encrypted_value") && entries.includes("persist-other-key"));
+  if (!hasPassword || !hasCookie || Object.keys(scan(userDataDir, MOCK).hits).length) throw new Error(`the other-key data isn't under its own key: ${JSON.stringify(hits)}`);
   unlinkSync(join(userDataDir, "Test Safe Storage Key"));
   rmSync(join(userDataDir, "Test Safe Storage Log"), { force: true });
   for (const f of ["dev-eval.js", "dev-eval-result.json", "instance.json", "perf-probe"]) rmSync(join(data, f), { force: true });
@@ -605,7 +618,7 @@ async function start(app, run, env, { until = "devtools", timeout = 120000 } = {
   const log = join(run.dir, `launch-${++run.launches}.log`);
   run.logs.push(log);
   writeFileSync(join(run.data, "onboarding.json"), JSON.stringify({ version: 1, completedAt: 1 }));
-  const full = { SOLARA_BACKGROUND: "1", SOLARA_DATA_DIR: run.data, SOLARA_REMOTE_DEBUGGING_PORT: String(port), SOLARA_JS_LOCATION: "localhost:8081", SOLARA_TEST_REAUTH: "granted", ...env };
+  const full = { SOLARA_BACKGROUND: "1", SOLARA_DATA_DIR: run.data, SOLARA_REMOTE_DEBUGGING_PORT: String(port), SOLARA_JS_LOCATION: "localhost:8081", SOLARA_TEST_REAUTH: "granted", ...env, SOLARA_CHROMIUM_SWITCHES: legacyKeySwitch };
   const before = binaryPids(binary);
   if (before.size) throw new Error(`${binary} is already running (${[...before]})`);
   await uiGateLaunching(binary);
@@ -1330,7 +1343,10 @@ async function main() {
   if (cmd === "scan" && a) {
     const k = args.indexOf("--key"), kf = args.indexOf("--key-file");
     const secret = k > 0 ? args[k + 1] : kf > 0 ? readFileSync(args[kf + 1], "latin1") : MOCK;
-    const r = scan(resolve(a), secret);
+    const option = args.indexOf("--format");
+    const format = option < 0 ? "v10" : args[option + 1];
+    if (format !== "v10" && format !== "v11") throw new Error("--format must be v10 or v11");
+    const r = scan(resolve(a), secret, format);
     console.log(JSON.stringify({ hits: r.hits, unreadable: r.unreadable }, null, 2));
     return;
   }

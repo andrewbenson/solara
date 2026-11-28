@@ -343,6 +343,7 @@ class TabBridge : public content::WebContentsObserver,
   void NavigationListPruned(
       const content::PrunedDetails& pruned_details) override;
   void NavigationEntriesDeleted() override;
+  void RenderFrameDeleted(content::RenderFrameHost* frame) override;
   void WebContentsDestroyed() override;
 
   void OnFindResultAvailable(content::WebContents* web_contents) override;
@@ -363,7 +364,7 @@ class TabBridge : public content::WebContentsObserver,
   NSDictionary* __strong app_badge_ = nil;
   NSDictionary* __strong security_;
   raw_ptr<zoom::ZoomController> zoom_ = nullptr;
-  raw_ptr<blocked_content::PopupBlockerTabHelper> popups_ = nullptr;
+  bool observing_popups_ = false;
   bool host_focusing_ = false;
   bool discarded_ = false;
   bool frozen_ = false;

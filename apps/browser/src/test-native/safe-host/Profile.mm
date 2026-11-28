@@ -7,6 +7,7 @@ static int profileLookups = 0;
 static int engineCalls = 0;
 static int fenceCalls = 0;
 static BOOL loaded = NO;
+static BOOL passkeysAllowed = YES;
 static NSArray *gChromeProfiles = @[];
 
 @interface SolaraCoreProfile : NSObject
@@ -19,13 +20,15 @@ static NSArray *gChromeProfiles = @[];
 @interface SolaraCoreEngine : NSObject
 @property(class, readonly) SolaraCoreEngine *sharedEngine;
 @property(readonly) NSArray<SolaraCoreProfile *> *loadedProfiles;
-- (void)deleteProfile:(SolaraCoreProfile *)profile completion:(void (^)(BOOL))done;
+- (void)deleteProfile:(SolaraCoreProfile *)profile deletionAllowed:(BOOL (^)(void))allowed completion:(void (^)(NSString *))done;
+- (BOOL)removeProfilePasskeysAtPath:(NSString *)path;
 - (void)fenceNotificationsForProfileDeletionAtPath:(NSString *)path completion:(void (^)(BOOL))done;
 @end
 @implementation SolaraCoreEngine
 + (SolaraCoreEngine *)sharedEngine { engineLookups++; return [SolaraCoreEngine new]; }
 - (NSArray<SolaraCoreProfile *> *)loadedProfiles { return gChromeProfiles; }
-- (void)deleteProfile:(SolaraCoreProfile *)profile completion:(void (^)(BOOL))done { engineCalls++; done(YES); }
+- (void)deleteProfile:(SolaraCoreProfile *)profile deletionAllowed:(BOOL (^)(void))allowed completion:(void (^)(NSString *))done { engineCalls++; done(allowed() ? nil : @"data"); }
+- (BOOL)removeProfilePasskeysAtPath:(NSString *)path { return passkeysAllowed; }
 - (void)fenceNotificationsForProfileDeletionAtPath:(NSString *)path completion:(void (^)(BOOL))done { fenceCalls++; done(YES); }
 @end
 
@@ -121,6 +124,22 @@ int main() {
       gChromeProfiles = @[];
       [results addObject:@{ @"chromeHeld": @YES, @"callbacks": @(callbacks), @"remaining": remaining ?: @[], @"engineCalls": @(engineCalls),
                            @"sentinelKept": @([[NSString stringWithContentsOfFile:sentinel encoding:NSUTF8StringEncoding error:nil] isEqualToString:@"untouched"]) }];
+    }
+    {
+      NSString *dir = [gDataDirectory stringByAppendingPathComponent:@"Profile passkeys"];
+      [NSFileManager.defaultManager createDirectoryAtPath:dir withIntermediateDirectories:YES attributes:nil error:nil];
+      NSString *prefs = [dir stringByAppendingPathComponent:@"Preferences"];
+      [@"{}" writeToFile:prefs atomically:YES encoding:NSUTF8StringEncoding error:nil];
+      __block NSArray *failure;
+      passkeysAllowed = NO;
+      [SolaraCoreHost deleteProfileData:@"passkeys" deletionAllowed:^BOOL { return YES; } completion:^(NSArray *value) { failure = value; }];
+      BOOL kept = [NSFileManager.defaultManager fileExistsAtPath:prefs];
+      __block NSArray *retry;
+      passkeysAllowed = YES;
+      [SolaraCoreHost deleteProfileData:@"passkeys" deletionAllowed:^BOOL { return YES; } completion:^(NSArray *value) { retry = value; }];
+      [results addObject:@{ @"failure": failure ?: @[], @"preferencesKept": @(kept),
+                            @"retry": retry ?: @[ @"no receipt" ],
+                            @"directoryRemoved": @(![NSFileManager.defaultManager fileExistsAtPath:dir]) }];
     }
     NSData *json = [NSJSONSerialization dataWithJSONObject:results options:0 error:nil];
     puts([[NSString alloc] initWithData:json encoding:NSUTF8StringEncoding].UTF8String);

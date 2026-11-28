@@ -74,6 +74,8 @@
 #include "content/public/browser/render_widget_host.h"
 #include "content/public/common/result_codes.h"
 #include "solara/core/ac_browser_window.h"
+#include "solara/core/ac_device_chooser.h"
+#include "solara/core/ac_external_apps.h"
 #include "solara/core/ac_password_prompt.h"
 #import "solara/core/solaracore_internal.h"
 #include "ui/gfx/image/image.h"
@@ -88,23 +90,23 @@ namespace solaracore {
 
 const char* DispositionName(WindowOpenDisposition disposition) {
   switch (disposition) {
-    case WindowOpenDisposition::CURRENT_TAB:
+    case WindowOpenDisposition::kCurrentTab:
       return "current_tab";
-    case WindowOpenDisposition::SINGLETON_TAB:
+    case WindowOpenDisposition::kSingletonTab:
       return "singleton_tab";
-    case WindowOpenDisposition::NEW_FOREGROUND_TAB:
+    case WindowOpenDisposition::kNewForegroundTab:
       return "foreground_tab";
-    case WindowOpenDisposition::NEW_BACKGROUND_TAB:
+    case WindowOpenDisposition::kNewBackgroundTab:
       return "background_tab";
-    case WindowOpenDisposition::NEW_POPUP:
+    case WindowOpenDisposition::kNewPopup:
       return "popup";
-    case WindowOpenDisposition::NEW_WINDOW:
+    case WindowOpenDisposition::kNewWindow:
       return "window";
-    case WindowOpenDisposition::NEW_PICTURE_IN_PICTURE:
+    case WindowOpenDisposition::kNewPictureInPicture:
       return "picture_in_picture";
-    case WindowOpenDisposition::OFF_THE_RECORD:
+    case WindowOpenDisposition::kOffTheRecord:
       return "off_the_record";
-    case WindowOpenDisposition::NEW_SPLIT_VIEW:
+    case WindowOpenDisposition::kNewSplitView:
       return "split_view";
     default:
       return "other";
@@ -781,8 +783,8 @@ void WindowHost::OnTabStripModelChanged(
           source ? TabBridge::GetOrCreate(source)->tab() : nil;
       if (!disposition) {
         disposition = tab_strip_model->active_index() == inserted.index
-                          ? WindowOpenDisposition::NEW_FOREGROUND_TAB
-                          : WindowOpenDisposition::NEW_BACKGROUND_TAB;
+                          ? WindowOpenDisposition::kNewForegroundTab
+                          : WindowOpenDisposition::kNewBackgroundTab;
       }
       if ([delegate respondsToSelector:@selector
                     (window:didInsertTab:opener:disposition:)]) {
@@ -797,6 +799,8 @@ void WindowHost::OnTabStripModelChanged(
       if (!removed.contents) {
         continue;
       }
+      RetireStaleExternalApps(removed.contents);
+      RetireDeviceChoosersForTab(removed.contents);
       TabBridge* bridge = TabBridge::FromWebContents(removed.contents);
       Browser* browser = nullptr;
       for (Browser* b : browsers()) {
@@ -1165,14 +1169,14 @@ ACWebContentsDelegate::~ACWebContentsDelegate() {
 
 namespace {
 bool IsWindowDisposition(WindowOpenDisposition d) {
-  return d == WindowOpenDisposition::NEW_POPUP ||
-         d == WindowOpenDisposition::NEW_WINDOW;
+  return d == WindowOpenDisposition::kNewPopup ||
+         d == WindowOpenDisposition::kNewWindow;
 }
 bool IsNewTabDisposition(WindowOpenDisposition d) {
   return IsWindowDisposition(d) ||
-         d == WindowOpenDisposition::NEW_FOREGROUND_TAB ||
-         d == WindowOpenDisposition::NEW_BACKGROUND_TAB ||
-         d == WindowOpenDisposition::NEW_SPLIT_VIEW;
+         d == WindowOpenDisposition::kNewForegroundTab ||
+         d == WindowOpenDisposition::kNewBackgroundTab ||
+         d == WindowOpenDisposition::kNewSplitView;
 }
 }
 
@@ -1201,7 +1205,7 @@ content::WebContents* ACWebContentsDelegate::OpenURLFromTab(
       params.triggering_event_info ==
           blink::mojom::TriggeringEventInfo::kFromTrustedEvent &&
       ui::PageTransitionCoreTypeIs(params.transition, ui::PAGE_TRANSITION_LINK) &&
-      params.disposition == WindowOpenDisposition::NEW_FOREGROUND_TAB) {
+      params.disposition == WindowOpenDisposition::kNewForegroundTab) {
     auto* profile = Profile::FromBrowserContext(source->GetBrowserContext());
     content::WebContents::CreateParams create(
         profile, tab_util::GetSiteInstanceForNewTab(profile, params.url));
@@ -1224,9 +1228,9 @@ content::WebContents* ACWebContentsDelegate::OpenURLFromTab(
   base::AutoReset<WindowHost::PendingOpen> pending(&host->pending_open(),
                                                    std::move(open));
   if (IsWindowDisposition(params.disposition)) {
-    tab_params.disposition = WindowOpenDisposition::NEW_FOREGROUND_TAB;
-  } else if (params.disposition == WindowOpenDisposition::NEW_SPLIT_VIEW) {
-    tab_params.disposition = WindowOpenDisposition::NEW_BACKGROUND_TAB;
+    tab_params.disposition = WindowOpenDisposition::kNewForegroundTab;
+  } else if (params.disposition == WindowOpenDisposition::kNewSplitView) {
+    tab_params.disposition = WindowOpenDisposition::kNewBackgroundTab;
   }
   return BrowserWebContentsDelegate::OpenURLFromTab(
       source, tab_params, std::move(navigation_handle_callback));
@@ -1248,7 +1252,7 @@ content::WebContents* ACWebContentsDelegate::AddNewContents(
   }
   if (host_ && new_contents && source && user_gesture &&
       target_url.SchemeIsHTTPOrHTTPS() &&
-      disposition == WindowOpenDisposition::NEW_FOREGROUND_TAB &&
+      disposition == WindowOpenDisposition::kNewForegroundTab &&
       TabBridge::GetOrCreate(new_contents.get())->created_from_link() &&
       !TabBridge::GetOrCreate(new_contents.get())->pinned_link_checked() &&
       WantsPinnedLinkPolicy(source) && HasPlainPinnedLinkGesture(source)) {
@@ -1258,7 +1262,7 @@ content::WebContents* ACWebContentsDelegate::AddNewContents(
   if (host_ && new_contents) {
     TabBridge* bridge = TabBridge::GetOrCreate(new_contents.get());
     bridge->set_open(disposition, source);
-    if (disposition == WindowOpenDisposition::NEW_POPUP) {
+    if (disposition == WindowOpenDisposition::kNewPopup) {
       NSMutableDictionary* features = [NSMutableDictionary dictionary];
       const gfx::Rect& bounds = window_features.bounds;
       if (window_features.has_x) {
@@ -1276,7 +1280,7 @@ content::WebContents* ACWebContentsDelegate::AddNewContents(
       bridge->set_popup_features(features);
     }
     if (IsWindowDisposition(disposition)) {
-      disposition = WindowOpenDisposition::NEW_FOREGROUND_TAB;
+      disposition = WindowOpenDisposition::kNewForegroundTab;
     }
   }
   return BrowserWebContentsDelegate::AddNewContents(
@@ -1378,7 +1382,8 @@ class MediaCaptureObserver : public MediaStreamCaptureIndicator::Observer {
     return @{
       @"camera" : @(indicator_->IsCapturingVideo(contents)),
       @"microphone" : @(indicator_->IsCapturingAudio(contents)),
-      @"screen" : @(indicator_->IsCapturingTab(contents) ||
+      @"screen" : @(GetDesktopCaptureState(contents).active ||
+                    indicator_->IsCapturingTab(contents) ||
                     indicator_->IsCapturingWindow(contents) ||
                     indicator_->IsCapturingDisplay(contents)),
     };
@@ -1724,12 +1729,13 @@ void TabBridge::OnWebContentsFocused(
 }
 
 void TabBridge::EnsurePopupsObserved() {
-  if (popups_) {
+  if (observing_popups_) {
     return;
   }
-  popups_ = blocked_content::PopupBlockerTabHelper::FromWebContents(web_contents());
-  if (popups_) {
-    popups_->manager()->AddObserver(this);
+  if (auto* helper =
+          blocked_content::PopupBlockerTabHelper::FromWebContents(web_contents())) {
+    helper->manager()->AddObserver(this);
+    observing_popups_ = true;
   }
 }
 
@@ -1743,9 +1749,12 @@ void TabBridge::BlockedUrlAdded(int32_t popup_id, const GURL& url) {
       FROM_HERE, base::BindOnce(
                      [](base::WeakPtr<TabBridge> bridge, int32_t popup_id,
                         NSDictionary* popup) {
-                       if (!bridge || !bridge->popups_ ||
-                           !bridge->popups_->GetBlockedPopupRequests().contains(
-                               popup_id)) {
+                       auto* helper = bridge
+                           ? blocked_content::PopupBlockerTabHelper::FromWebContents(
+                                 bridge->web_contents())
+                           : nullptr;
+                       if (!helper ||
+                           !helper->GetBlockedPopupRequests().contains(popup_id)) {
                          return;
                        }
                        SolaraCoreTab* tab = bridge->tab_;
@@ -1890,6 +1899,10 @@ void TabBridge::DidFinishNavigation(content::NavigationHandle* handle) {
                                  g_navigation_notifying + 1);
   EnsureFaviconObserved();
   EnsureZoomObserved();
+  if (handle->HasCommitted() && !handle->IsSameDocument()) {
+    RetireStaleExternalApps(nullptr);
+    RetireStaleDeviceChoosers();
+  }
   if (made_ahead_ && handle->IsInPrimaryMainFrame() && handle->HasCommitted() &&
       !handle->GetURL().IsAboutBlank()) {
     made_ahead_ = false;
@@ -1960,10 +1973,23 @@ void TabBridge::NavigationEntriesDeleted() {
   [tab_ notify:@selector(tabDidChangeNavigationState:)];
 }
 
+void TabBridge::RenderFrameDeleted(content::RenderFrameHost*) {
+  base::SingleThreadTaskRunner::GetCurrentDefault()->PostTask(
+      FROM_HERE, base::BindOnce([] {
+        RetireStaleExternalApps(nullptr);
+        RetireStaleDeviceChoosers();
+      }));
+}
+
 void TabBridge::WebContentsDestroyed() {
-  if (popups_) {
-    popups_->manager()->RemoveObserver(this);
-    popups_ = nullptr;
+  RetireStaleExternalApps(web_contents());
+  RetireDeviceChoosersForTab(web_contents());
+  if (observing_popups_) {
+    if (auto* helper =
+            blocked_content::PopupBlockerTabHelper::FromWebContents(web_contents())) {
+      helper->manager()->RemoveObserver(this);
+    }
+    observing_popups_ = false;
   }
   if (zoom_) {
     zoom_->RemoveObserver(this);

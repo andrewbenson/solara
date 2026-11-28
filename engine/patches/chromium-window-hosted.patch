@@ -1,8 +1,8 @@
 --- a/components/remote_cocoa/app_shim/bridged_content_view.h
 +++ b/components/remote_cocoa/app_shim/bridged_content_view.h
-@@ -57,6 +57,13 @@
- @property(assign, nonatomic) BOOL drawMenuBackgroundForBlur;
- @property(strong, nonatomic) NSEvent* keyDownEventForTesting;
+@@ -71,6 +71,13 @@
+ // ends.
+ @property(assign, nonatomic) BOOL deferInputContextActivation;
  
 +// Solara: a view the embedder added as a subview of this one to show its
 +// own UI over the widget's views (SolaraCore's windows, engine/solaracore). Hit
@@ -16,11 +16,12 @@
                          bounds:(gfx::Rect)rect;
 --- a/components/remote_cocoa/app_shim/bridged_content_view.mm
 +++ b/components/remote_cocoa/app_shim/bridged_content_view.mm
-@@ -198,6 +198,7 @@
+@@ -220,7 +220,8 @@
  @synthesize bridge = _bridge;
  @synthesize drawMenuBackgroundForBlur = _drawMenuBackgroundForBlur;
  @synthesize keyDownEventForTesting = _keyDownEvent;
 +@synthesize solaraEmbeddedView = _solaraEmbeddedView;
+ @synthesize deferInputContextActivation = _deferInputContextActivation;
  
  - (instancetype)initWithBridge:(remote_cocoa::NativeWidgetNSWindowBridge*)bridge
                          bounds:(gfx::Rect)bounds {

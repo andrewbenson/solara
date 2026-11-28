@@ -1,0 +1,100 @@
+diff --git a/device/fido/mac/credential_store.mm b/device/fido/mac/credential_store.mm
+--- a/device/fido/mac/credential_store.mm
++++ b/device/fido/mac/credential_store.mm
+@@ -95,8 +95,9 @@
+     CFToNSPtrCast(kSecAttrAccessGroup) :
+         base::SysUTF8ToNSString(keychain_access_group),
+     CFToNSPtrCast(kSecMatchLimit) : CFToNSPtrCast(kSecMatchLimitAll),
+-    // Return the key reference and its attributes.
+-    CFToNSPtrCast(kSecReturnRef) : @YES,
++    CFToNSPtrCast(kSecUseDataProtectionKeychain) : @YES,
++    CFToNSPtrCast(kSecAttrSynchronizable) : @NO,
++    CFToNSPtrCast(kSecAttrKeyClass) : CFToNSPtrCast(kSecAttrKeyClassPrivate),
+     CFToNSPtrCast(kSecReturnAttributes) : @YES,
+   };
+ 
+@@ -106,8 +107,7 @@
+         NSToCFPtrCast(query),
+         reinterpret_cast<CFTypeRef*>(keychain_items.InitializeInto()));
+     if (status == errSecItemNotFound) {
+-      DVLOG(1) << "no credentials found";
+-      return std::nullopt;
++      return result;
+     }
+     if (status != errSecSuccess) {
+       OSSTATUS_DLOG(ERROR, status) << "SecItemCopyMatching failed";
+@@ -445,16 +445,38 @@
+     CFDataRef credential_id_data =
+         base::apple::GetValueFromDictionary<CFDataRef>(
+             attributes.get(), kSecAttrApplicationLabel);
+-    if (!credential_id_data) {
+-      DLOG(ERROR) << "missing application label";
++    CFStringRef rp_label = base::apple::GetValueFromDictionary<CFStringRef>(
++        attributes.get(), kSecAttrLabel);
++    if (!credential_id_data || CFDataGetLength(credential_id_data) == 0 ||
++        !rp_label) {
++      result = false;
+       continue;
+     }
+-    if (!DeleteCredentialById(base::apple::CFDataToSpan(credential_id_data))) {
+-      // Indicate failure, but keep deleting remaining items.
++    NSDictionary* query = @{
++      CFToNSPtrCast(kSecClass) : CFToNSPtrCast(kSecClassKey),
++      CFToNSPtrCast(kSecUseDataProtectionKeychain) : @YES,
++      CFToNSPtrCast(kSecAttrSynchronizable) : @NO,
++      CFToNSPtrCast(kSecAttrKeyClass) : CFToNSPtrCast(kSecAttrKeyClassPrivate),
++      CFToNSPtrCast(kSecAttrAccessGroup) :
++          base::SysUTF8ToNSString(config_.keychain_access_group),
++      CFToNSPtrCast(kSecAttrLabel) : CFToNSPtrCast(rp_label),
++      CFToNSPtrCast(kSecAttrApplicationLabel) :
++          CFToNSPtrCast(credential_id_data),
++    };
++    OSStatus status =
++        crypto::apple::KeychainV2::GetInstance().ItemDelete(NSToCFPtrCast(query));
++    if (status != errSecSuccess && status != errSecItemNotFound) {
++      OSSTATUS_DLOG(ERROR, status) << "SecItemDelete failed";
+       result = false;
+     }
+   }
+-  return result;
++  if (!result) {
++    return false;
++  }
++  auto remaining = QueryKeychainItemsForProfile(
++      config_.keychain_access_group, config_.metadata_secret, created_not_before,
++      created_not_after);
++  return remaining && remaining->empty();
+ }
+ 
+ size_t TouchIdCredentialStore::CountCredentialsSync(
+diff --git a/device/fido/mac/credential_store_unittest.mm b/device/fido/mac/credential_store_unittest.mm
+--- a/device/fido/mac/credential_store_unittest.mm
++++ b/device/fido/mac/credential_store_unittest.mm
+@@ -74,6 +74,27 @@
+   crypto::apple::ScopedFakeKeychainV2 keychain_{config_.keychain_access_group};
+   TouchIdCredentialStore store_{config_};
+ };
++
++TEST_F(CredentialStoreTest, DeleteCredentialsIsScopedAndIdempotent) {
++  const auto all_time = base::Time::Max();
++  EXPECT_TRUE(store_.DeleteCredentialsSync(base::Time(), all_time));
++  InsertCredentials(1);
++  InsertLegacyCredential(CredentialMetadata::Version::kV2, {7});
++  AuthenticatorConfig other_config = config_;
++  other_config.metadata_secret = "OtherTestMetadataSecret";
++  TouchIdCredentialStore other_store(other_config);
++  ASSERT_TRUE(other_store.CreateCredential(
++      kRpId, kUser, TouchIdCredentialStore::kDiscoverable));
++  ASSERT_EQ(store_.CountCredentialsSync(base::Time(), all_time), 2u);
++  ASSERT_EQ(other_store.CountCredentialsSync(base::Time(), all_time), 1u);
++
++  EXPECT_TRUE(store_.DeleteCredentialsSync(base::Time(), all_time));
++  EXPECT_TRUE(store_.DeleteCredentialsSync(base::Time(), all_time));
++  EXPECT_EQ(store_.CountCredentialsSync(base::Time(), all_time), 0u);
++  EXPECT_EQ(other_store.CountCredentialsSync(base::Time(), all_time), 1u);
++  EXPECT_TRUE(other_store.DeleteCredentialsSync(base::Time(), all_time));
++  EXPECT_TRUE(other_store.DeleteCredentialsSync(base::Time(), all_time));
++}
+ 
+ TEST_F(CredentialStoreTest, CreateCredential) {
+   auto result = store_.CreateCredential(kRpId, kUser,

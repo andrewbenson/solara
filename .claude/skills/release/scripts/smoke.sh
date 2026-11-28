@@ -17,6 +17,7 @@ pages_port="${SMOKE_PAGES_PORT:-8798}"
 product="$(plutil -extract CFBundleName raw "$app/Contents/Info.plist")"
 executable="$(plutil -extract CFBundleExecutable raw "$app/Contents/Info.plist")"
 case "$(cd "$app" && pwd -P)" in /Applications/*) echo "error: never an installed app ($app)" >&2; exit 1 ;; esac
+"$here/check-installed-data-dir.sh" "$app"
 for p in "$port" "$pages_port"; do
   if nc -z -G 2 127.0.0.1 "$p" 2>/dev/null; then
     echo "error: something already listens on port $p (SMOKE_CDP_PORT, SMOKE_PAGES_PORT)" >&2

@@ -1,0 +1,296 @@
+diff --git a/content/browser/renderer_host/media/media_stream_manager.cc b/content/browser/renderer_host/media/media_stream_manager.cc
+index 2326a2d..0ac21fd 100644
+--- a/content/browser/renderer_host/media/media_stream_manager.cc
++++ b/content/browser/renderer_host/media/media_stream_manager.cc
+@@ -560,7 +560,13 @@ class MediaStreamManager::DeviceRequest {
+         RequestTypeToString(request_type)));
+   }
+ 
+-  virtual ~DeviceRequest() = default;
++  virtual ~DeviceRequest() {
++    if (solara_capture_control) {
++      solara_capture_control->End();
++    }
++  }
++
++  scoped_refptr<SolaraCaptureControl> solara_capture_control;
+ 
+   void set_request_type(MediaStreamRequestType type) { request_type_ = type; }
+   MediaStreamRequestType request_type() const { return request_type_; }
+@@ -2701,8 +2707,33 @@ void MediaStreamManager::PostRequestToUI(
+     request->ui_proxy = MediaStreamUIProxy::Create();
+   }
+ 
++  auto ui_request = request->DetachUIRequest();
++  if (request->request_type() == blink::MEDIA_GENERATE_STREAM &&
++      video_type == MediaStreamType::GUM_DESKTOP_VIDEO_CAPTURE &&
++      !ui_request->requested_video_device_ids.empty() &&
++      ui_request->requested_video_device_ids.front().starts_with(
++          kSolaraCaptureReceiptPrefix)) {
++    request->solara_capture_control =
++        base::MakeRefCounted<SolaraCaptureControl>(base::BindPostTask(
++            GetIOThreadTaskRunner({}),
++            base::BindOnce(
++                [](const base::WeakPtr<MediaStreamManager>& manager,
++                   const std::string& label, bool active) {
++                  if (!manager) {
++                    return;
++                  }
++                  if (active) {
++                    manager->StopMediaStreamFromBrowser(label);
++                  } else {
++                    manager->CancelRequest(label);
++                  }
++                },
++                weak_ptr_factory_.GetWeakPtr(), label)));
++    ui_request->solara_capture_control = request->solara_capture_control;
++  }
++
+   request->ui_proxy->RequestAccess(
+-      request->DetachUIRequest(),
++      std::move(ui_request),
+       base::BindOnce(&MediaStreamManager::HandleAccessRequestResponse,
+                      base::Unretained(this), label,
+                      output_parameters.value_or(
+@@ -3261,7 +3292,22 @@ void MediaStreamManager::PanTiltZoomPermissionChecked(
+       label.c_str(), request->requester_id,
+       RequestTypeToString(request->request_type()), pan_tilt_zoom_allowed));
+ 
+-  request->PanTiltZoomPermissionChecked(label, pan_tilt_zoom_allowed);
++  if (request->solara_capture_control) {
++    if (base::CommandLine::ForCurrentProcess()->HasSwitch(
++            "solara-test-hold-capture-start")) {
++      request->solara_capture_control->HoldStartForTesting();
++      return;
++    }
++    if (!request->solara_capture_control->CommitStart(base::BindOnce(
++            &DeviceRequest::PanTiltZoomPermissionChecked,
++            base::Unretained(request), label, pan_tilt_zoom_allowed))) {
++      CancelRequest(label);
++      return;
++    }
++    OnStreamStarted(label);
++  } else {
++    request->PanTiltZoomPermissionChecked(label, pan_tilt_zoom_allowed);
++  }
+ 
+   if (request->IsGetAllScreensMedia()) {
+     return;
+@@ -3536,8 +3582,11 @@ void MediaStreamManager::HandleRequestDone(const std::string& label,
+       OnStreamStarted(label);
+       break;
+     case blink::MEDIA_GENERATE_STREAM: {
++      const bool wait_for_capture_start = !!request->solara_capture_control;
+       FinalizeGenerateStreams(label, request);
+-      OnStreamStarted(label);
++      if (!wait_for_capture_start) {
++        OnStreamStarted(label);
++      }
+       break;
+     }
+     case blink::MEDIA_GET_OPEN_DEVICE: {
+@@ -3696,6 +3745,12 @@ void MediaStreamManager::HandleAccessRequestResponse(
+     return;
+   }
+   DeviceRequest* const request = request_it->second.get();
++  if (request->solara_capture_control &&
++      request->solara_capture_control->state() ==
++          SolaraCaptureControl::State::kEnded) {
++    CancelRequest(request_it);
++    return;
++  }
+   request->is_allowed_while_screen_locked = is_allowed_while_screen_locked;
+ 
+   SendLogMessage(base::StringPrintf(
+diff --git a/content/browser/renderer_host/media/media_stream_ui_proxy.cc b/content/browser/renderer_host/media/media_stream_ui_proxy.cc
+index 52dbd9e..29aa899 100644
+--- a/content/browser/renderer_host/media/media_stream_ui_proxy.cc
++++ b/content/browser/renderer_host/media/media_stream_ui_proxy.cc
+@@ -117,6 +117,7 @@ class MediaStreamUIProxy::Core {
+ 
+   base::WeakPtr<MediaStreamUIProxy> proxy_;
+   std::unique_ptr<MediaStreamUI> ui_;
++  scoped_refptr<SolaraCaptureControl> solara_capture_control_;
+ 
+   bool tests_use_fake_render_frame_hosts_;
+   const raw_ptr<RenderFrameHostDelegate> test_render_delegate_;
+@@ -147,6 +148,10 @@ void MediaStreamUIProxy::Core::RequestAccess(
+     std::unique_ptr<MediaStreamRequest> request) {
+   CHECK_CURRENTLY_ON(BrowserThread::UI, base::NotFatalUntil::M155);
+ 
++  if (request->solara_capture_control) {
++    solara_capture_control_ = request->solara_capture_control;
++  }
++
+   // TODO(crbug.com/379869738) Remove FromUnsafeValue.
+   RenderFrameHostDelegate* render_delegate = GetRenderFrameHostDelegate(
+       ChildProcessId::FromUnsafeValue(request->render_process_id),
+@@ -197,8 +202,11 @@ void MediaStreamUIProxy::Core::OnStarted(
+     std::vector<DesktopMediaID> screen_share_ids) {
+   CHECK_CURRENTLY_ON(BrowserThread::UI, base::NotFatalUntil::M155);
+ 
+-  if (!ui_)
++  if (!ui_ || (solara_capture_control_ &&
++               solara_capture_control_->state() ==
++                   SolaraCaptureControl::State::kEnded)) {
+     return;
++  }
+ 
+   MediaStreamUI::SourceCallback device_change_cb;
+   if (has_source_callback) {
+diff --git a/content/public/browser/media_stream_request.cc b/content/public/browser/media_stream_request.cc
+index f2ede1e..ed92a11 100644
+--- a/content/public/browser/media_stream_request.cc
++++ b/content/public/browser/media_stream_request.cc
+@@ -4,8 +4,91 @@
+ 
+ #include "content/public/browser/media_stream_request.h"
+ 
++#include <utility>
++
+ namespace content {
+ 
++SolaraCaptureControl::SolaraCaptureControl(
++    base::OnceCallback<void(bool)> stop)
++    : stop_(std::move(stop)) {}
++
++SolaraCaptureControl::~SolaraCaptureControl() = default;
++
++void SolaraCaptureControl::SetChangeCallback(base::RepeatingClosure changed) {
++  base::AutoLock lock(lock_);
++  changed_ = std::move(changed);
++}
++
++void SolaraCaptureControl::Cancel() {
++  base::OnceCallback<void(bool)> stop;
++  base::RepeatingClosure changed;
++  bool was_active;
++  {
++    base::AutoLock lock(lock_);
++    if (state_ == State::kEnded) {
++      return;
++    }
++    was_active = state_ == State::kActive;
++    state_ = State::kEnded;
++    stop = std::move(stop_);
++    changed = changed_;
++  }
++  if (stop) {
++    std::move(stop).Run(was_active);
++  }
++  if (changed) {
++    changed.Run();
++  }
++}
++
++void SolaraCaptureControl::End() {
++  base::RepeatingClosure changed;
++  {
++    base::AutoLock lock(lock_);
++    if (state_ == State::kEnded) {
++      return;
++    }
++    state_ = State::kEnded;
++    stop_.Reset();
++    changed = changed_;
++  }
++  if (changed) {
++    changed.Run();
++  }
++}
++
++bool SolaraCaptureControl::CommitStart(base::OnceClosure start) {
++  base::RepeatingClosure changed;
++  {
++    base::AutoLock lock(lock_);
++    if (state_ != State::kStarting) {
++      return false;
++    }
++    state_ = State::kActive;
++    std::move(start).Run();
++    changed = changed_;
++  }
++  if (changed) {
++    changed.Run();
++  }
++  return true;
++}
++
++void SolaraCaptureControl::HoldStartForTesting() {
++  base::AutoLock lock(lock_);
++  waiting_for_start_ = true;
++}
++
++bool SolaraCaptureControl::IsWaitingForStartForTesting() const {
++  base::AutoLock lock(lock_);
++  return state_ == State::kStarting && waiting_for_start_;
++}
++
++SolaraCaptureControl::State SolaraCaptureControl::state() const {
++  base::AutoLock lock(lock_);
++  return state_;
++}
++
+ MediaStreamRequest::MediaStreamRequest(
+     int render_process_id,
+     int render_frame_id,
+diff --git a/content/public/browser/media_stream_request.h b/content/public/browser/media_stream_request.h
+index 5ee3018..06ecdf1 100644
+--- a/content/public/browser/media_stream_request.h
++++ b/content/public/browser/media_stream_request.h
+@@ -6,8 +6,11 @@
+ #define CONTENT_PUBLIC_BROWSER_MEDIA_STREAM_REQUEST_H_
+ 
+ #include <memory>
++#include <string_view>
+ 
+-#include "base/functional/callback_forward.h"
++#include "base/functional/callback.h"
++#include "base/memory/ref_counted.h"
++#include "base/synchronization/lock.h"
+ #include "build/build_config.h"
+ #include "content/common/content_export.h"
+ #include "content/public/browser/desktop_media_id.h"
+@@ -19,6 +22,33 @@
+ 
+ namespace content {
+ 
++inline constexpr std::string_view kSolaraCaptureReceiptPrefix = "solara-capture:";
++
++class CONTENT_EXPORT SolaraCaptureControl
++    : public base::RefCountedThreadSafe<SolaraCaptureControl> {
++ public:
++  enum class State { kStarting, kActive, kEnded };
++
++  explicit SolaraCaptureControl(base::OnceCallback<void(bool)> stop);
++  void SetChangeCallback(base::RepeatingClosure changed);
++  void Cancel();
++  void End();
++  bool CommitStart(base::OnceClosure start);
++  void HoldStartForTesting();
++  bool IsWaitingForStartForTesting() const;
++  State state() const;
++
++ private:
++  friend class base::RefCountedThreadSafe<SolaraCaptureControl>;
++  ~SolaraCaptureControl();
++
++  mutable base::Lock lock_;
++  State state_ GUARDED_BY(lock_) = State::kStarting;
++  bool waiting_for_start_ GUARDED_BY(lock_) = false;
++  base::OnceCallback<void(bool)> stop_ GUARDED_BY(lock_);
++  base::RepeatingClosure changed_ GUARDED_BY(lock_);
++};
++
+ // Represents a request for media streams (audio/video).
+ // TODO(vrk,justinlin,wjia): Figure out a way to share this code cleanly between
+ // vanilla WebRTC, Tab Capture, and Pepper Video Capture. Right now there is
+@@ -43,6 +73,8 @@ struct CONTENT_EXPORT MediaStreamRequest {
+ 
+   ~MediaStreamRequest();
+ 
++  scoped_refptr<SolaraCaptureControl> solara_capture_control;
++
+   // This is the render process id for the renderer associated with generating
+   // frames for a MediaStream. Any indicators associated with a capture will be
+   // displayed for this renderer.

@@ -7,6 +7,12 @@ import { join } from "node:path";
 const root = new URL("../../../../../", import.meta.url);
 export const source = (path) => readFileSync(new URL(path, root), "utf8");
 
+export function desktopCaptureDeclarations() {
+  const header = source("engine/solaracore/src/solara/core/public/SolaraCore.h");
+  return [...header.matchAll(/SOLARACORE_EXPORT\s+[^;]*?\bac_desktop_capture_(?:answer|state)_v1\([^;]+;/g)]
+    .map(([signature]) => signature.replace("SOLARACORE_EXPORT", 'extern "C"')).join("\n");
+}
+
 export function declaration(text, signature) {
   const start = text.indexOf(signature);
   assert.notEqual(start, -1, `missing production declaration: ${signature}`);

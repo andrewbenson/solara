@@ -56,7 +56,8 @@ export function DeviceChooser({ tabId, left, top }: { tabId: string; left: numbe
   const guard = usePromptInputGuard(chooser?.id);
   if (!chooser) return null;
   const scanning = chooser.bothButtonsEnabled;
-  const valid = scanning || (selected !== null && selected < chooser.options.length);
+  const selectedIndex = chooser.options.findIndex((option, index) => (option.optionId ?? index) === selected);
+  const valid = scanning || selectedIndex >= 0;
   const choose = guard((index: number | null = selected) => {
     if (scanning) return void selectDevice(chooser.id, -1);
     if (index !== null) void selectDevice(chooser.id, index);
@@ -70,7 +71,7 @@ export function DeviceChooser({ tabId, left, top }: { tabId: string; left: numbe
           id: chooser.id,
           title: chooser.title,
           icon: chooser.showSignal || scanning ? "dot.radiowaves.left.and.right" : "cable.connector",
-          options: chooser.options.map((o) => ({ name: o.name, detail: o.connected ? "Connected" : o.paired ? "Paired" : null, signal: chooser.showSignal ? o.signal : -1 })),
+          options: chooser.options.map((o, index) => ({ optionId: o.optionId ?? index, name: o.name, detail: o.connected ? "Connected" : o.paired ? "Paired" : null, signal: chooser.showSignal ? o.signal : -1 })),
           selected,
           scanning,
           refreshing: chooser.refreshing,

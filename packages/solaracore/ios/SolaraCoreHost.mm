@@ -1143,6 +1143,14 @@ static void StartEarlyWindow() {
   solaracore_host::WithProfile(profile, ^(SolaraCoreProfile *loaded) { completion(loaded != nil); });
 }
 
++ (BOOL)removeDefaultProfilePasskeysIfAllowed:(BOOL (^)(void))deletionAllowed {
+  if (gSafeMode || !deletionAllowed()) return NO;
+  NSDictionary *location = DeletionLocation(@"");
+  SolaraCoreEngine *engine = SolaraCoreEngine.sharedEngine;
+  return location && [engine respondsToSelector:@selector(removeProfilePasskeysAtPath:)] &&
+      [engine removeProfilePasskeysAtPath:location[@"path"]];
+}
+
 + (void)deleteProfileData:(NSString *)profile deletionAllowed:(BOOL (^)(void))deletionAllowed completion:(void (^)(NSArray<NSString *> *))completion {
   if (gSafeMode) return completion(@[ @"safe mode" ]);
   if ([ScheduledProfileDeletions() containsObject:profile]) return completion(@[ @"Chromium deletion pending restart" ]);
@@ -1153,7 +1161,9 @@ static void StartEarlyWindow() {
   }
   SolaraCoreEngine *engine = SolaraCoreEngine.sharedEngine;
   SolaraCoreProfile *p = solaracore_host::LoadedProfile(profile);
-  if (!profile.length || ![engine respondsToSelector:@selector(deleteProfile:completion:)]) return completion(@[ @"data" ]);
+  if (!profile.length || ![engine respondsToSelector:@selector(deleteProfile:deletionAllowed:completion:)] ||
+      ![engine respondsToSelector:@selector(removeProfilePasskeysAtPath:)])
+    return completion(@[ @"Chromium Touch ID passkey cleanup unavailable" ]);
   if (![engine respondsToSelector:@selector(fenceNotificationsForProfileDeletionAtPath:completion:)])
     return completion(@[ @"notification deletion admission unavailable" ]);
   if (!deletionAllowed()) return completion(@[ @"live profile filesystem identity" ]);
@@ -1172,6 +1182,10 @@ static void StartEarlyWindow() {
     NSString *path = location[@"path"];
     if (!loaded) loaded = ChromeProfileAtPath(engine, path);
     if (!loaded) {
+      if (![engine removeProfilePasskeysAtPath:path]) {
+        [DeletedProfiles() removeObject:profile];
+        return completion(@[ @"Chromium Touch ID passkeys" ]);
+      }
       [NSFileManager.defaultManager removeItemAtPath:path error:nil];
       NSError *inspectionError = nil;
       NSDictionary *remaining = [NSFileManager.defaultManager attributesOfItemAtPath:path error:&inspectionError];
@@ -1185,14 +1199,16 @@ static void StartEarlyWindow() {
       return completion(@[ @"refused profile path" ]);
     }
     [ScheduledProfileDeletions() addObject:profile];
-    [engine deleteProfile:loaded completion:^(BOOL deleted) {
-      if (deleted) {
+    [engine deleteProfile:loaded deletionAllowed:^BOOL {
+      return deletionAllowed() && [DeletionLocation(profile) isEqualToDictionary:location];
+    } completion:^(NSString *failure) {
+      if (!failure) {
         [Profiles() removeObjectForKey:profile];
         completion(@[ @"Chromium deletion pending restart" ]);
       } else {
         [ScheduledProfileDeletions() removeObject:profile];
         [DeletedProfiles() removeObject:profile];
-        completion(@[ @"data" ]);
+        completion(@[ failure ]);
       }
     }];
   };
@@ -1260,6 +1276,10 @@ static void StartEarlyWindow() {
   return [tab respondsToSelector:@selector(tabId)] ? tab.tabId : -1;
 }
 
++ (NSDictionary<NSString *, id> *)displayCaptureState:(int)browserId {
+  return [SolaraCoreEngineBridge displayCaptureStateForTab:solaracore_host::TabWithBrowserId(browserId)];
+}
+
 + (BOOL)stopCapture:(int)browserId {
   SolaraCoreTab *tab = solaracore_host::TabWithBrowserId(browserId);
   return [tab respondsToSelector:@selector(stopCapture)] && [tab stopCapture];
@@ -1287,7 +1307,10 @@ static void StartEarlyWindow() {
 }
 
 + (void)deviceChooser:(int)chooserId select:(int)index {
-  if ([SolaraCoreEngine respondsToSelector:@selector(selectDevice:index:)]) [SolaraCoreEngine selectDevice:chooserId index:index];
+  if ([SolaraCoreEngine respondsToSelector:@selector(selectDevice:optionId:)])
+    [SolaraCoreEngine selectDevice:chooserId optionId:index];
+  else if ([SolaraCoreEngine respondsToSelector:@selector(selectDevice:index:)])
+    [SolaraCoreEngine selectDevice:chooserId index:index];
 }
 
 + (void)deviceChooser:(int)chooserId action:(NSString *)action {

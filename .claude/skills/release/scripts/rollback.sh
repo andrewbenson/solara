@@ -22,7 +22,12 @@ trap cleanup EXIT
 
 copy() {
   ditto "$1" "$2"
-  /usr/libexec/PlistBuddy -c "Set :CFBundleIdentifier $test_id" "$2/Contents/Info.plist"
+  local info="$2/Contents/Info.plist"
+  if plutil -extract CrProductDirName raw "$info" >/dev/null 2>&1; then
+    "$here/check-installed-data-dir.sh" "$2"
+    plutil -replace CrProductDirName -string "$test_id/Chromium" "$info"
+  fi
+  /usr/libexec/PlistBuddy -c "Set :CFBundleIdentifier $test_id" "$info"
   codesign --force --deep --sign - "$2" 2>/dev/null
 }
 copy "$old" "$work/old/Solara.app"

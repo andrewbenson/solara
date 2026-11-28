@@ -2,6 +2,7 @@ import Foundation
 
 enum SolaraCoreHost {
   static var safeMode = false
+  static func removeDefaultProfilePasskeys(deletionAllowed: () -> Bool) -> Bool { deletionAllowed() }
   static var dataDirectory: String { ProcessInfo.processInfo.environment["TMPDIR"]! }
   static func deleteProfileData(_ profile: String, deletionAllowed: () -> Bool, completion: ([String]) -> Void) { completion([]) }
 }

@@ -42,7 +42,7 @@ import assert from "node:assert/strict";
 import { assertNotificationAuthorizationLog } from "./notification-authorization-log.mjs";
 import { cpSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { createServer } from "node:http";
-import { networkInterfaces, tmpdir } from "node:os";
+import { tmpdir } from "node:os";
 import { createServer as createHttpsServer } from "node:https";
 import { basename, join, resolve } from "node:path";
 import { X509Certificate, createHash, createSign, generateKeyPairSync, randomUUID } from "node:crypto";
@@ -56,7 +56,7 @@ const usesPageA = [
   "cmd-click", "evaluate", "tab-strips", "tab-switch", "status-text", "load-error", "chrome-strings",
   "tab-memory", "tab-cpu", "cli-tabs-memory", "context-menu-search", "duplicate-and-reopen", "device-chooser", "bluetooth-chooser",
   "bluetooth-settings", "cast-dialog", "cast-routes", "theme-commit", "theme-modern-colors", "user-selection",
-  "password-prompt", "screen-share-activation", "screen-share-picker", "tab-capture", "share-instead-two-captures", "share-bar-layout",
+  "password-prompt", "screen-share-activation", "screen-share-picker", "screen-share-stop-startup", "screen-share-handoff", "tab-capture", "share-instead-two-captures", "share-bar-layout",
   "restore-after-close", "discard-outcomes", "sleep-eligibility", "keep-awake-sites", "sleep-pinned-capture", "native-tab-sleep", "capture-picture", "unresponsive", "permission-dismissed", "permission-status-detached",
   "save-page", "activate-request", "extension-popup-and-panel", "extension-popup-window", "extension-popup-native-frame", "extension-popup-rail-field", "print-preview",
   "extension-prompts", "extension-prompt-closed", "extension-sheet-native", "traffic-lights-after-profile-switch", "extension-configure",
@@ -702,7 +702,7 @@ function startNotificationWatch() {
 }
 
 process.env.SOLARA_CHROMIUM_SWITCHES = `--force-color-profile=srgb --solara-test-media-route-provider --disable-media-route-providers-for-test --solara-test-bluetooth-chooser --solara-test-browser-lifetime ${process.env.SOLARA_CHROMIUM_SWITCHES ?? ""}`.trim();
-process.env.SOLARA_CHROMIUM_SWITCHES += ` --host-resolver-rules=${["ib.adnxs.com", "securepubads.g.doubleclick.net", "pagead2.googlesyndication.com", "adpage.test"]
+process.env.SOLARA_CHROMIUM_SWITCHES += ` --host-resolver-rules=${["ib.adnxs.com", "securepubads.g.doubleclick.net", "pagead2.googlesyndication.com", "adpage.test", "popup-origin.test"]
   .map((host) => `MAP ${host} 127.0.0.1:${server.address().port}`).concat([`one.${siteDataDomain}`, `two.${siteDataDomain}`, ...siteDataSecureHosts].map((host) => `MAP ${host} 127.0.0.1:${tlsServer.address().port}`)).join(", ")}`;
 process.env.SOLARA_CHROMIUM_SWITCHES += ` --apps-gallery-update-url=${base}/webstore/crx`;
 process.env.SOLARA_CHROMIUM_SWITCHES += ` --ignore-certificate-errors-spki-list=${tlsSpki}`;
@@ -964,6 +964,11 @@ const openTab = async (url, title, background = false) => {
   return tab;
 };
 const closeTab = (id) => evalApp(`ac.store.getState().closeTab("${id}"); return true`);
+const personalWindow = () => evalApp(`return Object.values(ac.store.getState().windows).find((w) => !w.incognito && w.kind !== "small" && w.profileId === "default")?.id ?? null`);
+const showPersonalProfile = async () => {
+  mainWindow = await personalWindow() ?? await evalApp(`return ac.actions.openWindow({ profileId: "default" });`);
+  await until("Personal shown in the fixture window", async () => (await state()).profileId === "default", 10000);
+};
 const shownAndMounted = async (id) => {
   await evalApp(`ac.actions.switchToTab(${JSON.stringify(id)}); return true`);
   await until(`${id}'s WebView`, () => evalApp(`return !!ac.webviews.get(${JSON.stringify(id)})`), 15000);
@@ -1888,8 +1893,9 @@ try {
   await check("tab-keys-from-page", async () => {
     const s = await state();
     const ctrlTab = await evalApp(`return ac.shell.devKeyEquivalent("${s.windowId}", { key: "\t", keyCode: 48, modifiers: ["control"], focus: "page" })`);
-    if (!ctrlTab.fired?.some((f) => f.command === "tabSwitcher")) throw new Error(`⌃Tab: ${JSON.stringify(ctrlTab)}`);
-    await evalApp(`ac.switcher.cancelSwitcher(); return true`);
+    if (!ctrlTab.fired?.some((f) => f.command === "nextTab")) throw new Error(`⌃Tab: ${JSON.stringify(ctrlTab)}`);
+    await until("⌃Tab selected the next tab", async () => (await state()).active !== s.active);
+    await shownAndMounted(s.active);
     const next = await evalApp(`return ac.shell.devKeyEquivalent("${s.windowId}", { key: "}", keyCode: 30, modifiers: ["command", "shift"], focus: "page" })`);
     const after = await until("the next tab", async () => {
       const n = await state();
@@ -2057,6 +2063,8 @@ try {
     try {
       const before = (await chooserEvents()).length;
       const chooser = await bluetoothChooser(false);
+      const initial = (await evalApp(`return globalThis.__acChooser`)).findLast((c) => c.id === chooser.id && c.open && c.options?.length);
+      assert.ok(initial, "initial chooser options");
       const sent = (await evalApp(`return globalThis.__acChooser`)).length;
       await promptAnswer(first.id, "deviceChooser", chooser.id, "refresh");
       const rescan = await until("Chrome's rescan", async () => (await chooserEvents()).slice(before).find((e) => e.event === "rescan") ?? null, 5000);
@@ -2064,7 +2072,14 @@ try {
         const list = await evalApp(`return globalThis.__acChooser`);
         return list.slice(sent).find((c) => c.open && c.options?.length && !c.refreshing) ?? null;
       }, 5000);
-      await promptAnswer(first.id, "deviceChooser", chooser.id, "select", "0");
+      const staleOption = initial.options[0].optionId;
+      const liveOption = refreshed.options[0].optionId;
+      assert.ok(Number.isInteger(staleOption) && Number.isInteger(liveOption));
+      assert.notEqual(staleOption, liveOption);
+      await chromeUI(`selectDevice(${chooser.id}, ${staleOption}).then(() => true)`);
+      assert.equal((await chooserEvents()).slice(before).some((e) => e.event === "selected"), false);
+      assert.equal((await chooserOf(first.id))?.id, chooser.id);
+      await promptAnswer(first.id, "deviceChooser", chooser.id, "select", String(liveOption));
       const selected = await until("the pick answered", async () => (await chooserEvents()).slice(before).find((e) => e.event === "selected") ?? null, 5000);
       await chooserGone();
       if (selected.device !== "ac-test-device") throw new Error(`picked ${selected.device}`);
@@ -2166,9 +2181,9 @@ try {
     await shownAndMounted(first.id);
     const routesNow = async () => Object.values((await castState()).routes ?? {}).flat();
     const dialogNow = () => castDialog(first.id);
-    const castButton = () => evalApp(`return globalThis.expo.modules.SolaraToolbar.extensionToolbar(JSON.stringify({
-      windowId: ${JSON.stringify(mainWindow)}, tabId: ${JSON.stringify(first.id)}
-    })).then(JSON.parse).then((bar) => bar.buttons?.some((button) => button.id === "ext-cast") ?? false);`);
+    const castButton = () => evalApp(`return globalThis.expo.modules.SolaraToolbar.devToolbar(
+      ${JSON.stringify(mainWindow)}, ${JSON.stringify(first.id)}
+    ).then(JSON.parse).then((bar) => bar.extensions.some((button) => button.id === "ext-cast"));`);
     const openDialog = async () => {
       if (!(await castToggle(mainWindow, first.id))) throw new Error("native Cast refused the page");
       return until("the test sink in the native Cast dialog", async () => {
@@ -2374,6 +2389,7 @@ try {
           return value?.wrapper ? value : null;
         }, 10000);
         assert.equal(ready.policy, mode !== "denied", `${mode} permissions policy`);
+        await until(`${mode} started without transient activation`, async () => (await probe())?.active === false, 8000);
         const requests = async () => (await eventsOf(tab.id)).filter((event) => event.name === "displayMediaRequest");
         const beforeConstruction = (await requests()).length;
         await run('shareCommand("construct"); true');
@@ -2387,12 +2403,16 @@ try {
         results.push({ mode, command: "construct", ...constructed, picker: false });
         const refused = async (command, expected) => {
           const before = (await requests()).length;
-          const serial = (await probe()).serial;
+          const initial = await probe();
           await run(`shareCommand(${JSON.stringify(command)}); true`);
+          let observed;
           const result = await until(`${mode} ${command} refusal`, async () => {
-            const value = await probe();
-            return value?.serial > serial && value.outcome !== "pending" ? value : null;
-          }, 3000);
+            observed = await probe();
+            return observed?.serial > initial.serial && observed.outcome !== "pending" ? observed : null;
+          }, 3000).catch(async (error) => {
+            const picker = await requests().catch(() => []);
+            throw new Error(`${error.message}; before: ${JSON.stringify(initial)}; observed: ${JSON.stringify(observed)}; new picker requests: ${JSON.stringify(picker.slice(before))}`);
+          });
           assert.equal(result.outcome, expected, `${mode} ${command}`);
           assert.equal(result.requestedActive, false, `${mode} ${command} had no activation`);
           await sleep(250);
@@ -2460,6 +2480,138 @@ try {
       return { sources: Array.isArray(request.payload.sources) ? request.payload.sources.length : request.payload.sources, sourceId: String(sourceId).slice(0, 40), live };
     } finally {
       await closeTab(target.id);
+    }
+  });
+
+  await check("screen-share-stop-startup", async () => {
+    const hold = process.env.SOLARA_CHROMIUM_SWITCHES ?? "";
+    const beforeRegistration = hold.includes("--solara-test-hold-capture-reply");
+    if (!beforeRegistration && !hold.includes("--solara-test-hold-capture-start"))
+      return { skipped: "requires a capture startup hold switch in a fresh instance" };
+    const target = await openTab(`${base}/capture-target?stop-startup`, "Capture Target", true);
+    const capturerPage = await openTab(`${base}/capturer?t=StopStartup`, "StopStartup", false);
+    try {
+      await evalApp(`return globalThis.expo.modules.SolaraCEF.setDisplayMediaPicker(true).then(() => true)`);
+      await evalApp(`return ac.webviews.get(${JSON.stringify(capturerPage.id)}).reload()`);
+      await until("capture fixture loaded", async () =>
+        (await state()).tabs.some((tab) => tab.id === capturerPage.id && tab.title === "StopStartup" && !tab.loading));
+      await evalApp(`ac.actions.switchToTab(${JSON.stringify(capturerPage.id)}); return true`);
+      await until("capturer is active", async () => (await state()).active === capturerPage.id);
+      const page = await pageFor(capturerPage.id, "/capturer?t=StopStartup");
+      await until("Solara capture picker installed", async () =>
+        (await cdp(page, "Runtime.evaluate", {
+          expression: "navigator.mediaDevices.getDisplayMedia.__ac === true",
+          returnByValue: true,
+        })).result.value);
+      const id = JSON.stringify(capturerPage.id);
+      const browserId = await browserOf(capturerPage.id);
+      const source = await evalApp(`return ac.webviews.get(${JSON.stringify(target.id)}).mediaCaptureSourceId()`);
+      assert.ok(source, "fixture tab has a source");
+      const snapshot = () => evalApp(`return globalThis.expo.modules.SolaraChromeUI.displayCaptureState(${browserId})`);
+      const stop = () => evalApp(`return globalThis.expo.modules.SolaraChromeUI.stopCapture(${browserId})`);
+      const outcome = () => cdp(page, "Runtime.evaluate", {
+        expression: "window.__cap", returnByValue: true,
+      }).then((r) => r.result.value);
+      const ask = async () => {
+        const previous = (await eventsOf(capturerPage.id)).filter((event) => event.name === "displayMediaRequest").length;
+        await cdp(page, "Runtime.evaluate", { expression: "share()", userGesture: true });
+        await until("picker offer", async () =>
+          (await eventsOf(capturerPage.id)).filter((event) => event.name === "displayMediaRequest").length > previous);
+      };
+      const approve = () => evalApp(`globalThis.acSharePicker.answerDisplayMedia(${id}, ${JSON.stringify(source)}); return true`);
+      const rejected = async () => until("capture rejected without becoming live", async () => {
+        const result = await outcome();
+        assert.notEqual(result, "live");
+        return result && result !== "pending" ? result : null;
+      });
+
+      await ask();
+      assert.equal(await stop(), true);
+      await approve();
+      const before = await rejected();
+      assert.equal((await snapshot()).state, "ended");
+
+      await ask();
+      await approve();
+      if (beforeRegistration) {
+        await until("approved before registration", async () => (await snapshot())?.state === "starting");
+      } else {
+        await until("Chromium ready to publish the stream", async () => (await snapshot())?.waitingForStart);
+      }
+      assert.equal(await outcome(), "pending");
+      assert.equal(await stop(), true);
+      const during = await rejected();
+      assert.equal((await snapshot()).state, "ended");
+      assert.equal((await snapshot()).screen, false);
+      return { before, during };
+    } finally {
+      await closeTab(capturerPage.id);
+      await closeTab(target.id);
+    }
+  });
+
+  await check("screen-share-handoff", async () => {
+    const target = await openTab(`${base}/capture-target?handoff`, "Capture Target", true);
+    const capturerPage = await openTab(`${base}/capturer?t=CaptureHandoff`, "CaptureHandoff", false);
+    const id = JSON.stringify(capturerPage.id);
+    try {
+      await evalApp(`return globalThis.expo.modules.SolaraCEF.setDisplayMediaPicker(true).then(() => true)`);
+      await evalApp(`return ac.webviews.get(${id}).reload()`);
+      await until("handoff fixture loaded", async () =>
+        (await state()).tabs.some((tab) => tab.id === capturerPage.id && tab.title === "CaptureHandoff" && !tab.loading));
+      await evalApp(`ac.actions.switchToTab(${id}); return true`);
+      await until("capturer is active", async () => (await state()).active === capturerPage.id);
+      const page = await pageFor(capturerPage.id, "/capturer?t=CaptureHandoff");
+      await until("Solara capture picker installed", async () =>
+        (await cdp(page, "Runtime.evaluate", {
+          expression: "navigator.mediaDevices.getDisplayMedia.__ac === true",
+          returnByValue: true,
+        })).result.value);
+      const browserId = await browserOf(capturerPage.id);
+      const snapshot = (id) => evalApp(`return globalThis.expo.modules.SolaraChromeUI.displayCaptureState(${id})`);
+      const trackState = (page) => cdp(page, "Runtime.evaluate", {
+        expression: "window.__stream?.getVideoTracks()[0]?.readyState", returnByValue: true,
+      }).then((r) => r.result.value);
+
+      await cdp(page, "Runtime.evaluate", { expression: "share()", userGesture: true });
+      await until("handoff picker", async () =>
+        (await eventsOf(capturerPage.id)).findLast((event) => event.name === "displayMediaRequest"));
+      await evalApp(`return globalThis.acSharePicker.shareTab(${id}, ${JSON.stringify(target.id)}, false)`);
+      await until("live before move", async () => (await trackState(page)) === "live");
+      assert.equal((await snapshot(browserId)).state, "active");
+      const accessEvents = async () => (await eventsOf(capturerPage.id)).filter((event) => event.name === "mediaAccess");
+      const screenAccess = () => evalApp(`return ac.pageState.getState().pages[${id}]?.mediaAccess?.screen === true`);
+      await until("screen access before move", screenAccess);
+      const windowId = await evalApp(`return ac.store.getState().moveTabsToWindow([${id}], null)`);
+      assert.ok(windowId, "move opened a destination window");
+      await until("new window owns capturer", async () =>
+        evalApp(`return ac.store.getState().tabs[${id}]?.windowId === ${JSON.stringify(windowId)}`));
+      const moved = await pageFor(capturerPage.id, "/capturer?t=CaptureHandoff");
+      assert.equal(moved.id, page.id, "the capturer document survived its handoff");
+      const movedBrowser = await browserOf(capturerPage.id);
+      await until("Chromium moved the capturer into the destination window", async () => {
+        const { strips } = await cef("tabStrips()");
+        return strips.some((strip) => strip.appWindow === windowId && strip.tabs.some((tab) => tab.key === capturerPage.id));
+      });
+      await until("capture state restored in moved page", async () =>
+        (await snapshot(movedBrowser))?.state === "active");
+      await until("screen access in the receiving window", screenAccess).catch(async (error) => {
+        throw new Error(`${error.message}; browser ${browserId} → ${movedBrowser}; media events ${JSON.stringify(await accessEvents())}`);
+      });
+      assert.equal(await trackState(moved), "live");
+      const beforeStop = (await accessEvents()).at(-1);
+      assert.equal(await evalApp(`return globalThis.expo.modules.SolaraChromeUI.stopCapture(${movedBrowser})`), true);
+      await until("video track ended", async () => (await trackState(moved)) === "ended");
+      await until("native capture ended", async () => (await snapshot(movedBrowser))?.state === "ended");
+      await until("ended event reached moved page", async () => {
+        const last = (await accessEvents()).at(-1);
+        return last?.payload.screen === false && JSON.stringify(last) !== JSON.stringify(beforeStop) && !(await screenAccess());
+      });
+      return { windowId, active: true, ended: true };
+    } finally {
+      await evalApp(`const s = ac.store.getState(); const w = s.tabs[${id}]?.windowId; if (w && w !== ${JSON.stringify(mainWindow)}) s.closeWindow(w); return true`).catch(() => null);
+      await closeTab(capturerPage.id).catch(() => null);
+      await closeTab(target.id).catch(() => null);
     }
   });
 
@@ -2733,7 +2885,6 @@ try {
   });
 
   await check("restore-after-close", async () => {
-    const shell = "globalThis.expo.modules.SolaraShell";
     const s = (expr) => evalApp(`const s = ac.store.getState(); return ${expr}`);
     const toB = async (tabId, tag) => {
       await until(`A?${tag} loaded`, async () => (await s(`s.tabs["${tabId}"]?.title === "Page A" && !s.live["${tabId}"]?.isLoading && !!ac.webviews.get("${tabId}")`)) || null, 15000);
@@ -2765,26 +2916,31 @@ try {
         await evalApp(`ac.store.getState().closeWindow("${reopened}"); return true`);
       }
     };
-    const closeButton = async (tabId) => {
-      const number = await evalApp(`return globalThis.expo.modules.SolaraCEF.devWindowNumber(${await browserOf(tabId)})`);
-      return evalApp(`return globalThis.expo.modules.SolaraCEF.devWindow(${number}, "close-button")`);
+    const clickClose = async (windowId) => {
+      const described = await evalApp(`return expo.modules.SolaraApp.devWindowLifecycle("inventory", false)`);
+      const window = described.windows.find((window) => window.id === windowId);
+      assert.ok(window, `no AppKit window for ${windowId}`);
+      assert.equal(await cef(`devWindow(${window.number}, "close-button")`), "clicked");
     };
     const warn = await s(`s.settings.warnBeforeClosingWindow`);
     const results = {};
     try {
       results.appCommand = await windowCase("r1", (w) => evalApp(`ac.store.getState().closeWindow("${w}"); return true`));
-      results.closeWarning = await windowCase("r2", async (w, tabId) => {
+      results.closeWarning = await windowCase("r2", async (w) => {
         await evalApp(`ac.store.getState().newTab("${w}", { url: "${base}/c?r2", background: true }); ac.store.getState().updateSettings({ warnBeforeClosingWindow: true }); return true`);
-        await sleep(300);
-        await evalApp(`globalThis.__acConfirm = ${shell}.confirm; ${shell}.confirm = (o) => { globalThis.__acAsked = o.title; return Promise.resolve({ confirmed: true, suppressed: false }); }; return true`);
-        await closeButton(tabId);
-        await until("the close warning", () => evalApp(`return globalThis.__acAsked ?? null`), 5000);
+        await until("two tabs before closing", () => s(`s.windows["${w}"].tabIds.length === 2`));
+        const warning = (action) => evalApp(`return expo.modules.SolaraSettings.devCloseWarning(${JSON.stringify(w)}, "${action}")`);
+        await warning("arm");
+        try {
+          await clickClose(w);
+          assert.equal(await until("the native close warning", () => warning("read"), 5000), "Close 2 tabs?");
+        } finally {
+          await warning("clear");
+        }
       });
-      await evalApp(`${shell}.confirm = globalThis.__acConfirm; return true`);
-      results.nativeClose = await windowCase("r3", async (w, tabId) => {
+      results.nativeClose = await windowCase("r3", async (w) => {
         await evalApp(`ac.store.getState().updateSettings({ warnBeforeClosingWindow: false }); return true`);
-        await sleep(300);
-        await closeButton(tabId);
+        await clickClose(w);
       });
       const tabCase = async (tag, close) => {
         const tab = await openTab(`${base}/a?${tag}`, "Page A", true);
@@ -2835,7 +2991,7 @@ try {
         }
       })();
     } finally {
-      await evalApp(`if (globalThis.__acConfirm) ${shell}.confirm = globalThis.__acConfirm; ac.store.getState().updateSettings({ warnBeforeClosingWindow: ${warn} }); ac.actions.switchToTab("${first.id}"); return true`).catch(() => null);
+      await evalApp(`ac.store.getState().updateSettings({ warnBeforeClosingWindow: ${warn} }); ac.actions.switchToTab("${first.id}"); return true`).catch(() => null);
     }
     const failed = Object.entries(results).filter(([, r]) => !r.canGoBack || !r.back?.startsWith("/a?"));
     if (failed.length) throw new Error(`no Back to A after: ${failed.map(([k, r]) => `${k} ${JSON.stringify(r)}`).join(", ")}`);
@@ -4104,8 +4260,8 @@ try {
   await check("chrome-windows-remove", async () => {
     const installed = await exts(`install(${JSON.stringify(extPath)}, "")`);
     if (installed?.error) throw new Error(installed.error);
-    const worker = await extensionWorker(installed.id, "windows.remove");
     const inWorker = async (expression) => {
+      const worker = await extensionWorker(installed.id, "windows.remove");
       const r = await cdp(worker, "Runtime.evaluate", { expression, awaitPromise: true, returnByValue: true });
       if (r.exceptionDetails) throw new Error(r.exceptionDetails.exception?.description ?? JSON.stringify(r.exceptionDetails));
       return r.result?.value;
@@ -4154,7 +4310,9 @@ try {
         const left = (await storeTabs()).filter((t) => t.windowId === made[0] || ["e?rm-a", "e?rm-b"].some((m) => t.url?.includes(m)));
         return !open && !left.length ? { windowClosed: true, tabsLeft: 0 } : null;
       }, 10000).catch(async (e) => {
-        throw new Error(`${e.message}; store tabs: ${JSON.stringify((await storeTabs()).filter((t) => t.windowId === made[0]))}`);
+        const store = (await storeTabs()).filter((t) => t.windowId === made[0]);
+        const strips = (await cef("tabStrips()").catch(() => null))?.strips.filter((strip) => strip.appWindow === made[0]) ?? [];
+        throw new Error(`${e.message}; removal: ${JSON.stringify(plain)}; store tabs: ${JSON.stringify(store)}; strips: ${JSON.stringify(strips)}`);
       });
       const unload = await remove(["rm-c", "rm-d"], 0, ["rm-c"]);
       const keepOne = await remove(["rm-e", "rm-f"], 1, ["rm-f"]);
@@ -4358,7 +4516,10 @@ try {
             return pages.length === 1 && pages[0].engine === "chromium" && pages[0].ready?.browserId != null && pages[0].navigation?.url === url && pages[0].navigation.isLoading === false ? { page: pages[0], profileId: now.tab.profileId } : null;
           }, 15000);
           const oldToken = tokenOf(original.page);
-          const oldTarget = await pageTarget(`e?${marks[0]}`);
+          const chromiumPinTargets = async () => (await targets()).filter((t) => t.type === "page" && t.url === url);
+          const originalTargets = await chromiumPinTargets();
+          assert.equal(originalTargets.length, 1, "mirroring the pin created extra Chromium pages");
+          const [oldTarget] = originalTargets;
           const oldPageIsLive = async () => (await targets()).some((t) => t.id === oldTarget.id || t.type === "page" && t.url === url);
           const target = await until("the identity Leave page loaded", async () => {
             const found = await pageTarget(`e?${marks[1]}`).catch(() => null);
@@ -4399,7 +4560,10 @@ try {
           }, 15000);
           const newToken = tokenOf(replacement.page);
           if (newToken === oldToken || replacement.page.ready.browserId === original.page.ready.browserId) throw new Error(`identity page token did not change: ${JSON.stringify(replacement)}`);
-          await until("the discarded identity page gone from Chromium", async () => !await oldPageIsLive(), 10000);
+          await until("the discarded identity page gone from Chromium", async () => !await oldPageIsLive(), 10000).catch(async (error) => {
+            const remaining = (await targets()).filter((t) => t.id === oldTarget.id || t.type === "page" && t.url === url);
+            throw new Error(`${error.message}; old target ${oldTarget.id}; remaining ${JSON.stringify(remaining.map(({ id, url }) => ({ id, url })))}`);
+          });
           const verify = (now, holding) => {
             const pages = now.live.filter((p) => p.tabId === ids[0]);
             if (now.sourceOpen || !now.survivorOpen || now.tab?.windowId !== held.tab.windowId || now.tab?.profileId !== original.profileId || now.ids.filter((id) => id === ids[0]).length !== 1 || pages.length !== 1 || tokenOf(pages[0]) !== newToken || now.live.some((p) => tokenOf(p) === oldToken) || now.created !== 1 || now.gone !== 1) throw new Error(`identity replacement leaked or changed: ${JSON.stringify(now)}`);
@@ -5472,32 +5636,25 @@ try {
   });
 
   await check("popup-origin-strip", async () => {
-    const lan = Object.values(networkInterfaces()).flat().find((i) => i?.family === "IPv4" && !i.internal)?.address;
-    if (!lan) throw new Error("no non-loopback IPv4 address to serve an http pop-up from");
-    const plain = createServer((req, res) => {
-      res.writeHead(200, { "content-type": "text/html" });
-      res.end("<!doctype html><title>strip</title>plain http");
-    });
-    await new Promise((r) => plain.listen(0, lan, r));
-    const url = `http://${lan}:${plain.address().port}/strip-page`;
+    const host = "popup-origin.test";
+    const url = `http://${host}:${server.address().port}/strip-page`;
+    await shownAndMounted(first.id);
+    const opener = await pageFor(first.id, `${base}/a`);
+    const popups = async () => (await cef("engineInfo()")).popupWindows;
+    const before = await popups();
+    await cdp(opener, "Runtime.evaluate", { expression: `window.open("${url}", "strip", "width=480,height=360"); true`, userGesture: true });
+    const target = await until("the http pop-up's page", () => pageTarget(url));
     try {
-      await evalApp(`ac.actions.switchToTab("${first.id}"); return true`);
-      const opener = await pageFor(first.id, `${base}/a`);
-      const popups = async () => (await cef(`engineInfo()`)).popupWindows;
-      const before = await popups();
-      await cdp(opener, "Runtime.evaluate", { expression: `window.open("${url}", "strip", "width=480,height=360"); true`, userGesture: true });
-      const t = await until("the http pop-up's page", () => pageTarget("/strip-page"));
       let last = null;
       const strip = await until("the strip marks the http pop-up not secure", async () => {
-        last = (await cef(`engineInfo()`)).popupOrigins.find((o) => o.origin.includes(lan)) ?? null;
+        last = (await cef("engineInfo()")).popupOrigins.find((o) => o.origin.includes(host)) ?? null;
         return last?.symbol === "lock.open.trianglebadge.exclamationmark.fill" ? last : null;
       }, 10000).catch(() => { throw new Error(`strip ${JSON.stringify(last)}`); });
-      await closeFromPage(t);
-      await until("the pop-up closed", async () => ((await popups()) === before ? true : null), 10000);
-      if (strip.description !== "Connection is not secure") throw new Error(`strip ${JSON.stringify(strip)}`);
+      assert.equal(strip.description, "Connection is not secure");
       return strip;
     } finally {
-      plain.close();
+      await closeFromPage(target);
+      await until("the pop-up closed", async () => (await popups()) === before, 10000);
     }
   });
 
@@ -5821,11 +5978,19 @@ try {
     await until("the profile loaded", async () => existsSync(folder), 10000);
     await webKit(`devTouchStore("scratch-delete")`);
     if (!(await webKit(`devStoreExists("scratch-delete")`))) throw new Error("the profile's WebKit store wasn't made");
-    const pending = JSON.stringify(["Chromium deletion pending restart"]);
+    const prefs = join(folder, "Preferences");
+    const secret = (file) => JSON.parse(readFileSync(file, "utf8")).webauthn?.touchid?.metadata_secret;
+    const metadata = await until("loaded profile Touch ID selector persisted", () => existsSync(prefs) && secret(prefs));
+    const refused = ["Chromium Touch ID passkeys"];
     const result = await cef(`deleteProfileData("scratch-delete")`);
-    if (JSON.stringify(result.remaining) !== pending) throw new Error(`a loaded profile's Chromium data should wait for the next launch: ${JSON.stringify(result)}`);
-    const again = await cef(`deleteProfileData("scratch-delete")`);
-    if (JSON.stringify(again.remaining) !== pending) throw new Error(`a second delete while one is pending: ${JSON.stringify(again)}`);
+    assert.deepEqual(result.remaining, refused);
+    assert.deepEqual((await cef(`deleteProfileData("scratch-delete")`)).remaining, refused);
+    assert.ok(secret(prefs) === metadata, "refusal preserved the named profile's Touch ID selector");
+    const unloaded = join(data, "Chromium", "Profile scratch-delete-unloaded");
+    mkdirSync(unloaded);
+    writeFileSync(join(unloaded, "Preferences"), "{}");
+    assert.deepEqual((await cef(`deleteProfileData("scratch-delete-unloaded")`)).remaining, []);
+    assert.equal(existsSync(unloaded), false, "the unloaded profile without a Touch ID selector was removed");
     if (!(await webKit(`deleteProfileData("scratch-delete")`))) throw new Error("the profile's WebKit store wasn't removed");
     if (await webKit(`devStoreExists("scratch-delete")`)) throw new Error("the profile's WebKit store is still on disk");
     await webKit(`devTouchStore("scratch-held")`);
@@ -5834,7 +5999,7 @@ try {
     if (!(await webKit(`devStoreExists("scratch-held")`))) throw new Error("a held WebKit store went missing");
     const shown = (await cef(`chromeWindows()`)).filter((w) => w.visible || w.alpha >= 0).map((w) => w.profile);
     if (shown.includes("scratch-delete")) throw new Error(`a window still shows the deleted profile: ${JSON.stringify(shown)}`);
-    return { ...result, pendingRestart: true, windowProfiles: shown };
+    return { ...result, selectorPreserved: true, unloadedRemoved: true, windowProfiles: shown };
   });
 
   // MARK: Page events
@@ -5963,6 +6128,15 @@ try {
     const again = await ask(2);
     if (again.id === firstAsk.id) throw new Error("the second link reused the first request");
     await decline(again);
+    const stale = await ask("stale");
+    await evalApp(`ac.store.getState().navigate("${first.id}", "${base}/b", { userInitiated: true }); return true`);
+    await until("the unrelated same-origin document", async () =>
+      (await state()).tabs.find((x) => x.id === first.id && x.url === `${base}/b` && !x.loading));
+    await until("the stale external-app prompt cleared", async () => !(await promptState(first.id, "externalApp")), 5000);
+    await cef(`resolveExternalApp(${JSON.stringify(stale.id)}, true, true)`);
+    assert.equal((await cef("devExternalLaunches()")).some((row) => row.url?.includes("solaracore-acceptance-stale")), false);
+    assert.equal((await cef('getExternalAppAllowances("")')).some((row) => row.scheme === "shortcuts"), false);
+    await backToA();
     const third = await ask(3);
     await promptAnswer(first.id, "externalApp", third.id, "open", "remember");
     const launch = await until("the recorded launch", async () =>
@@ -6505,8 +6679,33 @@ try {
       await evalApp(`ac.actions.switchProfile("${mainWindow}", "${home}"); return true`);
       await until("the first profile back", async () => (await state()).profileId === home).catch(() => null);
 
+      const privateWindow = await evalApp(`return ac.actions.openWindow({ incognito: true, url: ${JSON.stringify(`${secureBase}/call?private`)} })`);
+      try {
+        const privateTabs = () => evalApp(`const s = ac.store.getState(); const w = s.windows[${JSON.stringify(privateWindow)}]; return (w?.tabIds ?? []).map((id) => ({ id, url: s.tabs[id]?.url, title: s.tabs[id]?.title, loading: s.live[id]?.isLoading }))`);
+        const callTab = await until("the private call loaded", async () => (await privateTabs()).find((x) => x.url?.includes("/call?private") && x.title === "Call" && !x.loading), 15000);
+        const page = await pageFor(callTab.id, "/call?private");
+        const js = async (e) => (await cdp(page, "Runtime.evaluate", { expression: e, awaitPromise: true, userGesture: true, returnByValue: true })).result.value;
+        await js(`join(${JSON.stringify({ audio: true, video: true })})`);
+        await until("joined in a private window", async () => {
+          const request = await promptState(callTab.id, "permission");
+          if (request) await promptAnswer(callTab.id, "permission", request.id, "accept");
+          return JSON.parse(await js("callState()")).joined ? true : null;
+        }, 10000);
+        const elsewhere = await evalApp(`return ac.store.getState().newTab(${JSON.stringify(privateWindow)}, { url: ${JSON.stringify(`${secureBase}/b?private-away`)} })`);
+        await until("the private window's other tab loaded", async () => (await privateTabs()).find((x) => x.id === elsewhere && !x.loading), 15000);
+        await evalApp(`ac.actions.switchToTab("${callTab.id}"); return true`);
+        await sleep(500);
+        await evalApp(`ac.actions.switchToTab("${elsewhere}"); return true`);
+        out.privateLeave = await until("the private call's document PiP", async () => docPip(callTab.id, true), 8000).then(() => true, () => false);
+        out.privateInPip = await js("callState()").then((x) => JSON.parse(x).inPip, () => null);
+        await evalApp(`return ac.webviews.get("${callTab.id}").exitPictureInPicture()`).catch(() => null);
+      } finally {
+        await evalApp(`ac.store.getState().closeWindow(${JSON.stringify(privateWindow)}); return true`).catch(() => null);
+      }
+
       const failed = !out.leave || !out.inPip.inPip || !out.inPip.tracks.every((x) => x.endsWith(":live")) || !out.back || !out.home.home ||
-        out.videoEntered !== true || !out.callTookOver || !out.videoPausedByTakeover || !out.callKeptPip || !out.micOnly || out.settingOffOpened;
+        out.videoEntered !== true || !out.callTookOver || !out.videoPausedByTakeover || !out.callKeptPip || !out.micOnly || out.settingOffOpened ||
+        !out.privateLeave;
       if (failed) throw new Error(JSON.stringify(out));
       return out;
     } finally {
@@ -6857,7 +7056,9 @@ try {
   const fsEnter = async (tabId, t) => {
     const asked = await fsRequest(t);
     await until("the page in full screen", async () => (await fsFlag(tabId)) && (await fsElement(t)), 6000)
-      .catch((e) => { throw new Error(`${e.message}; requestFullscreen: ${JSON.stringify(asked.result?.value)}`); });
+      .catch(async (error) => {
+        throw new Error(`${error.message}; requestFullscreen: ${JSON.stringify(asked.result?.value)}; page: ${await fsElement(t)}; flag: ${await fsFlag(tabId)}; events: ${JSON.stringify(await fsEvents(tabId))}; window: ${JSON.stringify(await fsWindow(tabId))}`);
+      });
   };
   const fsLeft = (tabId, t, what) => until(what, async () => !(await fsFlag(tabId)) && !(await fsElement(t)), 6000);
   const fsEscape = async (t) => {
@@ -7894,7 +8095,8 @@ try {
     const result = await evalApp(`return globalThis.expo.modules.SolaraCEF.deleteProfileData("")`, 60000);
     const p = await cef(`listPasswords("")`), a = await cef(`listAddresses("")`), z = await cef(`getZoomLevels("")`), o = await cef(`getSiteSettingsOrigins("")`);
     const left = { passwords: p.passwords?.length, addresses: a.addresses?.length, zoom: Object.keys(z).length, origins: o.length };
-    if (result?.remaining?.length || Object.values(left).some(Boolean)) throw new Error(JSON.stringify({ result, left }));
+    assert.deepEqual(left, { passwords: 0, addresses: 0, zoom: 0, origins: 0 });
+    assert.deepEqual(result.remaining, ["Chromium Touch ID passkeys"]);
     return { remaining: result.remaining, left };
   });
 
@@ -8225,11 +8427,13 @@ try {
 
   await check("quit-js-hung", async () => {
     const windowId = await appUp("app-quit-hung.out.log");
+    await evalApp(`ac.store.getState().updateSettings({ warnBeforeQuitting: false }); return expo.modules.SolaraShell.setMenuState({ warnBeforeQuitting: false })`);
+    const from = appLog.join().length;
     const started = Date.now();
-    await evalApp(`ac.shell.devKeyEquivalent("${windowId}", { key: "q", keyCode: 12, modifiers: ["command"], focus: "window" });
-      for (;;) {}`, 1000).catch(() => null);
+    void instance.eval(`ac.shell.devKeyEquivalent("${windowId}", { key: "q", keyCode: 12, modifiers: ["command"], focus: "window" });
+      for (;;) {}`, { timeout: 1000 }).catch(() => null);
     try {
-      const line = await until("the quit alert's log", async () => appLog.join().split("\n").find((l) => l.includes("[shell] quit alert:")) ?? null, Math.max(0, 6000 - (Date.now() - started)));
+      const line = await until("the quit alert's log", async () => appLog.join().slice(from).split("\n").find((l) => l.includes("[shell] quit alert:")) ?? null, 6000);
       const ms = Date.now() - started;
       if (ms > 6000) throw new Error(`the alert came after ${ms} ms`);
       if (exited) throw new Error("the app quit without the answer");
@@ -8346,42 +8550,36 @@ try {
     for (const id of [tabs[0], tabs[2], tabs[1], tabs[3]]) await run(`ac.actions.switchToTab("${id}"); return true`);
     await run(`return ac.store.getState().createSplit(["${tabs[2]}", "${tabs[3]}"])`);
     await run(`ac.store.getState().closeTab("${tabs[3]}"); return true`);
-    const hiding = logLength();
-    await run(`ac.store.getState().toggleSidebar(${W}); return true`, 1500);
-    const hidden = logLength();
+    const describe = () => evalApp(`return expo.modules.SolaraWindowShell.describe(${W}).then(JSON.parse)`);
+    const before = await describe();
+    const dock = async (open) => {
+      await run(`ac.store.getState().toggleSidebar(${W}); return true`, 0);
+      await until(`sidebar ${open ? "opened" : "closed"}`, async () =>
+        evalApp(`return ac.store.getState().windows[${W}]?.sidebarOpen === ${open}`));
+      return until(`sidebar ${open ? "docked" : "away"}`, async () => {
+        const info = await describe();
+        if (!info?.sidebar || info.sidebarDock?.moving) return null;
+        const [x, , width] = info.sidebar;
+        const visible = x + info.sidebarShift + width > 0;
+        return visible === open ? info : null;
+      }, 5000);
+    };
+    const closed = await dock(false);
     await run(`ac.actions.switchToTab("${tabs[0]}"); return true`);
-    const showing = logLength();
-    await run(`ac.store.getState().toggleSidebar(${W}); return true`, 1500);
-    const shown = logLength();
+    const reopened = await dock(true);
+    assert.equal(before.trafficLights.length, 3);
+    assert.deepEqual(closed.trafficLights, before.trafficLights);
+    assert.deepEqual(reopened.trafficLights, before.trafficLights);
     for (const id of [tabs[0], tabs[1], tabs[2]]) await run(`ac.store.getState().closeTab("${id}"); return true`);
     const other = await run(`return ac.actions.openWindow()`);
     await run(`ac.store.getState().closeWindow(${JSON.stringify(other)}); return true`);
-    const log = readFileSync(lightsLog, "utf8");
-    const linesOf = (a, b) => log.slice(a, b).split("\n").filter(Boolean);
-    const sample = (line) => line.match(/ -> (.*?) \| /)?.[1] ?? line;
-    const rest = (a, b) => linesOf(a, b).filter((line) => line.includes(" layout -> ")).slice(-1);
-    const docked = [...linesOf(from, hiding), ...rest(showing, shown), ...linesOf(shown)];
-    const away = [...rest(hiding, hidden), ...linesOf(hidden, showing)];
-    if (!away.length || !rest(showing, shown).length) throw new Error(`no settled layout logged for the sidebar's slides`);
-    const lines = [...docked, ...away];
-    const healthy = (line) => sample(line).endsWith(" hidden=0 alpha=1.00") && !/ _NSTheme\w*Widget set/.test(line);
-    const bad = docked.filter((line) => !sample(line).startsWith("close=(18.0,20.0) ") || !healthy(line));
-    const out = (line) => {
-      const xs = [...sample(line).matchAll(/=\((-?[\d.]+),(-?[\d.]+)\)/g)].map((m) => [Number(m[1]), Number(m[2])]);
-      return xs.length === 3 && xs.every(([x, y]) => x + 14 <= 0 && y === 20);
-    };
-    const window = (line) => line.match(/window=(\d+)/)?.[1];
-    const badAway = away.filter((line) => window(line) === window(docked[0] ?? "") && (!out(line) || !healthy(line)));
-    const moved = [];
-    for (const [phase, set] of [["docked", docked], ["hidden", away]]) {
-      const places = new Map();
-      for (const line of set) places.set(window(line), (places.get(window(line)) ?? new Set()).add(sample(line)));
-      for (const [win, at] of places) if (at.size > 1) moved.push({ phase, window: win, places: [...at] });
-    }
-    if (!lines.some((line) => line.includes(" layout -> "))) throw new Error("no layout pass logged (is SOLARA_TRAFFIC_LIGHTS_LOG set?)");
-    if (bad.length || badAway.length || moved.length)
-      throw new Error(`traffic lights left their spot: ${JSON.stringify({ moved, bad: bad.slice(0, 6), badAway: badAway.slice(0, 6) })}`);
-    return { samples: lines.length, hiddenSamples: away.length, layoutPasses: lines.filter((line) => line.includes(" layout -> ")).length };
+    const lines = readFileSync(lightsLog, "utf8").slice(from).split("\n").filter(Boolean);
+    const samples = lines.map((line) => line.match(/ -> (.*?) \| /)?.[1] ?? line);
+    assert.ok(lines.some((line) => line.includes(" layout -> ")), "no traffic-light layout was logged");
+    const bad = lines.filter((line, i) => samples[i] !== "close=(18.0,20.0) mini=(41.0,20.0) zoom=(64.0,20.0) hidden=0 alpha=1.00"
+      || / _NSTheme\w*Widget set/.test(line));
+    assert.deepEqual(bad.slice(0, 6), []);
+    return { samples: lines.length, closedShift: closed.sidebarShift, reopenedShift: reopened.sidebarShift };
   });
 
   await check("launch-cocoa-args", async () => {
@@ -8403,9 +8601,64 @@ try {
     return { pages: pages.length, argv: argv.slice(argv.indexOf("-NS")) };
   });
 
+  await check("extension-action-defaults-relaunch", async () => {
+    await appUp("app-action-defaults.out.log");
+    await showPersonalProfile();
+    const chromium = Number((await cef("engineInfo()")).chromiumVersion.split(".")[0]);
+    assert.ok(chromium > 0, "Chromium major version");
+    const restoresDefaults = chromium < 158;
+    const dir = join(scratch, "action-defaults-extension");
+    mkdirSync(dir, { recursive: true });
+    writeFileSync(join(dir, "manifest.json"), JSON.stringify({ manifest_version: 3, name: "Action defaults fixture", version: "1.0", action: { default_title: "Manifest action", default_popup: "popup.html" }, background: { service_worker: "worker.js" } }));
+    writeFileSync(join(dir, "popup.html"), "<!doctype html><title>Manifest popup</title>");
+    writeFileSync(join(dir, "worker.js"), "chrome.runtime.onInstalled.addListener(() => {});");
+    const installed = await exts(`install(${JSON.stringify(dir)}, "")`);
+    if (!installed?.id) throw new Error(`install: ${JSON.stringify(installed)}`);
+    const id = installed.id;
+    try {
+      const tab = await openTab(`${base}/e?action-defaults`, "Page E");
+      const shown = () => evalApp(`return expo.modules.SolaraToolbar.devExtensionActionState(${JSON.stringify(tab.id)}, ${JSON.stringify(id)});`);
+      await exts(`configure("${id}", "", { pinned: true })`);
+      const manifest = await until("manifest action state through the watcher", shown);
+      assert.equal(manifest.title, "Manifest action");
+      assert.equal(manifest.popup, `chrome-extension://${id}/popup.html`);
+      assert.equal(manifest.badgeText, "");
+      assert.equal(manifest.icon, "");
+      const worker = await extensionWorker(id, "action.setIcon");
+      const changed = await cdp(worker, "Runtime.evaluate", {
+        expression: `(async () => { const imageData = new ImageData(16, 16); imageData.data.fill(255); await chrome.action.setIcon({ imageData }); await chrome.action.setBadgeText({ text: "SAVED" }); await chrome.action.setTitle({ title: "Programmatic action" }); return true; })()`,
+        awaitPromise: true,
+        returnByValue: true,
+      });
+      assert.equal(changed.result?.value, true, JSON.stringify(changed));
+      await until("programmatic action state through the watcher", async () => {
+        const value = await shown();
+        return value?.badgeText === "SAVED" && value.title === "Programmatic action" && value.icon?.startsWith("data:image/png;base64,") ? value : null;
+      });
+      await stopApp();
+      await appUp("app-action-defaults-relaunch.out.log");
+      const after = await until("action state at startup", async () => {
+        const value = await shown();
+        if (restoresDefaults && (value?.title !== "Programmatic action" || value.badgeText !== "SAVED" || !value.icon?.startsWith("data:image/png;base64,"))) return null;
+        return value;
+      });
+      assert.equal(after.title, restoresDefaults ? "Programmatic action" : "Manifest action");
+      assert.equal(after.popup, `chrome-extension://${id}/popup.html`);
+      assert.equal(after.badgeText, restoresDefaults ? "SAVED" : "");
+      if (restoresDefaults) assert.ok(after.icon?.startsWith("data:image/png;base64,"));
+      else assert.equal(after.icon, "");
+      const browser = await browserOf(tab.id);
+      const states = await evalApp(`return globalThis.expo.modules.SolaraChromeUI.actionStates(${browser}, ["${id}"])`);
+      assert.deepEqual(states[id], after);
+      return { startup: after, savedDefaultsRestored: restoresDefaults, chromium };
+    } finally {
+      await exts(`uninstall("${id}", "")`).catch(() => null);
+    }
+  });
+
   await check("extension-pins-owner-shape", async () => {
     await appUp("app-pins-owner.out.log");
-    mainWindow = await until("a window", async () => (await state()).windowId, 30000);
+    await showPersonalProfile();
     const names = ["Alpha Keeper", "Bravo Notes", "Charlie Helper", "Delta Recorder"];
     const dirs = names.map((name) => {
       const dir = join(scratch, `owner-ext-${name.replace(/\W/g, "")}`);
@@ -8454,10 +8707,10 @@ try {
       }
     }, 90000);
     mainWindow = await until("a window", async () => (await state()).windowId, 30000);
-    const windows = await until("all three windows restored", async () => {
-      const w = await evalApp(`return Object.values(ac.store.getState().windows).filter((w) => !w.incognito).map((w) => w.profileId)`);
-      return w.length >= 3 ? w : null;
-    }, 30000).catch(() => null);
+    const windows = await until("Personal, Work and Play windows restored", async () => {
+      const w = await evalApp(`return Object.values(ac.store.getState().windows).filter((w) => !w.incognito && w.kind !== "small").map((w) => w.profileId)`);
+      return ["default", work, play].every((profile) => w.includes(profile)) ? w : null;
+    }, 30000);
     const firstShown = {};
     for (const [key, p] of Object.entries(profiles)) firstShown[key] = await until(`${key}'s first list in the app`, () => shownPins(p), 20000).catch(() => "never listed");
     await sleep(3000);
@@ -8486,6 +8739,7 @@ try {
 
   await check("extension-pins-after-relaunch", async () => {
     await appUp("app-pins.out.log");
+    await showPersonalProfile();
     const installed = await exts(`install(${JSON.stringify(extPath)}, "")`);
     const listed = async () => {
       const result = await exts(`list("")`);
@@ -8507,13 +8761,14 @@ try {
         }
       }, 90000);
       mainWindow = await until("a window", async () => (await state()).windowId, 30000);
-      const shown = () => evalApp(`return expo.modules.SolaraToolbar.devExtensionCatalog().then(({ lists }) => { const x = Object.values(lists).flat().find((e) => e.id === "${installed.id}"); return x ? { pinned: !!x.pinned } : null; });`);
+      await until("the Personal window restored", personalWindow, 30000);
+      const shown = () => evalApp(`return expo.modules.SolaraToolbar.devExtensionCatalog().then(({ lists }) => { const x = lists[""]?.find((e) => e.id === "${installed.id}"); return x ? { pinned: !!x.pinned } : null; });`);
       await until("the app's first extension list", shown, 20000);
       await sleep(3000);
       const afterRelaunch = await shown();
       const engineAfter = (await listed())?.pinned === true;
       if (!pinnedBefore) throw new Error("the pin didn't take before the relaunch");
-      if (afterRelaunch?.pinned !== true) throw new Error(`the toolbar's list lost the pin after a relaunch: ${JSON.stringify({ afterRelaunch, engineAfter })}`);
+      if (afterRelaunch?.pinned !== true || !engineAfter) throw new Error(`the Personal pin was lost after relaunch: ${JSON.stringify({ afterRelaunch, engineAfter })}`);
       return { pinnedBefore, afterRelaunch, engineAfter };
     } finally {
       await exts(`uninstall("${installed.id}", "")`).catch(() => null);

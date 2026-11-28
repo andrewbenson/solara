@@ -342,16 +342,16 @@ Helium's no-tracking choice stays: no utm_source on store links. Update pings ha
  
 --- a/extensions/common/extension_urls.cc
 +++ b/extensions/common/extension_urls.cc
-@@ -44,7 +44,7 @@
-     "https://developer.chrome.com/docs/extensions/ai/"
-     "build-with-ai#modern_web_guidance";
+@@ -63,7 +63,7 @@
+ const char kChromeWebstoreBaseURL[] = "https://chrome.google.com/webstore";
+ const char kNewChromeWebstoreBaseURL[] = "https://chromewebstore.google.com/";
  const char kChromeWebstoreUpdateURL[] =
 -    "https://update-url-to-be-replaced.qjz9zk";
 +    "https://clients2.google.com/service/update2/crx";
  const char kChromeWebstoreApiURL[] = "https://chromewebstore.googleapis.com/";
  
  const char kAppMenuUtmSource[] = "ext_app_menu";
-@@ -86,6 +86,8 @@
+@@ -101,6 +101,8 @@
  
  GURL GetWebstoreExtensionsCategoryURL() {
    GURL base_url = GetNewWebstoreLaunchURL();
@@ -360,7 +360,7 @@ Helium's no-tracking choice stays: no utm_source on store links. Update pings ha
    return base_url.Resolve("category/extensions");
  }
  
-@@ -94,7 +96,18 @@
+@@ -109,7 +111,18 @@
  }
  
  GURL GetWebstoreItemSnippetURL(const extensions::ExtensionId& extension_id) {
@@ -380,7 +380,7 @@ Helium's no-tracking choice stays: no utm_source on store links. Update pings ha
  }
  
  GURL GetWebstoreBlockStatusURL() {
-@@ -112,6 +125,9 @@
+@@ -127,6 +140,9 @@
  }
  
  GURL GetWebstoreUpdateUrl() {

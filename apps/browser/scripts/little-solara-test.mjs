@@ -19,7 +19,7 @@ a click on the bar's blank part leaves the window alone, and Open in Solara move
 then a relaunch handed a link, as another app hands it (SOLARA_ACCEPT_EXTERNAL_URLS=1, since a hidden instance otherwise
 passes outside links on to another copy), opens it in Little Solara and not the main window, through the early link window
 (the Debug-only engineInfo().earlyLinkWindow says "shown", not the reason it was skipped). The window is the native Little Solara shell:
-its backdrop, bar and RN slots in that order and the bar fed from JS.`);
+its native backdrop and bar sit below the page and overlay slots.`);
   process.exit(2);
 }
 const keep = args.includes("--keep-data");
@@ -48,7 +48,6 @@ const settle = (ms) => new Promise((r) => setTimeout(r, ms));
 const small = () => Object.values(st().windows).find((w) => w.kind === "small") || null;
 const win = (n) => C.chromeWindows().then((ws) => ws.find((w) => w.window === n));
 const act = (n, a) => C.devWindow(n, a);
-const fibers = (name) => acPerf.findFibers(name, 500).filter((f) => !!f.child);
 const centre = (f) => [Math.round(f[0] + f[2] / 2), Math.round(f[1] + f[3] / 2)];
 const click = (id, n, p) => ac.shell.devSetPointer(id, { x: p[0], y: p[1] }).then(() => act(n, "mouse:moved:" + p[0] + "," + p[1])).then(() => settle(60))
   .then(() => act(n, "mouse:down:" + p[0] + "," + p[1])).then(() => settle(60)).then(() => act(n, "mouse:up:" + p[0] + "," + p[1]));
@@ -112,16 +111,14 @@ try {
 
     const info = await until("the shell's bar", `return M.describeLittle(${JSON.stringify(little.id)}).then(JSON.parse).then((d) => d && d.barShown && d.backdrop ? d : null);`);
     const slots = info.slots.map(([slot]) => slot).join(",");
-    if (slots !== "backdrop,bar,react") throw new Error(`slots ${slots}`);
+    if (slots !== "backdrop,bar,react,overlay") throw new Error(`slots ${slots}`);
     const [, , w, h] = info.bounds;
     if (!near(info.card, [6, 38, w - 12, h - 44])) throw new Error(`card ${info.card} in ${info.bounds}`);
     if (!near(info.bar, [0, 0, w, 38])) throw new Error(`bar ${info.bar}`);
     if (info.blankBarHit !== "SolaraUI.LittleSolaraDragStrip") throw new Error(`a click on the bar's blank part reaches ${info.blankBarHit}, not the drag strip`);
     if (info.reactFill !== null) throw new Error(`the RN root keeps its fill over the backdrop and bar: ${info.reactFill}`);
-    const bars = await run(`return [acPerf.findFibers("ShellLittleSolaraBar", 5).length, fibers("LittleSolaraBar").length];`);
-    if (bars.join() !== "1,0") throw new Error(`JS bars (shell, hosted) ${bars}`);
-    const drawn = await run(`return acPerf.findFibers("ShellLittleSolaraBar", 5).filter((f) => !!f.child).length;`);
-    if (drawn) throw new Error("the shell's JS bar still mounts RN views");
+    const bars = await run(`return ["ShellLittleSolaraBar", "LittleSolaraBar", "NativePanelHost"].flatMap((name) => acPerf.findFibers(name, 20)).filter((fiber) => { for (let parent = fiber; parent; parent = parent.return) if (parent.type?.name === "LittleSolaraWindow") return true; return false; }).length;`);
+    if (bars) throw new Error(`Little Solara still mounts ${bars} JS bar or panel producers`);
     return { slots, card: info.card, bounds: info.bounds, blankBarHit: info.blankBarHit };
   });
 
@@ -180,21 +177,17 @@ try {
     const field = await fieldRect();
     const id = JSON.stringify(little.id);
     await run(`st().openPanel(${id}, st().tabs[${JSON.stringify(little.tab)}].url); return true;`);
-    const grow = await until("the panel", `const host = acPerf.findFibers("NativePanelHost", 5).find((f) => f.memoizedProps.windowId === ${id});
-      const bar = host && acPerf.findFibers("NativeOmniboxBar", 20).find((f) => { for (let p = f; p; p = p.return) if (p === host) return true; return false; });
-      const panel = bar && bar.memoizedProps.panel && JSON.parse(bar.memoizedProps.panel);
-      return panel && panel.open ? { renderer: "native", from: panel.from, frame: { left: panel.left, top: panel.top, width: panel.width }, radius: panel.radius, variant: panel.variant } : null;`, 3000);
-    if (grow.renderer !== "native") throw new Error(`the panel is drawn by ${grow.renderer}`);
-    if (grow.variant !== "sidebar") throw new Error(`the native panel's variant is ${grow.variant}, RN's dropdown uses the sidebar bar`);
+    const grow = await until("the native panel", `return M.describeLittle(${id}).then(JSON.parse).then((shell) => shell?.panel);`, 3000);
+    if (grow.variant !== "sidebar") throw new Error(`the native panel's variant is ${grow.variant}, expected sidebar`);
     const width = Math.min(Math.max(350, field[2] + 137), little.width - field[0] - 12);
-    const from = grow.from && [grow.from.left, grow.from.top, grow.from.width, grow.from.height];
+    const from = grow.from;
     if (!near(from, field)) throw new Error(`grows from ${from}, the field is at ${field}`);
-    if (!near([grow.frame.left, grow.frame.top, grow.frame.width], [field[0], field[1], width]) || grow.radius !== 12) throw new Error(`panel ${JSON.stringify(grow)}, RN's dropdown is ${[field[0], field[1], width]} radius 12`);
+    if (!near(grow.frame, [field[0], field[1], width]) || grow.radius !== 12) throw new Error(`panel ${JSON.stringify(grow)}, expected ${[field[0], field[1], width]} radius 12`);
     await run(`return click(${id}, ${little.number}, [${Math.round(field[0] + width / 2)}, 19]).then(() => settle(300)).then(() => true);`);
     if (!(await run(`return !!st().windowUi[${id}]?.panel.open;`))) throw new Error("a click on the panel's field inside the bar closed the panel");
     await run(`return click(${id}, ${little.number}, [${Math.round(little.width / 2)}, ${Math.round(little.height - 40)}]).then(() => settle(300)).then(() => true);`);
     if (await run(`return !!st().windowUi[${id}]?.panel.open;`)) throw new Error("a click on the card left the panel open");
-    return { renderer: grow.renderer, from, frame: grow.frame, radius: grow.radius };
+    return { from, frame: grow.frame, radius: grow.radius };
   });
 
   await rep.check("blank-bar-click", async () => {
@@ -213,6 +206,51 @@ try {
     return { moved };
   });
 
+
+  await rep.check("close-clears-overlays-without-pausing-or-keying-main", async () => {
+    const page = await app.page((target) => target.url === url("b"), { timeout: 3000 });
+    const keyWindows = () => run(`return C.chromeWindows().then((windows) => windows.filter((w) => w.key).map((w) => w.window));`);
+    const numberBefore = await run(`return C.chromeWindows().then((windows) => windows.map((w) => w.window));`);
+    try {
+      await page.eval(`(async () => {
+        const canvas = document.createElement("canvas");
+        canvas.width = 640;
+        canvas.height = 360;
+        const context = canvas.getContext("2d");
+        const video = document.createElement("video");
+        video.muted = true;
+        video.playsInline = true;
+        video.srcObject = canvas.captureStream(10);
+        document.body.append(video);
+        globalThis.closeTestVideo = video;
+        globalThis.closeTestPauses = 0;
+        video.addEventListener("pause", () => globalThis.closeTestPauses++);
+        globalThis.closeTestTimer = setInterval(() => context.fillRect(0, 0, Math.random() * 120, 40), 50);
+        await video.play();
+        await video.requestPictureInPicture();
+        return true;
+      })()`, { userGesture: true, timeout: 5000 });
+      await run(`ac.runCommand({ command: "newLittleSolara" }); return true;`);
+      const id = await until("replacement small window", `return small()?.id ?? null;`);
+      const windowId = JSON.stringify(id);
+      const number = await until("visible small window", `return C.chromeWindows().then((windows) => windows.find((w) => w.visible && !${JSON.stringify(numberBefore)}.includes(w.window))?.window ?? null);`);
+      await run(`st().openPanel(${windowId}, "queued"); return true;`);
+      const before = await page.eval("({ time: globalThis.closeTestVideo.currentTime, pauses: globalThis.closeTestPauses })");
+      const priorKeys = await keyWindows();
+      if (!priorKeys.includes(number)) throw new Error("Little Solara must be key before closing");
+      await run(`return act(${number}, "close-button");`);
+      await until("closed small window and native overlay registry", `return M.describeLittle(${windowId}).then(JSON.parse).then((shell) => !shell && !M.littleActive(${windowId}) && !st().windows[${windowId}] ? true : null);`, 5000);
+      await sleep(300);
+      const after = await page.eval("({ time: globalThis.closeTestVideo.currentTime, pauses: globalThis.closeTestPauses, paused: globalThis.closeTestVideo.paused, pip: document.pictureInPictureElement === globalThis.closeTestVideo })");
+      if (!after.pip || after.paused || after.pauses !== before.pauses || after.time <= before.time) throw new Error(`playback stopped at ${JSON.stringify(after)}, before close ${JSON.stringify(before)}`);
+      if ((await keyWindows()).some((key) => key !== number && !priorKeys.includes(key))) throw new Error("closing Little Solara keyed another window");
+      if (await run(`return !!small() || M.littleActive(${windowId});`)) throw new Error("Little Solara reopened after close");
+      return { before: before.time, after: after.time, pauses: after.pauses - before.pauses, pip: after.pip, priorKeys };
+    } finally {
+      await page.eval("(async () => { if (document.pictureInPictureElement) await document.exitPictureInPicture(); clearInterval(globalThis.closeTestTimer); globalThis.closeTestVideo?.srcObject?.getTracks().forEach((track) => track.stop()); globalThis.closeTestVideo?.remove(); return true; })()").catch(() => {});
+      page.close();
+    }
+  });
 
   await rep.check("link-from-another-app", async () => {
     const outcomes = [];

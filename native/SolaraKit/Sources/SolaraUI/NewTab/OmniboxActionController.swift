@@ -131,7 +131,8 @@ public final class OmniboxActionController {
 
   private func sourceMatches(_ model: HeroBarModel, store: Store) -> Bool {
     let state = store.state
-    guard let window = state.windows[model.windowId], let tab = state.tabs[model.tabId] else { return false }
+    guard let window = state.windows[model.windowId], let tab = state.tabs[model.tabId],
+      !window.isSmall || !store.memory.closingWindows.contains(model.windowId) else { return false }
     return tab.windowId == model.windowId && tab.profileId == model.profileId && window.profileId == model.profileId
       && state.activeTabId(model.windowId) == model.tabId
   }

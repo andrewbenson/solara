@@ -43,6 +43,7 @@ final class NativeOmniboxView: ExpoView, FocusHandoffDestination {
   var panelJSON = ""
   private var awaitingOpen = false
   private var host: OmniboxPanelHostView?
+  private var smallWindowPanel = false
   nonisolated(unsafe) static var hosts: [String: WeakOmniboxHost] = [:]
 
   override var isFlipped: Bool { true }
@@ -79,6 +80,10 @@ final class NativeOmniboxView: ExpoView, FocusHandoffDestination {
   func setPanel(_ json: String) {
     panelJSON = json
     guard !json.isEmpty else { return }
+    installPanelHost()
+  }
+
+  private func installPanelHost() {
     if host == nil {
       bar.removeFromSuperview()
       let made = OmniboxPanelHostView(bar: bar)
@@ -229,9 +234,44 @@ final class NativeOmniboxView: ExpoView, FocusHandoffDestination {
     open(panel, in: host)
   }
 
+  @MainActor
+  func mountSmallPanel(windowId: String, in container: NSView) {
+    smallWindowPanel = true
+    self.windowId = windowId
+    frame = container.bounds
+    autoresizingMask = [.width, .height]
+    container.addSubview(self)
+    installPanelHost()
+    Self.hosts[windowId] = WeakOmniboxHost(view: self)
+  }
+
+  @MainActor
+  func projectSmallPanel(_ panel: NativeOmniboxPanel?, profile: String, theme: NewTabTheme) {
+    guard let host else { return }
+    if bar.theme != theme { bar.theme = theme }
+    tabId = panel?.tabId ?? ""
+    profileId = profile
+    isHidden = panel?.open != true
+    guard let panel, panel.open else { return host.hide() }
+    placeHost()
+    host.style = panel.style
+    open(panel, in: host)
+  }
+
+  @MainActor
+  func unmountSmallPanel() {
+    projectSmallPanel(nil, profile: "", theme: bar.theme)
+    if Self.hosts[windowId]?.view === self { Self.hosts[windowId] = nil }
+    removeFromSuperview()
+  }
+
   func openNativePanel(text: String) {
+    if smallWindowPanel {
+      if let current = NativeLittleSolara.host(windowId), current.ownsPanel(self) { current.refresh() }
+      return
+    }
     guard NativeOmniboxActions.ownsActions, let store = NativeStoreHandle.store,
-      let window = store.state.windows[windowId], window.isSmall || store.state.settings.string("commandBarPlacement") != "centred",
+      store.state.windows[windowId] != nil, store.state.settings.string("commandBarPlacement") != "centred",
       store.state.windowUi[windowId]?.json["panel"]?["newTab"]?.truthy != true,
       let tabId = store.state.activeTabId(windowId), let data = panelJSON.data(using: .utf8),
       var panel = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any], panel["ready"] as? Bool == true else {
@@ -253,7 +293,14 @@ final class NativeOmniboxView: ExpoView, FocusHandoffDestination {
     showPanel(panelJSON)
   }
 
+  private var smallPanelCanAct: Bool {
+    guard smallWindowPanel else { return true }
+    guard let current = NativeLittleSolara.host(windowId) else { return false }
+    return current.ownsPanel(self) && current.acceptsOverlay
+  }
+
   private func cancelBar() {
+    guard smallPanelCanAct else { return }
     if let model = bar.model, actions.cancel(model) { host?.hide(); return }
     onCancel(["nativeActions": false])
   }
@@ -343,7 +390,7 @@ final class NativeOmniboxView: ExpoView, FocusHandoffDestination {
       self.onDone(["reason": reason?.rawValue ?? NSNull(), "nativeActions": false])
     }
     e.cancel = { [weak self] session in
-      guard let self, self.bar.model?.editingSession == session else { return }
+      guard let self, self.smallPanelCanAct, self.bar.model?.editingSession == session else { return }
       let preserved = NativeExtensionActionPopup.preservesOmnibox(windowId: self.windowId)
       NativeExtensionActionPopup.omniboxSessionEnded(windowId: self.windowId)
       if !preserved { self.onCancel(["nativeActions": false]) }
@@ -361,7 +408,7 @@ final class NativeOmniboxView: ExpoView, FocusHandoffDestination {
     var decorated = actions.decorate(e, model: { [weak self] in self?.bar.model })
     let cancel = decorated.cancel
     decorated.cancel = { [weak self] session in
-      guard let self, self.bar.model?.editingSession == session else { return }
+      guard let self, self.smallPanelCanAct, self.bar.model?.editingSession == session else { return }
       if !NativeExtensionActionPopup.preservesOmnibox(windowId: self.windowId) { cancel(session) }
     }
     return decorated

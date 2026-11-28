@@ -279,6 +279,7 @@ bool ShowAlertSheetsInTests(bool show) {
 namespace {
 
 bool gAppActive = true;
+bool gSuppressCloseFocus = false;
 __weak NSWindow *gKeyWindow;
 void (*gAppKitMakeKey)(id, SEL);
 
@@ -289,6 +290,7 @@ void PostKey(NSWindow *window, bool key) {
 }
 
 void MakeKey(NSWindow *window) {
+  if (gSuppressCloseFocus) return;
   gAppKitMakeKey(window, @selector(makeKeyWindow));
   if (window == gKeyWindow || !window.canBecomeKeyWindow) return;
   NSWindow *previous = gKeyWindow;
@@ -302,6 +304,7 @@ void KeyWindowLeaving(NSWindow *window) {
   if (window != gKeyWindow) return;
   gKeyWindow = nil;
   if (gAppActive) PostKey(window, false);
+  if (gSuppressCloseFocus) return;
   for (NSWindow *next in NSApp.orderedWindows)
     if (next != window && next.visible && next.canBecomeKeyWindow) return MakeKey(next);
 }
@@ -397,6 +400,13 @@ void KeepBehindOwnerWindows() {
 
 }
 
+void WithoutCloseFocus(void (^action)(void)) {
+  const bool previous = gSuppressCloseFocus;
+  gSuppressCloseFocus = true;
+  @try { action(); }
+  @finally { gSuppressCloseFocus = previous; }
+}
+
 void SetAppActive(bool active) {
   if (!Background() || active == gAppActive) return;
   NSNotificationCenter *center = NSNotificationCenter.defaultCenter;
@@ -440,7 +450,15 @@ void InstallActivationGuardsEarly() {
     return originalActivate(app, @selector(activateWithOptions:), options);
   });
 
-  if (!Background()) return;
+  if (!Background()) {
+    for (SEL selector : {@selector(makeKeyWindow), @selector(makeMainWindow)}) {
+      auto original = (void (*)(id, SEL))method_getImplementation(class_getInstanceMethod(NSWindow.class, selector));
+      Swizzle(NSWindow.class, selector, ^(NSWindow *window) {
+        if (!gSuppressCloseFocus) original(window, selector);
+      });
+    }
+    return;
+  }
   {
     Class meta = object_getClass(NSApplication.class);
     SEL selector = @selector(sharedApplication);

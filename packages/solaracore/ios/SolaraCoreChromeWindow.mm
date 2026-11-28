@@ -3195,6 +3195,14 @@ NSView *ACWindowRootView(NSWindow *window) {
   [SolaraCoreWindowController rejectCancelledChromeWindow:token];
 }
 
++ (void)orderOutForLittleClose:(NSWindow *)window {
+  solaracore_host::WithoutCloseFocus(^{ [window orderOut:nil]; });
+}
+
++ (void)closeLittleWindow:(NSWindow *)window appWindow:(NSString *)appWindow {
+  solaracore_host::WithoutCloseFocus(^{ [self closeWindow:window appWindow:appWindow]; });
+}
+
 + (void)closeWindow:(NSWindow *)window {
   [self closeWindow:window appWindow:nil];
 }

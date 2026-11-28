@@ -104,14 +104,6 @@ public class MediaModule: Module {
       NativeLittleSolara.active(windowId)
     }
 
-    AsyncFunction("setLittleBar") { (windowId: String, json: String) in
-      FrameUpdates.readOnMain { NativeLittleSolara.host(windowId)?.setBar(json) }
-    }.runOnQueue(.main)
-
-    AsyncFunction("setLittleBackdrop") { (windowId: String, json: String) in
-      FrameUpdates.readOnMain { NativeLittleSolara.host(windowId)?.setBackdrop(json) }
-    }.runOnQueue(.main)
-
     AsyncFunction("paneSwipe") { (windowId: String, tabId: String, json: String) in
       FrameUpdates.readOnMain { NativePaneOverlays.swipe(windowId, tabId, json) }
     }.runOnQueue(.main)
@@ -162,6 +154,8 @@ public class MediaModule: Module {
 final class SmallWindowPageHost: ExpoView {
   let card = SmallWindowCardView(frame: .zero)
   var windowId = "" { didSet { track() } }
+  private var request: CardRequest?
+  private weak var owner: LittleSolaraHost?
   #if DEBUG
     private var tracking: UUID?
   #endif
@@ -185,6 +179,12 @@ final class SmallWindowPageHost: ExpoView {
   }
 
   private func track() {
+    let host = window.flatMap { window in NativeLittleSolara.host(windowId).flatMap { $0.shell.window === window ? $0 : nil } }
+    if owner !== host {
+      owner?.untrack(self)
+      owner = host
+      host?.track(self)
+    }
     #if DEBUG
       if let tracking { HostedSmallWindowCard.untrack(tracking) }
       tracking = nil
@@ -192,9 +192,28 @@ final class SmallWindowPageHost: ExpoView {
     #endif
   }
 
+  private struct CardRequest: Decodable {
+    let tabId: String
+    let paints: Bool
+    let radius: Double
+  }
+
   func setState(_ json: String) {
-    card.update(SmallWindowCardState.decode(json))
+    request = try? JSONDecoder().decode(CardRequest.self, from: Data(json.utf8))
+    track()
+    owner?.track(self)
     card.hostContent(in: self)
+  }
+
+  func project(dark: Bool, activeTabId: String?) {
+    let next = request.map { request in
+      let fill = request.paints && activeTabId == request.tabId ? (dark ? "rgba(18,18,18,0.5)" : "rgba(255,255,255,0.7)") : nil
+      return SmallWindowCardState(tabId: request.tabId, fill: fill, radius: request.radius)
+    }
+    if card.state != next {
+      card.update(next)
+      card.hostContent(in: self)
+    }
   }
 
   override func layout() {

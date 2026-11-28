@@ -80,8 +80,17 @@ enum ChromeWindows {
     return host.perform(NSSelectorFromString("rootViewOfWindow:"), with: window)?.takeUnretainedValue() as? NSView
   }
 
-  static func close(_ window: NSWindow, appWindow: String) {
-    host?.perform(NSSelectorFromString("closeWindow:appWindow:"), with: window, with: appWindow)
+  static func orderOutForLittleClose(_ window: NSWindow) {
+    let selector = NSSelectorFromString("orderOutForLittleClose:")
+    guard let host, (host as AnyObject).responds(to: selector) else { return window.orderOut(nil) }
+    host.perform(selector, with: window)
+  }
+
+  static func close(_ window: NSWindow, appWindow: String, small: Bool = false) {
+    guard let host else { return }
+    let littleClose = NSSelectorFromString("closeLittleWindow:appWindow:")
+    let selector = small && (host as AnyObject).responds(to: littleClose) ? littleClose : NSSelectorFromString("closeWindow:appWindow:")
+    host.perform(selector, with: window, with: appWindow)
   }
 
   static func showProfile(_ profile: String, in window: NSWindow) {

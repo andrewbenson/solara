@@ -142,6 +142,7 @@ enum NativeDownloadsPanel {
 
   static func container(_ id: String) -> NSView? {
     guard let window = ShellDrag.window(id) else { return nil }
+    if observed?.state.windows[id]?.isSmall == true { return NativeLittleSolara.overlay(id) }
     if let overlay = NativeWindowShell.overlay(id), overlay.window === window { return overlay }
     guard let inline = inlineSurfaces.object(forKey: id as NSString), inline.window === window else { return nil }
     return inline
@@ -179,8 +180,8 @@ enum NativeDownloadsPanel {
       panel.autoresizingMask = [.width, .height]
       container.addSubview(panel)
     }
-    let top = (window.tabLayout ?? state.settings.string("tabLayout")) == "top"
-    let footer = !top && state.settings.string("addressBar") == "sidebar"
+    let top = !window.isSmall && (window.tabLayout ?? state.settings.string("tabLayout")) == "top"
+    let footer = !window.isSmall && !top && state.settings.string("addressBar") == "sidebar"
     let geometry = DownloadsPanelPlacement.resolve(in: panel.bounds.size, anchor: anchor(id, topStrip: top, in: panel),
       topStrip: top, footer: footer, scale: panel.window?.backingScaleFactor ?? 2)
     let appearance = NativeLayoutAppearance(state: state, profileId: window.profileId, incognito: window.incognito, strip: top)
@@ -220,6 +221,13 @@ enum NativeDownloadsPanel {
     }
     return panel
   }
+
+  static func smallGeometryChanged(_ id: String) {
+    guard panels[id] != nil else { return }
+    queueRefresh()
+  }
+
+  static func removeSmall(_ id: String) { remove(id) }
 
   private static func remove(_ id: String) {
     guard let panel = panels.removeValue(forKey: id) else { return }

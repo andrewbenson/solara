@@ -424,14 +424,14 @@ const TabPane = memo(function TabPane({
 
   const [nativeSmall] = useState(() => small && littleSolaraShellActive(windowId));
 
-  const cardFill = visible && !fullscreen && !nativePane && !pooled && !(windowToolbar && nativeRailChrome) ? theme.card : undefined;
+  const paintsCard = visible && !fullscreen && !nativePane && !pooled && !(windowToolbar && nativeRailChrome);
 
   return (
     <SmallWindowCard
       nativeSmall={nativeSmall}
       windowId={windowId}
       tabId={tabId}
-      fill={visible ? cardFill ?? null : null}
+      paints={paintsCard}
       radius={fullscreen ? 0 : layout.cardRadius}
       pointerEvents={!visible || covered ? "none" : pooled ? "box-none" : "auto"}
       onTouchStart={() => {
@@ -445,7 +445,7 @@ const TabPane = memo(function TabPane({
         borderRadius: nativeSmall ? undefined : fullscreen ? 0 : layout.cardRadius,
         overflow: nativeSmall ? undefined : "hidden",
         opacity: covered ? 0 : 1,
-        backgroundColor: nativeSmall ? undefined : cardFill,
+        backgroundColor: !nativeSmall && paintsCard ? theme.card : undefined,
       }}
     >
       {toolbarVisible && visible && !nativePane && !windowToolbar && (

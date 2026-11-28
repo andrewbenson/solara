@@ -2,8 +2,6 @@ import { requireOptionalNativeModule } from "expo-modules-core";
 
 type LittleSolaraModule = {
   littleActive(windowId: string): boolean;
-  setLittleBar(windowId: string, json: string): Promise<void>;
-  setLittleBackdrop(windowId: string, json: string): Promise<void>;
   describeLittle(windowId: string): Promise<string>;
   paneSwipe?(windowId: string, tabId: string, json: string): Promise<void>;
 };
@@ -16,14 +14,6 @@ export function littleSolaraShellActive(windowId: string): boolean {
   } catch {
     return false;
   }
-}
-
-export function setLittleSolaraBar(windowId: string, json: string) {
-  return native?.setLittleBar?.(windowId, json) ?? Promise.resolve();
-}
-
-export function setLittleSolaraBackdrop(windowId: string, json: string) {
-  return native?.setLittleBackdrop?.(windowId, json) ?? Promise.resolve();
 }
 
 export async function describeLittleSolaraShell(windowId: string): Promise<Record<string, unknown> | null> {

@@ -731,7 +731,7 @@ final class WindowManager: NSObject, NSWindowDelegate {
       DispatchQueue.main.asyncAfter(deadline: .now() + Self.fullScreenCloseWait) { [weak self] in self?.finishFullScreenClose(id) }
       return
     }
-    if replacement == nil, window.isKeyWindow { nextKeyWindow(after: window)?.makeKey() }
+    if replacement == nil, !smallIds.contains(id), window.isKeyWindow { nextKeyWindow(after: window)?.makeKey() }
     let finish: () -> Void = { [weak self] in self?.finishCloseAnimation(id) }
     if let replacement, replacement != id, windows[replacement] != nil {
       return whenRevealed(replacement) {
@@ -741,7 +741,7 @@ final class WindowManager: NSObject, NSWindowDelegate {
         }
       }
     }
-    WindowMotion.exit(window, style: motionStyle(id), then: finish)
+    WindowMotion.exit(window, style: motionStyle(id), orderOut: closeOrdering(id), then: finish)
   }
 
   private func finishCloseAnimation(_ id: String) {
@@ -752,6 +752,10 @@ final class WindowManager: NSObject, NSWindowDelegate {
 
   private func nextKeyWindow(after closing: NSWindow) -> NSWindow? {
     NSApp.orderedWindows.first { $0 !== closing && $0.isVisible && !$0.isMiniaturized && $0.canBecomeKey && isBrowserWindow($0) && exits[id(of: $0) ?? ""] == nil }
+  }
+
+  private func closeOrdering(_ id: String) -> (NSWindow) -> Void {
+    smallIds.contains(id) ? ChromeWindows.orderOutForLittleClose : { $0.orderOut(nil) }
   }
 
   func close(id: String) {
@@ -773,7 +777,7 @@ final class WindowManager: NSObject, NSWindowDelegate {
       NotificationCenter.default.removeObserver(self, name: nil, object: window)
       windows[id] = nil
       window.animationBehavior = .none
-      if !isFullScreen(window, id: id), !fullScreenTransitions.contains(id) { window.orderOut(nil) }
+      if !isFullScreen(window, id: id), !fullScreenTransitions.contains(id) { closeOrdering(id)(window) }
       CATransaction.flush()
       unrevealed[id] = nil
       stopKeepingContentSized(id)
@@ -781,8 +785,8 @@ final class WindowManager: NSObject, NSWindowDelegate {
       fullScreenIds.remove(id)
       fullScreenTransitions.remove(id)
       auxKinds[id] = nil
-      smallIds.remove(id)
-      ChromeWindows.close(window, appWindow: id)
+      let small = smallIds.remove(id) != nil
+      ChromeWindows.close(window, appWindow: id, small: small)
       DispatchQueue.main.async { ChromeWindows.removeRoot(of: window) }
       return
     }
@@ -1234,7 +1238,7 @@ enum WindowMotion {
     DispatchQueue.main.asyncAfter(deadline: .now() + settleAfter, execute: settle)
   }
 
-  static func exit(_ window: NSWindow, style: Style, then done: @escaping () -> Void) {
+  static func exit(_ window: NSWindow, style: Style, orderOut: @escaping (NSWindow) -> Void, then done: @escaping () -> Void) {
     guard window.isVisible, window.alphaValue > 0, let view = frameView(of: window), let layer = view.layer else { return done() }
     let shown = layer.presentation() ?? layer
     let fromTransform = shown.transform
@@ -1255,7 +1259,7 @@ enum WindowMotion {
     let finish: () -> Void = { [weak window, weak view, weak layer] in
       guard !finished else { return }
       finished = true
-      window?.orderOut(nil)
+      if let window { orderOut(window) }
       CATransaction.begin()
       CATransaction.setDisableActions(true)
       layer?.removeAnimation(forKey: exitKey)

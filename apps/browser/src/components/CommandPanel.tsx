@@ -87,12 +87,9 @@ function dropdownGeometry(anchor: UrlAnchor, windowWidth: number): PanelGeometry
   return { left, top: anchor.top, width, from };
 }
 
-const dropdownIsNative = (kind: string | undefined) => kind === "small" || sidebarAddressBarAvailable();
-const nativeDropdown = (windowId: string) => dropdownIsNative(useBrowser.getState().windows[windowId]?.kind);
-
-function nativePanelGeometry(windowId: string, anchor: UrlAnchor, insecure: boolean, windowWidth: number, text: string) {
+function nativePanelGeometry(anchor: UrlAnchor, insecure: boolean, windowWidth: number, text: string) {
   if (!anchor.sidebar) return toolbarPanelGeometry(anchor, insecure, true, windowWidth, text, true);
-  return nativeDropdown(windowId) ? { ...dropdownGeometry(anchor, windowWidth), radius: DROPDOWN_RADIUS, variant: "sidebar" } : null;
+  return sidebarAddressBarAvailable() ? { ...dropdownGeometry(anchor, windowWidth), radius: DROPDOWN_RADIUS, variant: "sidebar" } : null;
 }
 
 function nativePanelJson(windowId: string, tabId: string, text: string, open: boolean): string | null {
@@ -100,7 +97,7 @@ function nativePanelJson(windowId: string, tabId: string, text: string, open: bo
   const tab = useBrowser.getState().tabs[tabId];
   const style = panelStyles.get(windowId);
   if (!anchor || !tab?.url || !style) return null;
-  const geometry = nativePanelGeometry(windowId, anchor, !!insecureLevel(pageOf(tabId)), windowWidths.get(windowId) ?? 0, text);
+  const geometry = nativePanelGeometry(anchor, !!insecureLevel(pageOf(tabId)), windowWidths.get(windowId) ?? 0, text);
   return geometry ? JSON.stringify({ open, tabId, text, ...style, ...geometry }) : null;
 }
 
@@ -123,13 +120,13 @@ function NativePanelHost({ windowId, windowWidth }: { windowId: string; windowWi
   const centred = useBrowser((s) => commandBarCentred(s, windowId));
   const peeking = useBrowser((s) => !!peekTabId(s, windowId));
   const developer = useTabDeveloperMode(tabId);
-  const dropdown = useBrowser((s) => dropdownIsNative(s.windows[windowId]?.kind));
+  const dropdown = sidebarAddressBarAvailable();
   panelStyles.set(windowId, { fill: theme.panel, border: theme.panelBorder, shadowOpacity: theme.panelShadowOpacity, radius: PANEL_RADIUS });
   if (!tabId || !anchor || (anchor.sidebar ? !dropdown : !url)) return null;
   const open = panel.open && !panel.newTab && !centred;
   const text = open ? panel.initialText : url;
   const ready = !panel.open && !centred && !peeking && !developer;
-  const geometry = nativePanelGeometry(windowId, anchor, insecure, windowWidth, text);
+  const geometry = nativePanelGeometry(anchor, insecure, windowWidth, text);
   const json = JSON.stringify({ open, ready, tabId, text, ...panelStyles.get(windowId), ...geometry });
   const onCancel = () => useBrowser.getState().closePanel(windowId);
   const onDone = (reason?: BarDismissal) => closePanelToHeroBar(windowId, tabId, reason);
@@ -168,7 +165,7 @@ function CommandPanelBody({ windowWidth }: { windowWidth: number }) {
   if (!anchor) return null;
 
   if (anchor.sidebar) {
-    if (nativeOmniboxAvailable() && nativeDropdown(windowId)) return null;
+    if (nativeOmniboxAvailable() && sidebarAddressBarAvailable()) return null;
     const { left, width, from } = dropdownGeometry(anchor, windowWidth);
     return (
       <Grow from={from} frame={{ left, top: anchor.top, width }} openHeight={anchor.sidebar.height} radius={DROPDOWN_RADIUS} surface={surface(DROPDOWN_RADIUS)}>

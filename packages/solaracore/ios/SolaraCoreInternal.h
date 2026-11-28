@@ -34,6 +34,7 @@ bool TestHooksAllowed();
 bool ShowAlertSheetsInTests(bool show);
 void LogActivation(NSString *what);
 void SetAppActive(bool active);
+void WithoutCloseFocus(void (^action)(void));
 void ActToggleFullScreen(NSWindow *window);
 void InstallTestCrashGuard(NSString *_Nullable dataDir);
 

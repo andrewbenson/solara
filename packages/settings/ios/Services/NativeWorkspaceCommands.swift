@@ -809,6 +809,7 @@ enum NativeWorkspaceCommands {
     let leaving = Set(window.tabIds)
     let generation = NativeStoreHandle.ownershipGeneration
     guard (try? store.dispatch(Command("setWindowClosing", [.string(id), true]), origin: .native)) != nil else { return }
+    if window.isSmall { NativeLittleSolara.host(id)?.dismissOverlays() }
     WindowHost.animateClose(id, after: replacement) {
       let sameStore = NativeStoreHandle.store === store
       if sameStore { _ = try? store.dispatch(Command("setWindowClosing", [.string(id), false]), origin: .native) }

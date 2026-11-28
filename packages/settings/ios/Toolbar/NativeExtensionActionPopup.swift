@@ -43,7 +43,8 @@ enum NativeExtensionActionPopup {
     guard NativeStoreHandle.ownsWorkspace, let store = NativeStoreHandle.store,
       store === observed else { return nil }
     let state = snapshot ?? store.state
-    guard let window = state.windows[windowId] else { return nil }
+    guard let window = state.windows[windowId],
+      !window.isSmall || NativeLittleSolara.overlay(windowId) != nil else { return nil }
     let tabId = state.peeks[windowId]?.tabId ?? state.activeTabId(windowId)
     let tab = tabId.flatMap { state.tabs[$0] }
     let web = tabId.flatMap { NativeExtensionCatalog.page($0) }
@@ -161,8 +162,7 @@ enum NativeExtensionActionPopup {
 
   private static func popupAnchor(windowId: String, window: NSWindow, tabId: String?, extensionId: String) -> CGRect {
     if NativeStoreHandle.store?.state.windows[windowId]?.isSmall == true, let root = window.contentView {
-      return CGRect(x: root.bounds.width - SmallBarMetrics.inset - SmallBarMetrics.button,
-        y: (SmallBarMetrics.height - SmallBarMetrics.button) / 2, width: SmallBarMetrics.button, height: SmallBarMetrics.button)
+      return SmallBarMetrics.popupAnchor(width: root.bounds.width)
     }
     let active = NativeStoreHandle.store?.state.activeTabId(windowId)
     for pane in [tabId, active] {
@@ -386,7 +386,7 @@ final class ExtensionActionPopupHost: NSObject, SolaraCoreWebViewDelegate {
 
   func open() {
     guard let root, let window else { return NativeExtensionActionPopup.close(windowId: intent.windowId) }
-    let container = NativeLittleSolara.host(intent.windowId)?.shell.view(in: .react) ?? NativeWindowShell.overlay(intent.windowId) ?? root
+    let container = NativeLittleSolara.overlay(intent.windowId) ?? NativeWindowShell.overlay(intent.windowId) ?? root
     self.container = container
     surface.onResize = { [weak self] in self?.place() }
     surface.autoresizingMask = [.width, .height]
@@ -434,9 +434,7 @@ final class ExtensionActionPopupHost: NSObject, SolaraCoreWebViewDelegate {
   private func place() {
     guard let root, let container else { return }
     if NativeStoreHandle.store?.state.windows[intent.windowId]?.isSmall == true {
-      anchor = CGRect(x: root.bounds.width - SmallBarMetrics.inset - SmallBarMetrics.button,
-        y: (SmallBarMetrics.height - SmallBarMetrics.button) / 2,
-        width: SmallBarMetrics.button, height: SmallBarMetrics.button)
+      anchor = SmallBarMetrics.popupAnchor(width: root.bounds.width)
     } else if let window, let live = NativeToolbarHostView.extensionAnchor(window: window, tabId: intent.tabId, extensionId: intent.extensionId)
       ?? SidebarAddressBridge.extensionAnchor(windowId: intent.windowId, extensionId: intent.extensionId) {
       anchor = live

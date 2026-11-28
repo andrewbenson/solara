@@ -1,6 +1,7 @@
 import AppKit
 import QuartzCore
 import SolaraModel
+import SolaraOmnibox
 import SolaraStore
 
 public struct SmallBarButtonState: Decodable, Equatable, Sendable {
@@ -9,6 +10,14 @@ public struct SmallBarButtonState: Decodable, Equatable, Sendable {
   public var size: Double
   public var tooltip: String
   public var disabled: Bool?
+
+  public init(id: String, icon: String, size: Double, tooltip: String, disabled: Bool? = nil) {
+    self.id = id
+    self.icon = icon
+    self.size = size
+    self.tooltip = tooltip
+    self.disabled = disabled
+  }
 }
 
 public struct SmallBarProfile: Decodable, Equatable, Sendable {
@@ -17,6 +26,15 @@ public struct SmallBarProfile: Decodable, Equatable, Sendable {
   public var text: String
   public var emoji: Bool
   public var tooltip: String
+
+  public static func resolve(in state: BrowserState, profileId: String, swatch: (Profile) -> String) -> Self? {
+    guard state.profileOrder.count > 1, let profile = state.profiles[profileId] else { return nil }
+    let icon = profile.icon
+    let symbol = icon.flatMap { $0.hasPrefix("symbol:") ? String($0.dropFirst(7)) : nil }
+    return Self(swatch: swatch(profile), symbol: symbol,
+      text: icon ?? profile.name.trimmingCharacters(in: .whitespacesAndNewlines).first?.uppercased() ?? "?",
+      emoji: icon != nil, tooltip: "Profile: \(profile.name)")
+  }
 }
 
 public struct SmallBarState: Decodable, Equatable, Sendable {
@@ -34,9 +52,71 @@ public struct SmallBarState: Decodable, Equatable, Sendable {
   public var profile: SmallBarProfile?
   public var theme: MediaThemeState
 
+  public init(page: SmallBarPage?, facts: SmallBarPageFacts, profileId: String, profile: SmallBarProfile?,
+    hidden: Bool, theme: MediaThemeState, product: String) {
+    let url = page?.tab.url ?? ""
+    self.tabId = page?.id
+    self.icon = page?.icon(unsafe: facts.unsafe) ?? "search"
+    self.url = url
+    self.favicon = page?.tab.favicon
+    self.profileId = page?.tab.profileId ?? profileId
+    self.host = url.hasPrefix("file:") ? "File" : breadcrumb(url).host
+    let customTitle = page?.tab.customTitle ?? ""
+    self.title = customTitle.isEmpty ? page?.tab.title ?? "" : customTitle
+    self.loading = page?.loading == true
+    self.progress = loading ? facts.progress : 0
+    self.hidden = hidden || page == nil
+    self.buttons = [
+      SmallBarButtonState(id: "copy", icon: "link", size: 14, tooltip: "Copy Link (⇧⌘C)", disabled: url.isEmpty),
+      SmallBarButtonState(id: "open", icon: "arrow.up.left.and.arrow.down.right", size: 13, tooltip: "Open in \(product) (⌘O)", disabled: page == nil),
+    ]
+    self.profile = profile
+    self.theme = theme
+  }
+
   public static func decode(_ json: String) -> SmallBarState? {
     guard let data = json.data(using: .utf8) else { return nil }
     return try? JSONDecoder().decode(SmallBarState.self, from: data)
+  }
+}
+
+public struct SmallBarPage {
+  public let tab: Tab
+  public let loading: Bool
+  public var id: String { tab.id }
+
+  public static func resolve(windowId: String, state: BrowserState, closing: Set<String>) -> Self? {
+    guard !closing.contains(windowId), let window = state.windows[windowId], window.isSmall,
+      let tab = state.activeTab(windowId), tab.windowId == windowId, tab.profileId == window.profileId,
+      window.tabIds.contains(tab.id) else { return nil }
+    return Self(tab: tab, loading: state.live[tab.id]?.isLoading == true)
+  }
+
+  public func icon(unsafe: Bool) -> String {
+    if tab.url.isEmpty { return "search" }
+    return unsafe ? "insecure" : "favicon"
+  }
+}
+
+public struct SmallBarPageFacts: Equatable, Sendable {
+  public private(set) var progress = 0.0
+  public private(set) var unsafe = false
+
+  public init() {}
+
+  public static let events: Set<String> = ["onProgress", "onSecurity", "onDiscarded", "onCrashed", "onPagePhysicalReplaced"]
+
+  public mutating func receive(_ name: String, _ payload: JSONValue) {
+    switch name {
+    case "onProgress":
+      if let value = payload["progress"]?.number, value.isFinite { progress = min(1, max(0, value)) }
+    case "onSecurity":
+      let level = payload["chromium"]?.string
+      unsafe = level == "warning" || level == "dangerous"
+    case "onDiscarded", "onCrashed", "onPagePhysicalReplaced":
+      self = Self()
+    default: break
+    }
   }
 }
 
@@ -83,6 +163,17 @@ public enum SmallBarMetrics {
     let right = inset + buttonsWidth + fieldGap
     return CGRect(x: fieldLeft, y: height / 2 - fieldHeight / 2, width: max(0, width - fieldLeft - right), height: fieldHeight)
   }
+  public static func popupAnchor(width: CGFloat) -> CGRect {
+    CGRect(x: max(0, width - inset - button), y: (height - button) / 2, width: button, height: button)
+  }
+
+  public static func panelPlacement(width: CGFloat, buttons: Int) -> OmniboxPanelPlacement? {
+    let field = fieldFrame(width: width, buttons: buttons)
+    guard !field.isEmpty, width > field.minX + 12 else { return nil }
+    return OmniboxPanelPlacement(left: field.minX, top: field.minY,
+      width: min(max(350, field.width + 137), width - field.minX - 12), from: field)
+  }
+
 }
 
 final class SmallBarField: NSView {

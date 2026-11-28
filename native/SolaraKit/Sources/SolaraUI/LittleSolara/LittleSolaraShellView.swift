@@ -19,11 +19,14 @@ public final class LittleSolaraShellView: NSView {
     case backdrop
     case bar
     case react
+    case overlay
   }
 
   public let windowId: String
   public let bar = SmallBarView()
-  public var onDetach: (() -> Void)?
+  public let overlay = LittleSolaraOverlayView()
+  public var onWindowChange: (() -> Void)?
+  public var onResize: (() -> Void)?
   private let strip = LittleSolaraDragStrip()
   private var mounted: [Slot: NSView] = [:]
 
@@ -35,6 +38,7 @@ public final class LittleSolaraShellView: NSView {
     wantsLayer = true
     strip.addSubview(bar)
     mount(.bar, strip)
+    mount(.overlay, overlay)
   }
 
   required init?(coder: NSCoder) { fatalError() }
@@ -66,6 +70,7 @@ public final class LittleSolaraShellView: NSView {
   public override func setFrameSize(_ newSize: NSSize) {
     super.setFrameSize(newSize)
     relayout()
+    onResize?()
   }
 
   public override func layout() {
@@ -73,14 +78,15 @@ public final class LittleSolaraShellView: NSView {
     relayout()
   }
 
-  public override func viewDidMoveToSuperview() {
-    super.viewDidMoveToSuperview()
-    if superview == nil { onDetach?() }
+  public override func viewDidMoveToWindow() {
+    super.viewDidMoveToWindow()
+    onWindowChange?()
   }
 
   public override func hitTest(_ point: NSPoint) -> NSView? {
     guard frame.contains(point) else { return nil }
     let local = convert(point, from: superview)
+    if let hit = overlay.hitTest(local) { return hit }
     let react = mounted[.react]
     if let react, let hit = react.hitTest(local), !Self.passesThrough(hit, react) { return hit }
     if barFrame.contains(local), let hit = strip.hitTest(local) { return hit }
@@ -102,6 +108,15 @@ public final class LittleSolaraShellView: NSView {
     let frame = slot == .bar ? barFrame : bounds
     if view.frame != frame { view.frame = frame }
     if slot == .bar, bar.frame != view.bounds { bar.frame = view.bounds }
+  }
+}
+
+public final class LittleSolaraOverlayView: NSView {
+  public override var isFlipped: Bool { true }
+
+  public override func hitTest(_ point: NSPoint) -> NSView? {
+    guard let hit = super.hitTest(point), hit !== self else { return nil }
+    return hit
   }
 }
 

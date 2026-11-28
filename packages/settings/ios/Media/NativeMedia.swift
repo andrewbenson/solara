@@ -25,16 +25,6 @@ enum NativeMedia {
     MediaImages.favicons.loader = { request in
       return await NativeHistoryCatalog.favicon(page: request.url, source: request.favicon, profileId: request.profileId, dark: request.dark)
     }
-    HostedViews.register(smallBar) { windowId in
-      let view = SmallBarView()
-      view.onAction = { [weak view] action in
-        if let view { NativeLittleSolara.barAction(action, windowId: windowId, bar: view) }
-      }
-      return content(smallBar, windowId, view) { json in
-        guard let state = SmallBarState.decode(json) else { return }
-        view.update(state)
-      }
-    }
     HostedViews.register("media.tabBadge") { _ in
       let view = TabBadgesView()
       var tabId = ""

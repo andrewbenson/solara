@@ -31,7 +31,6 @@ import { openingLightsCenter } from "../components/layout/windowLayout";
 import { openWindow as createWindow } from "./actions";
 import { createWindowSync, type WindowPort } from "./windowSync";
 import { openExternalUrls } from "../components/littleSolara/actions";
-import { SMALL_LIGHTS_CENTER } from "../components/littleSolara/SmallChrome";
 import { runCommand } from "./commands";
 import { startShortcutHints } from "./commandShortcuts";
 import { finishAnimatedCloses } from "./closeAnimated";
@@ -116,7 +115,7 @@ export function startNativeSync() {
     port: shellWindowPort,
     getState: store.getState,
     isQuitting,
-    lightsCenter: (s, id) => (s.windows[id]?.kind === "small" ? SMALL_LIGHTS_CENTER : openingLightsCenter(s, id)),
+    lightsCenter: (s, id) => (s.windows[id]?.kind === "small" ? null : openingLightsCenter(s, id)),
     isUtilityWindow: isUtilityWindowId,
   });
   windows.listen();

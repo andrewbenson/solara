@@ -38,6 +38,45 @@ import Testing
     #expect(store.state.groups[mixedGroup]?.tabIds == [keep])
   }
 
+  @Test func liveLinksDetachWhenPinnedOrMissingTheirFolder() throws {
+    let store = fixture()
+    let window = try makeWindow(store)
+    func open(_ folder: String, _ item: String) throws -> String {
+      try #require(try store.dispatch(Command("openSidebarLiveItem", [
+        .string(window), .string(folder), .string(item), "https://example.test/", true,
+      ])).result?.string)
+    }
+    let pinned = try open("keep", "pinned")
+    let orphan = try open("missing", "orphan")
+    let retained = try open("keep", "retained")
+    try store.dispatch(Command("togglePin", [.string(pinned)]))
+
+    try LiveWorkspace.detachItemLinks(in: store, knownFolders: ["keep"])
+
+    #expect(store.state.tabs[pinned]?.pinned == true)
+    #expect(store.state.tabs[pinned]?.liveItem == nil)
+    #expect(store.state.tabs[orphan]?.url == "https://example.test/")
+    #expect(store.state.tabs[orphan]?.liveItem == nil)
+    #expect(store.state.tabs[retained]?.liveItem?["folderId"]?.string == "keep")
+  }
+
+  @Test func deactivationOnlyNudgesAStillOpenLiveItem() throws {
+    let store = fixture()
+    let window = try makeWindow(store)
+    let first = try #require(store.state.activeTabId(window))
+    let item = try #require(try store.dispatch(Command("openSidebarLiveItem", [
+      .string(window), "folder", "item", "https://example.test/", false,
+    ])).result?.string)
+    let before = store.state
+    try store.dispatch(Command("activate", [.string(first)]))
+
+    #expect(LiveWorkspace.deactivatedFolders(from: before, to: store.state) == ["folder"])
+    #expect(LiveWorkspace.deactivatedFolders(from: before, to: before).isEmpty)
+
+    try store.dispatch(Command("closeTabs", [JSONValue([item])]))
+    #expect(LiveWorkspace.deactivatedFolders(from: before, to: store.state).isEmpty)
+  }
+
   @Test func signInDoesNotOpenAWindowWhenOnlyPrivateAndSmallWindowsExist() async throws {
     let store = fixture()
     _ = try makeWindow(store, ["incognito": true])

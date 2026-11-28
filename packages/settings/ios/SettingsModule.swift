@@ -180,6 +180,9 @@ public class SettingsModule: Module {
         guard let data = optionsJSON.data(using: .utf8),
           let options = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any]
         else { return reply.reject("ERR_APP_STARTUP", "invalid startup options") }
+        if options["persistenceRefused"] as? Bool == false, options["safeMode"] as? Bool == false {
+          NativeLiveEngine.shared.start()
+        }
         reply.resolve(NativeAppStartup.shared.start(options) { event in
           sink.module?.sendEvent("onAppIntegrationPresentation", event)
         })
@@ -518,16 +521,6 @@ public class SettingsModule: Module {
         promise.resolve(nil)
       } catch {
         promise.reject("ERR_LIVE_MEETING_BROWSER", String(describing: error))
-      }
-    }.runOnQueue(.main)
-
-    AsyncFunction("liveStart") { (promise: Promise) in
-      nonisolated(unsafe) let reply = promise
-      MainActor.assumeIsolated {
-        Task { @MainActor in
-          await NativeLiveEngine.shared.start()
-          reply.resolve(nil)
-        }
       }
     }.runOnQueue(.main)
 

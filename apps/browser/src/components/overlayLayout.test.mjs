@@ -41,7 +41,7 @@ async function fixture() {
     "./layout/windowLayout": { useTabLayout: () => "sidebar", useAddressBarInSidebar: () => false, SIDEBAR_FOOTER_DOWNLOADS: { bottom: 6, size: 34 } },
     "./profiles/ProfileDots": { useProfileDotsShown: () => false, PROFILE_DOTS_HEIGHT: 20 },
     "./layout/controls": { PANEL: { inset: 8, separatorGap: 4, rowHeight: 24 } },
-    "../../live": { startLive() {} },
+    "../../live/meetingGroups": { startMeetingGroups() {} },
   };
   modules["../live/MeetingAlert"] = { MeetingAlert: leaf("MeetingAlert") };
   const exports = {};

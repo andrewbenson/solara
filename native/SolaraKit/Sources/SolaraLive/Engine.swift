@@ -474,7 +474,7 @@ public actor LiveEngine {
   public func appResignedActive() { appActive = false }
 
   public func liveTabDeactivated(folderId: String) {
-    guard !effects.environment.safeMode else { return }
+    guard !effects.environment.safeMode, state.folders[folderId] != nil else { return }
     let now = effects.clock.now()
     if now - (lastNudge[folderId] ?? 0) < LiveEngine.nudgeThrottleMs { return }
     lastNudge[folderId] = now

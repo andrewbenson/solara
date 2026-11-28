@@ -728,7 +728,13 @@ try {
     await until(async () => ({ ok: (await app.eval(`return ac.pages.calendar.getState().events.length`)) >= 2 }), 5000);
     await crossRead(app, "native calendar event count", (snapshot) => snapshot.calendar.count,
       (timeout) => app.eval(`return ac.pages.calendar.getState().events.length`, { timeout }));
-    await app.eval(`ac.pages.setSidebarUi({ hover: { windowId: ${JSON.stringify(ids.w)}, kind: "tab", id: ${JSON.stringify(ids.tab)}, anchor: { x: 10, y: 120, width: 240, height: 32 } } }); return true`);
+    const target = await until(async () => {
+      const frame = await app.eval(`return ac.sidebarRows.measureRow(${JSON.stringify(ids.w)}, ${JSON.stringify(ids.tab)})`);
+      return { ok: !!frame, frame };
+    });
+    assert.ok(target.ok, "the native calendar tab row has a frame");
+    const point = { x: target.frame.x + Math.min(60, target.frame.width / 2), y: target.frame.y + target.frame.height / 2 };
+    assert.equal(await app.eval(`return ac.shell.devSetPointer(${JSON.stringify(ids.w)}, ${JSON.stringify(point)})`), true);
     const shown = await until(async () => {
       const now = await calendarRows(ids.w);
       return { ok: !!now && now.some((f) => f.label.startsWith("event:standup")), now };
@@ -741,7 +747,7 @@ try {
     assert.ok(active.ok, `the calendar tab is shown (clicked ${JSON.stringify(row)} on ${hit})`);
     assert.equal(await crossRead(app, "calendar tab selection", (snapshot) => snapshot.windows.find((window) => window.id === ids.w)?.selectedTabId,
       (timeout) => app.eval(`const s = ac.store.getState(); const w = s.windows[${JSON.stringify(ids.w)}]; return w.activeTabIds[w.profileId]`, { timeout })), ids.tab);
-    await app.eval(`ac.pages.setSidebarUi({ hover: null }); return true`);
+    await app.eval(`return ac.shell.devSetPointer(${JSON.stringify(ids.w)}, null)`);
   });
 
   await rep.check("the meeting alert's Join opens the meeting and Ignore dismisses it", async () => {

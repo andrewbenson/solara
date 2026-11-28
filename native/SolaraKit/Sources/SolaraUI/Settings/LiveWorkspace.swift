@@ -4,6 +4,26 @@ import SolaraModel
 import SolaraStore
 
 public enum LiveWorkspace {
+  public static func detachItemLinks(in store: Store, knownFolders: Set<String>?, tabIds: [String]? = nil) throws {
+    try store.sequence {
+      let tabs = store.state.tabs
+      let updates = (tabIds ?? tabs.keys).compactMap { id -> Command? in
+        guard let tab = tabs[id], let item = tab.liveItem else { return nil }
+        let known = knownFolders.map { folders in item["folderId"]?.string.map(folders.contains) == true }
+        guard tab.pinned || known == false else { return nil }
+        return Command("updateTab", [.string(id), ["$unset": ["liveItem"]]])
+      }
+      if !updates.isEmpty { try store.dispatch(updates) }
+    }
+  }
+
+  public static func deactivatedFolders(from before: BrowserState, to after: BrowserState) -> Set<String> {
+    Set(after.windowOrder.compactMap { windowId in
+      guard let id = before.activeTabId(windowId), id != after.activeTabId(windowId) else { return nil }
+      return after.tabs[id]?.liveItem?["folderId"]?.string
+    })
+  }
+
   public static func closeFolderTabs(_ folderId: String, in store: Store) throws {
     try store.sequence {
       let ids = store.state.tabs.values

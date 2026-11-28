@@ -1,12 +1,8 @@
-import { nativeSafeMode } from "../store/nativeStore";
-import { persistenceRefused } from "../lib/persistLatch";
-import { onAppEvent, onWindowEvent } from "@solara/shell";
-import { liveStart } from "@solara/settings";
 import { liveCommand } from "./command";
 import { useBrowser } from "../store/browser";
-import { activeTabId, viewTabIds } from "../store/model";
+import { viewTabIds } from "../store/model";
 import { SOURCES } from "./sources";
-import { live, markRead, useLive } from "./store";
+import { live, markRead } from "./store";
 import type { LiveErrorKind, LiveFolderKind, LiveItem, LiveSourceId } from "./types";
 
 export const COMPLETION_MS = 2600;
@@ -67,41 +63,4 @@ export function openLiveItem(windowId: string, folderId: string, item: LiveItem,
   const id = s.newTab(windowId, { url: item.url, background: options.background });
   useBrowser.getState().updateTab(id, { liveItem: { folderId, itemId: item.id } });
   return id;
-}
-
-let started = false;
-
-export function startLiveEngine() {
-  if (started || nativeSafeMode() || persistenceRefused()) return;
-  started = true;
-  const orphans = () => {
-    const s = useBrowser.getState();
-    const folders = live().folders;
-    for (const t of Object.values(s.tabs)) if (t.liveItem && !folders[t.liveItem.folderId]) s.updateTab(t.id, { liveItem: undefined });
-  };
-  orphans();
-  useLive.subscribe((s, prev) => { if (s.folders !== prev.folders) orphans(); });
-  useBrowser.subscribe((s, prev) => {
-    if (s.profiles === prev.profiles) return;
-    for (const profileId of new Set(Object.values(live().folders).map((f) => f.profileId))) if (!s.profiles[profileId]) void liveCommand("removeProfile", { profileId });
-  });
-  useBrowser.subscribe((s, prev) => {
-    if (s.tabs === prev.tabs) return;
-    for (const id in s.tabs) {
-      const t = s.tabs[id]!;
-      if (t.pinned && t.liveItem && !prev.tabs[id]?.pinned) useBrowser.getState().updateTab(id, { liveItem: undefined });
-    }
-  });
-  useBrowser.subscribe((s, prev) => {
-    if (s.windows === prev.windows) return;
-    for (const windowId of s.windowOrder) {
-      const before = activeTabId(prev, windowId);
-      if (!before || before === activeTabId(s, windowId)) continue;
-      const folderId = s.tabs[before]?.liveItem?.folderId;
-      if (folderId) void liveCommand("liveTabDeactivated", { folderId });
-    }
-  });
-  onWindowEvent((e) => { if (e.type === "focus") void liveCommand("windowFocused", {}); });
-  onAppEvent((e) => { if (e.type === "resignActive") void liveCommand("appResignedActive", {}); });
-  void liveStart();
 }

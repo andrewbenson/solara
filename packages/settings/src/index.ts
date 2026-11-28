@@ -51,7 +51,6 @@ type NativeSettingsModule = {
   flushBookmarkJournal?(): Promise<boolean>;
   cancelBookmarkQuit?(): void;
   liveCommand(name: string, payloadJSON: string): Promise<string>;
-  liveStart(): Promise<void>;
   liveMeetingBrowser(snapshotJSON: string): Promise<void>;
   libraryCommand?(kind: string, engineProfile: string, payload: Record<string, unknown>): Promise<unknown>;
   faviconURI?(page: string, source: string | null, profileId: string, dark: boolean): Promise<string | null>;
@@ -432,7 +431,6 @@ export const liveCommand = async (name: string, payload: Record<string, unknown>
   return JSON.parse(await native.liveCommand(name, JSON.stringify(payload))) as LiveCommandResult;
 };
 
-export const liveStart = (): Promise<void> => native?.liveStart() ?? Promise.reject(new Error("native Live Folders unavailable"));
 export const liveMeetingBrowser = (snapshot: unknown): Promise<void> =>
   native?.liveMeetingBrowser(JSON.stringify(snapshot)) ?? Promise.reject(new Error("native Live Folders unavailable"));
 export const onLiveCloseGroup = (listener: (groupId: string) => void): EventSubscription | null =>

@@ -2,6 +2,7 @@ import AppKit
 import SolaraShell
 import Foundation
 import SolaraLive
+import SolaraModel
 import SolaraStore
 import SolaraUI
 
@@ -107,7 +108,13 @@ final class NativeLiveEngine: @unchecked Sendable {
   private let box: NativeLiveReplicaBox
   private let meetingBox = MeetingBrowserSnapshotBox()
   private let calendarProvider: NativeLiveCalendar
-  private var calendarObserver: NSObjectProtocol?
+  @MainActor private var calendarObserver: NSObjectProtocol?
+  @MainActor private var workspaceListener: Int?
+  @MainActor private var storeListener: Int?
+  @MainActor private weak var store: Store?
+  @MainActor private var workspace: (rev: Int, state: BrowserState)?
+  @MainActor private var folderIds: Set<String>?
+  @MainActor private var appObservers: [NSObjectProtocol] = []
 
   private init() {
     let result = DocumentStore.readResult("live.json")
@@ -140,7 +147,7 @@ final class NativeLiveEngine: @unchecked Sendable {
     Task {
       await engine.setPersistedTextSink { box.setPersistedText($0) }
       for await snapshot in await engine.changes() {
-        await NativeSidebarLive.receive(snapshot.live, calendar: snapshot.calendar, revision: snapshot.revision)
+        await self.receive(snapshot)
         if let replica = try? await engine.currentReplica(), replica.revision == snapshot.revision { box.publish(replica) }
       }
     }
@@ -177,12 +184,77 @@ final class NativeLiveEngine: @unchecked Sendable {
     return result
   }
 
-  @MainActor func start() async {
-    if calendarObserver == nil {
-      calendarObserver = calendarProvider.observeChanges { [engine] in Task { await engine.calendarChanged() } }
+  @MainActor func start() {
+    guard workspaceListener == nil, !DocumentStore.safeMode, !NativeStoreHandle.frozen else { return }
+    workspaceListener = NativeStoreHandle.subscribeLifecycle { [weak self] in self?.bindWorkspace() }
+    calendarObserver = calendarProvider.observeChanges { [engine] in Task { await engine.calendarChanged() } }
+    let center = NotificationCenter.default
+    appObservers.append(center.addObserver(forName: NSWindow.didBecomeKeyNotification, object: nil, queue: .main) { [weak self] note in
+      guard let window = note.object as? NSWindow else { return }
+      MainActor.assumeIsolated {
+        guard let self, ShellDrag.windowId(of: window) != nil,
+          !NativeStoreHandle.frozen else { return }
+        Task { await self.engine.windowFocused() }
+      }
+    })
+    appObservers.append(center.addObserver(forName: NSApplication.didResignActiveNotification, object: NSApp, queue: .main) { [weak self] _ in
+      guard let self else { return }
+      Task { await self.engine.appResignedActive() }
+    })
+    Task {
+      if !NSApp.isActive { await engine.appResignedActive() }
+      await engine.start(jobs: Set(LiveJob.allCases), meetingHost: meetingBox)
     }
-    if !NSApp.isActive { await engine.appResignedActive() }
-    await engine.start(jobs: Set(LiveJob.allCases), meetingHost: meetingBox)
+  }
+
+  @MainActor private func receive(_ snapshot: LiveSnapshot) {
+    let ids = Set(snapshot.live.folders.keys)
+    if folderIds != ids {
+      folderIds = ids
+      if let store = WorkspaceWrites.store, store === self.store {
+        try? LiveWorkspace.detachItemLinks(in: store, knownFolders: ids)
+      }
+    }
+    NativeSidebarLive.receive(snapshot.live, calendar: snapshot.calendar, revision: snapshot.revision)
+  }
+
+  @MainActor private func bindWorkspace() {
+    let next = WorkspaceWrites.store
+    guard next !== store else { return }
+    if let storeListener { store?.unsubscribe(storeListener) }
+    store = next
+    storeListener = nil
+    workspace = nil
+    guard let next else { return }
+    storeListener = next.subscribe { [weak self, weak next] commit in
+      let changes = commit.changes
+      guard !changes.tabs.upserted.isEmpty || !changes.windows.isEmpty || !changes.profiles.isEmpty else { return }
+      DispatchQueue.main.async { [weak self, weak next] in
+        guard let self, let next else { return }
+        self.workspaceChanged(commit, in: next)
+      }
+    }
+    workspace = next.snapshot
+    try? LiveWorkspace.detachItemLinks(in: next, knownFolders: folderIds)
+  }
+
+  @MainActor private func workspaceChanged(_ commit: Commit, in store: Store) {
+    guard WorkspaceWrites.store === store, self.store === store, let previous = workspace, commit.rev > previous.rev else { return }
+    workspace = (commit.rev, commit.state)
+    if !commit.changes.tabs.upserted.isEmpty {
+      try? LiveWorkspace.detachItemLinks(in: store, knownFolders: nil, tabIds: commit.changes.tabs.upserted)
+    }
+    let deactivated = commit.changes.windows.isEmpty ? [] : LiveWorkspace.deactivatedFolders(from: previous.state, to: commit.state)
+    let profilesChanged = !commit.changes.profiles.isEmpty
+    guard profilesChanged || !deactivated.isEmpty else { return }
+    Task { [weak store] in
+      guard let store, WorkspaceWrites.store === store else { return }
+      if profilesChanged { await engine.profilesChanged(existing: Set(store.state.profiles.keys)) }
+      for id in deactivated.sorted() {
+        guard WorkspaceWrites.store === store else { break }
+        await engine.liveTabDeactivated(folderId: id)
+      }
+    }
   }
 
   #if DEBUG

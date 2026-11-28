@@ -1,3 +1,5 @@
+import Darwin
+
 public enum JS {
   public static let negativeInfinity = Int.min / 4
   public static let positiveInfinity = Int.max / 4
@@ -166,10 +168,21 @@ public struct JSKey: Hashable, Sendable {
 
   public init(_ text: String) { self.text = text }
 
-  public static func == (a: JSKey, b: JSKey) -> Bool { a.text.utf16.elementsEqual(b.text.utf16) }
+  public static func == (a: JSKey, b: JSKey) -> Bool {
+    var left = a.text
+    var right = b.text
+    return left.withUTF8 { a in
+      right.withUTF8 { b in
+        guard a.count == b.count else { return false }
+        guard !a.isEmpty else { return true }
+        return memcmp(a.baseAddress!, b.baseAddress!, a.count) == 0
+      }
+    }
+  }
 
   public func hash(into hasher: inout Hasher) {
-    for unit in text.utf16 { hasher.combine(unit) }
+    var text = text
+    text.withUTF8 { hasher.combine(bytes: UnsafeRawBufferPointer($0)) }
   }
 }
 

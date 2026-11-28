@@ -52,6 +52,14 @@ struct BookmarkWireTests {
     #expect(try BookmarkWireFixture.parse(BookmarkWireFixture.text(value), canonical: canonical) == value)
   }
 
+  @Test func journalKeepsLegacyBytesForEscapedTitlesAndURLsWithASCIIKeys() throws {
+    let source = #"{"2":null,"10":true,"a\r\n":0,"a\r":0,"url":"https://例.test/é/😀?q=\"\\\u0000","title":"é é 😀\b\f\n\r\t\u0000\u0001\u001f\"\\"}"#
+    let canonical = #"{"10":true,"2":null,"a\r":0,"a\r\n":0,"title":"é é 😀\b\f\n\r\t\u0000\u0001\u001f\"\\","url":"https://例.test/é/😀?q=\"\\\u0000"}"#
+    let value = try BookmarkWireFixture.parse(source, canonical: canonical)
+    #expect(Data(try BookmarkWireFixture.text(value).utf8) == Data(source.utf8))
+    #expect(Data(value.bookmarkText(sortedKeys: true).utf8) == Data(canonical.utf8))
+  }
+
   @Test func duplicateWireKeysOverwriteOnlyTheSameCodeUnits() throws {
     let source = #"{"\ud800":1,"\ud801":2,"\ud800":3,"�":4}"#
     let canonical = #"{"\ud800":3,"\ud801":2,"�":4}"#

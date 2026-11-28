@@ -74,7 +74,11 @@ struct BookmarkPendingStoreTests {
   }
 
   @Test func unreadableIntentDoesNotBecomeEmpty() throws {
-    for bytes in [Data(), Data("{".utf8), Data("{\"version\":1,\"payload\":{},\"checksum\":\"bad\"}".utf8)] {
+    let unreadable = ["", "{", #"{"version":1,"payload":{},"checksum":"bad"}"#,
+      #"{"version":3,"payload":{"title":"é\"😀\u12xz"},"checksum":"bad"}"#,
+      #"{"version":3,"payload":{"url":"https://例.test/é\""#]
+    for text in unreadable {
+      let bytes = Data(text.utf8)
       let dir = try directory()
       defer { try? FileManager.default.removeItem(at: dir) }
       let path = dir.appendingPathComponent(BookmarkPendingStore.journalName)
@@ -97,12 +101,15 @@ struct BookmarkPendingStoreTests {
     }
   }
 
-  @Test func lostReceiptRequestIsIdempotent() throws {
+  @Test(arguments: [false, true])
+  func lostReceiptRequestIsIdempotent(escapedStrings: Bool) throws {
     let dir = try directory()
     defer { try? FileManager.default.removeItem(at: dir) }
     var first: BookmarkCoordinator? = owner(dir)
     first!.seed(engine: "", document: document([]), ready: true)
-    let edit = BookmarkMutation(method: "addBookmark", args: [["profileId": "p", "url": "https://new.test", "title": "New"]])
+    let url = escapedStrings ? "https://例.test/e\u{301}/😀?q=\"\\" : "https://new.test"
+    let title = escapedStrings ? "Café e\u{301} 🧪 \"\\\n\u{00}" : "New"
+    let edit = BookmarkMutation(method: "addBookmark", args: [["profileId": "p", "url": .string(url), "title": .string(title)]])
     let accepted = try first!.submit(profile: "p", mutations: [edit], requestID: "request-1")
     first = nil
     let second = owner(dir, makeID: { Issue.record("Retried durable request allocated a second ID"); return "wrong" })
@@ -114,7 +121,9 @@ struct BookmarkPendingStoreTests {
     #expect(throws: (any Error).self) {
       try second.submit(profile: "p", mutations: [.init(method: "removeBookmark", args: ["new-id"])], requestID: "request-1")
     }
-    #expect(second.membership(profile: "p", url: "https://new.test"))
+    #expect(retried.view.document["nodes"]?["new-id"]?["title"] == .string(title))
+    #expect(retried.view.document["nodes"]?["new-id"]?["url"] == .string(url))
+    #expect(second.membership(profile: "p", url: url))
   }
 
   @Test func acceptedRemoteReplacementSurvivesCrashBeforePush() throws {

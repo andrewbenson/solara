@@ -73,6 +73,39 @@ struct BookmarkReceiptMemoryTests {
     print("BOOKMARK_DURABLE bookmarks=50 requests=9 journal_bytes=\(before.count)")
   }
 
+  @Test(.enabled(if: ProcessInfo.processInfo.environment["SOLARA_BOOKMARK_JOURNAL_BENCH"] == "1"))
+  func bulkDeletionWithRetainedReceipts() async throws {
+    let directory = FileManager.default.temporaryDirectory.appendingPathComponent("bookmark-journal-bench-\(UUID())")
+    try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: directory) }
+    let pending = BookmarkPendingStore(directory: directory)
+    let owner = BookmarkCoordinator(profiles: ["p": ""], defaultProfile: "p", pendingStore: pending)
+    owner.seed(engine: "", document: document(5000), ready: true)
+    let first = try await owner.performJournalWrite { staged in
+      let first = try staged.submit(profile: "p", mutations: [mutation(0)], requestID: "edit-0")
+      for edit in 1..<12 {
+        try staged.submit(profile: "p", mutations: [mutation(edit)], requestID: "edit-\(edit)")
+      }
+      return first
+    }
+    let ids = (0..<3000).map { "b\($0)" }
+    let deletion = BookmarkMutation(method: "removeBookmarks", args: [JSONValue(ids)])
+    let start = ContinuousClock.now
+    let removed = try await owner.performJournalWrite { staged in
+      try staged.submit(profile: "p", mutations: [deletion], requestID: "bulk-delete")
+    }
+    let elapsed = start.duration(to: .now)
+    print("BOOKMARK_JOURNAL bulk_delete=\(elapsed)")
+    #expect(elapsed < .seconds(9))
+    #expect(removed.results.first?["nodes"]?.array?.count == ids.count)
+    let reopened = BookmarkCoordinator(profiles: ["p": ""], defaultProfile: "p", pendingStore: BookmarkPendingStore(directory: directory))
+    #expect(reopened.desiredView(engine: "").document["nodes"]?["bar@default"]?["children"]?.array?.count == 2000)
+    let replayed = try reopened.submit(profile: "p", mutations: [mutation(0)], requestID: "edit-0")
+    #expect(replayed.results == first.results)
+    #expect(replayed.view.document == first.view.document)
+    #expect(replayed.view.revision == first.view.revision)
+  }
+
   @Test(.enabled(if: ProcessInfo.processInfo.environment["SOLARA_BOOKMARK_MEMORY"] == "1"))
   func measureFiveThousandBookmarksAfterOneThousandEdits() throws {
     let environment = ProcessInfo.processInfo.environment

@@ -57,6 +57,28 @@ public extension JSONValue {
     return out
   }
 
+  var isValidBookmarkJSON: Bool {
+    var pending: [(value: JSONValue, depth: Int)] = [(self, 0)]
+    while let (value, depth) = pending.popLast() {
+      guard depth < 512 else { return false }
+      switch value {
+      case .null, .bool: break
+      case .number(let number):
+        guard number.isFinite else { return false }
+      case .string(let text):
+        guard BookmarkString.roundTrips(text) else { return false }
+      case .array(let values):
+        for child in values { pending.append((child, depth + 1)) }
+      case .object(let values):
+        for (key, child) in values {
+          guard BookmarkString.roundTrips(key) else { return false }
+          pending.append((child, depth + 1))
+        }
+      }
+    }
+    return true
+  }
+
   var canonical: String { text(sortedKeys: true) }
 }
 
@@ -88,8 +110,16 @@ enum JSONWriter {
     case .object(let object):
       out += "{"
       var first = true
-      let keys = sortedKeys ? object.keys.sorted(by: bookmarkStrings ? BookmarkString.precedes : jsKeyPrecedes) : object.keys
-      for key in keys {
+      let keys = object.keys
+      let orderedKeys: [String]
+      if !sortedKeys {
+        orderedKeys = keys
+      } else if keys.allSatisfy(isASCII) {
+        orderedKeys = keys.sorted()
+      } else {
+        orderedKeys = keys.sorted(by: bookmarkStrings ? BookmarkString.precedes : jsKeyPrecedes)
+      }
+      for key in orderedKeys {
         if !first { out += "," }
         first = false
         if bookmarkStrings { BookmarkString.write(key, into: &out) } else { string(key, into: &out) }
@@ -100,11 +130,23 @@ enum JSONWriter {
     }
   }
 
+  private static func isASCII(_ key: String) -> Bool { key.utf8.count == key.utf16.count }
+
+  private static let escapedBytes: String =
+    "\"\\\u{01}\u{02}\u{03}\u{04}\u{05}\u{06}\u{07}\u{08}\u{09}\u{0a}\u{0b}\u{0c}\u{0d}\u{0e}\u{0f}" +
+    "\u{10}\u{11}\u{12}\u{13}\u{14}\u{15}\u{16}\u{17}\u{18}\u{19}\u{1a}\u{1b}\u{1c}\u{1d}\u{1e}\u{1f}"
+
   static func string(_ s: String, into out: inout String) {
     out += "\""
     let bytes = s.utf8
+    let escapeStart = s.withCString { bytes in escapedBytes.withCString { strcspn(bytes, $0) } }
+    if escapeStart == bytes.count {
+      out += s
+      out += "\""
+      return
+    }
     var plainStart = bytes.startIndex
-    var index = plainStart
+    var index = bytes.index(plainStart, offsetBy: escapeStart)
     while index < bytes.endIndex {
       let byte = bytes[index]
       let escape: String?
@@ -328,10 +370,9 @@ struct JSONParser {
     return value
   }
 
-  mutating func bookmarkString() throws -> String {
-    at += 1
+  mutating func escapedBookmarkString(start: Int) throws -> String {
     var units: [UInt16] = []
-    var start = at
+    var start = start
     while at < bytes.count {
       let byte = bytes[at]
       if byte == UInt8(ascii: "\"") || byte == UInt8(ascii: "\\") {
@@ -362,7 +403,6 @@ struct JSONParser {
   }
 
   mutating func string() throws -> String {
-    if bookmarkStrings { return try bookmarkString() }
     at += 1
     let start = at
     while at < bytes.count {
@@ -370,11 +410,12 @@ struct JSONParser {
       if b == UInt8(ascii: "\"") {
         let s = String(decoding: UnsafeBufferPointer(rebasing: bytes[start..<at]), as: UTF8.self)
         at += 1
-        return s
+        return bookmarkStrings ? BookmarkString.encode(s) : s
       }
       if b == UInt8(ascii: "\\") { break }
       at += 1
     }
+    if bookmarkStrings { return try escapedBookmarkString(start: start) }
     var scalars = String.UnicodeScalarView()
     scalars.append(contentsOf: String(decoding: UnsafeBufferPointer(rebasing: bytes[start..<at]), as: UTF8.self).unicodeScalars)
     var pending: [UInt8] = []

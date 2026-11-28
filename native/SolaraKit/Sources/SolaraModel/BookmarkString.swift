@@ -3,7 +3,21 @@ import Foundation
 public enum BookmarkString {
   private static let marker: UInt32 = 0xF0000
 
-  private static func containsMarker(_ value: String) -> Bool { value.unicodeScalars.contains { $0.value == marker } }
+  private static func containsMarker(_ value: String) -> Bool {
+    var value = value
+    let possible = value.withUTF8 { bytes in
+      guard let start = bytes.baseAddress else { return false }
+      return memchr(start, 0xF3, bytes.count) != nil
+    }
+    return possible && value.unicodeScalars.contains { $0.value == marker }
+  }
+
+  static func roundTrips(_ value: String) -> Bool {
+    guard containsMarker(value) else { return true }
+    var text = ""
+    write(value, into: &text)
+    return (try? JSONValue.parseBookmark(text)) == .string(value)
+  }
 
   public static func encode(_ value: String) -> String {
     containsMarker(value) ? encode(units: Array(value.utf16)) : value

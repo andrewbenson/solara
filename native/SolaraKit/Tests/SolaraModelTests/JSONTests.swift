@@ -31,6 +31,46 @@ import Testing
     #expect(value == .array([.string("é😀/\"\\\u{08}\u{0C}\n\r\t"), .number(-125), .number(1000)]))
   }
 
+  @Test func bookmarkTextKeepsCodeUnitIdentityAndCanonicalKeyOrder() throws {
+    let literalMarker = BookmarkString.encode("\u{F0000}")
+    let isolatedSurrogate = BookmarkString.encode(units: [0xD800])
+    let value: JSONValue = [
+      "é": .string(literalMarker), "e\u{301}": .string(isolatedSurrogate),
+      "\u{E000}": "nul\u{00}byte", "😀": "escape\n\""
+    ]
+    #expect(try JSONValue.parseBookmark(value.bookmarkText()) == value)
+    #expect(value.bookmarkText(sortedKeys: true) == #"{"é":"\ud800","é":"\#(BookmarkString.display(literalMarker))","😀":"escape\n\"","\#("\u{E000}")":"nul\u0000byte"}"#)
+    #expect(Set([JSKey("é"), JSKey("e\u{301}")]).count == 2)
+    #expect(JSONValue.string("é") != .string("e\u{301}"))
+    #expect(try JSONValue.parseBookmark("\"\u{F0000}\"") == .string(literalMarker))
+  }
+
+  @Test func bookmarkValidationMatchesTheCodecLimits() throws {
+    let marker = "\u{F0000}"
+    let deep = (0..<511).reduce(JSONValue.null) { value, _ in .array([value]) }
+    let cases: [JSONValue] = [
+      ["valid": .array([.number(.greatestFiniteMagnitude), .number(.leastNonzeroMagnitude), .number(-0.0), .string(BookmarkString.encode(marker))])],
+      .string(marker), .object([marker: .null]), .number(.infinity), .number(.nan)
+    ]
+    for value in cases {
+      let roundTrip = (try? JSONValue.parseBookmark(value.bookmarkText())) == value
+      #expect(value.isValidBookmarkJSON == roundTrip)
+    }
+    #expect(deep.isValidBookmarkJSON)
+    #expect(!JSONValue.array([deep]).isValidBookmarkJSON)
+  }
+
+  @Test func bookmarkValidationRejectsMarkerStringsThatLoseCodeUnitsWhenWritten() throws {
+    let marker = BookmarkString.encode("\u{301}\u{F0000}")
+    let escapedSurrogate = BookmarkString.encode(units: [0xD800, 0x0301, 0x0061])
+    for text in [marker, escapedSurrogate] {
+      for value in [JSONValue.string(text), .object([text: .null])] {
+        #expect(try JSONValue.parseBookmark(value.bookmarkText()) != value)
+        #expect(!value.isValidBookmarkJSON)
+      }
+    }
+  }
+
   @Test func parseRejectsBrokenInput() {
     for text in ["{", "[1,]", "{\"a\" 1}", "tru", "\"abc", "1 2", ""] {
       #expect(throws: JSONParseError.self) { try JSONValue.parse(text) }

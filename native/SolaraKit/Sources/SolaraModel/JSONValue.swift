@@ -64,7 +64,7 @@ public enum JSONValue: Sendable, Hashable {
     case (.null, .null): true
     case (.bool(let x), .bool(let y)): x == y
     case (.number(let x), .number(let y)): x == y
-    case (.string(let x), .string(let y)): x.utf16.elementsEqual(y.utf16)
+    case (.string(let x), .string(let y)): JSKey(x) == JSKey(y)
     case (.array(let x), .array(let y)): x == y
     case (.object(let x), .object(let y)): x == y
     default: false

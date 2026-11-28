@@ -252,7 +252,7 @@ final class BookmarkDurability {
     if store != nil && !metadataOnly {
       for (_, view) in input.views { try Self.validateDocument(view.document, engine: view.engine) }
       for (engine, base) in input.bases { try Self.validateRecords(base.records, engine: engine) }
-      guard try JSONValue.parseBookmark(checkpoint.bookmarkText()) == checkpoint else { throw BookmarkPendingStoreError.invalidEnvelope }
+      guard checkpoint.isValidBookmarkJSON else { throw BookmarkPendingStoreError.invalidEnvelope }
     }
     return BookmarkCheckpoint(payload: checkpoint, requests: nextRequests, conflicts: nextConflicts, legacyPendingEngines: nextLegacy, owners: input.owners, factSequence: input.factSequence, syncLinks: input.syncLinks, terminalEngines: nextTerminals, incarnations: nextIncarnations, legacyMigration: nextMigration, requestSequence: retention.sequence, expiredRequests: retention.expired, acknowledgedRequestIDs: input.acknowledgedRequestIDs)
   }

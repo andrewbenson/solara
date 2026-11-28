@@ -3,7 +3,6 @@ import SolaraCore
 import SolaraShell
 import ExpoModulesCore
 import SolaraImportAdapter
-import Security
 
 public class SyncModule: Module {
   private let state = KeyState.shared
@@ -248,17 +247,24 @@ public class SyncModule: Module {
       }
     }.runOnQueue(Self.work)
 
-    AsyncFunction("migrateLedger") { (ledger: String, scopes: [String: String], state: String) -> String? in
-      guard Self.sealed.latched, let keys = self.state.keys, LedgerMigration.needsMigration(ledger) else { return nil }
-      do {
-        return try LedgerMigration.migrate(ledger, keys: keys) { engineProfile in
-          LedgerMigration.Profile(
-            logins: Self.loginData(engineProfile).map(LedgerMigration.logins),
-            records: scopes[engineProfile].map { LedgerMigration.records(fromState: state, scope: $0, keys: keys) } ?? [:])
+    AsyncFunction("migrateLedger") { (ledger: String, scopes: [String: String], state: String, promise: Promise) in
+      guard LedgerMigration.needsMigration(ledger) else { return promise.resolve(nil) }
+      Self.withPasswordSyncDecryptor(promise) { decryptor -> String? in
+        guard Self.sealed.latched, let keys = self.state.keys else { return nil }
+        do {
+          return try LedgerMigration.migrate(ledger, keys: keys) { engineProfile in
+            let logins = Self.readLogins(engineProfile, decryptor: decryptor)?.logins.map { login in
+              let c = login.credential
+              return (realm: c.realm ?? c.url, username: c.username, password: c.password)
+            }
+            return LedgerMigration.Profile(
+              logins: logins.map(LedgerMigration.logins),
+              records: scopes[engineProfile].map { LedgerMigration.records(fromState: state, scope: $0, keys: keys) } ?? [:])
+          }
+        } catch {
+          NSLog("[sync] unable to migrate the password ledger")
+          return nil
         }
-      } catch {
-        NSLog("[sync] migrating the password ledger: \(error)")
-        return nil
       }
     }.runOnQueue(Self.work)
 
@@ -332,55 +338,40 @@ public class SyncModule: Module {
       NSWorkspace.shared.activateFileViewerSelecting([URL(fileURLWithPath: path, isDirectory: true)])
     }.runOnQueue(.main)
 
-    AsyncFunction("readPasswordsWithMark") { (engineProfile: String) -> [String: Any]? in
-      do {
+    AsyncFunction("readPasswordsWithMark") { (engineProfile: String, promise: Promise) in
+      Self.withPasswordSyncDecryptor(promise) { decryptor -> [String: Any]? in
         let sealing = Self.sealed.latched
         let keys = self.state.keys
         if sealing && keys == nil { return nil }
-        let key = ChromiumCrypto.deriveKey(secret: try Self.safeStorageSecret())
-        let read = try ChromiumSecrets.loginsForSync(profile: Self.profileDirectory(engineProfile), key: key)
-        if read.undecryptable > 0 {
-          NSLog("[sync] \(read.undecryptable) saved passwords didn't decrypt; not syncing passwords now")
+        guard let read = Self.readLogins(engineProfile, decryptor: decryptor) else { return nil }
+        do {
+          let logins: [[String: Any]] = try read.logins.compactMap { l in
+            let c = l.credential
+            var login: [String: Any]
+            if sealing, let keys {
+              guard let origin = SealedPasswords.origin(of: c.realm ?? c.url) else { return nil }
+              login = ["origin": origin, "username": c.username, "s": try keys.sealPassword(c.password, origin: origin, username: c.username), "created": c.created ?? 0]
+            } else {
+              login = ["origin": c.realm ?? c.url, "url": c.url, "username": c.username, "password": c.password, "created": c.created ?? 0]
+            }
+            if let modified = l.modified { login["modified"] = modified }
+            return login
+          }
+          return ["logins": logins, "mark": read.mark ?? NSNull()]
+        } catch {
+          NSLog("[sync] unable to seal saved passwords")
           return nil
         }
-        let logins: [[String: Any]] = try read.logins.compactMap { l in
-          let c = l.credential
-          var login: [String: Any]
-          if sealing, let keys {
-            guard let origin = SealedPasswords.origin(of: c.realm ?? c.url) else { return nil }
-            login = ["origin": origin, "username": c.username, "s": try keys.sealPassword(c.password, origin: origin, username: c.username), "created": c.created ?? 0]
-          } else {
-            login = ["origin": c.realm ?? c.url, "url": c.url, "username": c.username, "password": c.password, "created": c.created ?? 0]
-          }
-          if let modified = l.modified { login["modified"] = modified }
-          return login
-        }
-        return ["logins": logins, "mark": read.mark ?? NSNull()]
-      } catch ImportError.notFound(_) {
-        return ["logins": [] as [[String: Any]], "mark": NSNull()]
-      } catch {
-        NSLog("[sync] reading passwords: \(error)")
-        return nil
       }
     }.runOnQueue(Self.work)
 
-    AsyncFunction("readPasswords") { (engineProfile: String) -> [[String: Any]]? in
-      guard !Self.sealed.latched else { return nil }
-      do {
-        let key = ChromiumCrypto.deriveKey(secret: try Self.safeStorageSecret())
-        let result = try ChromiumSecrets.logins(profile: Self.profileDirectory(engineProfile), key: key)
-        if result.undecryptable > 0 {
-          NSLog("[sync] \(result.undecryptable) saved passwords didn't decrypt; not syncing passwords now")
-          return nil
+    AsyncFunction("readPasswords") { (engineProfile: String, promise: Promise) in
+      Self.withPasswordSyncDecryptor(promise) { decryptor -> [[String: Any]]? in
+        guard !Self.sealed.latched, let read = Self.readLogins(engineProfile, decryptor: decryptor) else { return nil }
+        return read.logins.map { login in
+          let c = login.credential
+          return ["origin": c.realm ?? c.url, "url": c.url, "username": c.username, "password": c.password, "created": c.created ?? 0]
         }
-        return result.items.map { c in
-          ["origin": c.realm ?? c.url, "url": c.url, "username": c.username, "password": c.password, "created": c.created ?? 0]
-        }
-      } catch ImportError.notFound(_) {
-        return []
-      } catch {
-        NSLog("[sync] reading passwords: \(error)")
-        return nil
       }
     }.runOnQueue(Self.work)
   }
@@ -411,15 +402,29 @@ public class SyncModule: Module {
     }
   }
 
-  private static func loginData(_ engineProfile: String) -> [(realm: String, username: String, password: String)]? {
+  private static func withPasswordSyncDecryptor<T>(_ promise: Promise, read: @escaping (SolaraCorePasswordSyncDecryptor) -> T?) {
+    DispatchQueue.main.async {
+      SolaraCoreEngineBridge.passwordSyncDecryptor { decryptor in
+        Self.work.async {
+          guard let decryptor else { return promise.resolve(nil) }
+          promise.resolve(read(decryptor))
+        }
+      }
+    }
+  }
+
+  private static func readLogins(_ engineProfile: String, decryptor: SolaraCorePasswordSyncDecryptor) -> ChromiumSecrets.SyncRead? {
     do {
-      let key = ChromiumCrypto.deriveKey(secret: try safeStorageSecret())
-      let read = try ChromiumSecrets.logins(profile: profileDirectory(engineProfile), key: key)
-      guard read.undecryptable == 0 else { return nil }
-      return read.items.map { ($0.realm ?? $0.url, $0.username, $0.password) }
+      let read = try ChromiumSecrets.loginsForSync(profile: profileDirectory(engineProfile), decrypt: decryptor.decrypt)
+      if read.undecryptable > 0 {
+        NSLog("[sync] %d saved passwords didn't decrypt; not syncing passwords now", read.undecryptable)
+        return nil
+      }
+      return read
     } catch ImportError.notFound(_) {
-      return []
+      return .empty
     } catch {
+      NSLog("[sync] unable to read saved passwords")
       return nil
     }
   }
@@ -562,14 +567,6 @@ public class SyncModule: Module {
       .appendingPathComponent(Bundle.main.bundleIdentifier ?? "network.benson.solara.unbundled", isDirectory: true)
       .appendingPathComponent("Chromium", isDirectory: true)
     return root.appendingPathComponent(engineProfile.isEmpty ? "Default" : "Profile \(engineProfile)", isDirectory: true)
-  }
-
-  static func safeStorageSecret() throws -> Data {
-    if !SolaraCoreHost.chromeUsesRealKeychain {
-      return SafeStorageRekeyGate.testKeychainSecret(environment: ProcessInfo.processInfo.environment, chromeUsesRealKeychain: false)
-        ?? Data("mock_password".utf8)
-    }
-    return try SafeStorageKeychain.secret(service: "\(productName) Safe Storage", account: productName)
   }
 
 }

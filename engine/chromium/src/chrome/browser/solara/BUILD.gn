@@ -117,6 +117,8 @@ source_set("solara") {
     "//components/favicon_base",
     "//components/history/core/browser",
     "//components/keyed_service/core",
+    "//components/os_crypt/async/browser",
+    "//components/os_crypt/async/common",
     "//components/os_crypt/common:switches",
     "//components/password_manager/core/browser",
     "//components/password_manager/core/common",

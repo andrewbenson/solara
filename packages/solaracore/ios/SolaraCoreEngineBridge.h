@@ -12,7 +12,14 @@ typedef NS_ERROR_ENUM(SolaraCoreBookmarkURLErrorDomain, SolaraCoreBookmarkURLErr
 
 @class SolaraCoreTab;
 
+@interface SolaraCorePasswordSyncDecryptor : NSObject
+- (instancetype)init NS_UNAVAILABLE;
++ (instancetype)new NS_UNAVAILABLE;
+- (nullable NSString *)decrypt:(NSData *)ciphertext;
+@end
+
 @interface SolaraCoreEngineBridge : NSObject
++ (void)passwordSyncDecryptor:(void (^)(SolaraCorePasswordSyncDecryptor * _Nullable))completion;
 + (void)answerDesktopCapture:(NSString *)receipt tab:(SolaraCoreTab *)tab
                       source:(nullable NSString *)source audio:(BOOL)audio;
 + (nullable NSDictionary<NSString *, id> *)displayCaptureStateForTab:(nullable SolaraCoreTab *)tab;

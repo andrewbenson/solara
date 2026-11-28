@@ -9,6 +9,7 @@
 #include <utility>
 #include <vector>
 
+#include "base/compiler_specific.h"
 #include "base/containers/span.h"
 #include "base/files/file_path.h"
 #include "base/functional/bind.h"
@@ -21,6 +22,7 @@
 #include "base/task/sequenced_task_runner.h"
 #include "base/time/time.h"
 #include "base/timer/timer.h"
+#include "chrome/browser/browser_process.h"
 #include "chrome/browser/extensions/api/passwords_private/passwords_private_delegate.h"
 #include "chrome/browser/extensions/api/passwords_private/passwords_private_delegate_factory.h"
 #include "chrome/browser/password_manager/factories/profile_password_store_factory.h"
@@ -28,6 +30,8 @@
 #include "chrome/browser/solara/ac_sensitive_args.h"
 #include "chrome/common/extensions/api/passwords_private.h"
 #include "chrome/grit/generated_resources.h"
+#include "components/os_crypt/async/browser/os_crypt_async.h"
+#include "components/os_crypt/async/common/encryptor.h"
 #include "components/password_manager/core/browser/export/export_progress_status.h"
 #include "components/password_manager/core/browser/export/password_manager_exporter.h"
 #include "components/password_manager/core/browser/password_store/password_store_interface.h"
@@ -597,6 +601,42 @@ AC_ENGINE_CALL(ac_passwords_export) {
                     path));
           },
           path));
+}
+
+void ac_passwords_sync_get_decryptor_v1(
+    ac_password_sync_decryptor_reply_t reply,
+    void* context) {
+  if (!g_browser_process) {
+    reply(context, nullptr);
+    return;
+  }
+  g_browser_process->os_crypt_async()->GetInstance(base::BindOnce(
+      [](ac_password_sync_decryptor_reply_t reply, void* context,
+         scoped_refptr<os_crypt_async::Encryptor> encryptor) {
+        if (!encryptor || !encryptor->IsEncryptionAvailable()) {
+          reply(context, nullptr);
+          return;
+        }
+        using Encryptor = os_crypt_async::Encryptor;
+        encryptor->AddRef();
+        const ac_password_sync_decryptor decryptor{
+            encryptor.get(),
+            [](void* handle, const uint8_t* ciphertext, size_t length,
+               ac_password_sync_plaintext_t reply, void* reply_context) {
+              auto plaintext = static_cast<Encryptor*>(handle)->DecryptData(
+                  UNSAFE_BUFFERS(base::span(ciphertext, length)));
+              if (!plaintext || plaintext->empty()) {
+                reply(reply_context, nullptr, 0);
+                return;
+              }
+              const auto bytes = base::as_byte_span(*plaintext);
+              reply(reply_context, bytes.data(), bytes.size());
+              crypto::SecureZeroBuffer(base::as_writable_byte_span(*plaintext));
+            },
+            [](void* handle) { static_cast<Encryptor*>(handle)->Release(); }};
+        reply(context, &decryptor);
+      },
+      reply, context));
 }
 
 AC_ENGINE_CALL(ac_passwords_mark) {

@@ -386,6 +386,7 @@ Plain Chromium code over Chrome's services (`engine/chromium/src/chrome/browser/
 | `ac_engine_abi_version`, `ac_engine_set_event_sink` | `engineCall`, `onEngineEvent` |
 | `ac_passwords_*` (list, unlock, reveal, add, update, remove, exceptions, allow, export) | the password functions |
 | `ac_passwords_mark` (`{key, value}`, a `solara_` key only: a row in Login Data's own `meta` table, written on the password store's sequence after its pending writes; `chromium-passwords-sync-mark.patch`) | `engineCall` from sync's password ledger (docs/sync-redesign.md, step 2); read back by `SyncNative.readPasswordsWithMark` in the same copy of Login Data as the logins |
+| `ac_passwords_sync_get_decryptor_v1` | Native password sync only. Borrows Chromium's browser-process crypto through a retained, read-only handle. |
 | `ac_autofill_*` | the address and card functions |
 | `ac_extensions_*`, `ac_search_engines_list` | `SolaraExtensions` |
 | `ac_zoom_list`, `ac_zoom_set` | `getZoomLevels`, `setZoom` |

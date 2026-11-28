@@ -432,10 +432,10 @@ What Chrome Sync does for extensions, through our folder (`packages/sync/src/ext
 
 Saved passwords are Chrome's (its password manager).
 - **Reading.** Chrome's own API (`passwordsPrivate`) reveals a password only after device
-  authentication, so sync reads the profile's `Login Data` with the importer's reader
-  (`ChromiumSecrets`, `packages/import`). Chrome's key is its "Solara Safe Storage" item, or
-  the mock keychain's where SolaraCoreHost uses that (test instances, ad hoc builds). No Touch ID prompt is needed each cycle, and no
-  Chromium change.
+  authentication. Sync reads the profile's `Login Data` with `ChromiumSecrets` and passes its
+  ciphertext to Chromium's browser-process encryptor. The encryptor uses the provider Chromium
+  selected for the data directory. Sync can read unloaded profiles and needs no Touch ID prompt
+  each cycle.
   - The reader copies `Login Data` and its `-journal` and `-wal` (Chrome holds the file with an
     exclusive lock, so no second connection can read it). A copy taken while Chrome commits could
     hold half a transaction, and missing logins would read as deletions. So the copy is kept only

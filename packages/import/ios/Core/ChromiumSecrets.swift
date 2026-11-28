@@ -20,9 +20,15 @@ public enum ChromiumSecrets {
     public var logins: [SyncLogin]
     public var undecryptable: Int
     public var mark: String?
+
+    public static var empty: Self { Self(logins: [], undecryptable: 0, mark: nil) }
   }
 
   public static func loginsForSync(profile: URL, key: Data, cancellation: Cancellation = .init()) throws -> SyncRead {
+    try loginsForSync(profile: profile, cancellation: cancellation) { ChromiumCrypto.decrypt($0, key: key) }
+  }
+
+  public static func loginsForSync(profile: URL, cancellation: Cancellation = .init(), decrypt: (Data) -> String?) throws -> SyncRead {
     let files = ["Login Data", "Login Data For Account"].map { profile.appendingPathComponent($0) }
       .filter { FileManager.default.fileExists(atPath: $0.path) }
     guard !files.isEmpty else { throw ImportError.notFound("No saved passwords in this profile") }
@@ -32,7 +38,7 @@ public enum ChromiumSecrets {
     var mark: String?
     for file in files {
       let db = try SQLiteSnapshot(copying: file)
-      let r = try rows(db, key: key, cancellation: cancellation)
+      let r = try rows(db, cancellation: cancellation, decrypt: decrypt)
       bad += r.undecryptable
       for l in r.items where seen.insert("\(l.credential.realm ?? l.credential.url)\u{0}\(l.credential.username)").inserted { logins.append(l) }
       if file.lastPathComponent == "Login Data", db.tableExists("meta") {
@@ -46,7 +52,7 @@ public enum ChromiumSecrets {
   }
 
   public static func logins(database: URL, key: Data, cancellation: Cancellation = .init()) throws -> Outcome<Credential> {
-    let r = try rows(SQLiteSnapshot(copying: database), key: key, cancellation: cancellation)
+    let r = try rows(SQLiteSnapshot(copying: database), cancellation: cancellation) { ChromiumCrypto.decrypt($0, key: key) }
     return Outcome(items: r.items.map(\.credential), undecryptable: r.undecryptable)
   }
 
@@ -56,7 +62,7 @@ public enum ChromiumSecrets {
     return unix >= 0 ? unix / 1000 : (unix - 999) / 1000
   }
 
-  static func rows(_ db: SQLiteSnapshot, key: Data, cancellation: Cancellation) throws -> Outcome<SyncLogin> {
+  static func rows(_ db: SQLiteSnapshot, cancellation: Cancellation, decrypt: (Data) -> String?) throws -> Outcome<SyncLogin> {
     guard db.tableExists("logins") else { throw ImportError.unreadable("Login Data has no logins table") }
     var items: [SyncLogin] = []
     var bad = 0
@@ -64,7 +70,7 @@ public enum ChromiumSecrets {
       if items.count % 128 == 0 { try cancellation.check() }
       if row.int("blacklisted_by_user") ?? 0 != 0 { return true }
       guard let blob = row.blob("password_value"), !blob.isEmpty else { return true }
-      guard let password = ChromiumCrypto.decrypt(blob, key: key) else {
+      guard let password = decrypt(blob) else {
         bad += 1
         return true
       }

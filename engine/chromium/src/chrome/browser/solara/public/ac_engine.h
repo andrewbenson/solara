@@ -92,6 +92,25 @@ AC_ENGINE_EXPORT void ac_notifications_debug_displayed(
     ac_notifications_context_lifetime_t retain,
     ac_notifications_context_lifetime_t release);
 
+typedef void (*ac_password_sync_plaintext_t)(void* context,
+                                             const uint8_t* bytes,
+                                             size_t length);
+typedef struct ac_password_sync_decryptor {
+  void* context;
+  void (*decrypt)(void* context,
+                  const uint8_t* ciphertext,
+                  size_t length,
+                  ac_password_sync_plaintext_t reply,
+                  void* reply_context);
+  void (*release)(void* context);
+} ac_password_sync_decryptor;
+typedef void (*ac_password_sync_decryptor_reply_t)(
+    void* context, const ac_password_sync_decryptor* decryptor);
+typedef void (*ac_passwords_sync_get_decryptor_v1_t)(
+    ac_password_sync_decryptor_reply_t reply, void* context);
+AC_ENGINE_EXPORT void ac_passwords_sync_get_decryptor_v1(
+    ac_password_sync_decryptor_reply_t reply, void* context);
+
 enum ac_bookmark_url_status {
   AC_BOOKMARK_URL_INVALID = 0,
   AC_BOOKMARK_URL_VALID = 1,

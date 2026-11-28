@@ -136,7 +136,51 @@ void InstallSink() {
 
 }
 
+@interface SolaraCorePasswordSyncDecryptor ()
+- (instancetype)initWithDecryptor:(ac_password_sync_decryptor)decryptor;
+@end
+
+@implementation SolaraCorePasswordSyncDecryptor {
+  ac_password_sync_decryptor _decryptor;
+}
+
+- (instancetype)initWithDecryptor:(ac_password_sync_decryptor)decryptor {
+  self = [super init];
+  if (self) _decryptor = decryptor;
+  return self;
+}
+
+- (void)dealloc {
+  if (_decryptor.context) _decryptor.release(_decryptor.context);
+}
+
+- (NSString *)decrypt:(NSData *)ciphertext {
+  __block NSString *plaintext = nil;
+  void (^receive)(const uint8_t *, size_t) = ^(const uint8_t *bytes, size_t length) {
+    if (bytes) plaintext = [[NSString alloc] initWithBytes:bytes length:length encoding:NSUTF8StringEncoding];
+  };
+  _decryptor.decrypt(_decryptor.context, static_cast<const uint8_t *>(ciphertext.bytes), ciphertext.length,
+                     [](void *context, const uint8_t *bytes, size_t length) {
+    void (^receive)(const uint8_t *, size_t) = (__bridge void (^)(const uint8_t *, size_t))context;
+    receive(bytes, length);
+  }, (__bridge void *)receive);
+  return plaintext;
+}
+
+@end
+
 @implementation SolaraCoreEngineBridge
+
++ (void)passwordSyncDecryptor:(void (^)(SolaraCorePasswordSyncDecryptor *))completion {
+  NSAssert(NSThread.isMainThread, @"passwordSyncDecryptor off main");
+  auto request = (ac_passwords_sync_get_decryptor_v1_t)Symbol("ac_passwords_sync_get_decryptor_v1");
+  if (!request || !SolaraCoreHost.isStarted || SolaraCoreHost.safeMode) return completion(nil);
+  request([](void *context, const ac_password_sync_decryptor *decryptor) {
+    void (^completion)(SolaraCorePasswordSyncDecryptor *) =
+        (__bridge_transfer void (^)(SolaraCorePasswordSyncDecryptor *))context;
+    completion(decryptor ? [[SolaraCorePasswordSyncDecryptor alloc] initWithDecryptor:*decryptor] : nil);
+  }, (__bridge_retained void *)[completion copy]);
+}
 
 + (void)answerDesktopCapture:(NSString *)receipt tab:(SolaraCoreTab *)tab
                       source:(NSString *)source audio:(BOOL)audio {
@@ -160,6 +204,8 @@ void InstallSink() {
 }
 
 + (void)call:(NSString *)name profile:(NSString *)profile args:(NSString *)args completion:(void (^)(NSString *))completion {
+  if ([name isEqualToString:@"ac_passwords_sync_get_decryptor_v1"])
+    return completion(JSON(@{@"error" : @"requires the native password sync bridge"}));
   if ([name isEqualToString:@"ac_bookmarks_canonicalize_url_v1"])
     return completion(JSON(@{@"error" : @"use canonicalBookmarkURL for this synchronous utility"}));
   if (RefusesSafeModeCall(name)) return completion(JSON(@{@"error" : @"disabled in safe mode"}));
@@ -210,6 +256,10 @@ void InstallSink() {
     volatile unsigned char *bytes = (volatile unsigned char *)secret.mutableBytes;
     for (NSUInteger i = 0; i < secret.length; i++) bytes[i] = 0;
   };
+  if ([name isEqualToString:@"ac_passwords_sync_get_decryptor_v1"]) {
+    wipe();
+    return completion(JSON(@{@"error" : @"requires the native password sync bridge"}));
+  }
   if ([name isEqualToString:@"ac_bookmarks_canonicalize_url_v1"]) {
     wipe();
     return completion(JSON(@{@"error" : @"use canonicalBookmarkURL for this synchronous utility"}));

@@ -1,4 +1,6 @@
 import AppKit
+import SolaraModel
+import SolaraStore
 import Testing
 
 @testable import SolaraUI
@@ -52,5 +54,69 @@ import Testing
     #expect(button != nil && button!.isDescendant(of: shell.bar))
     let blank = shell.hitTest(NSPoint(x: 60, y: 19))
     #expect(blank != nil && !(blank!.isDescendant(of: shell.bar)) && blank !== shell.view(in: .react))
+  }
+
+  private func workspace() -> BrowserState {
+    var state = BrowserState(settings: Settings.hydrated(from: nil))
+    var window = BrowserWindow(id: "w", profileId: "default", incognito: false, frame: nil, createdAt: 0)
+    window.kind = "small"
+    window.tabIds = ["a", "b"]
+    window.activeTabIds["default"] = "a"
+    state.windows["w"] = window
+    state.windowOrder = ["w"]
+    state.tabs["a"] = Tab(id: "a", windowId: "w", profileId: "default", url: "https://a.example/", now: 0)
+    state.tabs["b"] = Tab(id: "b", windowId: "w", profileId: "default", url: "", now: 1)
+    return state
+  }
+
+  @Test func barActionsUseTheCurrentSmallPage() {
+    let state = workspace()
+    #expect(SmallBarCommand.resolve(.fieldClick, windowId: "w", tabId: "a", state: state, closing: []) == .edit("https://a.example/"))
+    #expect(SmallBarCommand.resolve(.fieldMenu, windowId: "w", tabId: "a", state: state, closing: []) == .menu)
+    #expect(SmallBarCommand.resolve(.button("copy"), windowId: "w", tabId: "a", state: state, closing: []) == .copy)
+    #expect(SmallBarCommand.resolve(.button("open"), windowId: "w", tabId: "a", state: state, closing: []) == .expand)
+    #expect(SmallBarCommand.resolve(.profile, windowId: "w", tabId: "a", state: state, closing: []) == .profile)
+    #expect(SmallBarCommand.resolve(.button("unknown"), windowId: "w", tabId: "a", state: state, closing: []) == nil)
+  }
+
+  @Test func staleOrClosingBarsCannotAct() {
+    var state = workspace()
+    #expect(SmallBarCommand.resolve(.fieldClick, windowId: "w", tabId: "b", state: state, closing: []) == nil)
+    #expect(SmallBarCommand.resolve(.profile, windowId: "w", tabId: "a", state: state, closing: ["w"]) == nil)
+    #expect(SmallBarCommand.resolve(.button("open"), windowId: "missing", tabId: "a", state: state, closing: []) == nil)
+    state.tabs["a"]?.windowId = "elsewhere"
+    #expect(SmallBarCommand.resolve(.fieldMenu, windowId: "w", tabId: "a", state: state, closing: []) == nil)
+    state.tabs["a"]?.windowId = "w"
+    state.windows["w"]?.kind = "browser"
+    #expect(SmallBarCommand.resolve(.button("copy"), windowId: "w", tabId: "a", state: state, closing: []) == nil)
+  }
+
+  @Test func blankOrCoveredFieldsHaveOnlyTheirAvailableActions() {
+    var state = workspace()
+    state.windows["w"]?.activeTabIds["default"] = "b"
+    #expect(SmallBarCommand.resolve(.fieldClick, windowId: "w", tabId: "b", state: state, closing: []) == .edit(""))
+    #expect(SmallBarCommand.resolve(.fieldMenu, windowId: "w", tabId: "b", state: state, closing: []) == nil)
+    #expect(SmallBarCommand.resolve(.button("copy"), windowId: "w", tabId: "b", state: state, closing: []) == nil)
+    #expect(SmallBarCommand.resolve(.button("open"), windowId: "w", tabId: "b", state: state, closing: []) == .expand)
+    let store = makeUIStore(state)
+    _ = try? store.dispatch(Command("openPanel", ["w", ""]), origin: .native)
+    #expect(SmallBarCommand.resolve(.fieldClick, windowId: "w", tabId: "b", state: store.state, closing: []) == nil)
+  }
+
+  @Test func copyConfirmationSurvivesRefreshAndClearsWithPageReplacement() throws {
+    let (shell, _, _) = shell()
+    var state = try #require(SmallBarState.decode(#"{"tabId":"t","icon":"favicon","url":"https://a.test/","profileId":"p","host":"a.test","title":"A","loading":false,"progress":0,"hidden":false,"buttons":[{"id":"copy","icon":"link","size":14,"tooltip":"Copy Link"}],"profile":null,"theme":{"dark":true,"colors":{},"panelShadowOpacity":0.2}}"#))
+    shell.bar.showCopyConfirmation()
+    #expect(shell.bar.copied)
+    state.progress = 0.5
+    shell.bar.update(state)
+    #expect(shell.bar.copied)
+    state.url = "https://b.test/"
+    shell.bar.update(state)
+    #expect(!shell.bar.copied)
+    shell.bar.showCopyConfirmation()
+    state.tabId = "replacement"
+    shell.bar.update(state)
+    #expect(!shell.bar.copied)
   }
 }

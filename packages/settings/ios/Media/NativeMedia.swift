@@ -27,11 +27,11 @@ enum NativeMedia {
     }
     HostedViews.register(smallBar) { windowId in
       let view = SmallBarView()
-      var tabId = ""
-      view.onAction = { smallBarAction(windowId, tabId, $0) }
+      view.onAction = { [weak view] action in
+        if let view { NativeLittleSolara.barAction(action, windowId: windowId, bar: view) }
+      }
       return content(smallBar, windowId, view) { json in
         guard let state = SmallBarState.decode(json) else { return }
-        tabId = state.tabId ?? ""
         view.update(state)
       }
     }
@@ -78,15 +78,6 @@ enum NativeMedia {
     let entry = WeakMediaView(view)
     mounted.append((kind, windowId, entry))
     return { mounted.removeAll { $0.view === entry } }
-  }
-
-  static func smallBarAction(_ windowId: String, _ tabId: String, _ event: SmallBarAction) {
-    switch event {
-    case .button(let id): action(windowId, "smallBar", tabId, ["action": id])
-    case .fieldClick: action(windowId, "smallBar", tabId, ["action": "field"])
-    case .fieldMenu: action(windowId, "smallBar", tabId, ["action": "fieldMenu"])
-    case .profile: action(windowId, "smallBar", tabId, ["action": "profile"])
-    }
   }
 
   static func action(_ windowId: String, _ name: String, _ tabId: String = "", _ extra: [String: Any] = [:]) {

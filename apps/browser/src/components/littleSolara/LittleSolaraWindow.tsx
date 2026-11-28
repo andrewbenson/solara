@@ -1,4 +1,3 @@
-import { nativeWorkspaceCommand } from "@solara/settings";
 import { WindowBackdrop } from "@solara/shaders";
 import { littleSolaraShellActive, setLittleSolaraBackdrop, setLittleSolaraBar } from "@solara/settings";
 import { setTrafficLightsCenter, WindowDragRegion } from "@solara/shell";
@@ -11,14 +10,12 @@ import { CommandPanel } from "../CommandPanel";
 import { ContentCard } from "../ContentCard";
 import { DownloadsSurface } from "../Downloads";
 import { setUrlAnchor } from "../layout/windowLayout";
-import { showUrlBarMenu } from "../omnibox/paste";
 import { profileSymbol } from "../profiles/icons";
-import { addMediaActions, mediaTheme, NativeMediaView } from "../media/nativeMedia";
+import { mediaTheme, NativeMediaView } from "../media/nativeMedia";
 import { breadcrumb } from "@solara/core";
 import { usePageProgress } from "../../store/pageProgress";
 import { usePage } from "../layout/pageState";
 import { insecureLevel } from "../Toolbar";
-import { openInMainWindow, openLittleSolaraProfileMenu } from "./actions";
 import { SMALL_BAR_BUTTON, SMALL_BAR_HEIGHT, SMALL_INSET, SMALL_LIGHTS_CENTER } from "./SmallChrome";
 import { PRODUCT } from "../../lib/productName";
 
@@ -51,52 +48,6 @@ export function LittleSolaraWindow() {
   );
 }
 
-const copiedUntil: Record<string, ReturnType<typeof setTimeout>> = {};
-
-addMediaActions({
-  smallBar: (windowId, tabId, extra) => {
-    if (extra.action === "copy") {
-      void nativeWorkspaceCommand("copyUrl", JSON.stringify({ tabId }), windowId);
-      clearTimeout(copiedUntil[windowId]);
-      useCopied.set(windowId, true);
-      copiedUntil[windowId] = setTimeout(() => useCopied.set(windowId, false), 1400);
-      return;
-    }
-    const s = useBrowser.getState();
-    const tab = tabId ? s.tabs[tabId] : undefined;
-    switch (extra.action) {
-      case "open":
-        return openInMainWindow(windowId);
-      case "field":
-        return tab ? s.openPanel(windowId, tab.url) : undefined;
-      case "fieldMenu":
-        return tab?.url ? void showUrlBarMenu(tab) : undefined;
-      case "profile":
-        return void openLittleSolaraProfileMenu(windowId);
-    }
-  },
-});
-
-const useCopied = (() => {
-  const listeners = new Set<() => void>();
-  const copied: Record<string, boolean> = {};
-  return {
-    set(windowId: string, on: boolean) {
-      copied[windowId] = on;
-      for (const l of listeners) l();
-    },
-    use(windowId: string) {
-      const [, bump] = useState(0);
-      useEffect(() => {
-        const l = () => bump((n) => n + 1);
-        listeners.add(l);
-        return () => void listeners.delete(l);
-      }, []);
-      return !!copied[windowId];
-    },
-  };
-})();
-
 function useSmallBarState() {
   const theme = useTheme();
   const windowId = useWindowId();
@@ -104,12 +55,11 @@ function useSmallBarState() {
   const panelOpen = useWindowUi().panel.open;
   const profile = useWindowProfile();
   const severalProfiles = useBrowser((s) => s.profileOrder.length > 1);
-  const copied = useCopied.use(windowId);
   const live = useTabLive(tab?.id ?? "");
   const progress = usePageProgress(tab?.id ?? "");
   const insecure = usePage(tab?.id ?? "", (p) => !!insecureLevel(p));
   const buttons = [
-    { id: "copy", icon: copied ? "checkmark" : "link", size: 14, disabled: !tab?.url, tooltip: "Copy Link (⇧⌘C)" },
+    { id: "copy", icon: "link", size: 14, disabled: !tab?.url, tooltip: "Copy Link (⇧⌘C)" },
     { id: "open", icon: "arrow.up.left.and.arrow.down.right", size: 13, tooltip: `Open in ${PRODUCT} (⌘O)` },
   ];
   const count = buttons.length + (severalProfiles ? 1 : 0);

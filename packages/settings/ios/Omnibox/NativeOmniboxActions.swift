@@ -109,21 +109,38 @@ enum NativeOmniboxActions {
       let target = ToolbarActionCommand.resolve(windowId: windowId, tabId: tabId, state: store.state, closing: store.memory.closingWindows) else { return }
     let generation = NativeStoreHandle.ownershipGeneration
     let paste = classifyPaste(NSPasteboard.general.string(forType: .string) ?? "")
-    var choices = [("copyURL", "Copy URL", true)]
-    if let paste { choices += [("", "", true), ("pasteAndGo", pasteTitle(paste), true)] }
-    menu(choices, in: view) { choice in
+    func choose(_ choice: String) {
       guard ownsActions, NativeStoreHandle.store === store, NativeStoreHandle.ownershipGeneration == generation,
         target.isCurrent(in: store.state, closing: store.memory.closingWindows) else { return }
       if choice == "copyURL" { copy(cleanUrl(target.tab.url)) }
-      if choice == "pasteAndGo", let paste = classifyPaste(NSPasteboard.general.string(forType: .string) ?? "") {
+      let currentPaste = target.small ? paste : classifyPaste(NSPasteboard.general.string(forType: .string) ?? "")
+      if choice == "pasteAndGo", let currentPaste {
         let url: String
-        switch paste {
+        switch currentPaste {
         case .go(let target): url = target
         case .search(let query): url = searchUrl(defaultSearchEngine(store.state.settings), query)
         }
-        openAddress(url, windowId: windowId, tabId: tabId, store: store)
+        if target.small {
+          _ = try? store.dispatch(Command("navigate", [.string(tabId), .string(url)]), origin: .native)
+        } else {
+          openAddress(url, windowId: windowId, tabId: tabId, store: store)
+        }
       }
     }
+    if target.small {
+      var rows: [[String: Any]] = []
+      if let paste {
+        let title = pasteTitle(paste)
+        rows.append(["id": "pasteAndGo", "title": title, "symbol": title == "Paste and Go" ? "arrow.right.circle" : "magnifyingglass"])
+        rows.append(["separator": true])
+      }
+      rows.append(["id": "copyURL", "title": "Copy URL", "symbol": "link"])
+      ShellMenus.choose(rows) { if let choice = $0 { choose(choice) } }
+      return
+    }
+    var choices = [("copyURL", "Copy URL", true)]
+    if let paste { choices += [("", "", true), ("pasteAndGo", pasteTitle(paste), true)] }
+    menu(choices, in: view, choose: choose)
   }
 
   private static func openAddress(_ url: String, windowId: String, tabId: String, store: Store) {

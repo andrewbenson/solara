@@ -61,7 +61,11 @@ enum NativeBrowserServiceCommands {
     if command == "openFile" {
       if plan.route.kind == .littleSolara || plan.route.kind == .peekPromote {
         materialize {
-          if let target = try BrowserServiceCommand.promote(plan, store: store) { ShellScripting.showWindow(target) }
+          guard let target = try BrowserServiceCommand.promote(plan, store: store) else { return }
+          if plan.route.kind == .littleSolara, let tabId = plan.tabId, store.state.tabs[tabId]?.windowId == target {
+            PageCalls.prepareTransfer(tabId)
+          }
+          ShellScripting.showWindow(target)
         }
         return true
       }

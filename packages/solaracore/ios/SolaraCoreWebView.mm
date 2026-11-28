@@ -885,10 +885,12 @@ static void (^gPageLoadHook)(NSDictionary<NSString *, id> *);
 + (void)prepareTransfer:(NSString *)transferKey {
   if (!transferKey.length) return;
   NSString *key = [transferKey copy];
-  dispatch_async(dispatch_get_main_queue(), ^{
+  void (^prepare)(void) = ^{
     for (SolaraCoreWebView *view in LiveViews().allObjects)
       if (view->_tab && !view.owned && [view->_transferKey isEqualToString:key]) view->_handingOff = YES;
-  });
+  };
+  if (NSThread.isMainThread) prepare();
+  else dispatch_async(dispatch_get_main_queue(), prepare);
 }
 
 + (void)releaseTransfer:(NSString *)transferKey {

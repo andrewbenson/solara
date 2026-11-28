@@ -2,6 +2,7 @@ import AppKit
 import SolaraShaders
 import SolaraShell
 import Foundation
+import SolaraModel
 import SolaraStore
 import SolaraUI
 import Synchronization
@@ -43,6 +44,28 @@ enum NativeLittleSolara {
   nonisolated static func active(_ windowId: String) -> Bool { activeIds.withLock { $0.contains(windowId) } }
 
   static func describe(_ windowId: String) -> [String: Any]? { host(windowId)?.describe() }
+
+  static func barAction(_ action: SmallBarAction, windowId: String, bar: SmallBarView) {
+    guard bar.window != nil, NativeStoreHandle.ownsWorkspace, let store = NativeStoreHandle.store,
+      let tabId = bar.tabId,
+      let command = SmallBarCommand.resolve(action, windowId: windowId, tabId: tabId, state: store.state, closing: store.memory.closingWindows)
+    else { return }
+    switch command {
+    case .edit(let url):
+      guard (try? store.dispatch(Command("openPanel", [.string(windowId), .string(url)]), origin: .native)) != nil else { return }
+      NativeOmniboxView.hosts[windowId]?.view?.openNativePanel(text: url)
+    case .menu:
+      NativeOmniboxActions.urlMenu(tabId: tabId, windowId: windowId, in: bar)
+    case .copy:
+      guard let data = try? JSONEncoder().encode(["tabId": tabId]),
+        NativeLinkCommands.perform("copyUrl", arg: String(decoding: data, as: UTF8.self), windowId: windowId) else { return }
+      bar.showCopyConfirmation()
+    case .expand:
+      _ = NativeBrowserServiceCommands.perform("openFile", arg: nil, windowId: windowId)
+    case .profile:
+      NativeWorkspaceCommands.littleProfileMenu(windowId: windowId, store: store)
+    }
+  }
 }
 
 @MainActor
@@ -50,7 +73,6 @@ final class LittleSolaraHost {
   let shell: LittleSolaraShellView
   private weak var root: NSView?
   private var backdropJSON: String?
-  private var tabId = ""
   private var observers: [NSObjectProtocol] = []
   private var contentSizer: NSObjectProtocol?
   private var untrack: (() -> Void)?
@@ -60,7 +82,9 @@ final class LittleSolaraHost {
     self.root = root
     shell.mount(.react, root)
     shell.bar.isHidden = true
-    shell.bar.onAction = { [weak self] in NativeMedia.smallBarAction(windowId, self?.tabId ?? "", $0) }
+    shell.bar.onAction = { [weak bar = shell.bar] action in
+      if let bar { NativeLittleSolara.barAction(action, windowId: windowId, bar: bar) }
+    }
     untrack = NativeMedia.track(NativeMedia.smallBar, windowId, shell.bar)
     let center = NotificationCenter.default
     let appeared = Notification.Name("RCTContentDidAppearNotification")
@@ -102,7 +126,6 @@ final class LittleSolaraHost {
 
   func setBar(_ json: String) {
     guard let state = SmallBarState.decode(json) else { return }
-    tabId = state.tabId ?? ""
     shell.bar.isHidden = false
     shell.bar.update(state)
   }

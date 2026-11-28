@@ -1,9 +1,8 @@
-import { classifyPaste, cleanUrl, searchUrl, type PasteAction } from "@solara/core";
-import { copyText, showMenu, type MenuItem } from "@solara/shell";
+import { classifyPaste, searchUrl, type PasteAction } from "@solara/core";
+import type { MenuItem } from "@solara/shell";
 import { NativeModules } from "react-native";
 import { useBrowser } from "../../store/browser";
 import { defaultSearchEngine } from "../../store/settings";
-import type { Tab } from "../../store/types";
 
 const NativeClipboard = NativeModules.Clipboard as { getString(): Promise<string> } | undefined;
 
@@ -20,16 +19,4 @@ export function pasteMenuItem(action: PasteAction | null): MenuItem[] {
 
 export function pasteTarget(action: PasteAction): string {
   return action.kind === "go" ? action.url : searchUrl(defaultSearchEngine(useBrowser.getState().settings), action.query);
-}
-
-export async function showUrlBarMenu(tab: Pick<Tab, "id" | "url">) {
-  const action = await clipboardPasteAction();
-  const paste = pasteMenuItem(action);
-  const choice = await showMenu([
-    ...paste,
-    ...(paste.length ? [{ separator: true as const }] : []),
-    { id: "copy", title: "Copy URL", symbol: "link" },
-  ]);
-  if (choice === "pasteAndGo" && action) useBrowser.getState().navigate(tab.id, pasteTarget(action));
-  if (choice === "copy") copyText(cleanUrl(tab.url));
 }

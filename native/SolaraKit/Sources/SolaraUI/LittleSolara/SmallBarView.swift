@@ -1,5 +1,7 @@
 import AppKit
 import QuartzCore
+import SolaraModel
+import SolaraStore
 
 public struct SmallBarButtonState: Decodable, Equatable, Sendable {
   public var id: String
@@ -43,6 +45,28 @@ public enum SmallBarAction: Equatable, Sendable {
   case fieldClick
   case fieldMenu
   case profile
+}
+
+public enum SmallBarCommand: Equatable, Sendable {
+  case edit(String)
+  case menu
+  case copy
+  case expand
+  case profile
+
+  public static func resolve(_ action: SmallBarAction, windowId: String, tabId: String, state: BrowserState, closing: Set<String>) -> Self? {
+    guard let target = ToolbarActionCommand.resolve(windowId: windowId, tabId: tabId, state: state, closing: closing),
+      target.small, !target.peek, target.activation == nil else { return nil }
+    let url = target.tab.url
+    switch action {
+    case .fieldClick: return state.windowUi[windowId]?.panelOpen == true ? nil : .edit(url)
+    case .fieldMenu: return url.isEmpty || state.windowUi[windowId]?.panelOpen == true ? nil : .menu
+    case .button("copy"): return url.isEmpty ? nil : .copy
+    case .button("open"): return .expand
+    case .profile: return .profile
+    default: return nil
+    }
+  }
 }
 
 public enum SmallBarMetrics {
@@ -280,6 +304,10 @@ public final class SmallBarView: NSView {
   private let profileButton = SidebarIconButton()
   private let badge = SmallBarBadge()
   private var state: SmallBarState?
+  private var copyReset: Task<Void, Never>?
+  private(set) var copied = false
+
+  public var tabId: String? { state?.tabId }
 
   public override var isFlipped: Bool { true }
 
@@ -301,6 +329,11 @@ public final class SmallBarView: NSView {
   }
 
   public func update(_ next: SmallBarState) {
+    if let state, state.tabId != next.tabId || state.profileId != next.profileId || state.url != next.url {
+      copyReset?.cancel()
+      copyReset = nil
+      copied = false
+    }
     state = next
     let palette = MediaPalette(next.theme)
     field.update(next)
@@ -325,8 +358,7 @@ public final class SmallBarView: NSView {
       let disabled = spec.disabled == true
       button.hoverFill = disabled ? .clear : palette.toolbarHover
       button.pressedFill = disabled ? .clear : palette.toolbarPressed
-      let ink = disabled ? (MediaPalette.parse(next.theme.colors["iconDisabled"]) ?? palette.textTertiary) : palette.icon
-      button.set(spec.icon, size: spec.size, weight: .regular, color: ink, tooltip: spec.tooltip)
+      setIcon(spec, on: button, theme: next.theme, palette: palette)
       button.setAccessibilityElement(true)
       button.setAccessibilityRole(.button)
       button.setAccessibilityLabel(spec.tooltip)
@@ -344,6 +376,30 @@ public final class SmallBarView: NSView {
       badge.set(profile, size: 16)
     }
     needsLayout = true
+  }
+
+  public func showCopyConfirmation() {
+    guard let state, state.tabId != nil, !state.url.isEmpty else { return }
+    copyReset?.cancel()
+    setCopied(true)
+    copyReset = Task { @MainActor [weak self] in
+      try? await Task.sleep(for: .milliseconds(1400))
+      guard !Task.isCancelled else { return }
+      self?.copyReset = nil
+      self?.setCopied(false)
+    }
+  }
+
+  private func setCopied(_ copied: Bool) {
+    self.copied = copied
+    guard let state, let spec = state.buttons.first(where: { $0.id == "copy" }), let button = buttons[spec.id] else { return }
+    setIcon(spec, on: button, theme: state.theme, palette: MediaPalette(state.theme))
+  }
+
+  private func setIcon(_ spec: SmallBarButtonState, on button: SidebarIconButton, theme: MediaThemeState, palette: MediaPalette) {
+    let ink = spec.disabled == true ? (MediaPalette.parse(theme.colors["iconDisabled"]) ?? palette.textTertiary) : palette.icon
+    let icon = spec.id == "copy" && copied ? "checkmark" : spec.icon
+    button.set(icon, size: spec.size, weight: .regular, color: ink, tooltip: spec.tooltip)
   }
 
   public var buttonCount: Int { order.count + (state?.profile == nil ? 0 : 1) }

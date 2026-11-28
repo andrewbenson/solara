@@ -91,6 +91,11 @@ public enum PageCalls {
   public typealias Resolve = (Any?) -> Void
   public typealias Reject = (_ code: String, _ message: String) -> Void
 
+  public static func prepareTransfer(_ tabId: String) {
+    SolaraCoreWebView.prepareTransfer(tabId)
+    if WebKitHub.shared.liveTab(tabId) != nil { WebKitHub.shared.prepareTransfer(tabId) }
+  }
+
   public static let methods: Set<String> = [
     "loadUrl", "goBack", "goForward", "goToOffset", "reload", "forceReload", "stopLoading", "focus", "setMuted",
     "zoomStep", "find", "stopFinding", "print", "runPageCommand", "showDevTools", "executeJavaScript", "evaluate",

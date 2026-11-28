@@ -67,22 +67,6 @@ function openLinksInMainWindow(urls: string[], profileId: string, adoptIds: (str
   if (target) focus(target);
 }
 
-export function openInMainWindow(windowId: string) {
-  const s = store();
-  if (!isSmall(s, windowId)) return;
-  const tabId = activeTabId(s, windowId);
-  const tab = tabId ? s.tabs[tabId] : undefined;
-  const target = mainWindowFor(s, tab?.profileId ?? s.windows[windowId]!.profileId);
-  if (!tab?.url) {
-    s.closeWindow(windowId);
-    if (target) focus(target);
-    else openWindow({ profileId: tab?.profileId });
-    return;
-  }
-  const moved = s.moveTabsToWindow([tab.id], target ?? null);
-  if (moved) focus(moved);
-}
-
 export function moveLittleSolaraToProfile(windowId: string, profileId: string) {
   if (nativeOwnsWorkspace() && nativeWorkspaceCommand("moveLittleSolaraToProfile", profileId, windowId)) return;
   const s = store();
@@ -103,10 +87,6 @@ export function cycleLittleSolaraProfile(windowId: string, delta: 1 | -1) {
   if (!w || s.profileOrder.length < 2) return;
   const i = s.profileOrder.indexOf(w.profileId);
   moveLittleSolaraToProfile(windowId, s.profileOrder[(i + delta + s.profileOrder.length) % s.profileOrder.length]!);
-}
-
-export function openLittleSolaraProfileMenu(windowId: string) {
-  nativeWorkspaceCommand("openProfileMenu", null, windowId);
 }
 
 export function closeLittleSolara(windowId: string) {

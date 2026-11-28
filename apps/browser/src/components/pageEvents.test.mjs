@@ -113,6 +113,7 @@ test("RN reservation leaves navigation and favicons with the native page", () =>
   h.emit("onPasswordPrompt", { origin: "https://a.test/" });
   assert.deepEqual(semantics(h.calls), []);
   for (const name of ["setMuted", "browserId", "showPasswordPrompt"]) assert.ok(h.calls.some((call) => call.name === name), name);
+  assert.equal(h.calls.filter(({ name }) => name === "faviconChanged").length, 0);
   assert.equal(h.page.status, "status");
 });
 
@@ -207,8 +208,10 @@ test("fallback JS facts still work", () => {
   const h = harness({ owned: false });
   h.emit("onNavigationChange", navigation());
   h.emit("onMedia", { playing: true, muted: false });
+  h.emit("onFavicon", { url: "icon", urls: [] });
   assert.ok(h.calls.some(({ name }) => name === "navigated"));
   assert.ok(h.calls.some(({ name }) => name === "updateLive"));
+  assert.deepEqual(h.calls.filter(({ name }) => name === "faviconChanged").map(({ args }) => args), [["t", "icon"]]);
   h.events.followNavigation(h.session, h.state.tabs.t.navigation);
   assert.equal(h.calls.filter(({ name }) => name === "jsLoad").length, 1);
 });

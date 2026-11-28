@@ -9,7 +9,6 @@ import { useFormColors } from "./settings/controls";
 import { useNativeSplitChrome } from "./layout/nativeSplitChrome";
 import { SplitToolbarFeed } from "./layout/NativeSplitToolbars";
 import { FrozenPage } from "./layout/frozenPage";
-import { NativePeekMount } from "./peek/NativePeekMount";
 import { NativePaneFallback, useNativePaneFallbacks } from "./layout/NativePaneFallback";
 import { useContentServices } from "./ContentServices";
 import { PaneContent } from "./PaneContent";
@@ -45,7 +44,6 @@ function NativeContentGuests() {
       ))}
       {tabIds.map((tabId) => <SplitToolbarFeed key={tabId} windowId={windowId} tabId={tabId} geometry={toolbarGeometry({ sidebarButton: false })} focused={tabId === panes?.activeTabId} inSplit={tabIds.length > 1} />)}
       {tabIds.map((tabId) => <FrozenPage key={tabId} windowId={windowId} tabId={tabId} headless />)}
-      <NativePeekMount windowId={windowId} origin={null} fullscreen={false} />
     </>
   );
 }

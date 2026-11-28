@@ -409,8 +409,8 @@ test("pooled created acknowledges its own stamp and requests a complete feed", (
 
 test("a throwing UI handler marks the session protective before a later event can acknowledge it", () => {
   const h = harness();
-  h.state.faviconChanged = () => { throw new Error("UI failure"); };
-  assert.throws(() => h.emit("onFavicon", { url: "icon", urls: [] }, { ...h.report, eventSeq: 5 }), /UI failure/);
+  h.webviews.get("t").setMuted = () => { throw new Error("UI failure"); };
+  assert.throws(() => h.emit("onReady", { browserId: 12, tabId: 34 }, { ...h.report, eventSeq: 5 }), /UI failure/);
   assert.equal(h.calls.filter((call) => call.name === "keepAliveFailed").length, 1);
   assert.equal(h.calls.filter((call) => call.name === "keepAliveHandled").length, 0);
 });

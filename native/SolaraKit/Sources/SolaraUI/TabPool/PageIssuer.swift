@@ -119,6 +119,8 @@ public final class PageHostBinding {
 @MainActor
 public final class PageIssuer {
   public static var shared: PageIssuer?
+  public static var consumePageOpen: (@MainActor (PageIssuer, PageHostBinding, JSONObject) -> Void)?
+  public static var consumePeekEscape: (@MainActor (PageIssuer, PageHostBinding) -> Bool)?
   public static var consumeLifecycleEvent: (@MainActor (PageIssuer, PageHostBinding, String, JSONValue) -> Bool)?
   public static var consumePromptEvent: (@MainActor (PageIssuer, PageHostBinding, String, JSONValue) -> Bool)?
   public static var lifecycleEvent: (@MainActor (PageIssuer, PageHostBinding, String, JSONValue) -> Void)?
@@ -490,6 +492,18 @@ public final class PageIssuer {
       }
     }
     if Self.consumePromptEvent?(self, binding, name, payload) == true { return nil }
+    if name == "onOpenWindow", let request = payload.object, let consume = Self.consumePageOpen {
+      store.sequence {
+        guard ensurePageEstablished(binding), currentInScope(binding, requirePage: true) else { return }
+        consume(self, binding, request)
+      }
+      return nil
+    }
+    let escape = name == "onCommand" && payload["command"]?.string == "escape"
+    if escape, store.sequence({
+      guard ensurePageEstablished(binding), currentInScope(binding, requirePage: true) else { return false }
+      return Self.consumeLifecycleEvent?(self, binding, name, payload) == true || Self.consumePeekEscape?(self, binding) == true
+    }) { return nil }
     let sequence = reserveEventInScope(binding, name: name, payload: payload)
     if !mediaEnded, sequence != nil, name == "onMediaAccess" {
       binding.reportedMedia.insert(.capture)
@@ -497,7 +511,7 @@ public final class PageIssuer {
         : payload["camera"]?.bool == true || payload["microphone"]?.bool == true ? .camera : nil
       NowPlayingStore.shared.setCapture(tabId: binding.tabId, kind)
     }
-    if sequence != nil, Self.consumeLifecycleEvent?(self, binding, name, payload) == true { return nil }
+    if !escape, sequence != nil, Self.consumeLifecycleEvent?(self, binding, name, payload) == true { return nil }
     if sequence != nil {
       Self.lifecycleEvent?(self, binding, name, payload)
       for observer in Self.lifecycleObservers { observer(self, binding, name, payload) }

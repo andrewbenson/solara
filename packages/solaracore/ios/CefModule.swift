@@ -22,7 +22,7 @@ public class CefModule: Module {
   private let notificationConsumer = UUID().uuidString
   public func definition() -> ModuleDefinition {
     Name("SolaraCEF")
-    Events("onDownload", "onPermission", "onPermissionDismissed", "onContentBlocker", "onSystemState", "onEngineEvent", "onTabStrip", "onNotificationEvent", "onPinnedLink", "onProfileLoaded")
+    Events("onDownload", "onPermission", "onPermissionDismissed", "onContentBlocker", "onSystemState", "onEngineEvent", "onTabStrip", "onNotificationEvent", "onProfileLoaded")
 
     OnCreate {
       DispatchQueue.main.async {
@@ -46,7 +46,6 @@ public class CefModule: Module {
         }
       }
       DispatchQueue.main.async {
-        SolaraCoreWebView.setPinnedLinkHandler({ [weak self] event in self?.sendEvent("onPinnedLink", event) }, owner: self.notificationConsumer)
       }
       SystemState.shared.onChange = { [weak self] state in self?.sendEvent("onSystemState", state) }
       SystemState.shared.start()
@@ -56,7 +55,6 @@ public class CefModule: Module {
       let owner = self.notificationConsumer
       DispatchQueue.main.async {
         SolaraCoreNotifications.clearEventHandler(owner)
-        SolaraCoreWebView.clearPinnedLinkHandler(owner)
       }
     }
     AsyncFunction("notificationWatch") { (promise: Promise) in
@@ -127,12 +125,6 @@ public class CefModule: Module {
     AsyncFunction("isTracing") { SolaraCoreHost.isTracing }.runOnQueue(.main)
     AsyncFunction("setSearchEngineName") { (name: String) in SolaraCoreWebView.setSearchEngineName(name) }.runOnQueue(.main)
     AsyncFunction("setDisplayMediaPicker") { (enabled: Bool) in SolaraCoreWebView.setDisplayMediaPicker(enabled) }.runOnQueue(.main)
-    AsyncFunction("setPinnedLinkSources") { (keys: [String]) in SolaraCoreWebView.setPinnedLinkSources(keys) }.runOnQueue(.main)
-    AsyncFunction("resolvePinnedLink") { (requestId: String, intercept: Bool) -> Bool in
-      SolaraCoreWebView.resolvePinnedLink(requestId, intercept: intercept)
-    }.runOnQueue(.main)
-    AsyncFunction("setPeekModifier") { (modifier: String) in SolaraCoreWebView.setPeekModifier(modifier) }.runOnQueue(.main)
-    AsyncFunction("setSplitLinkModifier") { (modifier: String) in SolaraCoreWebView.setSplitLinkModifier(modifier) }.runOnQueue(.main)
     AsyncFunction("setSelectionPopover") { (enabled: Bool) in SolaraCoreWebView.setSelectionPopoverEnabled(enabled) }.runOnQueue(.main)
     AsyncFunction("devPostPeekMouseUp") { (keys: String, tabId: String) in SolaraCoreWebView.devPostPeekMouseUp(keys, over: tabId) }.runOnQueue(.main)
     AsyncFunction("setAutoPictureInPicture") { (enabled: Bool) in SolaraCoreWebView.setAutoPictureInPictureEnabled(enabled) }.runOnQueue(.main)

@@ -1,55 +1,82 @@
 import AppKit
 import Foundation
+import SolaraShell
 import SolaraUI
 import SolaraModel
 import SolaraStore
 
 @MainActor
 enum NativePeek {
-  static let topic = "peek.state"
   private static var started = false
   private static var hosts: [String: PeekHost] = [:]
 
-  nonisolated static var enabled: Bool { NativeSplitChrome.panesEnabled }
-
-  static func start() {
-    guard enabled, !started else { return }
-    started = true
-    if NativeWindowShell.nativeLayout {
-      TabPoolHost.shared.pageEventObservers.append { tabId, _, _ in
-        guard let windowId = TabPoolHost.shared.windowOf(tabId), NativeWindowShell.nativeLayoutActive(windowId),
-          NativeStoreHandle.store?.state.peeks[windowId] != nil else { return }
-        NativeWindowShell.host(windowId)?.scheduleLayoutProjection()
-      }
-      return
-    }
-    _ = SettingsJS.shared.observe(topic) { value in apply(value) }
-    apply(SettingsJS.shared.latestValue(topic))
+  private struct Load {
+    let tabId: String
+    let identity: PageIdentity
+    var progress: Double?
+    var insecure: Bool?
+    var loading = false
+    var loaded = false
   }
 
-  private static func apply(_ value: Any?) {
-    guard !NativeWindowShell.nativeLayout else { return }
-    let windows = ((value as? [String: Any])?["windows"] as? [String: Any]) ?? [:]
-    for (windowId, host) in hosts where windows[windowId] == nil {
-      host.end()
-      hosts[windowId] = nil
+  private static var loads: [String: Load] = [:]
+
+  static func start() {
+    guard !started else { return }
+    started = true
+    PageIssuer.lifecycleObservers.append { issuer, binding, name, payload in
+      guard ["onNavigationChange", "onProgress", "onSecurity", "onLoadError"].contains(name),
+        NativeStoreHandle.ownsWorkspace, NativeStoreHandle.store === issuer.store,
+        let tab = issuer.store.state.tabs[binding.tabId],
+        issuer.store.state.peeks[tab.windowId]?.tabId == tab.id else { return }
+      let windowId = tab.windowId
+      var load = loads[windowId].flatMap { $0.identity == binding.identity ? $0 : nil } ?? Load(tabId: tab.id, identity: binding.identity)
+      switch name {
+      case "onProgress":
+        if let progress = payload["progress"]?.number, progress.isFinite { load.progress = min(1, max(0, progress)) }
+      case "onSecurity":
+        load.insecure = ["warning", "dangerous"].contains(payload["chromium"]?.string ?? "")
+      default:
+        if issuer.store.state.live[tab.id]?.isLoading == true {
+          load.loading = true
+        } else if load.loading, !load.loaded {
+          load.loaded = true
+          if !issuer.store.memory.isDismissingPeek(windowId) { ShellHaptics.tick() }
+        }
+      }
+      loads[windowId] = load
+      issuer.afterIngress { NativeWindowShell.host(windowId)?.scheduleLayoutProjection() }
     }
-    for (windowId, json) in windows {
-      guard let json = json as? String else { continue }
-      if json.isEmpty, hosts[windowId] == nil { continue }
-      guard let shell = NativeWindowShell.host(windowId)?.shell else { continue }
-      let host = hosts[windowId].flatMap { $0.shell === shell ? $0 : nil } ?? replace(windowId, shell)
-      host.apply(json)
+    _ = PageRegistry.shared.observe { event in
+      guard case .retired(let registration) = event,
+        let window = loads.first(where: {
+          $0.value.tabId == registration.tabID && $0.value.identity.registrationGeneration == registration.registrationGeneration
+        })?.key else { return }
+      loads[window] = nil
+    }
+    PageIssuer.consumePeekEscape = { issuer, binding in
+      let state = issuer.store.state
+      guard NativeStoreHandle.ownsWorkspace, NativeStoreHandle.store === issuer.store,
+        let tab = state.tabs[binding.tabId], let peek = state.peeks[tab.windowId],
+        peek.tabId == tab.id || peek.sourceId == tab.id, state.find[tab.id]?.json["open"]?.bool != true,
+        state.windowUi[tab.windowId]?.panelOpen != true, NativeSelectionTools.popoverSnapshot()[tab.id] == nil else { return false }
+      issuer.afterIngress {
+        guard issuer.isCurrent(binding) else { return }
+        if !NativeTileFolders.close(in: tab.windowId) { action(tab.windowId, tabId: peek.tabId, action: "dismiss") }
+      }
+      return true
     }
   }
 
   static func install(_ state: BrowserState, shell: WindowShellView, fullscreenTabId: String?) {
     let windowId = shell.windowId
-    guard NativeWindowShell.nativeLayoutActive(windowId), let window = state.windows[windowId] else { return }
+    guard TabPoolHost.available, let window = state.windows[windowId] else { return }
     let look = NativeLayoutAppearance(state: state, profileId: window.profileId, incognito: window.incognito)
     let fullscreen = state.peeks[windowId].map { $0.tabId == fullscreenTabId } ?? false
+    if loads[windowId]?.tabId != state.peeks[windowId]?.tabId { loads[windowId] = nil }
+    let load = loads[windowId]
     let next = PeekState.native(state: state, windowId: windowId, card: shell.railFraction > 0 ? shell.frames.page : shell.frames.card, tokens: look.tokens, dark: look.dark,
-      fullscreen: fullscreen, reduceMotion: NSWorkspace.shared.accessibilityDisplayShouldReduceMotion)
+      fullscreen: fullscreen, reduceMotion: NSWorkspace.shared.accessibilityDisplayShouldReduceMotion, progress: load?.progress, insecure: load?.insecure)
     if next == nil, hosts[windowId] == nil { return }
     let host = hosts[windowId].flatMap { $0.shell === shell ? $0 : nil } ?? replace(windowId, shell)
     host.presentationChanged(fullscreenTabId)
@@ -69,26 +96,83 @@ enum NativePeek {
 
   static func windowEnded(_ windowId: String) {
     hosts.removeValue(forKey: windowId)?.end()
+    loads[windowId] = nil
   }
 
   static func backdropChanged(_ windowId: String) {
     hosts[windowId]?.refreshBackdrop()
   }
 
-  static func close(_ windowId: String, tabId: String, generation: UInt64) -> Bool {
-    guard controlMatches(windowId, tabId: tabId, generation: generation), let host = hosts[windowId] else { return false }
-    host.view.close(expectedTabId: tabId)
+  @discardableResult
+  static func action(_ windowId: String, tabId: String, action: String) -> Bool {
+    guard let store = WorkspaceWrites.store, !store.memory.closingWindows.contains(windowId),
+      let peek = store.state.peeks[windowId], peek.tabId == tabId else { return false }
+    let host = hosts[windowId].flatMap { $0.view.state?.tabId == tabId ? $0 : nil }
+    switch action {
+    case "beginClose":
+      return beginClose(store, windowId: windowId, tabId: tabId)
+    case "dismiss":
+      if let host {
+        guard host.view.canDismiss, beginClose(store, windowId: windowId, tabId: tabId) else { return false }
+        host.dismiss(tabId)
+      } else {
+        finishClose(store, windowId: windowId, sourceId: peek.sourceId, tabId: tabId)
+      }
+    case "closed":
+      finishClose(store, windowId: windowId, sourceId: peek.sourceId, tabId: tabId)
+    case "expand":
+      if let host {
+        host.view.expandToTab(expectedTabId: tabId) { [weak host] accepted in
+          guard accepted, let host, hosts[windowId] === host else { return }
+          Self.action(windowId, tabId: tabId, action: "promote")
+        }
+      } else {
+        return Self.action(windowId, tabId: tabId, action: "promote")
+      }
+    case "promote", "split":
+      return promote(store, windowId: windowId, peek: peek, split: action == "split")
+    case "closeFind":
+      guard store.state.find[tabId]?.json["open"]?.bool == true else { return false }
+      _ = try? store.dispatch(Command("setFind", [.string(tabId), ["open": false, "count": .null, "active": 0]]), origin: .native)
+      NativeWorkspaceCommands.restoreContentFocus(windowId: windowId, store: store, tabId: tabId, stopFinding: true)
+    default:
+      return false
+    }
     return true
   }
 
-  static func expand(_ windowId: String, tabId: String, generation: UInt64, _ done: @escaping (Bool) -> Void) {
-    guard controlMatches(windowId, tabId: tabId, generation: generation), let host = hosts[windowId] else { return done(false) }
-    host.view.expandToTab(expectedTabId: tabId, done)
+  private static func beginClose(_ store: Store, windowId: String, tabId: String) -> Bool {
+    (try? store.transact { session in session.result = .bool(session.beginPeekDismissal(windowId, tabId: tabId)) })?.result?.bool == true
   }
 
-  private static func controlMatches(_ windowId: String, tabId: String, generation: UInt64) -> Bool {
-    guard hosts[windowId]?.view.state?.tabId == tabId, NativeWindowShell.nativeLayoutGeneration(windowId) == generation else { return false }
-    return !NativeStoreHandle.ownedWorkspaceAtLaunch || NativeStoreHandle.store?.state.peeks[windowId]?.tabId == tabId
+  private static func finishClose(_ store: Store, windowId: String, sourceId: String, tabId: String) {
+    _ = try? store.dispatch(Command("closePeek", [.string(windowId), .string(tabId)]), origin: .native)
+    guard hosts[windowId] == nil, store.state.activeTabId(windowId) == sourceId else { return }
+    NativeWorkspaceCommands.restoreContentFocus(windowId: windowId, store: store, tabId: sourceId)
+  }
+
+  private static func promote(_ store: Store, windowId: String, peek: Peek, split: Bool) -> Bool {
+    guard !store.memory.isDismissingPeek(windowId) else { return false }
+    if split, (Splits.splitOf(store.state, peek.sourceId)?.tabIds.count ?? 0) >= Splits.maxPanes { return false }
+    let identity = PageIssuer.shared?.binding(tabId: peek.tabId)?.identity
+    let commit = try? store.transact { session in
+      guard let id = session.peekToTab(windowId, activate: !split, tabId: peek.tabId) else { return }
+      if split {
+        var options = Session.OpenPaneOptions()
+        options.tabId = id
+        options.anchorTabId = peek.sourceId
+        options.side = "right"
+        if session.openSplitPane(windowId, options)["ok"]?.bool != true { session.activate(id) }
+      }
+      session.result = .string(id)
+    }
+    guard let id = commit?.result?.string else { return false }
+    if !split { ShellHaptics.tick() }
+    FrameUpdates.flush()
+    if store.state.activeTabId(windowId) == id, PageIssuer.shared?.binding(tabId: id)?.identity == identity {
+      NativeWorkspaceCommands.restoreContentFocus(windowId: windowId, store: store, tabId: id)
+    }
+    return true
   }
 
   static func anchors(_ windowId: String) -> [String: CGRect] {
@@ -125,23 +209,32 @@ final class PeekHost {
   let windowId: String
   let view = PeekOverlayView(frame: .zero)
   private(set) weak var shell: WindowShellView?
-  private var latestJSON = ""
   private var fullscreenTabId: String?
   private var eventGeneration: UInt64 = 0
   private var sourceId: String?
+  private var dismissing: String?
 
   init(windowId: String, shell: WindowShellView) {
     self.windowId = windowId
     self.shell = shell
     view.onEvent = { [weak self] event in
       guard let self, let tabId = self.view.state?.tabId else { return }
+      if event == .dismiss {
+        NativePeek.action(windowId, tabId: tabId, action: "dismiss")
+        return
+      }
       let receipt = self.eventGeneration
       Task { @MainActor [weak self] in
-        guard let self, self.eventGeneration == receipt, self.view.state?.tabId == tabId,
-          !NativeWindowShell.nativeLayoutActive(windowId) || NativeStoreHandle.store?.state.peeks[windowId]?.tabId == tabId else { return }
-        var payload = PeekOverlayView.eventJSON(event)
-        payload["tabId"] = tabId
-        _ = await SettingsAdapters.js("peek.event", windowId, payload)
+        guard let self, self.eventGeneration == receipt, self.view.state?.tabId == tabId else { return }
+        switch event {
+        case .dismiss: break
+        case .openAsTab: NativePeek.action(windowId, tabId: tabId, action: "expand")
+        case .openInSplit: NativePeek.action(windowId, tabId: tabId, action: "split")
+        case .closed(let closed):
+          guard closed == tabId else { return }
+          self.dismissing = nil
+          NativePeek.action(windowId, tabId: tabId, action: "closed")
+        }
       }
     }
   }
@@ -151,6 +244,7 @@ final class PeekHost {
       if view.state != nil { eventGeneration += 1 }
       let responder = view.window?.firstResponder as? NSView
       let returnFocus = responder.map { $0 === view || $0.isDescendant(of: view) } ?? false
+      dismissing = nil
       view.clear()
       unmount()
       if returnFocus, let shell, !shell.modalShown, let sourceId = self.sourceId,
@@ -178,39 +272,14 @@ final class PeekHost {
     shell.coverChanged()
   }
 
-  func apply(_ json: String) {
-    latestJSON = json
-    guard let shell else { return }
-    if json.isEmpty {
-      view.clear()
-      unmount()
-      return
-    }
-    if shell.view(in: .peek) !== view {
-      shell.mount(.peek, view)
-      refreshBackdrop()
-    }
-    TabSlots.shared.set(.peek(windowId), container: view.pageSlot)
-    if NativeWindowShell.nativeLayoutActive(windowId),
-      let data = json.data(using: .utf8), var value = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any] {
-      let tabId = value["tabId"] as? String
-      value["fullscreen"] = tabId != nil && tabId == fullscreenTabId
-      view.isHidden = fullscreenTabId != nil && tabId != fullscreenTabId
-      if let encoded = try? JSONSerialization.data(withJSONObject: value), let next = String(data: encoded, encoding: .utf8) { view.apply(json: next) }
-    } else {
-      view.apply(json: json)
-    }
-    shell.coverChanged()
+  func dismiss(_ tabId: String) {
+    dismissing = tabId
+    view.close(expectedTabId: tabId)
   }
 
   func presentationChanged(_ fullscreenTabId: String?) {
-    guard self.fullscreenTabId != fullscreenTabId else { return }
     self.fullscreenTabId = fullscreenTabId
-    if NativeWindowShell.nativeLayoutActive(windowId) {
-      view.isHidden = fullscreenTabId != nil && view.state?.tabId != fullscreenTabId
-    } else if !latestJSON.isEmpty {
-      apply(latestJSON)
-    }
+    view.isHidden = fullscreenTabId != nil && view.state?.tabId != fullscreenTabId
   }
 
   func refreshBackdrop() {
@@ -225,6 +294,7 @@ final class PeekHost {
     eventGeneration += 1
     view.clear()
     unmount()
+    if let dismissing { NativePeek.action(windowId, tabId: dismissing, action: "closed") }
   }
 
   private func unmount() {

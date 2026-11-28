@@ -9,6 +9,8 @@ public struct StoreMemory: Sendable, Equatable {
   var privateSessionGenerations: [JSKey: String] = [:]
   public var closingWindows: Set<String> = []
   var closingWindowUndos: [String: ClosingWindowUndo] = [:]
+  var peekGenerations: [String: UInt64] = [:]
+  var dismissingPeeks: Set<String> = []
   var hydrating = false
   public var lastTabKeepsWindow = false
   public var listSpots: [String: PinnedListSpot] = [:]
@@ -23,6 +25,8 @@ public struct StoreMemory: Sendable, Equatable {
   var feedWatermark: [String: FeedWatermark] = [:]
   var pageProducerFence: [String: PageProducerFence] = [:]
   var nextPageModelSerial = 0
+
+  public func isDismissingPeek(_ windowId: String) -> Bool { dismissingPeeks.contains(windowId) }
 
   public init(ids: IdSource = IdSource(launch: "x")) {
     self.ids = ids

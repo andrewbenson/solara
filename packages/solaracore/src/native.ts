@@ -3,7 +3,7 @@ import type { ContentBlockerState, ContentBlockerStats, WebKitContentBlockerStat
 import type { DisplayMediaSource } from "./WebView";
 import type { ExternalAppAllowance } from "./externalApps";
 import type { FaviconImage } from "./favicons";
-import type { BrowsingDataType, Download, EngineComponent, EngineInfo, EngineTask, ChromeWindowState, PermissionRequest, PermissionResult, SystemState, PinnedLinkEvent } from "./module";
+import type { BrowsingDataType, Download, EngineComponent, EngineInfo, EngineTask, ChromeWindowState, PermissionRequest, PermissionResult, SystemState } from "./module";
 import type { PasswordExportStatus, SavedPassword } from "./passwords";
 import type { TabStripCommand, TabStripTransaction } from "./tabStrip";
 import type { AddressInput, CardInput, SavedAddress, SavedCard } from "./autofill";
@@ -34,9 +34,6 @@ export type CefNative = {
   addListener(name: "onSystemState", listener: (s: SystemState) => void): EventSubscription;
   addListener(name: "onEngineEvent", listener: (e: { topic: string; payload: string }) => void): EventSubscription;
 
-  addListener(name: "onPinnedLink", listener: (event: PinnedLinkEvent) => void): EventSubscription;
-  setPinnedLinkSources?(keys: string[]): Promise<void>;
-  resolvePinnedLink?(requestId: string, intercept: boolean): Promise<boolean>;
   loadedProfiles(): Promise<string[]>;
   ensureProfile(profile: string): Promise<boolean>;
   addListener(name: "onProfileLoaded", listener: (event: { profile: string }) => void): EventSubscription;
@@ -60,8 +57,6 @@ export type CefNative = {
   setDisplayMediaPicker(enabled: boolean): Promise<void>;
   setAutoPictureInPicture?(enabled: boolean): Promise<void>;
   setVideoUpscaling?(enabled: boolean): Promise<void>;
-  setPeekModifier?(modifier: "alt" | "shift" | "off"): Promise<void>;
-  setSplitLinkModifier?(modifier: "alt" | "altShift"): Promise<void>;
   setSelectionPopover?(enabled: boolean): Promise<void>;
   setVideoUpscalingTestConditions?(conditions: { lowPower?: boolean; thermalPressure?: boolean }): Promise<void>;
   videoUpscalingState?(): Promise<{ enabled: boolean; lowPower: boolean; thermalPressure: boolean; appActive: boolean; tabs: { tabId: number; allowed: boolean }[] } | null>;

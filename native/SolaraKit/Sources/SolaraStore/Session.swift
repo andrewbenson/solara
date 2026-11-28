@@ -146,6 +146,15 @@ public final class Session {
     let prev = state
     var next = normalizedNewTabPlaceholders(next)
     next.pruneWindowLocalState(tabsChanged: next.tabs.changed(from: prev.tabs), windowsChanged: next.windows.changed(from: prev.windows))
+    if next.peeks.changed(from: prev.peeks) {
+      for id in Set(prev.peeks.keys).union(next.peeks.keys) where prev.peeks[id]?.tabId != next.peeks[id]?.tabId {
+        memory.peekGenerations[id, default: 0] &+= 1
+        memory.dismissingPeeks.remove(id)
+      }
+    }
+    if !memory.peekGenerations.isEmpty && next.windows.changed(from: prev.windows) {
+      memory.peekGenerations = memory.peekGenerations.filter { next.windows[$0.key] != nil }
+    }
     captureClosingWindows(before: prev, after: next)
     state = next
     settleLive()

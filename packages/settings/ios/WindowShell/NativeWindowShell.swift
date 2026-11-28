@@ -74,7 +74,6 @@ enum NativeWindowShell {
       return true
     }
     NativeSplitChrome.start()
-    NativePeek.start()
     SettingsJS.shared.onConnect {
       for id in lifetimes.ids { lifetimes.host(id)?.sendPreferences() }
     }
@@ -1318,15 +1317,8 @@ public class WindowShellModule: Module {
       #endif
     }.runOnQueue(.main)
 
-    Function("peekNative") { (windowId: String) -> Bool in NativePeek.enabled && NativeWindowShell.active(windowId) }
-
-    AsyncFunction("peekClose") { (windowId: String, tabId: String, generation: UInt64) -> Bool in
-      FrameUpdates.readOnMain { NativePeek.close(windowId, tabId: tabId, generation: generation) }
-    }.runOnQueue(.main)
-
-    AsyncFunction("peekExpand") { (windowId: String, tabId: String, generation: UInt64, promise: Promise) in
-      nonisolated(unsafe) let reply = promise
-      FrameUpdates.readOnMain { NativePeek.expand(windowId, tabId: tabId, generation: generation) { reply.resolve($0) } }
+    AsyncFunction("peekAction") { (windowId: String, tabId: String, action: String) -> Bool in
+      FrameUpdates.readOnMain { NativePeek.action(windowId, tabId: tabId, action: action) }
     }.runOnQueue(.main)
 
     AsyncFunction("devReactBlockers") { (windowId: String, step: Double) -> String in

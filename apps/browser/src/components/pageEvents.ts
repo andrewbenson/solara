@@ -1,5 +1,5 @@
 import { nativeWorkspaceCommand } from "@solara/settings";
-import { unwrapPageEvent, type OpenWindowRequest, type PageEngine, type PageCreated, type PageIssue, type StoreReportDisposition, type ViewEventName, type WebViewProps } from "@solara/solaracore";
+import { unwrapPageEvent, type PageEngine, type PageCreated, type PageIssue, type StoreReportDisposition, type ViewEventName, type WebViewProps } from "@solara/solaracore";
 import { reportsKnownHistory } from "./layout/backAction";
 import { isPageCurrent, updatePageContext, type PageContext, type PageIdentity } from "@solara/store";
 import { keepAliveCreated, keepAliveFailed, keepAliveGone, keepAliveHandled } from "../lib/keepAliveFeed";
@@ -18,12 +18,10 @@ import { navigationTo } from "../store/model";
 import { splitOf } from "../store/splits";
 import type { Tab } from "../store/types";
 import { patchPage, pageOf, setBrowserId, setPopover, usePages } from "./layout/pageState";
-import { openFromPage } from "./layout/openFromPage";
 import { closeFolderPanelIn } from "./sidebar/tileFolderUi";
 import { closeLittleSolaraOnEscape } from "./littleSolara/actions";
 import { answerExternalApp } from "./site/ExternalAppPrompt";
 import { showAutofillPrompt, showPasswordPrompt } from "./site/Prompts";
-import { closePeekOnEscape } from "./peek/actions";
 
 export type PageSession = {
   tabId: string;
@@ -53,7 +51,6 @@ export type PageEventName =
   | "onExternalApp"
   | "onPasswordPrompt"
   | "onAutofillPrompt"
-  | "onOpenWindow"
   | "onStatus"
   | "onCrashed"
   | "onUnresponsive"
@@ -299,10 +296,6 @@ export function pageEventHandlers(session: PageSession): PageEventHandlers {
       if (!externalApp.closed) patchPage(tabId, { externalApp });
       else if (pageOf(tabId).externalApp?.id === externalApp.id) patchPage(tabId, { externalApp: null });
     },
-    onOpenWindow: (request: OpenWindowRequest) => {
-      const t = tab();
-      if (t) openFromPage(request, { windowId: t.windowId, profileId: t.profileId, tabId });
-    },
     onStatus: (status) => patchPage(tabId, { status }),
     onCrashed: (crashed) => {
       if (!isQuitting()) patchPage(tabId, { crashed, unresponsive: false, fullscreen: false, status: "" });
@@ -323,7 +316,7 @@ export function pageEventHandlers(session: PageSession): PageEventHandlers {
     onCommand: ({ command, text, modifiers }) => {
       if (command === "copyLinkToHighlight") void nativeWorkspaceCommand("copyQuoteLink", JSON.stringify({ tabId }), null);
       else if (command === "escape" && usePages.getState().popover[tabId]) setPopover(tabId, null);
-      else if (command === "escape" && !closeFolderPanelIn(tab()?.windowId) && !closePeekOnEscape(tabId)) closeLittleSolaraOnEscape(tabId);
+      else if (command === "escape" && !closeFolderPanelIn(tab()?.windowId)) closeLittleSolaraOnEscape(tabId);
     },
     onPageMessage: () => {},
     onDiscarded: (url) => {

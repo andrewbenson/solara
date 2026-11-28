@@ -28,7 +28,7 @@ public struct PeekState: Decodable, Equatable, Sendable {
 
 extension PeekState {
   public static func native(state: BrowserState, windowId: String, card: CGRect, tokens: [String: String], dark: Bool,
-    fullscreen: Bool = false, reduceMotion: Bool = false) -> PeekState? {
+    fullscreen: Bool = false, reduceMotion: Bool = false, progress: Double? = nil, insecure: Bool? = nil) -> PeekState? {
     guard state.windows[windowId] != nil, let peek = state.peeks[windowId], let tab = state.tabs[peek.tabId],
       let source = state.tabs[peek.sourceId], source.windowId == windowId, tab.windowId == windowId,
       state.activeTabId(windowId) == peek.sourceId, source.url.components(separatedBy: "#").first == peek.sourcePage else { return nil }
@@ -38,7 +38,8 @@ extension PeekState {
     let hover = tokens["toolbarHover"] ?? (dark ? "#FFFFFF1A" : "#0000000F")
     let pressed = tokens["toolbarPressed"] ?? (dark ? "#FFFFFF2E" : "#0000001A")
     return PeekState(tabId: peek.tabId, dark: dark, host: URL(string: tab.url)?.host ?? "", title: tab.customTitle ?? tab.title,
-      favicon: tab.favicon, insecure: tab.url.lowercased().hasPrefix("http:"), loading: state.live[tab.id]?.isLoading == true ? 0.08 : nil,
+      favicon: tab.favicon, insecure: insecure ?? tab.url.lowercased().hasPrefix("http:"),
+      loading: state.live[tab.id]?.isLoading == true ? max(progress ?? 0, 0.08) : nil,
       splitFull: (Splits.splitOf(state, peek.sourceId)?.tabIds.count ?? 0) >= Splits.maxPanes, fullscreen: fullscreen,
       from: peek.from.map { PeekPoint(x: $0.x - card.minX, y: $0.y - card.minY) }, reduceMotion: reduceMotion,
       palette: ToolbarPaletteState(background: nil, text: text, secondary: secondary, icon: icon, iconDisabled: secondary,
@@ -61,6 +62,7 @@ public final class PeekOverlayView: FrameLayoutView {
   public let pageSlot = FrameLayoutView()
   public let backdropSlot = FrameLayoutView()
   public private(set) var state: PeekState?
+  public var canDismiss: Bool { state != nil && leaving == nil }
 
   private let dim = PeekDimView()
   private let card = FlippedView()
@@ -310,20 +312,6 @@ public final class PeekOverlayView: FrameLayoutView {
     let reply = expandReply
     expandReply = nil
     reply?(accepted)
-  }
-
-  public func apply(json: String) {
-    guard !json.isEmpty, let data = json.data(using: .utf8), let next = try? JSONDecoder().decode(PeekState.self, from: data) else { return clear() }
-    apply(next)
-  }
-
-  public static func eventJSON(_ event: PeekEvent) -> [String: String] {
-    switch event {
-    case .dismiss: return ["kind": "dismiss"]
-    case .openAsTab: return ["kind": "openAsTab"]
-    case .openInSplit: return ["kind": "openInSplit"]
-    case .closed(let tabId): return ["kind": "closed", "tabId": tabId]
-    }
   }
 
   public func clear() {

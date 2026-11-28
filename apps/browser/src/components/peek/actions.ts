@@ -1,135 +1,52 @@
-import { windowNativeLayout } from "@solara/settings";
-import { setPeekModifier, setSplitLinkModifier } from "@solara/solaracore";
-import { hapticTick } from "@solara/shell";
-import { webviews } from "../../lib/webviews";
-import { useBrowser, type BrowserState } from "../../store/browser";
-import { activeTabId } from "../../store/model";
-import { isPeekTab } from "../../store/peek";
-import { peekModifierOf, splitLinkModifierOf, type PeekModifier, type SplitLinkModifier } from "../../store/settings";
-import { MAX_SPLIT_PANES, splitOf } from "../../store/splits";
-import { openSplitPane, showToast } from "../layout/splitActions";
+import { windowPeekAction } from "@solara/settings";
+import { useBrowser } from "../../store/browser";
 
-const store = () => useBrowser.getState();
-const closers = new Map<string, () => void>();
-const expanders = new Map<string, (done: () => void) => void>();
+const motions = new Map<string, { tabId: string; close(): void; expand(done: () => void): void }>();
+const peekIn = (windowId: string) => useBrowser.getState().peeks[windowId];
 
-export function registerPeekMotion(windowId: string, close: () => void, expand: (done: () => void) => void) {
-  closers.set(windowId, close);
-  expanders.set(windowId, expand);
+export function registerPeekMotion(windowId: string, tabId: string, close: () => void, expand: (done: () => void) => void) {
+  const motion = { tabId, close, expand };
+  motions.set(windowId, motion);
   return () => {
-    if (closers.get(windowId) === close) closers.delete(windowId);
-    if (expanders.get(windowId) === expand) expanders.delete(windowId);
+    if (motions.get(windowId) === motion) motions.delete(windowId);
   };
 }
 
 export function dismissPeek(windowId: string) {
-  if (!store().peeks[windowId]) return;
-  const close = closers.get(windowId);
-  if (close) close();
-  else finishPeek(windowId, store().peeks[windowId]!.tabId);
+  const peek = peekIn(windowId);
+  if (!peek) return;
+  const motion = motions.get(windowId);
+  if (motion?.tabId !== peek.tabId) return void windowPeekAction(windowId, peek.tabId, "dismiss");
+  void windowPeekAction(windowId, peek.tabId, "beginClose").then((accepted) => {
+    if (!accepted) return;
+    if (motions.get(windowId) === motion) motion.close();
+    else finishPeek(windowId, peek.tabId);
+  });
 }
 
 export function finishPeek(windowId: string, tabId: string) {
-  const peek = store().peeks[windowId];
-  if (!peek || peek.tabId !== tabId) return;
-  store().closePeek(windowId);
+  void windowPeekAction(windowId, tabId, "closed");
 }
 
-const focusSoon = (tabId: string) => setTimeout(() => void webviews.get(tabId)?.focus(), 50);
-
 export function openPeekAsTab(windowId: string) {
-  const peek = store().peeks[windowId];
+  const peek = peekIn(windowId);
   if (!peek) return;
-  const promote = () => {
-    if (store().peeks[windowId]?.tabId !== peek.tabId) return;
-    const id = store().peekToTab(windowId);
-    if (!id) return;
-    hapticTick();
-    if (!windowNativeLayout(windowId)) focusSoon(id);
-  };
-  const expand = expanders.get(windowId);
-  if (expand) expand(promote);
-  else promote();
+  const motion = motions.get(windowId);
+  if (motion?.tabId !== peek.tabId) return void windowPeekAction(windowId, peek.tabId, "expand");
+  motion.expand(() => void windowPeekAction(windowId, peek.tabId, "promote"));
 }
 
 export function openPeekInSplit(windowId: string) {
-  const s = store();
+  const peek = peekIn(windowId);
+  if (peek) void windowPeekAction(windowId, peek.tabId, "split");
+}
+
+export function runPeekCommand(command: string, windowId: string) {
+  const s = useBrowser.getState();
   const peek = s.peeks[windowId];
-  if (!peek) return;
-  if ((splitOf(s, peek.sourceId)?.tabIds.length ?? 0) >= MAX_SPLIT_PANES) {
-    return showToast(windowId, "Cannot Add New Pane", `Split View can show up to ${MAX_SPLIT_PANES} tabs at once.`);
-  }
-  const id = s.peekToTab(windowId, { activate: false });
-  if (!id) return;
-  if (openSplitPane(windowId, { tabId: id, anchorTabId: peek.sourceId, side: "right" })) {
-    if (!windowNativeLayout(windowId)) focusSoon(id);
-  }
-  else store().activate(id);
-}
-
-export function closePeekOnEscape(tabId: string): boolean {
-  const s = store();
-  const tab = s.tabs[tabId];
-  const peek = tab ? s.peeks[tab.windowId] : undefined;
-  if (!tab || !peek || (peek.tabId !== tabId && peek.sourceId !== tabId) || s.find[tabId]?.open || s.windowUi[tab.windowId]?.panel.open) return false;
-  dismissPeek(tab.windowId);
-  return true;
-}
-
-export function runPeekCommand(command: string, windowId: string): boolean {
-  const s = store();
-  const peek = s.peeks[windowId];
-  if (!peek) return false;
-  if (command !== "closeTab" || s.windowUi[windowId]?.panel.open) return false;
-  if (s.find[peek.tabId]?.open) {
-    s.setFind(peek.tabId, { open: false, count: null, active: 0 });
-    void webviews.get(peek.tabId)?.stopFinding(false);
-    void webviews.get(peek.tabId)?.focus();
-  } else dismissPeek(windowId);
-  return true;
-}
-
-let started = false;
-
-export function startPeeks() {
-  if (started) return;
-  started = true;
-  let sent: PeekModifier | null = null;
-  let sentSplit: SplitLinkModifier | null = null;
-  const sync = () => {
-    const modifier = peekModifierOf(store().settings);
-    if (modifier !== sent) void setPeekModifier((sent = modifier));
-    const split = splitLinkModifierOf(store().settings);
-    if (split !== sentSplit) void setSplitLinkModifier((sentSplit = split));
-  };
-  sync();
-  useBrowser.subscribe(sync);
-  useBrowser.subscribe(bumpOnFirstLoad);
-  useBrowser.subscribe(refocusAfterClose);
-}
-
-function refocusAfterClose(s: BrowserState, prev: BrowserState) {
-  if (s.peeks === prev.peeks) return;
-  for (const [windowId, peek] of Object.entries(prev.peeks)) {
-    if (windowNativeLayout(windowId) || s.peeks[windowId]?.tabId === peek.tabId || s.tabs[peek.tabId]) continue;
-    if (s.tabs[peek.sourceId] && activeTabId(s, windowId) === peek.sourceId) void webviews.get(peek.sourceId)?.focus();
-  }
-}
-
-const loading = new Set<string>();
-const loaded = new Set<string>();
-
-function bumpOnFirstLoad(s: BrowserState, prev: BrowserState) {
-  if (s.peeks === prev.peeks && s.live === prev.live) return;
-  const shown = new Set(Object.values(s.peeks).map((p) => p.tabId));
-  for (const id of [...loading, ...loaded]) if (!shown.has(id)) (loading.delete(id), loaded.delete(id));
-  for (const id of shown) {
-    if (loaded.has(id)) continue;
-    if (s.live[id]?.isLoading) loading.add(id);
-    else if (loading.has(id)) {
-      loading.delete(id);
-      loaded.add(id);
-      hapticTick();
-    }
-  }
+  if (!peek || s.windowUi[windowId]?.panel.open) return;
+  if (command === "openFile") return openPeekAsTab(windowId);
+  if (command !== "closeTab") return;
+  if (s.find[peek.tabId]?.open) void windowPeekAction(windowId, peek.tabId, "closeFind");
+  else dismissPeek(windowId);
 }

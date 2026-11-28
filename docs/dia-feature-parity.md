@@ -722,7 +722,7 @@ Chrome; n/t = not pressed there by the test (clipboard and window-level AppKit i
 | Show Tabs in Sidebar / Auto-Hide Tabs | ⇧⌘S / ⌘S | ⇧⌘L collapses vertical tabs, ⇧⌘F toolbar in full screen | Dia's (+ hidden ⇧⌘L, ⇧⌘F for Auto-Hide) | ✓ ✓ ✓ ✓ | ✅ |
 | Open Split Pane / Focus Next / Previous | ⌃⇧= / ⌃⇧] / ⌃⇧[ | ⌥⌘N new split view | Dia's (+ hidden ⌃+ ⌃} ⌃{); ⌥⌘N is New Little Solara Window, as in Arc | ✓ ✓ ✓ ✓ / ○ (no split) | ✅ |
 | New Little Solara Window (Arc's Little Arc) | — | — | ⌥⌘N (Arc's) | ✓ ✓ ✓ ✓ | ✅ new |
-| Peek a link (Arc's Peek) / Open as Tab / Close | — | ⇧-click opens a new window | ⇧-click, as in Arc (or ⌥-click, or Off: Settings › Tabs) / ⌘O / Esc, ⌘W | page ✓ (CDP clicks) | ✅ new |
+| Peek a link (Arc's Peek) / Open as Tab / Close | — | ⇧-click opens a new window | ⇧-click, as in Arc (or ⌥-click, or Off: Settings › Tabs) / ⌘O / Esc, ⌘W | Swift renderer routing and pooled presentation in both layouts. Dismissal keeps selection and playback and rejects queued requests from the dismissed Peek. | ✅ new |
 | Toggle Bookmarks Bar / Manage Bookmarks | ⇧⌘B / ⌥⌘B | same | same | ✓ ✓ ✓ ✓ | ✅ |
 | Actual Size / Zoom In / Out | ⌘0 / ⌘+ / ⌘- | same (+ ⌘=) | same (+ hidden ⌘=) | ✓ ✓ ✓ ✓ | ✅ |
 | Enter Full Screen | 🌐F | 🌐F, ⌃⌘F | 🌐F (+ hidden ⌃⌘F) | n/t ✓ n/t n/t | ✅ |

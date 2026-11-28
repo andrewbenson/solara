@@ -259,6 +259,7 @@ static void (^gDisplayCaptureHandler)(SolaraCoreWebView *, NSString *, NSDiction
 NSString *gPeekModifier = @"shift";
 NSString *gSplitLinkModifier = @"altShift";
 static BOOL gSelectionPopover = YES;
+static SolaraPageOpenGuardFactory gOpenWindowGuard;
 static void (^gPinnedLinkHandler)(NSDictionary<NSString *, id> *);
 static NSMutableDictionary<NSString *, void (^)(BOOL)> *gPinnedLinkDecisions;
 static NSSet<NSString *> *gPinnedLinkSources;
@@ -1579,16 +1580,27 @@ static SolaraCoreTab *StartParkedPage(NSString *url, NSString *profileName, NSSt
 }
 
 - (void)openedTab:(SolaraCoreTab *)tab adoptId:(NSString *)adoptId disposition:(NSString *)disposition {
-  [self announceOpenedTab:tab adoptId:adoptId disposition:disposition tries:0];
+  NSString *key = [_transferKey copy];
+  SolaraCoreTab *source = _tab;
+  SolaraPageOpenGuard workspaceGuard = nil;
+  if (key.length && gOpenWindowGuard) workspaceGuard = gOpenWindowGuard(key);
+  __weak SolaraCoreWebView *weakSelf = self;
+  __weak SolaraCoreTab *weakSource = source;
+  [self announceOpenedTab:tab adoptId:adoptId disposition:disposition tries:0 validation:^BOOL {
+    SolaraCoreWebView *view = weakSelf;
+    SolaraCoreTab *live = weakSource;
+    return view && live && view->_tab == live && !live.closed &&
+      (!key || [view.transferKey isEqualToString:key]) && (!workspaceGuard || workspaceGuard());
+  }];
 }
 
-- (void)announceOpenedTab:(SolaraCoreTab *)tab adoptId:(NSString *)adoptId disposition:(NSString *)disposition tries:(int)tries {
-  if (tab.closed) return;
+- (void)announceOpenedTab:(SolaraCoreTab *)tab adoptId:(NSString *)adoptId disposition:(NSString *)disposition tries:(int)tries validation:(BOOL (^)(void))validation {
+  if (tab.closed || !validation()) return;
   NSString *url = tab.url;
   if ((!url.length || [url isEqualToString:@"about:blank"]) && tries < 20) {
     __weak SolaraCoreWebView *weakSelf = self;
     dispatch_after(dispatch_time(DISPATCH_TIME_NOW, 25 * NSEC_PER_MSEC), dispatch_get_main_queue(), ^{
-      [weakSelf announceOpenedTab:tab adoptId:adoptId disposition:disposition tries:tries + 1];
+      [weakSelf announceOpenedTab:tab adoptId:adoptId disposition:disposition tries:tries + 1 validation:validation];
     });
     return;
   }
@@ -2344,6 +2356,10 @@ void SolaraCoreWebViewsSetFieldTiming(BOOL on) {
     [NSApp postEvent:down atStart:NO];
   }
   return YES;
+}
+
++ (void)setOpenWindowGuard:(SolaraPageOpenGuardFactory)guardFactory {
+  gOpenWindowGuard = [guardFactory copy];
 }
 
 + (void)clearPinnedLinkHandler:(NSString *)owner {

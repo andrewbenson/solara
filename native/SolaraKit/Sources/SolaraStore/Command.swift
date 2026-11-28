@@ -330,8 +330,8 @@ extension Session {
     case "focusPane": focusPane(try a.requireString(0), a.int(1))
     case "toggleTabLayout": toggleTabLayout(try a.requireString(0))
     case "openPeek": result = .string(openPeek(try a.requireString(0), try a.requireString(1), from: a[2].flatMap { try? PeekPoint(value: $0) }))
-    case "closePeek": closePeek(try a.requireString(0))
-    case "peekToTab": result = JSONValue(peekToTab(try a.requireString(0), activate: a[1]?["activate"].map(\.truthy) ?? true))
+    case "closePeek": closePeek(try a.requireString(0), tabId: a[1]?.string)
+    case "peekToTab": result = JSONValue(peekToTab(try a.requireString(0), activate: a[1]?["activate"].map(\.truthy) ?? true, tabId: a[1]?["tabId"]?.string))
     case "updateSettings":
       var patch = a.object(0)
       if let position = patch["sidebarPosition"] {

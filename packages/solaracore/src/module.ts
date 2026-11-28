@@ -127,8 +127,6 @@ export const onSystemState = (listener: (state: SystemState) => void) => Cef.add
 export const setDisplayMediaPicker = (enabled: boolean) => Cef.setDisplayMediaPicker(enabled);
 export const setAutoPictureInPicture = (enabled: boolean) => Cef.setAutoPictureInPicture?.(enabled) ?? Promise.resolve();
 export const setVideoUpscaling = (enabled: boolean) => Cef.setVideoUpscaling?.(enabled) ?? Promise.resolve();
-export const setPeekModifier = (modifier: "alt" | "shift" | "off") => Cef.setPeekModifier?.(modifier) ?? Promise.resolve();
-export const setSplitLinkModifier = (modifier: "alt" | "altShift") => Cef.setSplitLinkModifier?.(modifier) ?? Promise.resolve();
 export const setSelectionPopover = (enabled: boolean) => Cef.setSelectionPopover?.(enabled) ?? Promise.resolve();
 export const setSearchEngineName = (name: string) => Cef.setSearchEngineName(name);
 export const getDisplayMediaSources = () => Cef.displayMediaSources();
@@ -176,19 +174,3 @@ export const loadedProfiles = (): Promise<string[]> => Cef.loadedProfiles();
 export const ensureProfile = (profile: string): Promise<boolean> => Cef.ensureProfile(profile);
 export const onProfileLoaded = (listener: (event: { profile: string }) => void) => Cef.addListener("onProfileLoaded", listener);
 export const releaseProfile = (profile: string) => Cef.releaseProfile(profile);
-
-export type PinnedLinkEvent = {
-  phase: "decide" | "intercepted";
-  requestId: string;
-  sourceId: string;
-  sourceURL: string;
-  url: string;
-  newWindow: boolean;
-  point?: { x: number; y: number };
-};
-
-export const onPinnedLink = (listener: (event: PinnedLinkEvent) => void) => Cef.addListener("onPinnedLink", listener);
-export const resolvePinnedLink = (requestId: string, intercept: boolean): Promise<boolean> =>
-  Cef.resolvePinnedLink?.(requestId, intercept) ?? Promise.resolve(false);
-
-export const setPinnedLinkSources = (keys: string[]) => Cef.setPinnedLinkSources?.(keys) ?? Promise.resolve();

@@ -99,20 +99,21 @@ function PeekCard({
       : Animated.spring(progress, { toValue: 1, ...GROW, overshootClamping: true, restDisplacementThreshold: 0.001, restSpeedThreshold: 0.01, useNativeDriver: true });
     grow.start();
     const close = () => {
-      if (leaving.current) return;
+      if (leaving.current === "close") return;
       leaving.current = "close";
+      expand.stopAnimation();
       progress.stopAnimation();
       Animated.timing(progress, { toValue: 0, duration: CLOSE_MS, easing: Easing.in(Easing.cubic), useNativeDriver: true }).start(({ finished }) => {
         if (finished) finishPeek(windowId, peek.tabId);
       });
     };
     const grown = (done: () => void) => {
-      if (leaving.current === "expand") return;
+      if (leaving.current) return;
       leaving.current = "expand";
       progress.stopAnimation();
       progress.setValue(1);
       if (fade) return done();
-      Animated.timing(expand, { toValue: 1, duration: EXPAND_MS, easing: Easing.out(Easing.cubic), useNativeDriver: true }).start(done);
+      Animated.timing(expand, { toValue: 1, duration: EXPAND_MS, easing: Easing.out(Easing.cubic), useNativeDriver: true }).start(({ finished }) => { if (finished) done(); });
     };
     pinch.current = ({ phase, magnification }) => {
       if (leaving.current) return;
@@ -134,7 +135,11 @@ function PeekCard({
       progress.setValue(follow.progress);
       expand.setValue(follow.expand);
     };
-    return registerPeekMotion(windowId, close, grown);
+    const unregister = registerPeekMotion(windowId, peek.tabId, close, grown);
+    return () => {
+      unregister();
+      if (leaving.current === "close") finishPeek(windowId, peek.tabId);
+    };
   }, [motion]);
 
   const scaleX = fade

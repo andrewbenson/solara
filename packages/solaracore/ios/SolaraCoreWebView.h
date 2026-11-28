@@ -5,6 +5,9 @@ NS_ASSUME_NONNULL_BEGIN
 @class SolaraCoreWebView;
 @class SolaraCoreTab;
 
+typedef BOOL (^SolaraPageOpenGuard)(void);
+typedef SolaraPageOpenGuard _Nullable (^SolaraPageOpenGuardFactory)(NSString *key);
+
 extern NSNotificationName const SolaraCorePictureInPictureDidChangeNotification;
 
 @protocol SolaraCoreWebViewDelegate <NSObject>
@@ -54,6 +57,7 @@ extern NSNotificationName const SolaraCorePictureInPictureDidChangeNotification;
 + (void)setDisplayCaptureHandler:(void (^)(SolaraCoreWebView *, NSString *, NSDictionary<NSString *, id> *))handler
     NS_SWIFT_NAME(setDisplayCaptureHandler(_:));
 + (void)setDisplayMediaPicker:(BOOL)enabled;
++ (void)setOpenWindowGuard:(nullable SolaraPageOpenGuardFactory)guardFactory;
 + (void)setPinnedLinkHandler:(void (^)(NSDictionary<NSString *, id> *event))handler owner:(NSString *)owner NS_SWIFT_NAME(setPinnedLinkHandler(_:owner:));
 + (void)clearPinnedLinkHandler:(NSString *)owner NS_SWIFT_NAME(clearPinnedLinkHandler(_:));
 + (void)setPinnedLinkSources:(NSArray<NSString *> *)keys NS_SWIFT_NAME(setPinnedLinkSources(_:));

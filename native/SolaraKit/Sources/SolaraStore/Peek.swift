@@ -39,7 +39,7 @@ extension Session {
 
   public func openPeek(_ sourceTabId: String, _ url: String, from: PeekPoint?) -> String {
     var s = state
-    guard let source = s.tabs[sourceTabId], let w = s.windows[source.windowId], !w.isSmall, peekable(url), w.tabIds.contains(sourceTabId) else {
+    guard let source = s.tabs[sourceTabId], let w = s.windows[source.windowId], !w.isSmall, !memory.closingWindows.contains(w.id), !memory.dismissingPeeks.contains(w.id), peekable(url), w.tabIds.contains(sourceTabId) else {
       return ""
     }
     s = withoutPeek(s, w.id)
@@ -53,14 +53,21 @@ extension Session {
     return tab.id
   }
 
-  public func closePeek(_ windowId: String) {
-    let s = state
-    if s.peeks[windowId] != nil { set(withoutPeek(s, windowId)) }
+  public func beginPeekDismissal(_ windowId: String, tabId: String) -> Bool {
+    guard state.peeks[windowId]?.tabId == tabId, memory.dismissingPeeks.insert(windowId).inserted else { return false }
+    return true
   }
 
-  public func peekToTab(_ windowId: String, activate: Bool = true) -> String? {
+  public func closePeek(_ windowId: String, tabId: String? = nil) {
+    let s = state
+    guard let peek = s.peeks[windowId], tabId == nil || peek.tabId == tabId else { return }
+    set(withoutPeek(s, windowId))
+  }
+
+  public func peekToTab(_ windowId: String, activate: Bool = true, tabId: String? = nil) -> String? {
     var s = state
-    guard let peek = s.peeks[windowId], let tab = s.tabs[peek.tabId], s.windows[windowId] != nil else { return nil }
+    guard let peek = s.peeks[windowId], tabId == nil || tabId == peek.tabId, let tab = s.tabs[peek.tabId],
+      s.windows[windowId] != nil, !memory.dismissingPeeks.contains(windowId) else { return nil }
     s.peeks.remove([windowId])
     if activate { s = forgetOpeners(s, windowId) }
     let loaded = hasNavigatedPage(tab)

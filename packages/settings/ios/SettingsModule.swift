@@ -62,6 +62,8 @@ public class SettingsModule: Module {
           }
         }
         NativeEngineCommands.start()
+        NativePageOpens.start()
+        NativePeek.start()
         NativeSelectionTools.start()
         NativeSettingsWindow.install()
         NativeConfigNotifier.install()

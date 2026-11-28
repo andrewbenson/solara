@@ -1,7 +1,7 @@
 // This Source Code Form is subject to the terms of the Mozilla Public
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
-export const PSL_SITE_RULES = `
+let pinnedLinkSiteRules = """
 com.ac edu.ac gov.ac mil.ac net.ac org.ac ac.ae co.ae gov.ae mil.ae net.ae org.ae sch.ae airline.aero
 airport.aero accident-investigation.aero accident-prevention.aero aerobatic.aero aeroclub.aero aerodrome.aero
 agents.aero air-surveillance.aero air-traffic-control.aero aircraft.aero airtraffic.aero ambulance.aero
@@ -1307,4 +1307,4 @@ demon.nl xs4all.space xtooldevice.com yandexcloud.net storage.yandexcloud.net we
 sourcecraft.site official.academy yolasite.com ynh.fr nohost.me noho.st za.net za.org zap.cloud zeabur.app
 *.zerops.app prg1-zerops.zone *.zerops.zone bss.design basicserver.io virtualserver.io enterprisecloud.nu zone.id
 nett.to zabc.net
-`;
+"""

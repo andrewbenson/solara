@@ -1,6 +1,5 @@
 import { keepAlivePagesChanged } from "./nativeKeepAlive";
 import { usePages } from "../components/layout/pageState";
-import { startPinnedLinks } from "./pinnedLinks";
 import { lastTabClosesWindow, onDownload, releaseProfile } from "@solara/solaracore";
 import {
   cancelFocusMove,
@@ -69,7 +68,6 @@ export function startNativeSync() {
   onCommand((e) => settlingCommandFocus(e, runCommand));
   startWindowCloseGuard();
   usePages.subscribe(keepAlivePagesChanged);
-  startPinnedLinks();
   onOpenURLs((urls, pointer, profile) => openExternalUrls(urls, pointer, profile));
   void lastTabClosesWindow().then((closes) => setLastTabKeepsWindow(!closes));
   onDownload((d) => store.getState().upsertDownload(d));

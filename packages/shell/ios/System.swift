@@ -153,8 +153,7 @@ public class SystemModule: Module {
 
     Function("hapticTick") {
       DispatchQueue.main.async {
-        ShellHaptics.alignment()
-        HapticLog.note("alignment")
+        ShellHaptics.tick()
       }
     }
 
@@ -296,11 +295,16 @@ final class FileDragView: ExpoView, NSDraggingSource {
 }
 
 @MainActor
-enum ShellHaptics {
+public enum ShellHaptics {
   #if SOLARA_PROBES
   static var performed = 0
   static var suppressed = 0
   #endif
+
+  public static func tick() {
+    alignment()
+    HapticLog.note("alignment")
+  }
 
   static func alignment() {
     if ProcessInfo.processInfo.environment["SOLARA_BACKGROUND"] == "1" {

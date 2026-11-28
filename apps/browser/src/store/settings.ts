@@ -9,7 +9,6 @@ import {
   type EngineInput,
   type ExtensionSearchEngine,
   type SearchEngine,
-  type PinnedLinkTarget,
 } from "@solara/core";
 import type { ShortcutPrecedence } from "@solara/shell";
 import type { PageEngine } from "@solara/solaracore";
@@ -50,7 +49,7 @@ export type Settings = {
   cmdClickCreatesTabGroup: boolean;
   optShiftClickOpensInGroup: boolean;
   peekModifier: PeekModifier;
-  pinnedLinkTarget: PinnedLinkTarget;
+  pinnedLinkTarget: "peek" | "tab" | "littleSolara";
   splitLinkModifier: SplitLinkModifier;
   autoGroupMeetingTabs: boolean;
   cleanUpInactiveTabsAfterHours: number | null;

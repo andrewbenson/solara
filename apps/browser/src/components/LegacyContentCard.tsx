@@ -50,7 +50,6 @@ import { Toolbar, ToolbarBackdrop, urlFieldRight } from "./Toolbar";
 import { WindowToolbar } from "./WindowToolbar";
 import { useToolbarSidebarToggle } from "./layout/nativeToolbarPresentation";
 import { useNativeWindowAnchors } from "./layout/shellLayout";
-import { NativePeekMount } from "./peek/NativePeekMount";
 import { PeekOverlay } from "./peek/PeekOverlay";
 import { PooledPageProps } from "./PooledPageProps";
 import { dismissPeek } from "./peek/actions";
@@ -329,7 +328,6 @@ export function LegacyContentCard({ small }: { small: boolean }) {
         />
       )}
       {!shell && !fullscreenTab && <DropTargets panes={panes} origin={origin} windowId={windowId} />}
-      {(!fullscreenTab || peekFullscreen) && !small && pooled && <NativePeekMount windowId={windowId} origin={origin} fullscreen={peekFullscreen} />}
       {(!fullscreenTab || peekFullscreen) && !small && !pooled && (
         <PeekOverlay
           windowId={windowId}

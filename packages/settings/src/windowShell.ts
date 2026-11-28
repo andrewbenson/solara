@@ -11,9 +11,7 @@ type WindowShellModule = {
   pagesPool?(): boolean;
   paneRoots?(windowId: string): boolean;
   mainOnTop?(windowId: string): boolean;
-  peekNative?(windowId: string): boolean;
-  peekClose?(windowId: string, tabId: string, generation: number): Promise<boolean>;
-  peekExpand?(windowId: string, tabId: string, generation: number): Promise<boolean>;
+  peekAction?(windowId: string, tabId: string, action: string): Promise<boolean>;
   setBackdrop(windowId: string, json: string): Promise<void>;
   setLayout?(windowId: string, layout: WindowShellLayout): Promise<void>;
   setModal?(windowId: string, owner: string, shown: boolean): Promise<void>;
@@ -91,20 +89,8 @@ export function windowMainOnTop(windowId: string): boolean {
   }
 }
 
-export function windowPeekNative(windowId: string): boolean {
-  try {
-    return native?.peekNative?.(windowId) ?? false;
-  } catch {
-    return false;
-  }
-}
-
-export function closeWindowPeek(windowId: string, tabId: string): Promise<boolean> {
-  return native?.peekClose?.(windowId, tabId, windowNativeLayoutGeneration(windowId)) ?? Promise.resolve(false);
-}
-
-export function expandWindowPeek(windowId: string, tabId: string): Promise<boolean> {
-  return native?.peekExpand?.(windowId, tabId, windowNativeLayoutGeneration(windowId)) ?? Promise.resolve(false);
+export function windowPeekAction(windowId: string, tabId: string, action: "beginClose" | "dismiss" | "closed" | "expand" | "promote" | "split" | "closeFind"): Promise<boolean> {
+  return native?.peekAction?.(windowId, tabId, action) ?? Promise.resolve(false);
 }
 
 export function setWindowShellBackdrop(windowId: string, json: string) {

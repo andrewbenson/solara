@@ -7,7 +7,7 @@ const bodyURL = new URL("./NativePromptBody.tsx", import.meta.url).href;
 const f = globalThis.nativePromptConsumersTest = {};
 const fake = (source) => ({ url: `data:text/javascript,${encodeURIComponent(source)}`, shortCircuit: true });
 const sources = {
-  "@solara/settings": `export const nativeToolbarAvailable = () => false, nativePagesAvailable = () => false; export const NativePromptView = "NativePromptView", NativeDeviceChooserView = "NativeDeviceChooserView";`,
+  "@solara/settings": `export const nativeToolbarAvailable = () => false, nativePagesAvailable = () => false; export const NativePromptView = "NativePromptView";`,
   "@solara/shell": `export const Symbol = "Symbol";`,
   react: `
     export const useState = initial => {

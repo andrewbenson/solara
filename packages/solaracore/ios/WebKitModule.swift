@@ -37,9 +37,6 @@ public class WebKitModule: Module {
     AsyncFunction("setSitePermission") { (profile: String, origin: String, kind: String, value: String) in
       WebKitHub.shared.setSitePermission(profile: profile, origin: origin, kind: kind, value: value)
     }.runOnQueue(.main)
-    AsyncFunction("resolveExternalApp") { (id: String, open: Bool, remember: Bool?) in
-      WebKitHub.shared.resolveExternalApp(id, open: open, remember: remember ?? false)
-    }.runOnQueue(.main)
     AsyncFunction("clearBrowsingData") { (profile: String, types: [String], since: Double?, promise: Promise) in
       WebKitHub.shared.clearBrowsingData(profile: profile, types: types, since: since ?? 0) { promise.resolve(nil) }
     }.runOnQueue(.main)
@@ -166,7 +163,6 @@ final class WebKitTabView: ExpoView, WebKitTabDelegate, @preconcurrency RCTInval
   let onPasswordPrompt = EventDispatcher()
   let onAutofillPrompt = EventDispatcher()
   let onTabStrip = EventDispatcher()
-  let onExternalApp = EventDispatcher()
   let onPreferredSize = EventDispatcher()
 
   var pageContext: [String: Any] = [:]

@@ -3,7 +3,7 @@ import ExpoModulesCore
 public class ChromeUIModule: Module {
   public func definition() -> ModuleDefinition {
     Name("SolaraChromeUI")
-    Events("onDeviceChooser", "onActionPopup", "onActionShortcut")
+    Events("onActionPopup", "onActionShortcut")
 
     OnCreate {
       SolaraCoreHost.chromeUIHandler = { [weak self] name, payload in
@@ -11,16 +11,16 @@ public class ChromeUIModule: Module {
         switch name {
         case "actionPopup": self?.sendEvent("onActionPopup", payload)
         case "actionShortcut": self?.sendEvent("onActionShortcut", payload)
-        case "deviceChooser": self?.sendEvent("onDeviceChooser", payload)
         default: break
         }
       }
     }
 
-    AsyncFunction("selectDevice") { (id: Int, index: Int) in SolaraCoreHost.deviceChooser(Int32(id), select: Int32(index)) }.runOnQueue(.main)
-    AsyncFunction("cancelDeviceChooser") { (id: Int) in SolaraCoreHost.deviceChooser(Int32(id), action: "cancel") }.runOnQueue(.main)
-    AsyncFunction("refreshDeviceChooser") { (id: Int) in SolaraCoreHost.deviceChooser(Int32(id), action: "refresh") }.runOnQueue(.main)
-    AsyncFunction("openBluetoothSettings") { (id: Int) in SolaraCoreHost.deviceChooser(Int32(id), action: "settings") }.runOnQueue(.main)
+    #if DEBUG
+    AsyncFunction("devSelectDevice") { (id: Int, option: Int) in
+      SolaraCoreHost.deviceChooser(Int32(id), select: Int32(option))
+    }.runOnQueue(.main)
+    #endif
     AsyncFunction("devShowBluetoothChooser") { (browserId: Int, unauthorized: Bool) -> Bool in
       SolaraCoreHost.devShowBluetoothChooser(browserId: Int32(browserId), unauthorized: unauthorized)
     }.runOnQueue(.main)

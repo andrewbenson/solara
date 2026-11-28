@@ -32,7 +32,8 @@ NS_ASSUME_NONNULL_BEGIN
 @property(class, nonatomic, copy, nullable) void (^chromeUIHandler)(NSString *name, NSDictionary<NSString *, id> *payload);
 @property(class, nonatomic, copy, nullable) void (^castUIHandler)(NSString *name, NSDictionary<NSString *, id> *payload);
 + (void)resolveExternalApp:(NSString *)requestId open:(BOOL)open remember:(BOOL)remember NS_SWIFT_NAME(resolveExternalApp(_:open:remember:));
-+ (void)deviceChooser:(int)chooserId select:(int)index NS_SWIFT_NAME(deviceChooser(_:select:));
+@property(class, nonatomic, copy, nullable) void (^deviceChooserHandler)(NSDictionary<NSString *, id> *payload);
++ (void)deviceChooser:(int)chooserId select:(int)optionId NS_SWIFT_NAME(deviceChooser(_:select:));
 + (void)deviceChooser:(int)chooserId action:(NSString *)action NS_SWIFT_NAME(deviceChooser(_:action:));
 + (NSArray<NSDictionary *> *)testExternalLaunches;
 + (BOOL)devShowBluetoothChooser:(int)browserId unauthorized:(BOOL)unauthorized NS_SWIFT_NAME(devShowBluetoothChooser(browserId:unauthorized:));

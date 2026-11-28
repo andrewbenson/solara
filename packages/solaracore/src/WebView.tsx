@@ -2,7 +2,6 @@ import { toAppUrl, toEngineUrl } from "@solara/core";
 import { requireNativeViewManager, requireOptionalNativeModule } from "expo-modules-core";
 import { forwardRef, useImperativeHandle, useRef } from "react";
 import { findNodeHandle, type NativeSyntheticEvent, type ViewProps } from "react-native";
-import type { ExternalAppRequest } from "./externalApps";
 import type { FaviconImage } from "./favicons";
 import type { PageCookie, PageEngine } from "./webkit";
 
@@ -187,7 +186,6 @@ export type WebViewProps = ViewProps & {
   onDiscarded?: (url: string) => void;
   onPasswordPrompt?: (prompt: PasswordPrompt) => void;
   onAutofillPrompt?: (prompt: AutofillPrompt | null, id: number) => void;
-  onExternalApp?: (request: ExternalAppRequest) => void;
   onPreferredSize?: (size: { width: number; height: number }) => void;
 };
 
@@ -275,7 +273,6 @@ type NativeEvents = {
   onDiscarded: { url: string };
   onPasswordPrompt: PasswordPrompt;
   onAutofillPrompt: AutofillPrompt | { id: number; closed: true };
-  onExternalApp: ExternalAppRequest;
   onPreferredSize: { width: number; height: number };
 };
 type Handlers = keyof NativeEvents;
@@ -314,7 +311,6 @@ const unwrap: { [K in Handlers]: (e: NativeEvents[K]) => Parameters<NonNullable<
   onDiscarded: (e) => [toAppUrl(e.url)],
   onPasswordPrompt: (e) => [e],
   onAutofillPrompt: (e) => ("closed" in e ? [null, e.id] : [e, e.id]),
-  onExternalApp: (e) => [e],
   onPreferredSize: (e) => [e],
 };
 

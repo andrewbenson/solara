@@ -521,8 +521,10 @@ final class PaneOverlayHost {
     let chooser = PanePopover(DeviceChooserView(frame: .zero))
     chooser.body.onHeight = { [weak chooser] h in chooser?.setHeight(h) }
     chooser.body.onEvent = { [weak self] event in
-      if case .choose = event, self?.choosers[tabId]?.allowInput() != true { return }
-      PanePrompts.chooserAction(tabId, chooserId, event)
+      guard let self, let entry = self.choosers[tabId], entry.id == chooserId,
+        entry.popover.wrap.window != nil, !entry.popover.wrap.isHiddenOrHasHiddenAncestor else { return }
+      if case .choose = event, !entry.allowInput() { return }
+      PanePrompts.chooserAction(self.windowId, tabId, chooserId, event)
     }
     return chooser
   }
@@ -660,7 +662,7 @@ final class PaneOverlayHost {
       entry.place(in: promptSlot(entry.tabId))
     }
     for entry in choosers.values {
-      entry.popover.place(in: slot(entry.tabId))
+      entry.popover.place(in: promptSlot(entry.tabId))
       entry.refit()
     }
     for (tabId, history) in histories { history.place(in: slot(tabId)) }

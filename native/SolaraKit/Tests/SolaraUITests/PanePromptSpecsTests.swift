@@ -83,7 +83,7 @@ import Testing
     #expect(((sections.last?["lines"] as? [[String: Any]]) ?? []).map { $0["text"] as? String } == ["J"])
   }
 
-  @Test func externalAppStaysOnTheSameHost() {
+  @Test func externalAppFollowsDocumentCommits() {
     var page = PanePromptPage()
     _ = take(&page, "onNavigationChange", ["url": "https://a.test/one"])
     #expect(take(&page, "onExternalApp", ["id": "x1", "title": "Open Zoom?", "app": "Zoom", "remember": "Always allow"]))
@@ -91,6 +91,8 @@ import Testing
     _ = take(&page, "onNavigationChange", ["url": "https://a.test/two"])
     #expect(page.externalApp != nil)
     _ = take(&page, "onNavigationChange", ["url": "https://b.test/"])
+    #expect(page.externalApp != nil)
+    _ = page.take("onDocumentCommitted", [:])
     #expect(page.externalApp == nil)
     #expect(!page.alwaysOpen)
   }

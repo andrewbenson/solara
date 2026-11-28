@@ -198,6 +198,7 @@ final class WebKitTab: NSView, WKNavigationDelegate, WKUIDelegate {
   func relinquish() -> SolaraWKWebView? {
     guard !closed, let view = webView else { return nil }
     closed = true
+    retireExternalAppRequest()
     observations = []
     WebKitHub.shared.dropPermissions(browserId: browserId)
     if let key = transferKey { WebKitHub.shared.forgetLive(self, key: key) }
@@ -265,6 +266,14 @@ final class WebKitTab: NSView, WKNavigationDelegate, WKUIDelegate {
     webView?.alphaValue = visible ? 1 : 0
   }
 
+  private var externalAppRequestId: String?
+
+  private func retireExternalAppRequest() {
+    guard let id = externalAppRequestId else { return }
+    externalAppRequestId = nil
+    WebKitHub.shared.resolveExternalApp(id, open: false, remember: false)
+  }
+
   func close(parking: Bool = true) {
     if let sightObserver {
       NotificationCenter.default.removeObserver(sightObserver)
@@ -272,6 +281,7 @@ final class WebKitTab: NSView, WKNavigationDelegate, WKUIDelegate {
     }
     guard !closed else { return }
     closed = true
+    retireExternalAppRequest()
     observations = []
     WebKitHub.shared.dropPermissions(browserId: browserId)
     if let key = transferKey { WebKitHub.shared.forgetLive(self, key: key) }
@@ -616,11 +626,14 @@ final class WebKitTab: NSView, WKNavigationDelegate, WKUIDelegate {
     let webSchemes: Set<String> = ["http", "https", "file", "about", "data", "blob", "javascript", "webkit-pdfjs-viewer"]
     if !webSchemes.contains(scheme) {
       decisionHandler(.cancel)
-      let fromMainFrame = action.sourceFrame.isMainFrame || action.targetFrame?.isMainFrame == true
-      guard action.navigationType == .linkActivated || fromMainFrame else { return }
+      guard action.sourceFrame.isMainFrame, self.webView === webView, !closed else { return }
       let source = action.sourceFrame.securityOrigin
       let origin = source.host.isEmpty ? nil : "\(source.protocol)://\(source.host)" + (source.port > 0 ? ":\(source.port)" : "")
-      if let request = WebKitHub.shared.externalAppRequest(url: url, origin: origin, profile: profile, webView: webView) { emit("externalApp", request) }
+      if let request = WebKitHub.shared.externalAppRequest(url: url, origin: origin, profile: profile, webView: webView) {
+        retireExternalAppRequest()
+        externalAppRequestId = request["id"] as? String
+        emit("externalApp", request)
+      }
       return
     }
     if action.navigationType == .linkActivated, action.targetFrame != nil {
@@ -667,6 +680,8 @@ final class WebKitTab: NSView, WKNavigationDelegate, WKUIDelegate {
   }
 
   func webView(_ webView: WKWebView, didCommit navigation: WKNavigation!) {
+    guard self.webView === webView else { return }
+    retireExternalAppRequest()
     emit("documentCommitted")
     WebKitHub.shared.contentBlocker.sync(webView, url: webView.backForwardList.currentItem?.url ?? webView.url)
     if !showingError { errorURL = nil }
@@ -731,6 +746,8 @@ final class WebKitTab: NSView, WKNavigationDelegate, WKUIDelegate {
   }
 
   func webViewWebContentProcessDidTerminate(_ webView: WKWebView) {
+    guard self.webView === webView else { return }
+    retireExternalAppRequest()
     emit("crashed", ["status": 0, "reason": "crashed", "code": 0])
   }
 

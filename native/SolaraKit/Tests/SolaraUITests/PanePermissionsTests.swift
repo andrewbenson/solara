@@ -58,24 +58,6 @@ import Testing
     #expect(ready(&browsers, "a", 9).count == PaneBrowsers.orphanLimit)
   }
 
-  @Test func aChooserBeforeItsBrowserWaitsForIt() {
-    var browsers = PaneBrowsers()
-    let open: [String: Any] = ["id": 4, "browserId": 9, "open": true, "title": "t", "okLabel": "Pair"]
-    browsers.park(PaneDeviceChooser(open)!)
-    let other = browsers.parkedChooser(8)
-    #expect(other == nil)
-    let parked = browsers.parkedChooser(9)
-    #expect(parked?.id == 4)
-    let again = browsers.parkedChooser(9)
-    #expect(again == nil)
-    browsers.park(PaneDeviceChooser(open)!)
-    var closed = open
-    closed["open"] = false
-    browsers.park(PaneDeviceChooser(closed)!)
-    let cleared = browsers.parkedChooser(9)
-    #expect(cleared == nil)
-  }
-
   @Test func aChooserIsAnsweredOnce() {
     var page = PanePromptPage()
     let early = page.answerChooser()
@@ -93,7 +75,7 @@ import Testing
     _ = chooser(&page, closed)
     _ = chooser(&page, open)
     let reopened = page.answerChooser()
-    #expect(reopened)
+    #expect(!reopened)
   }
 
   @Test func describesLikeRN() {
@@ -113,13 +95,13 @@ import Testing
 
   @Test func chooserKeepsItsSelectionUntilANewChooser() {
     var page = PanePromptPage()
-    let base: [String: Any] = ["id": 3, "browserId": 7, "open": true, "title": "Pick", "options": [["name": "Mouse", "paired": true, "signal": 2]]]
+    let base: [String: Any] = ["id": 3, "browserId": 7, "open": true, "title": "Pick", "options": [["optionId": 1, "name": "Mouse", "paired": true, "signal": 2]]]
     #expect(chooser(&page, base))
-    page.chooserSelected = 0
+    page.chooserSelected = 1
     var refreshed = base
     refreshed["refreshing"] = true
     #expect(chooser(&page, refreshed))
-    #expect(page.chooserSelected == 0)
+    #expect(page.chooserSelected == 1)
     var other = base
     other["id"] = 4
     _ = chooser(&page, other)
@@ -133,19 +115,19 @@ import Testing
   }
 
   @Test func chooserSpecMatchesRN() {
-    let c = PaneDeviceChooser(["id": 3, "browserId": 7, "open": true, "title": "Pick", "showSignal": true, "options": [["name": "Mouse", "paired": true, "signal": 2], ["name": "Pad", "connected": true, "signal": 4]]])!
-    let spec = PanePromptSpecs.deviceChooser(c, selected: 1, product: "Solara", left: 8)
+    let c = PaneDeviceChooser(["id": 3, "browserId": 7, "open": true, "title": "Pick", "showSignal": true, "options": [["optionId": 1, "name": "Mouse", "paired": true, "signal": 2], ["optionId": 2, "name": "Pad", "connected": true, "signal": 4]]])!
+    let spec = PanePromptSpecs.deviceChooser(c, selected: 2, product: "Solara", left: 8)
     #expect(spec["icon"] as? String == "dot.radiowaves.left.and.right")
     #expect((spec["options"] as? [[String: Any]])?.compactMap { $0["detail"] as? String } == ["Paired", "Connected"])
     #expect(spec["valid"] as? Bool == true && spec["okLabel"] as? String == "Connect")
-    #expect(c.choice(nil, selected: 1) == 1)
+    #expect(c.choice(nil, selected: 2) == 2)
     let locked = PaneDeviceChooser(["id": 5, "browserId": 7, "open": true, "unauthorized": true])!
     let lockedSpec = PanePromptSpecs.deviceChooser(locked, selected: nil, product: "Solara", left: 8)
     #expect(lockedSpec["notice"] as? String == "Solara needs access to Bluetooth to find devices.")
     #expect(lockedSpec["valid"] as? Bool == false && locked.blocked)
     let look: [String: Any] = ["dark": false, "theme": [String: String](), "goButton": "", "goButtonText": ""]
     let json = try! JSONSerialization.data(withJSONObject: spec.merging(look) { a, _ in a })
-    #expect(DeviceChooserState.decode(String(data: json, encoding: .utf8)!)?.selected == 1)
+    #expect(DeviceChooserState.decode(String(data: json, encoding: .utf8)!)?.selected == 2)
   }
 
   @Test func selectionComesFromPageMessagesAndGoesWithThePage() {

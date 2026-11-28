@@ -72,7 +72,6 @@ export type CefNative = {
   resumeDownload(id: string): Promise<void>;
   keepDownload?(id: string): Promise<void>;
   resolvePermission(id: string, result: PermissionResult, remember?: boolean): Promise<void>;
-  resolveExternalApp(id: string, open: boolean, remember: boolean): Promise<void>;
   getExternalAppAllowances(profile: string): Promise<ExternalAppAllowance[]>;
   removeExternalAppAllowance(profile: string, origin: string, scheme: string): Promise<void>;
   clearBrowsingData(profile: string, types: BrowsingDataType[], since: number | null): Promise<void>;

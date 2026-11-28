@@ -69,7 +69,7 @@ enum PanePrompts {
     }
     TabSleepPermissionFeed.coversPages = { TabPoolHost.available }
     TabPoolHost.shared.pageEventObservers.append { tabId, name, payload in
-      guard ["onPasswordPrompt", "onAutofillPrompt", "onExternalApp"].contains(name), let binding = current(tabId), owns(tabId) else { return }
+      guard ["onPasswordPrompt", "onAutofillPrompt"].contains(name), let binding = current(tabId), owns(tabId) else { return }
       pageEvent(binding, name, payload)
     }
     PageIssuer.consumePromptEvent = receive
@@ -163,10 +163,12 @@ enum PanePrompts {
 
   private static func receive(_ issuer: PageIssuer, _ binding: PageHostBinding, _ name: String, _ payload: JSONValue) -> Bool {
     switch name {
-    case "onPopupBlocked", "onDocumentCommitted":
+    case "onPopupBlocked", "onDocumentCommitted", "onExternalApp":
       if name == "onDocumentCommitted" { DispatchQueue.main.async { NativeSiteControls.shared.refresh() } }
       if issuer.store === observedStore, current(binding.tabId) === binding {
         pageEvent(binding, name, PageValue(json: payload).foundation as? [String: Any] ?? [:])
+      } else if name == "onExternalApp", payload["closed"]?.bool != true, let id = payload["id"]?.string {
+        SolaraCorePromptAnswers.externalApp(id, open: false, remember: false)
       }
       return true
     case "onCommand":
@@ -245,10 +247,6 @@ enum PanePrompts {
     if let browserId = ready {
       bindings[tabId]?.browserId = browserId
       for found in browsers.ready(tabId, browserId: browserId) { enqueue(found.tabId, found.request) }
-      if owns(tabId), let chooser = browsers.parkedChooser(browserId) {
-        var page = pages[tabId] ?? PanePromptPage()
-        if page.chooserEvent(chooser) { update(tabId, page) }
-      }
     }
     if ["onDocumentCommitted", "onDiscarded", "onCrashed"].contains(name) {
       documentRevisions[tabId] = UUID()
@@ -270,6 +268,12 @@ enum PanePrompts {
   }
 
   private static func cancelRemoved(_ old: PanePromptPage, leaving page: PanePromptPage) {
+    if let request = old.externalApp, request.id != page.externalApp?.id {
+      SolaraCorePromptAnswers.externalApp(request.id, open: false, remember: false)
+    }
+    if let chooser = old.chooser, chooser.id != page.chooser?.id {
+      SolaraCoreHost.deviceChooser(Int32(chooser.id), action: "cancel")
+    }
     for request in old.permissions where !page.permissions.contains(where: { $0.id == request.id }) {
       pendingPermissions.remove(request.id)
       SolaraCorePromptAnswers.permission(request.id, result: "dismiss", remember: false)
@@ -357,10 +361,16 @@ enum PanePrompts {
       }
     case "deviceChooser":
       guard let chooser = PaneDeviceChooser(payload) else { return }
-      guard let tabId = browsers.tab(chooser.browserId) else { return browsers.park(chooser) }
-      guard owns(tabId) else { return }
+      guard let tabId = anchoredTab(chooser.browserId), active(tabId) != nil,
+        bindings[tabId]?.browserId == chooser.browserId else {
+        if chooser.open { SolaraCoreHost.deviceChooser(Int32(chooser.id), action: "cancel") }
+        return
+      }
       var page = pages[tabId] ?? PanePromptPage()
-      if page.chooserEvent(chooser) { update(tabId, page) }
+      let previous = page
+      guard page.chooserEvent(chooser) else { return }
+      update(tabId, page)
+      if chooser.open { cancelRemoved(previous, leaving: page) }
     default: break
     }
   }
@@ -375,31 +385,34 @@ enum PanePrompts {
     update(tabId, page)
   }
 
-  static func chooserAction(_ tabId: String, _ chooserId: Int, _ event: DeviceChooserEvent) {
-    guard var page = pages[tabId], let chooser = page.chooser, chooser.id == chooserId else { return }
+  @discardableResult
+  static func chooserAction(_ windowId: String, _ tabId: String, _ chooserId: Int, _ event: DeviceChooserEvent) -> Bool {
+    guard active(tabId) != nil, profileIsShown(tabId, windowId), var page = pages[tabId],
+      let chooser = page.chooser, chooser.id == chooserId, chooser.browserId == bindings[tabId]?.browserId else { return false }
     let id = Int32(chooser.id)
     switch event {
-    case .select(let index):
-      page.chooserSelected = index
+    case .select(let option):
+      guard chooser.options.contains(where: { $0.id == option }) else { return false }
+      page.chooserSelected = option
       update(tabId, page)
-    case .choose(let index):
-      guard let choice = chooser.choice(index, selected: page.chooserSelected), page.answerChooser() else { return }
-      pages[tabId] = page
+    case .choose(let option):
+      guard let choice = chooser.choice(option, selected: nil) else { return false }
       SolaraCoreHost.deviceChooser(id, select: Int32(choice))
     case .cancel:
-      guard page.answerChooser() else { return }
-      pages[tabId] = page
+      guard page.answerChooser() else { return false }
+      update(tabId, page)
       SolaraCoreHost.deviceChooser(id, action: "cancel")
     case .refresh: SolaraCoreHost.deviceChooser(id, action: "refresh")
     case .openSettings: SolaraCoreHost.deviceChooser(id, action: "settings")
     }
+    return true
   }
 
   static func choosers(in windowId: String, paneWidth: (String) -> Double?) -> [(tabId: String, id: Int, json: String)] {
     guard let window = windows[windowId], let look = (window["theme"] as? [String: Any])?["prompt"] as? [String: Any] else { return [] }
     let panes = window["panes"] as? [String: [String: Any]] ?? [:]
     return tabs(in: windowId, where: { $0.chooser != nil }).sorted().compactMap { tabId in
-      guard owns(tabId), let page = pages[tabId], let chooser = page.chooser, panes[tabId]?["newTabShown"] as? Bool != true else { return nil }
+      guard profileIsShown(tabId, windowId), let page = pages[tabId], let chooser = page.chooser, panes[tabId]?["newTabShown"] as? Bool != true else { return nil }
       let left = PanePromptSpecs.promptLeft(urlLeft: urlLeft(tabId) ?? 0, paneWidth: paneWidth(tabId) ?? 0, width: PanePromptSpecs.deviceChooserWidth)
       let spec = PanePromptSpecs.deviceChooser(chooser, selected: page.chooserSelected, product: Bundle.main.productName, left: left)
       return encode(spec.merging(look) { _, theme in theme }).map { (tabId, chooser.id, $0) }
@@ -498,7 +511,7 @@ enum PanePrompts {
       func left(_ width: Double) -> Double {
         PanePromptSpecs.promptLeft(urlLeft: (pane["urlLeft"] as? NSNumber)?.doubleValue ?? 0, paneWidth: paneWidth(tabId) ?? 0, width: width)
       }
-      if owns(tabId), let request = page.externalApp, !newTabShown {
+      if let request = page.externalApp, profileIsShown(tabId, windowId), !newTabShown {
         add(.externalApp, request.key, PanePromptSpecs.externalApp(request, always: page.alwaysOpen, left: left(PanePromptSpecs.externalAppWidth)))
       }
       if let request = page.permission, !newTabShown {
@@ -586,22 +599,22 @@ enum PanePrompts {
       update(tabId, page)
       js("pane.autofill", windowId, tabId, prompt.id, action)
     case .externalApp:
-      guard owns(tabId), let request = page.externalApp, shown == receipt(binding, request.key) else { return }
+      guard let request = page.externalApp, shown == receipt(binding, request.key) else { return }
       if case .toggle(let on) = event {
+        guard request.remember != nil else { return }
         page.alwaysOpen = on
         return update(tabId, page)
       }
       let open: Bool
       switch event {
-      case .button(let id): open = id == "open"
-      case .close: open = false
+      case .button("open") where request.app != nil: open = true
+      case .button("cancel"), .button("ok"), .close: open = false
       default: return
       }
       let remember = open && page.alwaysOpen
-      page.externalApp = nil
-      page.alwaysOpen = false
+      page.clearExternalApp()
       update(tabId, page)
-      js("pane.externalApp", windowId, tabId, request.id, open, remember)
+      SolaraCorePromptAnswers.externalApp(request.id, open: open, remember: remember)
     case .permission:
       guard let request = page.permission, request.browserId == bindings[tabId]?.browserId, shown == receipt(binding, request.key),
         let result = answer(event) else { return }
@@ -687,16 +700,17 @@ enum PanePrompts {
     if let offer {
       data["engineOffer"] = ["id": offer.id, "canRemember": offer.canRemember]
     }
-    if owns(tabId), let prompt = pageState.externalApp {
+    if let prompt = pageState.externalApp {
       data["externalApp"] = ["id": prompt.id, "app": prompt.app as Any? ?? NSNull(), "remember": prompt.remember as Any? ?? NSNull(),
         "origin": prompt.origin as Any? ?? NSNull(), "hasIcon": prompt.icon != nil]
     }
     if let prompt = pageState.permission {
       data["permission"] = ["id": prompt.id, "origin": prompt.origin, "permissions": prompt.permissions, "browserId": prompt.browserId]
     }
-    if owns(tabId), let chooser = pageState.chooser {
+    if let chooser = pageState.chooser {
       data["deviceChooser"] = ["id": chooser.id, "title": chooser.title, "unauthorized": chooser.unauthorized,
-        "optionCount": chooser.options.count]
+        "options": chooser.options.map { ["optionId": $0.id, "name": $0.name] },
+        "optionCount": chooser.options.count, "refreshing": chooser.refreshing]
     }
     return encode(data) ?? "{}"
   }
@@ -711,17 +725,18 @@ enum PanePrompts {
     guard let binding = active(tabId), let page = pages[tabId], let windowId = TabPoolHost.shared.windowOf(tabId),
       profileIsShown(tabId, windowId) else { return false }
     if kind == "deviceChooser" {
-      guard owns(tabId), let chooser = page.chooser, String(chooser.id) == id else { return false }
+      guard let chooser = page.chooser, String(chooser.id) == id else { return false }
       let event: DeviceChooserEvent
       switch action {
-      case "select": event = .choose(Int(option))
+      case "select":
+        guard let option = Int(option) else { return false }
+        event = .choose(option)
       case "cancel": event = .cancel
       case "refresh": event = .refresh
       case "settings": event = .openSettings
       default: return false
       }
-      chooserAction(tabId, chooser.id, event)
-      return true
+      return chooserAction(windowId, tabId, chooser.id, event)
     }
     guard let kind = PanePromptKind(rawValue: kind) else { return false }
     let key: String?
@@ -736,7 +751,7 @@ enum PanePrompts {
     let shown = receipt(binding, kind == .popups ? popupKey(tabId, id) : id)
     if kind == .externalApp, option == "remember" { promptEvent(windowId, tabId, kind, shown, .toggle(true)) }
     promptEvent(windowId, tabId, kind, shown, action == "row" ? .row(option) : .button(action))
-    return true
+    return kind != .externalApp || pages[tabId]?.externalApp?.id != id
   }
   #endif
 

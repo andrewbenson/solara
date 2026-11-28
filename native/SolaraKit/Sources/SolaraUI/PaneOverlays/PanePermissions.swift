@@ -43,7 +43,7 @@ public struct PaneDeviceChooser: Equatable, Sendable {
   public var options: [Option]
 
   public init?(_ payload: [String: Any]) {
-    guard let id = (payload["id"] as? NSNumber)?.intValue, let browserId = (payload["browserId"] as? NSNumber)?.intValue else { return nil }
+    guard let id = (payload["id"] as? NSNumber)?.intValue, id > 0, id <= Int32.max, let browserId = (payload["browserId"] as? NSNumber)?.intValue else { return nil }
     func flag(_ name: String) -> Bool { (payload[name] as? NSNumber)?.boolValue ?? false }
     func text(_ name: String) -> String { payload[name] as? String ?? "" }
     self.id = id
@@ -60,30 +60,30 @@ public struct PaneDeviceChooser: Equatable, Sendable {
     unauthorized = flag("unauthorized")
     bothButtonsEnabled = flag("bothButtonsEnabled")
     showSignal = flag("showSignal")
-    options = (payload["options"] as? [[String: Any]] ?? []).enumerated().map { index, option in
-      Option(id: (option["optionId"] as? NSNumber)?.intValue ?? index, name: option["name"] as? String ?? "", connected: (option["connected"] as? NSNumber)?.boolValue ?? false, paired: (option["paired"] as? NSNumber)?.boolValue ?? false, signal: (option["signal"] as? NSNumber)?.intValue ?? 0)
+    options = (payload["options"] as? [[String: Any]] ?? []).compactMap { option in
+      guard let id = (option["optionId"] as? NSNumber)?.intValue, id > 0, id <= Int32.max else { return nil }
+      return Option(id: id, name: option["name"] as? String ?? "", connected: (option["connected"] as? NSNumber)?.boolValue ?? false, paired: (option["paired"] as? NSNumber)?.boolValue ?? false, signal: (option["signal"] as? NSNumber)?.intValue ?? 0)
     }
   }
 
   public var scanning: Bool { bothButtonsEnabled }
   public var blocked: Bool { adapterOff || unauthorized }
 
-  public func valid(_ selected: Int?) -> Bool { scanning || options.contains { $0.id == selected } }
+  public func valid(_ selected: Int?) -> Bool { !blocked && choice(nil, selected: selected) != nil }
 
   public func choice(_ option: Int?, selected: Int?) -> Int? {
-    if scanning { return -1 }
-    guard let id = option ?? selected, valid(id) else { return nil }
-    return id
+    guard !blocked else { return nil }
+    guard let id = option ?? selected else { return scanning ? -1 : nil }
+    if id == -1, scanning { return id }
+    return options.contains(where: { $0.id == id }) ? id : nil
   }
 }
 
 public struct PaneBrowsers: Sendable {
   public static let orphanLimit = 32
-  public static let parkedChooserLimit = 8
 
   public private(set) var tabs: [Int: String] = [:]
   private var orphans: [PanePermissionRequest] = []
-  private var parkedChoosers: [PaneDeviceChooser] = []
 
   public init() {}
 
@@ -96,22 +96,10 @@ public struct PaneBrowsers: Sendable {
     return dropped
   }
 
-  public mutating func park(_ chooser: PaneDeviceChooser) {
-    parkedChoosers.removeAll { $0.browserId == chooser.browserId || $0.id == chooser.id }
-    guard chooser.open else { return }
-    parkedChoosers.append(chooser)
-    if parkedChoosers.count > Self.parkedChooserLimit { parkedChoosers.removeFirst(parkedChoosers.count - Self.parkedChooserLimit) }
-  }
-
   public mutating func drain() -> [PanePermissionRequest] {
     let pending = orphans
     self = PaneBrowsers()
     return pending
-  }
-
-  public mutating func parkedChooser(_ browserId: Int) -> PaneDeviceChooser? {
-    guard let index = parkedChoosers.firstIndex(where: { $0.browserId == browserId }) else { return nil }
-    return parkedChoosers.remove(at: index)
   }
 
   public mutating func ready(_ tabId: String, browserId: Int) -> [(tabId: String, request: PanePermissionRequest)] {
@@ -150,22 +138,22 @@ extension PanePromptPage {
   public mutating func chooserEvent(_ next: PaneDeviceChooser) -> Bool {
     let before = self
     if next.open {
-      if chooser?.id != next.id {
+      guard next.id > newestChooserId || next.id == chooser?.id else { return false }
+      if next.id != chooser?.id || !next.options.contains(where: { $0.id == chooserSelected }) {
         chooserSelected = nil
-        chooserAnswered = false
       }
       chooser = next
-    } else if chooser?.id == next.id {
-      chooser = nil
-      chooserSelected = nil
-      chooserAnswered = false
+    } else if next.id == chooser?.id {
+      _ = answerChooser()
     }
+    newestChooserId = max(newestChooserId, next.id)
     return self != before
   }
 
   public mutating func answerChooser() -> Bool {
-    guard chooser != nil, !chooserAnswered else { return false }
-    chooserAnswered = true
+    guard chooser != nil else { return false }
+    chooser = nil
+    chooserSelected = nil
     return true
   }
 }

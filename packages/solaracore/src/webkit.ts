@@ -34,7 +34,6 @@ export type WebKitNative = {
   removeDownloadStaging(path: string, uuid: string, folder: string): Promise<boolean>;
   sitePermissions(profile: string, origin: string): Promise<Partial<SiteSettings>>;
   setSitePermission(profile: string, origin: string, kind: string, value: string): Promise<void>;
-  resolveExternalApp(id: string, open: boolean, remember: boolean): Promise<void>;
   clearBrowsingData(profile: string, types: BrowsingDataType[], since: number | null): Promise<void>;
   deleteProfileData(profile: string): Promise<boolean>;
   cookieStoreKey(profile: string): Promise<string>;
@@ -56,7 +55,6 @@ const NO_SUBSCRIPTION: EventSubscription = { remove() {} };
 
 export const isWebKitDownload = (id: string) => id.startsWith("wk-download-");
 export const isWebKitPermission = (id: string) => id.startsWith("wk-permission-");
-export const isWebKitExternalApp = (id: string) => id.startsWith("wk-external-");
 export const WEBKIT_SITE_SETTINGS: readonly SiteSettingType[] = ["camera", "microphone"];
 
 export const webKitListener = <T>(name: "onDownload" | "onPermission" | "onPermissionDismissed", listener: (value: T) => void): EventSubscription =>

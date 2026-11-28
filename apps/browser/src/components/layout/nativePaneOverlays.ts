@@ -1,4 +1,4 @@
-import { resolveExternalApp, type AutofillPromptAnswer, type PasswordPromptAnswer } from "@solara/solaracore";
+import type { AutofillPromptAnswer, PasswordPromptAnswer } from "@solara/solaracore";
 import { publishSettingsTopic } from "@solara/settings";
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { View } from "react-native";
@@ -57,10 +57,6 @@ addNativeSettingsHandlers({
   "pane.autofill": (_windowId: string, tabId: string, id: number, action: AutofillPromptAnswer) => {
     if (pageOf(tabId).autofillPrompt?.id === id) patchPage(tabId, { autofillPrompt: null });
     void webviews.get(tabId)?.resolveAutofillPrompt(id, action);
-  },
-  "pane.externalApp": (_windowId: string, tabId: string, id: string, open: boolean, remember: boolean) => {
-    if (pageOf(tabId).externalApp?.id === id) patchPage(tabId, { externalApp: null });
-    void resolveExternalApp(id, open, remember);
   },
 });
 

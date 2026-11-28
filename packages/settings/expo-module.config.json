@@ -1,6 +1,6 @@
 {
   "platforms": ["apple"],
   "apple": {
-    "modules": ["SettingsModule", "NewTabModule", "HostedModule", "OmniboxModule", "ToolbarModule", "FindBarModule", "DownloadsModule", "PromptModule", "DeviceChooserModule", "PanelModule", "SitePanelModule", "MediaModule", "WindowShellModule", "PagesModule", "TopStripModule", "SidebarDragModule", "FolderPanelModule", "AutoHideModule", "TabPoolModule", "DockSelectionModule", "ProfilePagerModule", "SidebarAddressBarModule"]
+    "modules": ["SettingsModule", "NewTabModule", "HostedModule", "OmniboxModule", "ToolbarModule", "FindBarModule", "DownloadsModule", "PromptModule", "PanelModule", "SitePanelModule", "MediaModule", "WindowShellModule", "PagesModule", "TopStripModule", "SidebarDragModule", "FolderPanelModule", "AutoHideModule", "TabPoolModule", "DockSelectionModule", "ProfilePagerModule", "SidebarAddressBarModule"]
   }
 }

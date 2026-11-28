@@ -62,7 +62,6 @@ function harness({ owned = true, pooled = false, quitting = false } = {}) {
     "../lib/pageHandoff": { handoffLoaded: () => false },
     "../lib/webviews": { noteIssued: spy("noteIssued"), notePooledPage: spy("notePooledPage"), webviewRef: () => spy("registerHandle"), webviews },
     "./webviews": { webviews },
-    "./site/ExternalAppPrompt": { answerExternalApp: spy("answerExternalApp") },
     "./layout/pageState": { pageOf: () => page, patchPage: (_id, patch) => { calls.push({ name: "patchPage", args: [patch] }); Object.assign(page, patch); }, setBrowserId: spy("browserId"), setPopover: spy("popover"), usePages: { getState: () => ({ popover: {} }) } },
   };
   function load(name, contents) {

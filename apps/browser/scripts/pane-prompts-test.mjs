@@ -225,21 +225,14 @@ try {
     });
 
     await rep.check(`${tag}-external-app`, async () => {
-      const target = await until("its DevTools target", async () => (await app.pageTarget(`${base}/other`)) ?? null, 5000);
+      const url = `${base}/other`;
+      await run(`const s = ac.store.getState(); if (s.tabs.a?.url !== ${JSON.stringify(url)}) s.navigate("a", ${JSON.stringify(url)}, { userInitiated: true }); return true;`);
+      const target = await until("its DevTools target", async () => (await app.pageTarget(url)) ?? null, 10000);
       const cdp = await devtools(target);
       try {
         await cdp.send("Runtime.evaluate", { expression: "location.href = 'solaracore-no-such-app://hello'", userGesture: true });
       } finally {
         cdp.close();
-      }
-      if (inline) {
-        await until("the inline external-app prompt", `return rnDrawn("ExternalAppPrompt") || null;`, 8000);
-        await sleep(800);
-        await run(`const body = acPerf.findFibers("NativePromptBody", 5).find((f) => f.memoizedProps.spec?.buttons?.some((button) => button.id === "ok"));
-          if (!body) throw new Error("inline prompt body missing");
-          body.memoizedProps.onButton("ok"); return true;`);
-        await until("the inline external-app prompt closes", `return !rnDrawn("ExternalAppPrompt") || null;`, 4000);
-        return { host: "inline" };
       }
       await until("the request reaches Swift", `return prompts().then((p) => p.externalApp || null);`, 8000);
       const shown = await until("the native prompt", `return native().then((d) => d && d.tabs.a && d.tabs.a.externalApp && !d.tabs.a.externalApp.hidden && d.tabs.a.externalApp.controls.OK ? d.tabs.a.externalApp : null);`, 6000);
@@ -371,15 +364,6 @@ try {
       };
       const current = `return prompts().then((p) => p.permission ?? null);`;
       await inPage("Notification.requestPermission(); true");
-      if (inline) {
-        await until("the inline external-app prompt", `return rnDrawn("ExternalAppPrompt") || null;`, 8000);
-        await sleep(800);
-        await run(`const body = acPerf.findFibers("NativePromptBody", 5).find((f) => f.memoizedProps.spec?.buttons?.some((button) => button.id === "ok"));
-          if (!body) throw new Error("inline prompt body missing");
-          body.memoizedProps.onButton("ok"); return true;`);
-        await until("the inline external-app prompt closes", `return !rnDrawn("ExternalAppPrompt") || null;`, 4000);
-        return { host: "inline" };
-      }
       await until("the request reaches Swift", current, 8000);
       await inPage("navigator.geolocation.getCurrentPosition(() => {}, () => {}); true");
       const shownFor = (request) =>
@@ -418,12 +402,6 @@ try {
       const UI = `globalThis.expo.modules.SolaraChromeUI`;
       const chooserId = `return prompts().then((p) => p.deviceChooser?.id ?? null);`;
       if (!(await run(`return ${UI}.devShowBluetoothChooser(${browserId}, false);`))) throw new Error("the DEBUG chooser hook is missing");
-      if (inline) {
-        await until("the inline device chooser", `return rnDrawn("DeviceChooser") || null;`, 6000);
-        await run(`const d = globalThis.acDeviceChoosers; return d.cancelDeviceChooser(d.useChoosers.getState().byTab.a.id);`);
-        await until("the inline chooser closes", `return !rnDrawn("DeviceChooser") || null;`, 4000);
-        return { host: "inline" };
-      }
       const id = await until("the chooser reaches Swift", chooserId, 6000);
       const shown = await until("the native chooser", `return native().then((d) => d && d.tabs.a && d.tabs.a.deviceChooser && !d.tabs.a.deviceChooser.hidden && d.tabs.a.deviceChooser.controls.Cancel && d.tabs.a.deviceChooser.id === ${id} ? d.tabs.a.deviceChooser : null);`, 6000);
       await crossPrompt("w1", "deviceChooser", shown);
@@ -521,7 +499,8 @@ try {
         const plant = `return M.devPromptFixture(${tab}, "onPopupBlocked", ${JSON.stringify({ id, origin: base, url: `${base}/popped` })});`;
         const staleAnswer = `return M.devPromptAnswer(${tab}, "popups", ${JSON.stringify(id)}, "dismiss", "");`;
         try {
-          await until(`${mode} page loads`, `const s = ac.store.getState(); return s.tabs[${tab}]?.url === ${JSON.stringify(url)} && !s.live[${tab}]?.isLoading || null;`, 15000);
+          await until(`${mode} page loads`, `const s = ac.store.getState(); const t = s.tabs[${tab}];
+            return t?.url === ${JSON.stringify(url)} && t.title === "Other" && !s.live[${tab}]?.isLoading || null;`, 15000);
           await until(`${mode} receipt arrives`, plant, 5000);
           await untilSnapshot(`${mode} prompt is on its own page`, (window) =>
             window?.paneOverlays?.tabs?.[tabId]?.popups?.hidden === false, windowId, 8000);

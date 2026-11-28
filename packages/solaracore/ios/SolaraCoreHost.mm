@@ -243,6 +243,7 @@ bool gJSStarted = false;
 static bool gLaunchLinksReady = false;
 void (^gEventHandler)(NSString *, NSDictionary *);
 void (^gChromeUIHandler)(NSString *, NSDictionary *);
+void (^gDeviceChooserHandler)(NSDictionary *);
 void (^gCastUIHandler)(NSString *, NSDictionary *);
 void (^gExtensionsEventHandler)(NSString *, NSDictionary *);
 NSMutableDictionary<NSString *, NSDictionary *> *gInstallPrompts = [NSMutableDictionary dictionary];
@@ -720,7 +721,7 @@ static void StartEarlyWindow() {
 - (void)engine:(SolaraCoreEngine *)engine deviceChooser:(NSDictionary *)chooser tab:(SolaraCoreTab *)tab {
   NSMutableDictionary *payload = [chooser mutableCopy];
   payload[@"browserId"] = @(tab ? solaracore_host::BrowserId(tab) : 0);
-  if (auto handler = SolaraCoreHost.chromeUIHandler) handler(@"deviceChooser", payload);
+  if (gDeviceChooserHandler) gDeviceChooserHandler(payload);
   else if ([payload[@"open"] boolValue] && [SolaraCoreEngine respondsToSelector:@selector(cancelDeviceChooser:)])
     [SolaraCoreEngine cancelDeviceChooser:[payload[@"id"] intValue]];
 }
@@ -1316,11 +1317,17 @@ static void StartEarlyWindow() {
   gCastUIHandler = [handler copy];
 }
 
-+ (void)deviceChooser:(int)chooserId select:(int)index {
++ (void (^)(NSDictionary *))deviceChooserHandler {
+  return gDeviceChooserHandler;
+}
+
++ (void)setDeviceChooserHandler:(void (^)(NSDictionary *))handler {
+  gDeviceChooserHandler = [handler copy];
+}
+
++ (void)deviceChooser:(int)chooserId select:(int)optionId {
   if ([SolaraCoreEngine respondsToSelector:@selector(selectDevice:optionId:)])
-    [SolaraCoreEngine selectDevice:chooserId optionId:index];
-  else if ([SolaraCoreEngine respondsToSelector:@selector(selectDevice:index:)])
-    [SolaraCoreEngine selectDevice:chooserId index:index];
+    [SolaraCoreEngine selectDevice:chooserId optionId:optionId];
 }
 
 + (void)deviceChooser:(int)chooserId action:(NSString *)action {

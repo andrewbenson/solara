@@ -80,6 +80,11 @@ public class CefModule: Module {
       SolaraCoreHost.ensureProfile(profile) { promise.resolve($0) }
     }.runOnQueue(.main)
     AsyncFunction("chromeWindows") { SolaraCoreHost.chromeWindows }.runOnQueue(.main)
+    #if DEBUG
+    AsyncFunction("devResolveExternalApp") { (id: String, open: Bool, remember: Bool) in
+      SolaraCoreHost.resolveExternalApp(id, open: open, remember: remember)
+    }.runOnQueue(.main)
+    #endif
     AsyncFunction("devExternalLaunches") { SolaraCoreHost.testExternalLaunches() }.runOnQueue(.main)
     AsyncFunction("devEvents") { (browserId: Int) in SolaraCoreWebView.devEvents(browserId: Int32(browserId)) }.runOnQueue(.main)
     AsyncFunction("devWindowNumber") { (browserId: Int) in SolaraCoreWebView.devWindowNumber(browserId: Int32(browserId)) }.runOnQueue(.main)
@@ -151,9 +156,6 @@ public class CefModule: Module {
 
     AsyncFunction("resolvePermission") { (id: String, result: String, remember: Bool?) in
       SolaraCoreHost.resolvePermission(id, result: result, remember: remember ?? false)
-    }.runOnQueue(.main)
-    AsyncFunction("resolveExternalApp") { (id: String, open: Bool, remember: Bool?) in
-      SolaraCoreHost.resolveExternalApp(id, open: open, remember: remember ?? false)
     }.runOnQueue(.main)
     AsyncFunction("getExternalAppAllowances") { (profile: String, promise: Promise) in
       SolaraCoreServices.externalAppAllowances(profile: profile) { promise.resolve($0) }
@@ -437,7 +439,6 @@ final class CefWebView: ExpoView, SolaraCoreWebViewDelegate, @preconcurrency RCT
   let onPasswordPrompt = EventDispatcher()
   let onAutofillPrompt = EventDispatcher()
   let onTabStrip = EventDispatcher()
-  let onExternalApp = EventDispatcher()
   let onPreferredSize = EventDispatcher()
 
   var pageContext: [String: Any] = [:]

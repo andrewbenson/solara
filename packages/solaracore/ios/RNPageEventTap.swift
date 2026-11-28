@@ -100,6 +100,12 @@ public enum RNPageEventTap {
   @MainActor
   public static func forward(attachment: RNPageAttachment?, name: String, payload: [String: Any], emit: @escaping @MainActor ([String: Any]) -> Void) {
     let disposition = reserve(attachment: attachment, name: name, payload: payload)
+    if name == "onExternalApp" {
+      if case .fallback = disposition, payload["closed"] as? Bool != true, let id = payload["id"] as? String {
+        SolaraCorePromptAnswers.externalApp(id, open: false, remember: false)
+      }
+      return
+    }
     guard name != "onPagePhysical", name != "onPageExecution", name != "onPageRequestAccepted", name != "onPageConstructorCaptured" else { return }
     var body = payload
     body["storeReport"] = disposition.envelope

@@ -47,7 +47,7 @@ import { createServer as createHttpsServer } from "node:https";
 import { basename, join, resolve } from "node:path";
 import { X509Certificate, createHash, createSign, generateKeyPairSync, randomUUID } from "node:crypto";
 import { crc32, deflateSync, inflateSync } from "node:zlib";
-import { attach as attachInstance, crashReportsForInstance, launch as launchInstance, onScreenWindows as windowsOf, reporter, screenLocked, session as fixtureSession, sleep, temporaryData } from "../../../scripts/lib/instance.mjs";
+import { attach as attachInstance, crashReportsForInstance, devtools, launch as launchInstance, onScreenWindows as windowsOf, reporter, screenLocked, session as fixtureSession, sleep, temporaryData } from "../../../scripts/lib/instance.mjs";
 
 // MARK: What each check needs
 
@@ -2042,7 +2042,42 @@ try {
     }, 8000);
     await until("the sheet gone", async () => !(await promptState(first.id, "deviceChooser")), 5000);
     if (result !== "NotFoundError") throw new Error(`page got ${result}`);
-    return { chooser: { id: chooser.id, title: chooser.title, options: chooser.optionCount }, page: result };
+
+    await cdp(t, "Runtime.evaluate", { expression: `new Promise((resolve) => {
+      const frame = document.createElement("iframe");
+      frame.id = "chooser-requester";
+      frame.allow = "usb";
+      frame.onload = () => resolve(true);
+      frame.srcdoc = "<title>Chooser requester</title>";
+      document.body.append(frame);
+    })`, awaitPromise: true });
+    const frameConnection = await devtools(t);
+    let frameChooser;
+    try {
+      const { frameTree } = await frameConnection.send("Page.getFrameTree");
+      const requester = frameTree.childFrames.find(({ frame }) => frame.url === "about:srcdoc").frame;
+      const { executionContextId } = await frameConnection.send("Page.createIsolatedWorld", { frameId: requester.id });
+      const result = await frameConnection.send("Runtime.evaluate", {
+        expression: "navigator.usb.requestDevice({ filters: [] }).catch(() => {}); true",
+        contextId: executionContextId, userGesture: true,
+      });
+      assert.ok(!result.exceptionDetails, JSON.stringify(result.exceptionDetails));
+      frameChooser = await until("the frame's chooser", async () => promptState(first.id, "deviceChooser"), 10000);
+    } finally {
+      frameConnection.close();
+    }
+    await cdp(t, "Runtime.evaluate", { expression: 'document.getElementById("chooser-requester").remove(); true' });
+    await until("the frame chooser retired", async () => !(await promptState(first.id, "deviceChooser")), 5000);
+    await cdp(t, "Runtime.evaluate", {
+      expression: "navigator.usb.requestDevice({ filters: [] }).catch(() => {}); true", userGesture: true,
+    });
+    const replacement = await until("the new document's chooser", async () => promptState(first.id, "deviceChooser"), 10000);
+    assert.notEqual(replacement.id, frameChooser.id);
+    assert.equal(await promptAnswer(first.id, "deviceChooser", frameChooser.id, "cancel"), false);
+    assert.equal((await promptState(first.id, "deviceChooser"))?.id, replacement.id);
+    await promptAnswer(first.id, "deviceChooser", replacement.id, "cancel");
+    await until("the replacement chooser closed", async () => !(await promptState(first.id, "deviceChooser")), 5000);
+    return { chooser: { id: chooser.id, title: chooser.title, options: chooser.optionCount }, page: result, retiredFrame: frameChooser.id };
   });
 
   const chromeUI = (call) => evalApp(`return globalThis.expo.modules.SolaraChromeUI.${call}`);
@@ -2058,25 +2093,22 @@ try {
   const chooserGone = () => until("the sheet gone", async () => !(await chooserOf(first.id)), 5000);
 
   await check("bluetooth-chooser", async () => {
-    await evalApp(`globalThis.__acChooser = []; globalThis.__acChooserSub?.remove();
-      globalThis.__acChooserSub = globalThis.expo.modules.SolaraChromeUI.addListener("onDeviceChooser", (e) => globalThis.__acChooser.push(e)); return true`);
     try {
       const before = (await chooserEvents()).length;
       const chooser = await bluetoothChooser(false);
-      const initial = (await evalApp(`return globalThis.__acChooser`)).findLast((c) => c.id === chooser.id && c.open && c.options?.length);
-      assert.ok(initial, "initial chooser options");
-      const sent = (await evalApp(`return globalThis.__acChooser`)).length;
+      const staleOption = chooser.options[0].optionId;
       await promptAnswer(first.id, "deviceChooser", chooser.id, "refresh");
       const rescan = await until("Chrome's rescan", async () => (await chooserEvents()).slice(before).find((e) => e.event === "rescan") ?? null, 5000);
       const refreshed = await until("the list sent again", async () => {
-        const list = await evalApp(`return globalThis.__acChooser`);
-        return list.slice(sent).find((c) => c.open && c.options?.length && !c.refreshing) ?? null;
+        const current = await chooserOf(first.id);
+        return current?.id === chooser.id && current.options.length && !current.refreshing &&
+          current.options[0].optionId !== staleOption ? current : null;
       }, 5000);
-      const staleOption = initial.options[0].optionId;
       const liveOption = refreshed.options[0].optionId;
       assert.ok(Number.isInteger(staleOption) && Number.isInteger(liveOption));
       assert.notEqual(staleOption, liveOption);
-      await chromeUI(`selectDevice(${chooser.id}, ${staleOption}).then(() => true)`);
+      assert.equal(await promptAnswer(first.id, "deviceChooser", chooser.id, "select", String(staleOption)), false);
+      await chromeUI(`devSelectDevice(${chooser.id}, ${staleOption}).then(() => true)`);
       assert.equal((await chooserEvents()).slice(before).some((e) => e.event === "selected"), false);
       assert.equal((await chooserOf(first.id))?.id, chooser.id);
       await promptAnswer(first.id, "deviceChooser", chooser.id, "select", String(liveOption));
@@ -2085,7 +2117,6 @@ try {
       if (selected.device !== "ac-test-device") throw new Error(`picked ${selected.device}`);
       return { title: chooser.title, options: refreshed.options.map((o) => o.name), rescan: !!rescan, selected: selected.device };
     } finally {
-      await evalApp(`globalThis.__acChooserSub?.remove(); return true`).catch(() => null);
       const c = await chooserOf(first.id).catch(() => null);
       if (c) await promptAnswer(first.id, "deviceChooser", c.id, "cancel").catch(() => null);
     }
@@ -6126,7 +6157,8 @@ try {
     await until("the unrelated same-origin document", async () =>
       (await state()).tabs.find((x) => x.id === first.id && x.url === `${base}/b` && !x.loading));
     await until("the stale external-app prompt cleared", async () => !(await promptState(first.id, "externalApp")), 5000);
-    await cef(`resolveExternalApp(${JSON.stringify(stale.id)}, true, true)`);
+    assert.equal(await promptAnswer(first.id, "externalApp", stale.id, "open", "remember"), false);
+    await cef(`devResolveExternalApp(${JSON.stringify(stale.id)}, true, true)`);
     assert.equal((await cef("devExternalLaunches()")).some((row) => row.url?.includes("solaracore-acceptance-stale")), false);
     assert.equal((await cef('getExternalAppAllowances("")')).some((row) => row.scheme === "shortcuts"), false);
     await backToA();

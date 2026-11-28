@@ -17,21 +17,6 @@ export function NativePromptView(props: NativePromptProps) {
   return <View {...props} />;
 }
 
-export type NativeDeviceChooserEvent = { kind: "select" | "choose"; index: number } | { kind: "cancel" | "refresh" | "openSettings" };
-
-export type NativeDeviceChooserProps = ViewProps & {
-  state: string;
-  onChooserEvent?(e: NativeSyntheticEvent<NativeDeviceChooserEvent>): void;
-  onChooserHeight?(e: NativeSyntheticEvent<{ height: number }>): void;
-};
-
-let ChooserView: ComponentType<NativeDeviceChooserProps> | null = null;
-
-export function NativeDeviceChooserView(props: NativeDeviceChooserProps) {
-  ChooserView ??= requireNativeViewManager<NativeDeviceChooserProps>("SolaraDeviceChooser") as ComponentType<NativeDeviceChooserProps>;
-  return <ChooserView {...props} />;
-}
-
 export type NativePanelEvent = { kind: "step"; step: number } | { kind: string; [key: string]: unknown };
 
 export type NativePanelProps = ViewProps & {

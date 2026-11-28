@@ -3,8 +3,6 @@ import { memo, useEffect, useLayoutEffect, useMemo, useState } from "react";
 import { Animated, StyleSheet, View, type ViewStyle } from "react-native";
 import { layout } from "../lib/theme";
 import { panePromptsNativeIn } from "../lib/pagesPool";
-import { ExternalAppPrompt } from "./site/ExternalAppPrompt";
-import { DeviceChooser } from "./site/DeviceChooser";
 import { useBrowser } from "../store/browser";
 import { shallowEqual, useTabValue } from "../store/tabWatch";
 import { useActiveTabId } from "../store/hooks";
@@ -82,8 +80,6 @@ export function PageOverlays({
       {popovers && popover === "zoom" && <ZoomPopover tabId={tabId} {...popoverSide} top={POPOVER_MARGIN} nativeAllowed={!peek} />}
       {!nativePrompts && <PasswordPrompt tabId={tabId} right={POPOVER_MARGIN} top={POPOVER_MARGIN} />}
       {!nativePrompts && <AutofillPrompt tabId={tabId} right={POPOVER_MARGIN} top={POPOVER_MARGIN} />}
-      {!newTabShown && !nativePrompts && <ExternalAppPrompt tabId={tabId} left={Math.max(POPOVER_MARGIN, Math.min(geometry.urlLeft, width - 348))} top={POPOVER_MARGIN} />}
-      {!newTabShown && !nativePrompts && <DeviceChooser tabId={tabId} left={Math.max(POPOVER_MARGIN, Math.min(geometry.urlLeft, width - 348))} top={POPOVER_MARGIN} />}
       <SolaraHostedView kind="panePrompts" windowId={windowId} state={tabId} pointerEvents="box-none" style={StyleSheet.absoluteFill} />
       <SolaraHostedView kind="media.sharePicker" windowId={windowId} state={tabId} pointerEvents="box-none" style={StyleSheet.absoluteFill} />
       {(peek || !windowShellActive(windowId)) && <SolaraHostedView kind="media.castPicker" windowId={windowId} state={tabId} pointerEvents="box-none" style={StyleSheet.absoluteFill} />}

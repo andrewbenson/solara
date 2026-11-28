@@ -112,7 +112,7 @@ public final class DeviceChooserView: NSView, PromptInputProtectionOwner {
     guard inputProtection.allows(event) else { return }
     switch event.keyCode {
     case 53: onEvent(.cancel)
-    case 36, 76: if s.valid { onEvent(.choose(s.scanning ? nil : s.selected)) }
+    case 36, 76: if s.valid { onEvent(.choose(s.selected)) }
     default: super.keyDown(with: event)
     }
   }
@@ -313,7 +313,7 @@ public final class DeviceChooserView: NSView, PromptInputProtectionOwner {
       b.addSubview(f)
       if primary {
         b.alphaValue = primaryOn ? 1 : 0.4
-        b.onPress = { [weak self] in if primaryOn { self?.onEvent(.choose(s.scanning ? nil : s.selected)) } }
+        b.onPress = { [weak self] in if primaryOn { self?.onEvent(.choose(s.selected)) } }
       } else {
         b.onPress = { [weak self] in self?.onEvent(.cancel) }
       }

@@ -101,57 +101,6 @@ final class PromptPopoverHost {
   }
 }
 
-public class DeviceChooserModule: Module {
-  public func definition() -> ModuleDefinition {
-    Name("SolaraDeviceChooser")
-
-    View(NativeDeviceChooserView.self) {
-      Events("onChooserEvent", "onChooserHeight")
-
-      Prop("state") { (view: NativeDeviceChooserView, v: String) in MainActor.assumeIsolated { view.setState(v) } }
-    }
-  }
-}
-
-final class NativeDeviceChooserView: ExpoView {
-  let onChooserEvent = EventDispatcher()
-  let onChooserHeight = EventDispatcher()
-  let body = DeviceChooserView(frame: .zero)
-  private var json = ""
-  private lazy var host = PromptPopoverHost(owner: self, body: body) { [weak self] in self?.onChooserEvent(["kind": "dismiss"]) }
-
-  override var isFlipped: Bool { true }
-
-  override func hitTest(_ point: NSPoint) -> NSView? {
-    let hit = super.hitTest(point)
-    return hit === self ? nil : hit
-  }
-
-  required init(appContext: AppContext? = nil) {
-    super.init(appContext: appContext)
-    body.onHeight = { [weak self] h in
-      guard let self else { return }
-      if !self.host.report(h) { self.onChooserHeight(["height": h]) }
-    }
-    body.onEvent = { [weak self] e in
-      switch e {
-      case .select(let i): self?.onChooserEvent(["kind": "select", "index": i])
-      case .choose(let i): self?.onChooserEvent(["kind": "choose", "index": i ?? -1])
-      case .cancel: self?.onChooserEvent(["kind": "cancel"])
-      case .refresh: self?.onChooserEvent(["kind": "refresh"])
-      case .openSettings: self?.onChooserEvent(["kind": "openSettings"])
-      }
-    }
-  }
-
-  func setState(_ next: String) {
-    guard next != json, let state = DeviceChooserState.decode(next) else { return }
-    json = next
-    host.mount(next)
-    body.update(state)
-  }
-}
-
 public class PanelModule: Module {
   public func definition() -> ModuleDefinition {
     Name("SolaraPanel")

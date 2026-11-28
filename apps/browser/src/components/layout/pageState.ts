@@ -1,5 +1,5 @@
 import { onPanePopoversChanged, panePopovers, setPanePopover } from "@solara/settings";
-import type { AutofillPrompt, CrashInfo, ExternalAppRequest, MediaAccess, NavigationState, PasswordPrompt, SecurityInfo } from "@solara/solaracore";
+import type { AutofillPrompt, CrashInfo, MediaAccess, NavigationState, PasswordPrompt, SecurityInfo } from "@solara/solaracore";
 import { create } from "zustand";
 import { useBrowser } from "../../store/browser";
 import { activeTabId } from "../../store/model";
@@ -18,7 +18,6 @@ export type PageState = {
   mediaAccess: MediaAccess | null;
   passwordPrompt: PasswordPrompt | null;
   autofillPrompt: AutofillPrompt | null;
-  externalApp: ExternalAppRequest | null;
   wasNewTab: boolean;
   backToNewTab: boolean;
   newTabShown: { url: string; title: string; favicon: string | null } | null;
@@ -37,7 +36,6 @@ const IDLE_PAGE: PageState = {
   mediaAccess: null,
   passwordPrompt: null,
   autofillPrompt: null,
-  externalApp: null,
   wasNewTab: false,
   backToNewTab: false,
   newTabShown: null,

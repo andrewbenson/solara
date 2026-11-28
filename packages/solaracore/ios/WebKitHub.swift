@@ -44,6 +44,8 @@ final class WebKitHub: NSObject, WKScriptMessageHandler {
     let url: URL
     let allowance: String?
     let grant: ExternalGrant?
+    weak var webView: WKWebView?
+    let document: WKBackForwardListItem?
   }
 
   private struct ExternalGrant {
@@ -476,7 +478,9 @@ final class WebKitHub: NSObject, WKScriptMessageHandler {
     let id = "wk-external-\(lastExternal)"
     if app != nil {
       if pendingExternal.count >= 50 { pendingExternal.removeAll() }
-      pendingExternal.insert(PendingExternal(url: url, allowance: allowance, grant: grant), id: id, generation: generation)
+      let pending = PendingExternal(url: url, allowance: allowance, grant: grant, webView: webView,
+        document: webView.backForwardList.currentItem)
+      pendingExternal.insert(pending, id: id, generation: generation)
     }
     let title = name.map { "Open “\($0)”?" } ?? "No application is set to open this link"
     let message = app == nil
@@ -491,7 +495,8 @@ final class WebKitHub: NSObject, WKScriptMessageHandler {
   }
 
   func resolveExternalApp(_ id: String, open: Bool, remember: Bool) {
-    guard let pending = pendingExternal.removeValue(forKey: id), open else { return }
+    guard let pending = pendingExternal.removeValue(forKey: id), open, let webView = pending.webView,
+      webView.backForwardList.currentItem === pending.document else { return }
     if remember, let allowance = pending.allowance, let grant = pending.grant { externalAllowances[allowance] = grant }
     self.open(pending.url)
   }

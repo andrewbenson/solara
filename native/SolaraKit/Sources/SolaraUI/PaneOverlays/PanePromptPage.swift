@@ -105,11 +105,12 @@ public struct PanePromptPage: Equatable, Sendable {
   public var autofill: PaneAutofillPrompt?
   public var externalApp: PaneExternalApp?
   public var alwaysOpen = false
+  private var seenExternalApps: Set<String> = []
   public var popups: [PaneBlockedPopup] = []
   public var permissions: [PanePermissionRequest] = []
   public var chooser: PaneDeviceChooser?
   public var chooserSelected: Int?
-  public var chooserAnswered = false
+  var newestChooserId = 0
   public var selection: PaneSelection?
 
   public init() {}
@@ -119,6 +120,8 @@ public struct PanePromptPage: Equatable, Sendable {
   public var shown: PanePromptPage {
     var page = self
     page.pageKey = nil
+    page.seenExternalApps = []
+    page.newestChooserId = 0
     return page
   }
 
@@ -149,12 +152,12 @@ public struct PanePromptPage: Equatable, Sendable {
       }
     case "onExternalApp":
       if payload["closed"] as? Bool == true {
-        if let id = payload["id"] as? String, externalApp?.id == id {
-          externalApp = nil
-          alwaysOpen = false
+        if let id = payload["id"] as? String {
+          seenExternalApps.insert(id)
+          if externalApp?.id == id { clearExternalApp() }
         }
-      } else {
-        externalApp = PaneExternalApp(payload)
+      } else if let request = PaneExternalApp(payload), seenExternalApps.insert(request.id).inserted {
+        externalApp = request
         alwaysOpen = false
       }
     case "onPageMessage":
@@ -170,10 +173,6 @@ public struct PanePromptPage: Equatable, Sendable {
         permissions = []
         popups = []
         selection = nil
-        if externalApp != nil, Self.host(key) != Self.host(pageKey) {
-          externalApp = nil
-          alwaysOpen = false
-        }
       }
       pageKey = key
     default: break
@@ -181,7 +180,14 @@ public struct PanePromptPage: Equatable, Sendable {
     return self != before
   }
 
+  public mutating func clearExternalApp() {
+    externalApp = nil
+    alwaysOpen = false
+  }
+
   private mutating func clearPrompts() {
+    clearExternalApp()
+    _ = answerChooser()
     popups = []
     permissions = []
   }
@@ -190,9 +196,4 @@ public struct PanePromptPage: Equatable, Sendable {
     url.firstIndex(of: "#").map { String(url[..<$0]) } ?? url
   }
 
-  static func host(_ url: String) -> String {
-    guard let scheme = url.range(of: "://"), url[..<scheme.lowerBound].first?.isLetter == true else { return "" }
-    let rest = url[scheme.upperBound...]
-    return String(rest.prefix { !"/?#".contains($0) }).lowercased()
-  }
 }

@@ -166,7 +166,7 @@ const PROMPT_FIELDS = {
   externalApp: ["externalApp", `{ id: "probe-ext", url: "zoommtg://x", scheme: "zoommtg", origin: "https://example.com", app: "zoom.us", appPath: null, icon: null, title: "Open zoom.us?", message: "https://example.com wants to open this application.", remember: "Always allow example.com to open links of this type" }`],
 };
 const PROMPT_NAMES = ["permission", ...Object.keys(PROMPT_FIELDS), "engine", "chooser", "popups"];
-const PAGE_EVENTS = { password: ["onPasswordPrompt", '{ state: "saved" }'], autofill: ["onAutofillPrompt", "{ id: 7, closed: true }"], externalApp: ["onExternalApp", "{}"] };
+const PAGE_EVENTS = { password: ["onPasswordPrompt", '{ state: "saved" }'], autofill: ["onAutofillPrompt", "{ id: 7, closed: true }"], externalApp: ["onExternalApp", null] };
 const POOL_PROMPTS = new Set(["onPasswordPrompt", "onAutofillPrompt"]);
 const PANE_KEYS = { permission: "permission", password: "password", autofill: "autofill", externalApp: "externalApp", engine: "engineOffer", chooser: "deviceChooser", popups: "popups" };
 const panePromptsHosted = async (instance) => {
@@ -206,6 +206,7 @@ async function promptOutcomes(instance) {
   const tab = JSON.stringify(ids.tab);
   await panePromptsHosted(instance);
   let visit = 0;
+  let externalId = 0;
   const pageEvent = async (name, payload) => {
     const event = POOL_PROMPTS.has(name) ? "SolaraTabPool.devPageEvent" : "SolaraMedia.devPromptFixture";
     const accepted = await instance.eval(`return globalThis.expo.modules.${event}(${tab}, ${JSON.stringify(name)}, ${payload})`);
@@ -237,6 +238,7 @@ async function promptOutcomes(instance) {
       for (let i = 0; i < 25 && !(await present(name)); i++) await sleep(200);
       return true;
     }
+    if (name === "externalApp") return pageEvent("onExternalApp", PROMPT_FIELDS[name][1].replace("probe-ext", `probe-ext-${++externalId}`));
     if (PAGE_EVENTS[name]) return pageEvent(PAGE_EVENTS[name][0], PROMPT_FIELDS[name][1]);
     return plant(name);
   };
@@ -247,6 +249,7 @@ async function promptOutcomes(instance) {
       await sleep(800);
       return true;
     }
+    if (name === "externalApp") return pageEvent("onExternalApp", JSON.stringify({ id: `probe-ext-${externalId}`, closed: true }));
     if (PAGE_EVENTS[name]) await pageEvent(PAGE_EVENTS[name][0], PAGE_EVENTS[name][1]);
     return unplant(name);
   };

@@ -19,7 +19,6 @@ import { splitOf } from "../store/splits";
 import type { Tab } from "../store/types";
 import { patchPage, pageOf, setBrowserId, setPopover, usePages } from "./layout/pageState";
 import { closeFolderPanelIn } from "./sidebar/tileFolderUi";
-import { answerExternalApp } from "./site/ExternalAppPrompt";
 import { showAutofillPrompt, showPasswordPrompt } from "./site/Prompts";
 
 export type PageSession = {
@@ -47,7 +46,6 @@ export type PageEventName =
   | "onFindResult"
   | "onFavicon"
   | "onMedia"
-  | "onExternalApp"
   | "onPasswordPrompt"
   | "onAutofillPrompt"
   | "onStatus"
@@ -69,7 +67,6 @@ export type PageEventName =
 export type PageEventHandlers = Required<Pick<WebViewProps, PageEventName>>;
 
 const isBlank = (url: string) => !url || url === "about:blank";
-const hostOf = (url: string) => url.match(/^[a-z][\w+.-]*:\/\/([^/?#]*)/i)?.[1]?.toLowerCase() ?? "";
 const pageKey = (url: string) => url.replace(/#.*$/, "");
 
 export function newPageSession(tabId: string, engine: PageEngine, handoff: { seq?: number } | null): PageSession {
@@ -243,7 +240,6 @@ export function pageEventHandlers(session: PageSession): PageEventHandlers {
       const lastPage = session.lastPage;
       if (lastPage !== null && pageKey(url) !== lastPage) {
         setPopover(tabId, null);
-        if (pageOf(tabId).externalApp && hostOf(url) !== hostOf(lastPage)) answerExternalApp(tabId, false);
         patchPage(tabId, { passwordPrompt: null, crashed: null, status: "" });
       }
       session.lastPage = pageKey(url);
@@ -291,10 +287,6 @@ export function pageEventHandlers(session: PageSession): PageEventHandlers {
     },
     onPasswordPrompt: (prompt) => showPasswordPrompt(tabId, prompt),
     onAutofillPrompt: (prompt, id) => showAutofillPrompt(tabId, prompt, id),
-    onExternalApp: (externalApp) => {
-      if (!externalApp.closed) patchPage(tabId, { externalApp });
-      else if (pageOf(tabId).externalApp?.id === externalApp.id) patchPage(tabId, { externalApp: null });
-    },
     onStatus: (status) => patchPage(tabId, { status }),
     onCrashed: (crashed) => {
       if (!isQuitting()) patchPage(tabId, { crashed, unresponsive: false, fullscreen: false, status: "" });

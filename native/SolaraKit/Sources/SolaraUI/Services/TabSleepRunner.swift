@@ -321,6 +321,7 @@ public final class TabSleepRunner {
     if live.discarded { return "discarded" }
     if live.playingAudio { return "playing audio" }
     if live.isLoading { return "loading" }
+    if let reason = CaptureSleepProtection.reason?(id) { return reason }
     if pendingPermission(id) { return "asking for permission" }
     guard let facts = store.pageFacts(id), facts.generation == descriptor.sessionGeneration,
       facts.ready != nil, let feed = facts.keepAlive,

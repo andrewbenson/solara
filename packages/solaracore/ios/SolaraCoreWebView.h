@@ -51,6 +51,8 @@ extern NSNotificationName const SolaraCorePictureInPictureDidChangeNotification;
 + (void)setOwnedTabStillWanted:(nullable BOOL (^)(SolaraCoreWebView *view))handler;
 + (void)installSwitchPrewarm;
 + (void)installOutgoingFocusSnapshots;
++ (void)setDisplayCaptureHandler:(void (^)(SolaraCoreWebView *, NSString *, NSDictionary<NSString *, id> *))handler
+    NS_SWIFT_NAME(setDisplayCaptureHandler(_:));
 + (void)setDisplayMediaPicker:(BOOL)enabled;
 + (void)setPinnedLinkHandler:(void (^)(NSDictionary<NSString *, id> *event))handler owner:(NSString *)owner NS_SWIFT_NAME(setPinnedLinkHandler(_:owner:));
 + (void)clearPinnedLinkHandler:(NSString *)owner NS_SWIFT_NAME(clearPinnedLinkHandler(_:));

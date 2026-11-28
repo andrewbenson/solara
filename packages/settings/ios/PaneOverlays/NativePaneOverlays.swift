@@ -149,6 +149,9 @@ enum NativePaneOverlays {
   #if DEBUG
     static func snapshot(_ windowId: String) -> [String: Any]? {
       var value = hosts[windowId]?.describe()
+      if value == nil, !NativeDisplayCapture.panePickers(windowId).isEmpty || !NativeCast.panePickers(windowId).isEmpty {
+        value = PaneOverlayHost(windowId: windowId).describe()
+      }
       let hosted = [
         HostedSadTab.describe(windowId),
         HostedSelectionBar.describe(windowId),
@@ -332,7 +335,6 @@ final class PaneOverlayHost {
   private var histories: [String: PanePopover<HistoryPanelView>] = [:]
   private var selections: [String: SelectionBarView] = [:]
   private var cliPills: [String: CliControlPillView] = [:]
-  private var shares: [String: (id: String, popover: PanePopover<SharePickerView>, focus: HostedMount?)] = [:]
   private var swipes: [String: (wrap: PanePopoverWrap, capsule: SwipeCapsuleView)] = [:]
   private var navigationSwipes: [String: NativeNavigationSwipe] = [:]
   private var fromJS: [String: Any] = [:]
@@ -371,7 +373,6 @@ final class PaneOverlayHost {
     var listed = Set<String>()
     var selected = Set<String>()
     var piloted = Set<String>()
-    var sharing = Set<String>()
     for (tabId, value) in tabs {
       if !PanePrompts.owns(tabId), let data = entry(value, kind: "sadTab", tabId: tabId), let json = String(data: data, encoding: .utf8), let state = SadTabState.decode(json), state.mode != nil {
         sad.insert(tabId)
@@ -407,13 +408,6 @@ final class PaneOverlayHost {
       if let data = entry(value, kind: "cliPill", tabId: tabId), let json = String(data: data, encoding: .utf8), let state = CliPillState.decode(json) {
         piloted.insert(tabId)
         (cliPills[tabId] ?? makeCliPill(tabId)).update(state)
-      }
-      if let data = entry(value, kind: "sharePicker", tabId: tabId), let json = String(data: data, encoding: .utf8), let state = SharePickerState.decode(json), let placement = PopoverEnvelope.decode(json) {
-        sharing.insert(tabId)
-        if shares[tabId]?.id != state.requestId { endShare(tabId); shares[tabId] = (state.requestId, makeShare(tabId), nil) }
-        let share = shares[tabId]!.popover
-        share.popover.set(placement: placement, dark: state.theme.dark)
-        share.body.update(state)
       }
     }
     for found in PanePrompts.cliPills(in: windowId) {
@@ -486,7 +480,6 @@ final class PaneOverlayHost {
       pill.removeFromSuperview()
       cliPills[tabId] = nil
     }
-    for tabId in shares.keys where !sharing.contains(tabId) { endShare(tabId) }
     relayout()
   }
 
@@ -573,50 +566,17 @@ final class PaneOverlayHost {
 
   private func makeCliPill(_ tabId: String) -> CliControlPillView {
     let pill = CliControlPillView(frame: .zero)
-    let windowId = windowId
-    pill.onStop = { NativeMedia.action(windowId, "cliStop") }
+    pill.onStop = { NativeCliControl.shared.stop() }
     pill.autoresizingMask = [.width, .height]
     cliPills[tabId] = pill
     return pill
   }
 
-  private func makeShare(_ tabId: String) -> PanePopover<SharePickerView> {
-    let share = PanePopover(SharePickerView(frame: .zero))
-    let windowId = windowId
-    share.popover.onDismiss = { NativeMedia.action(windowId, "sharePicker", tabId, ["action": "cancel"]) }
-    share.body.onAction = { [weak share] event in
-      if case .height(let h) = event { share?.setHeight(CGFloat(h)); return }
-      NativeMedia.sharePicker(windowId, tabId, event)
-    }
-    share.wrap.autoresizingMask = [.width, .height]
-    share.wrap.onLeave = { [weak self] in self?.unfocusShare(tabId) }
-    share.wrap.onReturn = { [weak self] in self?.focusShare(tabId) }
-    return share
-  }
-
   func mediaViews(_ kind: String) -> [NSView] {
     switch kind {
-    case NativeMedia.sharePicker: return shares.values.map { $0.popover.popover }
     case NativeMedia.cliPill: return Array(cliPills.values)
     default: return []
     }
-  }
-
-  private func endShare(_ tabId: String) {
-    guard let share = shares[tabId] else { return }
-    share.focus?.end()
-    share.popover.wrap.removeFromSuperview()
-    shares[tabId] = nil
-  }
-
-  private func unfocusShare(_ tabId: String) {
-    shares[tabId]?.focus?.end()
-    shares[tabId]?.focus = nil
-  }
-
-  private func focusShare(_ tabId: String) {
-    guard let share = shares[tabId], share.focus == nil, let window = share.popover.wrap.window, !share.popover.wrap.isHiddenOrHasHiddenAncestor else { return }
-    shares[tabId]?.focus = HostedMount(content: HostedContent(view: share.popover.popover, takesFocus: true), in: share.popover.wrap, window: window)
   }
 
   func swipe(_ tabId: String, _ message: [String: Any]) {
@@ -677,7 +637,6 @@ final class PaneOverlayHost {
     swipes.values.forEach { $0.wrap.removeFromSuperview() }
     prompts.values.forEach { $0.popover.wrap.removeFromSuperview() }
     choosers.values.forEach { $0.popover.wrap.removeFromSuperview() }
-    for id in shares.keys { endShare(id) }
     sadTabs = [:]
     zooms = [:]
     histories = [:]
@@ -706,10 +665,6 @@ final class PaneOverlayHost {
     }
     for (tabId, history) in histories { history.place(in: slot(tabId)) }
     for (tabId, pill) in cliPills { Self.place(pill, in: slot(tabId), bottom: false) }
-    for (tabId, share) in shares {
-      share.popover.place(in: slot(tabId))
-      focusShare(tabId)
-    }
     for (tabId, bar) in selections {
       Self.place(bar, in: slot(tabId), bottom: false)
       bar.isHidden = bar.superview == nil
@@ -800,9 +755,10 @@ final class PaneOverlayHost {
       let casts = NativeCast.panePickers(windowId)
       for (tabId, cast) in casts { tabs[tabId, default: [:]]["castPicker"] = cast.describe(inWindow) }
       for (tabId, pill) in cliPills { tabs[tabId, default: [:]]["cliPill"] = ["frame": inWindow(pill, pill.bounds), "pill": inWindow(pill, pill.pillFrame), "shown": pill.shown, "progress": pill.progress] }
+      let shares = NativeDisplayCapture.panePickers(windowId)
       for (tabId, share) in shares {
-        var info = share.popover.describe(inWindow)
-        info["focused"] = share.popover.wrap.window.map { window in (window.firstResponder as? NSView).map { $0 === share.popover.popover || $0.isDescendant(of: share.popover.popover) } ?? false } ?? false
+        var info = share.describe(inWindow)
+        info["focused"] = share.wrap.window.map { window in (window.firstResponder as? NSView).map { $0 === share.popover || $0.isDescendant(of: share.popover) } ?? false } ?? false
         tabs[tabId, default: [:]]["sharePicker"] = info
       }
       for (tabId, bar) in selections {

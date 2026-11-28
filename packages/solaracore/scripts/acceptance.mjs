@@ -2440,14 +2440,14 @@ try {
           assert.equal(pending.requestedActive, true, `${mode} click activation`);
           assert.equal(pending.outcome, "pending", `${mode} picker pending`);
           assert.equal((await requests()).length, before + 1, `${mode} one picker`);
-          await evalApp(`globalThis.acSharePicker.answerDisplayMedia(${JSON.stringify(tab.id)}, null); return true`);
+          await evalApp(`return globalThis.expo.modules.SolaraMedia.devDisplayCapture(${JSON.stringify(tab.id)}, "cancel", "", false)`);
           await until(`${mode} picker canceled`, async () => (await probe())?.outcome === "NotAllowedError", 3000);
           results.push({ mode, command: "trusted-click", ...pending, picker: true, canceled: true });
         }
         await until(`${mode} activation expired`, async () => !(await probe())?.active, 8000);
         await refused("ask", mode === "denied" ? "NotAllowedError" : "InvalidStateError");
       } finally {
-        await evalApp(`globalThis.acSharePicker.answerDisplayMedia(${JSON.stringify(tab.id)}, null); return true`).catch(() => null);
+        await evalApp(`return globalThis.expo.modules.SolaraMedia.devDisplayCapture(${JSON.stringify(tab.id)}, "cancel", "", false)`).catch(() => null);
         await closeTab(tab.id);
       }
     }
@@ -2470,7 +2470,7 @@ try {
       const request = await until("onDisplayMediaRequest", async () => (await eventsOf(first.id)).findLast((x) => x.name === "displayMediaRequest"), 10000);
       const sourceId = await evalApp(`return ac.webviews.get("${target.id}").mediaCaptureSourceId()`);
       if (!sourceId) throw new Error("no capture source id for the target tab");
-      await evalApp(`globalThis.acSharePicker.answerDisplayMedia("${first.id}", ${JSON.stringify(sourceId)}); return true`);
+      await evalApp(`return globalThis.expo.modules.SolaraMedia.devDisplayCapture("${first.id}", "tab", "${target.id}", false)`);
       const live = await until("a live capture", async () => {
         const v = (await cdp(page, "Runtime.evaluate", { expression: "window.__cap", returnByValue: true })).result.value;
         if (v !== "pending" && v !== "live") throw new Error(`getDisplayMedia: ${v}`);
@@ -2508,7 +2508,7 @@ try {
       const source = await evalApp(`return ac.webviews.get(${JSON.stringify(target.id)}).mediaCaptureSourceId()`);
       assert.ok(source, "fixture tab has a source");
       const snapshot = () => evalApp(`return globalThis.expo.modules.SolaraChromeUI.displayCaptureState(${browserId})`);
-      const stop = () => evalApp(`return globalThis.expo.modules.SolaraChromeUI.stopCapture(${browserId})`);
+      const stop = () => evalApp(`return globalThis.expo.modules.SolaraMedia.devDisplayCapture(${id}, "stop", "", false)`);
       const outcome = () => cdp(page, "Runtime.evaluate", {
         expression: "window.__cap", returnByValue: true,
       }).then((r) => r.result.value);
@@ -2518,7 +2518,7 @@ try {
         await until("picker offer", async () =>
           (await eventsOf(capturerPage.id)).filter((event) => event.name === "displayMediaRequest").length > previous);
       };
-      const approve = () => evalApp(`globalThis.acSharePicker.answerDisplayMedia(${id}, ${JSON.stringify(source)}); return true`);
+      const approve = () => evalApp(`return globalThis.expo.modules.SolaraMedia.devDisplayCapture(${id}, "tab", ${JSON.stringify(target.id)}, false)`);
       const rejected = async () => until("capture rejected without becoming live", async () => {
         const result = await outcome();
         assert.notEqual(result, "live");
@@ -2527,18 +2527,20 @@ try {
 
       await ask();
       assert.equal(await stop(), true);
-      await approve();
+      assert.equal(await approve(), false);
       const before = await rejected();
       assert.equal((await snapshot()).state, "ended");
 
       await ask();
-      await approve();
+      assert.equal(await approve(), true);
       if (beforeRegistration) {
         await until("approved before registration", async () => (await snapshot())?.state === "starting");
       } else {
         await until("Chromium ready to publish the stream", async () => (await snapshot())?.waitingForStart);
       }
       assert.equal(await outcome(), "pending");
+      await until("native Stop while the stream is starting", async () =>
+        evalApp(`return globalThis.expo.modules.SolaraMedia.probe("media.shareBar", ${JSON.stringify(mainWindow)}).then((json) => JSON.parse(json).some((row) => row.primary === "Stop Sharing"))`));
       assert.equal(await stop(), true);
       const during = await rejected();
       assert.equal((await snapshot()).state, "ended");
@@ -2576,7 +2578,7 @@ try {
       await cdp(page, "Runtime.evaluate", { expression: "share()", userGesture: true });
       await until("handoff picker", async () =>
         (await eventsOf(capturerPage.id)).findLast((event) => event.name === "displayMediaRequest"));
-      await evalApp(`return globalThis.acSharePicker.shareTab(${id}, ${JSON.stringify(target.id)}, false)`);
+      await evalApp(`return globalThis.expo.modules.SolaraMedia.devDisplayCapture(${id}, "tab", ${JSON.stringify(target.id)}, false)`);
       await until("live before move", async () => (await trackState(page)) === "live");
       assert.equal((await snapshot(browserId)).state, "active");
       const accessEvents = async () => (await eventsOf(capturerPage.id)).filter((event) => event.name === "mediaAccess");
@@ -2600,7 +2602,9 @@ try {
       });
       assert.equal(await trackState(moved), "live");
       const beforeStop = (await accessEvents()).at(-1);
-      assert.equal(await evalApp(`return globalThis.expo.modules.SolaraChromeUI.stopCapture(${movedBrowser})`), true);
+      await until("native Stop in the receiving window", async () =>
+        evalApp(`return globalThis.expo.modules.SolaraMedia.probe("media.shareBar", ${JSON.stringify(windowId)}).then((json) => JSON.parse(json).some((row) => row.primary === "Stop Sharing"))`));
+      assert.equal(await evalApp(`return globalThis.expo.modules.SolaraMedia.devDisplayCapture(${id}, "stop", "", false)`), true);
       await until("video track ended", async () => (await trackState(moved)) === "ended");
       await until("native capture ended", async () => (await snapshot(movedBrowser))?.state === "ended");
       await until("ended event reached moved page", async () => {
@@ -2673,18 +2677,13 @@ try {
       for (const [c, t] of [["ff0000", "Red"], ["00ff00", "Green"], ["0000ff", "Blue"]]) opened.push(await openTab(`${base}/solid?c=${c}&t=${t}`, t, true));
       for (const t of ["CallA", "CallB"]) opened.push(await openTab(`${base}/capturer?t=${t}`, t, true));
       const [red, green, blue, callA, callB] = opened;
-      const hooks = await evalApp(`return { picker: !!globalThis.acSharePicker?.shareTab, bar: !!globalThis.acShareBar }`);
       const share = async (call, target) => {
         await evalApp(`ac.actions.switchToTab("${call.id}"); return true`);
         await until(`${call.title} shown`, async () => (await state()).active === call.id);
         const page = await pageFor(call.id, `/capturer?t=${call.title}`);
         await cdp(page, "Runtime.evaluate", { expression: "share()", userGesture: true });
         await until(`${call.title}'s picker`, async () => (await eventsOf(call.id)).findLast((x) => x.name === "displayMediaRequest"), 10000);
-        if (hooks.picker) await evalApp(`return globalThis.acSharePicker.shareTab("${call.id}", "${target.id}")`);
-        else {
-          const source = await evalApp(`return ac.webviews.get("${target.id}").mediaCaptureSourceId()`);
-          await evalApp(`globalThis.acSharePicker.answerDisplayMedia("${call.id}", ${JSON.stringify(source)}); return true`);
-        }
+        assert.equal(await evalApp(`return globalThis.expo.modules.SolaraMedia.devDisplayCapture("${call.id}", "tab", "${target.id}", true)`), true);
         await until(`${call.title} live`, async () => {
           const v = (await cdp(page, "Runtime.evaluate", { expression: "window.__cap", returnByValue: true })).result.value;
           if (v !== "pending" && v !== "live") throw new Error(`${call.title} getDisplayMedia: ${v}`);
@@ -2704,13 +2703,11 @@ try {
         const c = await both();
         return c.A === "red" && c.B === "green" ? c : null;
       }, 10000);
-      const recorded = hooks.bar && (await evalApp(`const s = globalThis.acShareBar.tabShares(); return [s["${callA.id}"]?.capturedTabId === "${red.id}", s["${callB.id}"]?.capturedTabId === "${green.id}"]`));
-      if (hooks.bar && !(recorded[0] && recorded[1])) throw new Error(`app records before: ${JSON.stringify(recorded)}`);
+      const recorded = (await evalApp(`return globalThis.expo.modules.SolaraMedia.devDisplayCaptureState().then((json) => { const s = JSON.parse(json).shares; return [s["${callA.id}"]?.capturedTabId === "${red.id}", s["${callB.id}"]?.capturedTabId === "${green.id}"]; })`));
+      if (!(recorded[0] && recorded[1])) throw new Error(`app records before: ${JSON.stringify(recorded)}`);
       await evalApp(`ac.actions.switchToTab("${blue.id}"); return true`);
       await until("blue shown", async () => (await state()).active === blue.id);
-      const changed = hooks.bar
-        ? await evalApp(`return globalThis.acShareBar.shareInstead("${callB.id}", "${blue.id}")`)
-        : await evalApp(`return globalThis.expo.modules.SolaraChromeUI.changeCaptureSource(${await browserOf(callB.id)}, ${await browserOf(blue.id)})`);
+      const changed = await evalApp(`return globalThis.expo.modules.SolaraMedia.devDisplayCapture("${callB.id}", "retarget", "${blue.id}", false)`);
       if (changed !== true) throw new Error(`share instead answered ${JSON.stringify(changed)}`);
       let after = null;
       try {
@@ -2724,13 +2721,9 @@ try {
       await sleep(1000);
       const settled = await both();
       if (settled.A !== "red" || settled.B !== "blue") throw new Error(`after B's share instead: A ${settled.A} (want red), B ${settled.B} (want blue)`);
-      let records = null;
-      if (hooks.bar) {
-        await sleep(2000);
-        records = await evalApp(`const s = globalThis.acShareBar.tabShares(); return { A: s["${callA.id}"]?.capturedTabId ?? null, B: s["${callB.id}"]?.capturedTabId ?? null }`);
-        if (records.A !== red.id || records.B !== blue.id) throw new Error(`app records ${JSON.stringify(records)} (want A ${red.id}, B ${blue.id})`);
-      }
-      return { before, after: settled, changed, records: records && { A: "red", B: "blue" } };
+      const records = await evalApp(`return globalThis.expo.modules.SolaraMedia.devDisplayCaptureState().then((json) => { const s = JSON.parse(json).shares; return { A: s["${callA.id}"]?.capturedTabId ?? null, B: s["${callB.id}"]?.capturedTabId ?? null }; })`);
+      if (records.A !== red.id || records.B !== blue.id) throw new Error(`app records ${JSON.stringify(records)} (want A ${red.id}, B ${blue.id})`);
+      return { before, after: settled, changed, records: { A: "red", B: "blue" } };
     } finally {
       for (const page of Object.values(pages)) await cdp(page, "Runtime.evaluate", { expression: "window.__stream?.getTracks().forEach((x) => x.stop()); true" }).catch(() => null);
       for (const t of opened) await closeTab(t.id).catch(() => null);
@@ -2791,7 +2784,7 @@ try {
       page = await pageFor(call.id, "/capturer?t=CallBand");
       await cdp(page, "Runtime.evaluate", { expression: "share()", userGesture: true });
       await until("the picker", async () => (await eventsOf(call.id)).findLast((x) => x.name === "displayMediaRequest"), 10000);
-      await evalApp(`return globalThis.acSharePicker.shareTab("${call.id}", "${red.id}")`);
+      await evalApp(`return globalThis.expo.modules.SolaraMedia.devDisplayCapture("${call.id}", "tab", "${red.id}", true)`);
       await until("the call sharing", async () => {
         const v = (await cdp(page, "Runtime.evaluate", { expression: "window.__cap", returnByValue: true })).result.value;
         if (v !== "pending" && v !== "live") throw new Error(`getDisplayMedia: ${v}`);

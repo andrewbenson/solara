@@ -45,7 +45,7 @@ import { notePageEventHandled, acceptPageReport, currentPageContext, followNavig
 import { NewTabPage } from "./NewTabPage";
 import { EmptyCard } from "./EmptyCard";
 import { SmallWindowCard } from "./SmallWindowCard";
-import { ShareBar } from "./media/ShareBar";
+import { NativeDisplayShareBand } from "./media/NativeDisplayShareBand";
 import { Toolbar, ToolbarBackdrop, urlFieldRight } from "./Toolbar";
 import { WindowToolbar } from "./WindowToolbar";
 import { useToolbarSidebarToggle } from "./layout/nativeToolbarPresentation";
@@ -464,7 +464,7 @@ const TabPane = memo(function TabPane({
       <View pointerEvents={pooled ? "box-none" : "auto"} style={[pageGroupFrame, { top: current.top - bookmarksHeight }, windowToolbar && nativeRailChrome && visible && !nativePane && !pooled ? { backgroundColor: theme.card, borderRadius: layout.cardRadius } : null]}>
         {bookmarksHeight > 0 && (visible ? <NativeBookmarksBar windowId={windowId} height={bookmarksHeight} /> : <View style={{ height: bookmarksHeight }} />)}
         <View pointerEvents={pooled ? "box-none" : "auto"} style={{ height: Math.max(0, frame.height - current.viewport) }}>
-          {visible && !fullscreen && <ShareBar tabId={tabId} />}
+          {visible && !fullscreen && !(nativeSplitPanes && pooled) && <NativeDisplayShareBand windowId={windowId} tabId={tabId} />}
           <View pointerEvents={pooled ? "box-none" : "auto"} style={{ flex: 1 }}>
             {pooled && tabPool && <PooledPageProps pool={tabPool} tabId={tabId} />}
             {!pooled && (mounted || prewarmed) && <TabWebView tabId={tabId} visible={visible && !newTabShown && !isNewTab} warm={!!warm && !newTabShown && !isNewTab} />}

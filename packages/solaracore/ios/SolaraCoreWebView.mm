@@ -255,6 +255,7 @@ void NoteEvent(int browserId, NSString *name, NSDictionary *payload) {
 
 NSString *gSearchEngineName = @"Google";
 BOOL gDisplayMediaPicker = NO;
+static void (^gDisplayCaptureHandler)(SolaraCoreWebView *, NSString *, NSDictionary<NSString *, id> *);
 NSString *gPeekModifier = @"shift";
 NSString *gSplitLinkModifier = @"altShift";
 static BOOL gSelectionPopover = YES;
@@ -2285,7 +2286,11 @@ static NSView *SharedAncestor(NSView *a, NSView *b) {
 - (void)emit:(NSString *)name payload:(NSDictionary *)payload {
   if (_navigationQueued && ![name isEqualToString:@"navigation"]) [self emitNavigation];
   if (_tab) NoteEvent(solaracore_host::BrowserId(_tab), name, payload);
-  [self.delegate webView:self event:name payload:payload];
+  if ([name isEqualToString:@"displayMediaRequest"] || [name isEqualToString:@"documentCommitted"] ||
+      [name isEqualToString:@"mediaAccess"] || [name isEqualToString:@"ready"])
+    if (gDisplayCaptureHandler) gDisplayCaptureHandler(self, name, payload);
+  if (![name isEqualToString:@"displayMediaRequest"])
+    [self.delegate webView:self event:name payload:payload];
 }
 
 void SolaraCoreWebViewsRecheckTheme(void) {
@@ -2303,6 +2308,10 @@ void SolaraCoreWebViewsSetFieldTiming(BOOL on) {
 
 + (NSArray<NSDictionary<NSString *, id> *> *)devEventsForBrowser:(int)browserId {
   return RecentEvents()[@(browserId)] ?: @[];
+}
+
++ (void)setDisplayCaptureHandler:(void (^)(SolaraCoreWebView *, NSString *, NSDictionary<NSString *, id> *))handler {
+  gDisplayCaptureHandler = [handler copy];
 }
 
 + (void)setDisplayMediaPicker:(BOOL)enabled {

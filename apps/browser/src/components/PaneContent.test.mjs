@@ -46,7 +46,7 @@ async function fixture() {
     react,
     "react/jsx-runtime": require("react/jsx-runtime"),
     "react-native": { View, Animated: { View }, StyleSheet: { absoluteFill: {} } },
-    "@solara/settings": { SolaraHostedView: leaf("CastHost"), tabPool: {}, windowNativeLayout: () => true, windowShellActive: () => false },
+    "@solara/settings": { SolaraHostedView: ({ kind }) => leaf(kind === "media.sharePicker" ? "CaptureAnchor" : "CastHost")(), tabPool: {}, windowNativeLayout: () => true, windowShellActive: () => false },
     "../lib/pagesPool": { panePromptsNativeIn: () => true },
     "../lib/engines": { useEngineOffers: () => null },
     "../store/browser": { useBrowser },
@@ -63,10 +63,10 @@ async function fixture() {
   };
   state.popover = {};
   for (const [module, names] of [
-    ["./PooledPageProps", ["PooledPageProps"]], ["./media/ShareBar", ["ShareBar"]],
+    ["./PooledPageProps", ["PooledPageProps"]],
     ["./NewTabPage", ["NewTabPage"]], ["./EmptyCard", ["EmptyCard"]], ["./FindBar", ["FindBar"]],
     ["./layout/PaneOverlays", ["StatusBubble", "SadTab"]], ["./site/SitePanelHost", ["SiteControls"]],
-    ["./media/SharePicker", ["SharePicker"]], ["./layout/SwipeOverlay", ["NavigationOverlays"]],
+    ["./layout/SwipeOverlay", ["NavigationOverlays"]],
   ]) modules[module] = Object.fromEntries(names.map((name) => [name, leaf(name)]));
   const exports = {};
   const source = readFileSync(new URL("./PaneContent.tsx", import.meta.url), "utf8");
@@ -91,7 +91,7 @@ async function fixture() {
 test("navigation updates the native page guest without redrawing sibling overlays", async () => {
   const f = await fixture();
   try {
-    const overlays = ["StatusBubble", "SiteControls", "SharePicker", "CastHost"];
+    const overlays = ["StatusBubble", "SiteControls", "CaptureAnchor", "CastHost"];
     const before = Object.fromEntries(overlays.map((name) => [name, f.renders[name]]));
     for (const count of Object.values(before)) assert.ok(count > 0);
     await f.update({ tabs: { a: { url: "https://two.invalid" } } });
@@ -104,16 +104,15 @@ test("navigation updates the native page guest without redrawing sibling overlay
 test("focus and layout parent renders do not redraw unchanged native page guests", async () => {
   const f = await fixture();
   try {
-    const guests = ["PooledPageProps", "ShareBar"];
+    const guests = ["PooledPageProps"];
     const before = Object.fromEntries(guests.map((name) => [name, f.renders[name]]));
     for (const count of Object.values(before)) assert.ok(count > 0);
     await f.update({ focused: "b" });
     await f.render();
     assert.deepEqual(Object.fromEntries(guests.map((name) => [name, f.renders[name]])), before);
     await f.update({ fullscreen: "a" });
-    assert.equal(f.renders.PooledPageProps, before.PooledPageProps + 1);
-    assert.equal(f.renders.ShareBar, before.ShareBar);
+    assert.equal(f.renders.PooledPageProps, before.PooledPageProps);
     await f.update({ fullscreen: null });
-    assert.equal(f.renders.ShareBar, before.ShareBar + 1);
+    assert.equal(f.renders.PooledPageProps, before.PooledPageProps);
   } finally { f.stop(); }
 });

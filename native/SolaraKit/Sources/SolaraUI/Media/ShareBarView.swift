@@ -5,8 +5,22 @@ public struct ShareBarState: Decodable, Equatable, Sendable {
   public var capturer: String
   public var tabId: String
   public var shared: Bool
+  public var canStop: Bool?
+  public var sourceLabel: String?
+  public var receiptID: String?
   public var host: String
   public var theme: MediaThemeState
+
+  public init(capturer: String, tabId: String, shared: Bool, host: String, theme: MediaThemeState, canStop: Bool? = nil, sourceLabel: String? = nil, receiptID: String? = nil) {
+    self.capturer = capturer
+    self.tabId = tabId
+    self.shared = shared
+    self.canStop = canStop
+    self.sourceLabel = sourceLabel
+    self.receiptID = receiptID
+    self.host = host
+    self.theme = theme
+  }
 
   public static func decode(_ json: String) -> ShareBarState? {
     guard let data = json.data(using: .utf8) else { return nil }
@@ -155,7 +169,7 @@ public final class ShareBarView: NSView {
     addSubview(label)
     primaryButton.onPress = { [weak self] in
       guard let self, let state = self.state else { return }
-      self.onAction?(state.shared ? .stop : .shareInstead)
+      self.onAction?((state.canStop ?? state.shared) ? .stop : .shareInstead)
     }
     dismissButton.onPress = { [weak self] in self?.onAction?(.dismiss) }
     addSubview(primaryButton)
@@ -169,14 +183,15 @@ public final class ShareBarView: NSView {
     let palette = MediaPalette(next.theme)
     glyph.set("rectangle.inset.filled", size: 9, weight: .bold, color: .white)
     let text = NSMutableAttributedString(string: "Sharing ", attributes: [.font: NSFont.systemFont(ofSize: 13), .foregroundColor: palette.textSecondary])
-    text.append(NSAttributedString(string: next.shared ? "this tab" : "another tab", attributes: [.font: NSFont.systemFont(ofSize: 13, weight: .semibold), .foregroundColor: palette.textPrimary]))
+    text.append(NSAttributedString(string: next.sourceLabel ?? (next.shared ? "this tab" : "another tab"), attributes: [.font: NSFont.systemFont(ofSize: 13, weight: .semibold), .foregroundColor: palette.textPrimary]))
     text.append(NSAttributedString(string: " with \(next.host)", attributes: [.font: NSFont.systemFont(ofSize: 13), .foregroundColor: palette.textSecondary]))
     let paragraph = NSMutableParagraphStyle()
     paragraph.lineBreakMode = .byTruncatingTail
     text.addAttribute(.paragraphStyle, value: paragraph, range: NSRange(location: 0, length: text.length))
     label.attributedStringValue = text
-    primaryButton.title = next.shared ? "Stop Sharing" : "Share This Tab Instead"
-    primaryButton.primary = !next.shared
+    let canStop = next.canStop ?? next.shared
+    primaryButton.title = canStop ? "Stop Sharing" : "Share This Tab Instead"
+    primaryButton.primary = !canStop
     for b in [primaryButton, dismissButton] { b.theme = next.theme }
     MediaMotion.setInstantly {
       line.backgroundColor = (next.theme.dark ? NSColor(white: 1, alpha: 0.1) : NSColor(white: 0, alpha: 0.08)).cgColor

@@ -63,6 +63,8 @@ NS_ASSUME_NONNULL_BEGIN
 + (BOOL)userSeesWindow:(nullable NSWindow *)window NS_SWIFT_NAME(userSees(_:));
 @property(class, readonly) NSNotificationName windowSeenDidChange;
 + (void)activateForPictureInPicture:(NSString *)why NS_SWIFT_NAME(activateForPictureInPicture(_:));
++ (void)answerDisplayCapture:(int)browserId receipt:(NSString *)receipt source:(nullable NSString *)source audio:(BOOL)audio
+    NS_SWIFT_NAME(answerDisplayCapture(browserId:receipt:source:audio:));
 + (BOOL)stopCapture:(int)browserId NS_SWIFT_NAME(stopCapture(browserId:));
 + (nullable NSDictionary<NSString *, id> *)displayCaptureState:(int)browserId NS_SWIFT_NAME(displayCaptureState(browserId:));
 + (BOOL)showAutofillSuggestions:(int)browserId passwords:(BOOL)passwords NS_SWIFT_NAME(showAutofillSuggestions(browserId:passwords:));

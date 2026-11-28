@@ -1,5 +1,5 @@
 import { dropTabReveals, revealOffered, revealTab } from "@solara/solaracore";
-import { useMedia } from "../components/media/state";
+import { hasDisplayTabShare } from "@solara/settings";
 import { pageOf } from "../components/layout/pageState";
 import { toolbarScrolledDown } from "../components/layout/nativeToolbarPresentation";
 import { useBrowser, type BrowserState } from "../store/browser";
@@ -25,7 +25,7 @@ function revealFor(s: BrowserState, prev: BrowserState, windowId: string, next: 
   const was = prev.windows[windowId]!;
   if (w.profileId !== was.profileId || w.kind === "small") return null;
   if (splitOf(prev, before) || splitOf(s, next) || !plainPage(before) || !plainPage(next)) return null;
-  if (Object.keys(useMedia.getState().tabShares).length) return null;
+  if (hasDisplayTabShare()) return null;
   const tab = s.tabs[next];
   const had = prev.tabs[next];
   if (!hasWebPage(tab) || tab.windowId !== windowId) return null;

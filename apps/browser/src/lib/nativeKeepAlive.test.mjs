@@ -30,10 +30,9 @@ function fixture(running = true, hasPage = () => true) {
   const pages = createStore(() => ({ pages: { t: { fullscreen: false, crashed: null, unresponsive: false, mediaAccess: null, newTabShown: null } } }));
   const followPages = pages.subscribe;
   let pagesListeners = 0;
-  const media = createStore(() => ({ displayRequests: {}, tabShares: {} }));
   const toolbar = createStore(() => ({ scrolledDown: {} }));
   let listeners = 0;
-  for (const store of [pages, media, toolbar]) {
+  for (const store of [pages, toolbar]) {
     const subscribe = store.subscribe;
     store.subscribe = (listener) => {
       listeners += 1;
@@ -61,7 +60,6 @@ function fixture(running = true, hasPage = () => true) {
         return { remove: stop };
       },
     },
-    "../components/media/state": { useMedia: media },
     "../store/browser": { useBrowser: browser },
     "../store/changes": changes,
     "../store/nativeStore": { nativeTabSleepRunning: () => running },
@@ -77,7 +75,7 @@ function fixture(running = true, hasPage = () => true) {
   const page = (patch) => pages.setState((s) => ({ pages: { ...s.pages, t: { ...s.pages.t, ...patch } } }));
   const pendingTimers = () => timers.filter((timer) => timer.live);
   const fire = () => { const due = pendingTimers(); for (const timer of due) { timer.live = false; timer.run(); } return due.map((timer) => timer.ms); };
-  return { jobs, changedIds: changes.changedIds, nativeReads, pagesListeners: () => pagesListeners, listeners: () => listeners, pendingTimers, fire, producerListeners, producer, events, sent, identity, browser, pages, media, toolbar, flush, page, setProtectionKnown: (value) => { protectionKnown = value; }, epoch: () => epoch, setRunning: (value) => { running = value; runnerListener?.(value); }, replace: (next) => { authority = next; generation = next.sessionGeneration; events.keepAliveCreated(next, "rn"); } };
+  return { jobs, changedIds: changes.changedIds, nativeReads, pagesListeners: () => pagesListeners, listeners: () => listeners, pendingTimers, fire, producerListeners, producer, events, sent, identity, browser, pages, toolbar, flush, page, setProtectionKnown: (value) => { protectionKnown = value; }, epoch: () => epoch, setRunning: (value) => { running = value; runnerListener?.(value); }, replace: (next) => { authority = next; generation = next.sessionGeneration; events.keepAliveCreated(next, "rn"); } };
 }
 
 test("a tracked tab edit with unchanged keepalive facts performs no native validation", () => {
@@ -111,17 +109,16 @@ test("changing one page's protection avoids native reads for unchanged tracked p
   assert.equal(f.sent.at(-1).handled, 8);
 });
 
-test("page and media subscriptions produce every typed keep fact and handled watermark", () => {
+test("page and toolbar changes produce every typed keep fact and handled watermark", () => {
   const f = fixture();
   f.events.keepAliveCreated(f.identity, "rn");
   f.flush();
   f.page({ mediaAccess: { camera: true }, fullscreen: true, crashed: {}, unresponsive: true, newTabShown: {} });
-  f.media.setState({ displayRequests: { t: {} }, tabShares: { other: { capturedTabId: "t" } } });
   f.toolbar.setState({ scrolledDown: { t: true } });
   f.events.keepAliveHandled(f.identity, 4);
   f.flush();
-  assert.deepEqual(f.sent.at(-1).keep, { capturing: true, newTabShown: true, pip: false, displayRequest: true, media: "none" });
-  assert.deepEqual(f.sent.at(-1).reveal, { fullscreen: true, crashed: true, unresponsive: true, scrolledDown: true, sharing: true });
+  assert.deepEqual(f.sent.at(-1).keep, { capturing: true, newTabShown: true, pip: false, displayRequest: false, media: "none" });
+  assert.deepEqual(f.sent.at(-1).reveal, { fullscreen: true, crashed: true, unresponsive: true, scrolledDown: true, sharing: false });
   assert.equal(f.sent.at(-1).handled, 4);
 });
 
@@ -129,9 +126,7 @@ test("a shared-data profile move preserves every surviving session protection", 
   const f = fixture();
   f.browser.setState({ tabs: { t: { ...f.browser.getState().tabs.t, pinned: true } } });
   f.events.keepAliveCreated(f.identity, "pool");
-  const displayRequest = { requestId: "pending-picker" };
   f.page({ mediaAccess: { microphone: true }, newTabShown: { url: "https://forward.test" } });
-  f.media.setState({ displayRequests: { t: displayRequest }, tabShares: { other: { capturedTabId: "t" } } });
   f.events.keepAliveHandled(f.identity, 8);
   f.flush();
   f.browser.setState({ tabs: { t: { id: "t", pinned: true, profileId: "shared-data-profile", windowId: "w2" } } });
@@ -140,9 +135,8 @@ test("a shared-data profile move preserves every surviving session protection", 
   assert.equal(f.sent.at(-1).generation, "G");
   assert.equal(f.sent.at(-1).epoch, 1);
   assert.equal(f.sent.at(-1).handled, 8);
-  assert.deepEqual(f.sent.at(-1).keep, { capturing: true, newTabShown: true, pip: false, displayRequest: true, media: "none" });
-  assert.equal(f.sent.at(-1).reveal.sharing, true);
-  assert.equal(f.media.getState().displayRequests.t, displayRequest);
+  assert.deepEqual(f.sent.at(-1).keep, { capturing: true, newTabShown: true, pip: false, displayRequest: false, media: "none" });
+  assert.equal(f.sent.at(-1).reveal.sharing, false);
 });
 
 test("discard and session replacement clear old transient facts before a full feed", () => {
@@ -150,11 +144,9 @@ test("discard and session replacement clear old transient facts before a full fe
   f.events.keepAliveCreated(f.identity, "rn");
   f.flush();
   f.page({ mediaAccess: { microphone: true } });
-  f.media.setState({ displayRequests: { t: {} }, tabShares: { other: { capturedTabId: "t" } } });
   f.browser.setState({ live: { t: { discarded: true } } });
   f.flush();
   assert.equal(f.sent.length, 1);
-  assert.deepEqual(Object.keys(f.media.getState().tabShares), []);
   f.browser.setState({ live: {} });
   f.flush();
   assert.deepEqual(f.sent.at(-1).keep, { capturing: false, newTabShown: false, pip: false, displayRequest: false, media: "none" });
@@ -172,14 +164,11 @@ test("registration replacement and close clear the retired page's transient fact
     f.events.keepAliveCreated(f.identity, "rn");
     f.flush();
     f.page({ mediaAccess: { microphone: true }, newTabShown: {} });
-    f.media.setState({ displayRequests: { t: {} }, tabShares: { other: { capturedTabId: "t" } } });
     if (transition === "registration") f.replace({ ...f.identity, registrationGeneration: 2 });
     else f.browser.setState({ tabs: {} });
     f.flush();
     assert.equal(f.pages.getState().pages.t.mediaAccess, null, transition);
     assert.equal(f.pages.getState().pages.t.newTabShown, null, transition);
-    assert.deepEqual(Object.keys(f.media.getState().displayRequests), [], transition);
-    assert.deepEqual(Object.keys(f.media.getState().tabShares), [], transition);
     if (transition === "close") assert.equal(f.sent.length, 1);
     else assert.deepEqual(f.sent.at(-1).keep, { capturing: false, newTabShown: false, pip: false, displayRequest: false, media: "none" });
   }
@@ -255,11 +244,11 @@ test("a runner that turns on after launch starts the feed, and turning it off st
 test("cold-launch pages publish protective facts held before feed registration", () => {
   const f = fixture();
   f.events.keepAliveCreated(f.identity, "pool");
-  f.media.setState({ displayRequests: { t: {} } });
+  f.page({ mediaAccess: { camera: true } });
   f.events.keepAliveHandled(f.identity, 8);
   f.flush();
   assert.equal(f.sent.length, 1);
-  assert.equal(f.sent[0].keep.displayRequest, true);
+  assert.equal(f.sent[0].keep.capturing, true);
   assert.equal(f.sent[0].handled, 8);
 });
 
@@ -303,7 +292,6 @@ test("updates for untracked tabs or untracked fields queue no flush", () => {
   const before = f.sent.length;
   f.browser.setState((s) => ({ tabs: { ...s.tabs, other: { id: "other", profileId: "p", windowId: "w" } }, live: { ...s.live, other: { discarded: true } } }));
   f.pages.setState((s) => ({ pages: { ...s.pages, other: { fullscreen: true }, t: { ...s.pages.t, title: "renamed" } } }));
-  f.media.setState({ displayRequests: { other: {} } });
   f.toolbar.setState({ scrolledDown: { other: true } });
   assert.equal(f.jobs.length, 0);
   f.flush();
@@ -320,8 +308,6 @@ test("each tracked keep and reveal input queues one flush and reaches native", (
     [() => f.page({ fullscreen: true }), (r) => r.reveal.fullscreen],
     [() => f.page({ crashed: {} }), (r) => r.reveal.crashed],
     [() => f.page({ unresponsive: true }), (r) => r.reveal.unresponsive],
-    [() => f.media.setState({ displayRequests: { t: {} } }), (r) => r.keep.displayRequest],
-    [() => f.media.setState({ tabShares: { other: { capturedTabId: "t" } } }), (r) => r.reveal.sharing],
     [() => f.toolbar.setState({ scrolledDown: { t: true } }), (r) => r.reveal.scrolledDown],
   ];
   for (const [change, holds] of inputs) {
@@ -382,13 +368,12 @@ test("no listeners before the first page, and none after the last page closes", 
   f.browser.setState((s) => ({ live: { ...s.live, x: {} } }));
   assert.equal(f.jobs.length, 0);
   f.events.keepAliveCreated(f.identity, "rn");
-  assert.equal(f.listeners(), 2);
+  assert.equal(f.listeners(), 1);
   f.flush();
   f.browser.setState({ tabs: {} });
   assert.equal(f.listeners(), 0);
   f.flush();
   f.pages.setState({ pages: {} });
-  f.media.setState({ displayRequests: { t: {} } });
   assert.equal(f.jobs.length, 0);
 });
 
@@ -396,7 +381,6 @@ test("a protect flip on a tracked tab queues its flush in the same turn, ahead o
   const protects = [
     [() => f.page({ mediaAccess: { camera: true } }), (r) => r.keep.capturing],
     [() => f.page({ newTabShown: {} }), (r) => r.keep.newTabShown],
-    [() => f.media.setState({ displayRequests: { t: {} } }), (r) => r.keep.displayRequest],
   ];
   let f;
   for (const [flip, protects_] of protects) {

@@ -5,7 +5,6 @@ import { create } from "zustand";
 import { onTabSleepRunningChanged } from "@solara/store";
 import { pageOf, usePages } from "../components/layout/pageState";
 import { showToast } from "../components/layout/splitActions";
-import { useMedia } from "../components/media/state";
 import { isInternalTab } from "../components/pages";
 import { openSettings } from "../components/settings/windows";
 import { useBrowser, type BrowserState } from "../store/browser";
@@ -107,10 +106,7 @@ function keepAliveReason(s: BrowserState, id: string): string | null {
   const page = pageOf(id);
   if (page.mediaAccess) return "capturing";
   if (page.newTabShown) return "kept for Forward";
-  const media = useMedia.getState();
   const nativeMedia = mediaProtectionReason(id, tab.pinned);
-  if (nativeMedia === "picture in picture") return nativeMedia;
-  if (media.displayRequests[id]) return "choosing a screen to share";
   if (nativeMedia) return nativeMedia;
   if (splitOf(s, id)) return "in a split";
   return null;

@@ -19,11 +19,22 @@ public class MediaModule: Module {
       }
     }
 
+    View(DisplayShareBarHost.self) {
+      Prop("windowId") { (view: DisplayShareBarHost, value: String) in
+        MainActor.assumeIsolated { view.windowID = value }
+      }
+      Prop("tabId") { (view: DisplayShareBarHost, value: String) in
+        MainActor.assumeIsolated { view.tabID = value }
+      }
+      Events("onBandHeight")
+    }
+
     OnCreate {
       DispatchQueue.main.async {
         MainActor.assumeIsolated {
           NativeMedia.register()
           NativeCast.start()
+          NativeDisplayCapture.start()
           NativeLittleSolara.install()
           NativePaneOverlays.start()
         }
@@ -32,9 +43,13 @@ public class MediaModule: Module {
 
     Function("cliIndicatorShown") { () -> Bool? in NativeMedia.cliShown }
 
+    Function("hasDisplayTabShare") {
+      NativeDisplayCapture.hasTabShare
+    }
+
     Function("protectionReason") { (tabId: String, pinned: Bool) -> String? in
       if PanePrompts.permissionPending(tabId) { return "answering a permission request" }
-      return NowPlayingStore.shared.protectionReason(tabId: tabId, pinned: pinned)
+      return NativeDisplayCapture.protectionSnapshot(tabId) ?? NowPlayingStore.shared.protectionReason(tabId: tabId, pinned: pinned)
     }
 
     #if DEBUG
@@ -47,6 +62,25 @@ public class MediaModule: Module {
     #endif
 
     #if DEBUG
+      AsyncFunction("devDisplayCapture") { (tabID: String, action: String, value: String, audio: Bool) in
+        FrameUpdates.readOnMain { SolaraCoreTestHooksAllowed() && NativeDisplayCapture.debugAction(tabID, action, value, audio) }
+      }.runOnQueue(.main)
+
+      AsyncFunction("devDisplayCaptureState") { () -> String in
+        FrameUpdates.readOnMain {
+          guard SolaraCoreTestHooksAllowed(), let data = try? JSONSerialization.data(withJSONObject: NativeDisplayCapture.debugState()) else { return "{}" }
+          return String(decoding: data, as: UTF8.self)
+        }
+      }.runOnQueue(.main)
+
+      AsyncFunction("devDisplayCaptureFixture") { (tabID: String, json: String) in
+        FrameUpdates.readOnMain { SolaraCoreTestHooksAllowed() && NativeDisplayCapture.fixture(tabID, json) }
+      }.runOnQueue(.main)
+
+      AsyncFunction("devDisplayShareBarFixture") { (tabID: String, targetID: String) in
+        FrameUpdates.readOnMain { SolaraCoreTestHooksAllowed() && NativeDisplayCapture.fixtureBar(tabID, targetID) }
+      }.runOnQueue(.main)
+
       AsyncFunction("devCastState") { () -> String in
         MainActor.assumeIsolated { SolaraCoreTestHooksAllowed() ? NativeCast.probe() : "{}" }
       }.runOnQueue(.main)
@@ -181,5 +215,44 @@ final class SmallWindowPageHost: ExpoView {
   override func hitTest(_ point: NSPoint) -> NSView? {
     guard let hit = super.hitTest(point), hit !== self else { return nil }
     return hit
+  }
+}
+
+@MainActor
+final class DisplayShareBarHost: ExpoView {
+  let id = UUID()
+  let clip = ShareBandClip()
+  let onBandHeight = EventDispatcher()
+  private let band = ShareBand()
+  private var row: ShareBarState?
+  var windowID = "" { didSet { NativeDisplayCapture.register(self) } }
+  var tabID = "" { didSet { NativeDisplayCapture.register(self) } }
+
+  required init(appContext: AppContext? = nil) {
+    super.init(appContext: appContext)
+    addSubview(clip)
+    clip.autoresizingMask = [.width, .height]
+    clip.bar.onAction = { [weak self] action in
+      guard let row = self?.row else { return }
+      NativeDisplayCapture.barAction(action, row: row)
+    }
+    band.onChange = { [weak self] heights in self?.onBandHeight(["height": heights["inline"] ?? 0]) }
+  }
+
+  override func viewDidMoveToWindow() {
+    super.viewDidMoveToWindow()
+    NativeDisplayCapture.register(self)
+    if window == nil { band.stop() }
+  }
+
+  func update(_ row: ShareBarState?) {
+    if let row, row != self.row { clip.bar.update(row) }
+    self.row = row
+    band.target("inline", shown: row != nil)
+  }
+
+  override func hitTest(_ point: NSPoint) -> NSView? {
+    let hit = super.hitTest(point)
+    return hit === self || row == nil ? nil : hit
   }
 }

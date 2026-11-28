@@ -1,7 +1,6 @@
 import { isPageCurrent, nativePageFacts, onTabSleepRunningChanged, pageReport, registerKeepAliveRuntime, type PageIdentity } from "@solara/store";
 import { pageOf, patchPage, usePages } from "../components/layout/pageState";
 import { onToolbarScrollChanged, toolbarScrolledDown } from "../components/layout/nativeToolbarPresentation";
-import { useMedia } from "../components/media/state";
 import { useBrowser, type BrowserState } from "../store/browser";
 import { changedIds } from "../store/changes";
 import { nativeTabSleepRunning } from "../store/nativeStore";
@@ -11,10 +10,6 @@ import { applyHeldReports } from "./nativeEvents";
 
 function clearTransientFacts(id: string) {
   patchPage(id, { mediaAccess: null, crashed: null, unresponsive: false, fullscreen: false, newTabShown: null });
-  useMedia.setState((media) => {
-    const keys = ["displayRequests", "tabShares"] as const;
-    return Object.fromEntries(keys.map((key) => [key, Object.fromEntries(Object.entries(media[key]).filter(([tabId, value]) => tabId !== id && (key !== "tabShares" || (value as { capturedTabId?: string }).capturedTabId !== id)))]));
-  });
 }
 
 const PENDING_RETRY_MS = 1000;
@@ -45,14 +40,13 @@ export function startNativeKeepAlive() {
     const tab = s.tabs[identity.tabId];
     if (!tab || !hasPage(tab) || s.live[tab.id]?.discarded) return null;
     const page = pageOf(tab.id);
-    const media = useMedia.getState();
     return {
       route: JSON.stringify([tab.profileId, tab.windowId]),
       keep: {
         capturing: !!page.mediaAccess,
         newTabShown: !!page.newTabShown,
         pip: false,
-        displayRequest: !!media.displayRequests[tab.id],
+        displayRequest: false,
         media: "none" as const,
       },
       reveal: {
@@ -60,7 +54,7 @@ export function startNativeKeepAlive() {
         crashed: !!page.crashed,
         unresponsive: page.unresponsive,
         scrolledDown: toolbarScrolledDown(tab.id),
-        sharing: !!media.tabShares[tab.id] || Object.values(media.tabShares).some((share) => share.capturedTabId === tab.id),
+        sharing: false,
       },
     };
   };
@@ -87,7 +81,6 @@ export function startNativeKeepAlive() {
     }, delay);
   };
   const feed = createKeepAliveFeed({ running: nativeTabSleepRunning, register: registerKeepAliveRuntime, read, ready, send: pageReport, schedule: (run) => queueMicrotask(() => { applyHeldReports(); run(); }), waiting });
-  const tracked = (ids: Iterable<string>) => { for (const id of ids) if (identities.has(id)) return true; return false; };
   followPages = (s, prev) => {
     if (s.pages === prev.pages) return;
     for (const id of identities.keys()) {
@@ -97,24 +90,16 @@ export function startNativeKeepAlive() {
       if (!now || !before || now.mediaAccess !== before.mediaAccess || now.newTabShown !== before.newTabShown || now.fullscreen !== before.fullscreen || now.crashed !== before.crashed || now.unresponsive !== before.unresponsive) return feed.changed();
     }
   };
-  const mediaChanged = (s: ReturnType<typeof useMedia.getState>, prev: ReturnType<typeof useMedia.getState>) => {
-    for (const id of identities.keys()) {
-      if (s.displayRequests[id] !== prev.displayRequests[id]) return feed.changed();
-    }
-    if (s.tabShares === prev.tabShares) return;
-    const shares = (all: typeof s.tabShares) => Object.entries(all).flatMap(([id, share]) => [id, (share as { capturedTabId?: string }).capturedTabId ?? ""]);
-    if (tracked(shares(s.tabShares)) || tracked(shares(prev.tabShares))) feed.changed();
-  };
-  let listening: (() => void)[] = [];
+  let stopListening: (() => void) | null = null;
   const listen = () => {
-    if (listening.length || !identities.size) return;
+    if (stopListening || !identities.size) return;
     const scroll = onToolbarScrollChanged((tabId) => { if (identities.has(tabId)) feed.changed(); });
-    listening = [useMedia.subscribe(mediaChanged), () => scroll?.remove()];
+    stopListening = () => scroll?.remove();
   };
   const unlisten = () => {
     if (identities.size) return;
-    for (const stop of listening) stop();
-    listening = [];
+    stopListening?.();
+    stopListening = null;
   };
   observeKeepAlive({
     created(identity, host) {

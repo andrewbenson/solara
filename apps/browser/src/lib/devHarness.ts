@@ -57,9 +57,6 @@ export function startDevHarness() {
     },
     openSettings,
     favicons,
-    get media(): typeof import("../components/media/state").useMedia {
-      return require("../components/media/state").useMedia;
-    },
     get peek(): typeof import("../components/peek/actions") {
       return require("../components/peek/actions");
     },

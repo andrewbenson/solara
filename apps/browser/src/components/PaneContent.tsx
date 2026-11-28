@@ -25,8 +25,6 @@ import { AutofillPrompt, PasswordPrompt } from "./site/Prompts";
 import { SiteControls } from "./site/SitePanelHost";
 import { ZOOM_POPOVER_WIDTH, ZoomPopover } from "./site/ZoomHost";
 import { SelectionHost } from "./site/SelectionHost";
-import { SharePicker } from "./media/SharePicker";
-import { ShareBar } from "./media/ShareBar";
 import { NavigationOverlays } from "./layout/SwipeOverlay";
 import { isSmallWindow } from "../store/small";
 import { PooledPageProps } from "./PooledPageProps";
@@ -87,7 +85,7 @@ export function PageOverlays({
       {!newTabShown && !nativePrompts && <ExternalAppPrompt tabId={tabId} left={Math.max(POPOVER_MARGIN, Math.min(geometry.urlLeft, width - 348))} top={POPOVER_MARGIN} />}
       {!newTabShown && !nativePrompts && <DeviceChooser tabId={tabId} left={Math.max(POPOVER_MARGIN, Math.min(geometry.urlLeft, width - 348))} top={POPOVER_MARGIN} />}
       <SolaraHostedView kind="panePrompts" windowId={windowId} state={tabId} pointerEvents="box-none" style={StyleSheet.absoluteFill} />
-      <SharePicker tabId={tabId} paneWidth={width} nativeAllowed={!peek} />
+      <SolaraHostedView kind="media.sharePicker" windowId={windowId} state={tabId} pointerEvents="box-none" style={StyleSheet.absoluteFill} />
       {(peek || !windowShellActive(windowId)) && <SolaraHostedView kind="media.castPicker" windowId={windowId} state={tabId} pointerEvents="box-none" style={StyleSheet.absoluteFill} />}
       <NavigationOverlays tabId={tabId} windowId={windowId} geometry={geometry} peek={peek} />
       {!nativePrompts && <SelectionHost tabId={tabId} nativeAllowed={!peek} />}
@@ -131,7 +129,7 @@ export function PaneContent({ windowId, tabId, shown, nativeFallback = false }: 
   return (
     <View pointerEvents="box-none" style={{ flex: 1 }} onLayout={(e) => setWidth(e.nativeEvent.layout.width)}>
       {nativeLayout && shown && (
-        <NativePageContent windowId={windowId} tabId={tabId} fullscreen={fullscreen} inSplit={inSplit} toolbar={toolbar} />
+        <NativePageContent windowId={windowId} tabId={tabId} inSplit={inSplit} toolbar={toolbar} />
       )}
       {width > 0 && (
         <PageOverlays
@@ -152,7 +150,7 @@ export function PaneContent({ windowId, tabId, shown, nativeFallback = false }: 
   );
 }
 
-const NativePageContent = memo(function NativePageContent({ windowId, tabId, fullscreen, inSplit, toolbar }: { windowId: string; tabId: string; fullscreen: boolean; inSplit: boolean; toolbar: boolean }) {
+const NativePageContent = memo(function NativePageContent({ windowId, tabId, inSplit, toolbar }: { windowId: string; tabId: string; inSplit: boolean; toolbar: boolean }) {
   const own = useTabValue(tabId, paneTab, shallowEqual);
   const emptyCard = useBrowser((s) => s.settings.newTabOpens === "commandBar");
   useEffect(() => {
@@ -161,7 +159,6 @@ const NativePageContent = memo(function NativePageContent({ windowId, tabId, ful
   return (
     <>
       {tabPool && <PooledPageProps pool={tabPool} tabId={tabId} />}
-      {!fullscreen && <ShareBar tabId={tabId} />}
       {!own.url && !inSplit && (emptyCard ? <EmptyCard windowId={windowId} tabId={tabId} /> : <NewTabPage key={tabId} windowId={windowId} tabId={tabId} toolbar={toolbar} />)}
     </>
   );

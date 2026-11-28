@@ -99,7 +99,6 @@ export type DisplayMediaSource = {
   height: number;
 };
 export type DisplayMediaAudio = { tab: boolean; screen: boolean; window: "application" | "system" | null };
-export type DisplayMediaRequest = { id: string; origin: string; frameOrigin?: string; audio: DisplayMediaAudio | null; sources: DisplayMediaSource[] };
 
 export type ZoomState = { zoom: number; host: string; isDefault: boolean; pinchScale: number };
 export type ContentBlockedState = { count: number; url: string };
@@ -179,7 +178,6 @@ export type WebViewProps = ViewProps & {
   onDownloadNavigation?: (navigation: DownloadNavigation) => void;
   onPictureInPicture?: (state: PictureInPictureState) => void;
   onActivateRequest?: (request: ActivateRequest) => void;
-  onDisplayMediaRequest?: (request: DisplayMediaRequest) => void;
   onWindowClose?: (withWindow: boolean) => void;
   onCommand?: (command: PageCommand) => void;
   onPageFocus?: () => void;
@@ -268,7 +266,6 @@ type NativeEvents = {
   onDownloadNavigation: DownloadNavigation;
   onPictureInPicture: PictureInPictureState;
   onActivateRequest: ActivateRequest;
-  onDisplayMediaRequest: DisplayMediaRequest;
   onWindowClose: object;
   onCommand: PageCommand;
   onPageFocus: object;
@@ -308,7 +305,6 @@ const unwrap: { [K in Handlers]: (e: NativeEvents[K]) => Parameters<NonNullable<
   onDownloadNavigation: (e) => [{ ...e, url: toAppUrl(e.url), committedUrl: toAppUrl(e.committedUrl) }],
   onPictureInPicture: (e) => [e],
   onActivateRequest: (e) => [e],
-  onDisplayMediaRequest: (e) => [e],
   onWindowClose: (e) => [!!(e as { withWindow?: boolean }).withWindow],
   onCommand: (e) => [e],
   onPageFocus: () => [],

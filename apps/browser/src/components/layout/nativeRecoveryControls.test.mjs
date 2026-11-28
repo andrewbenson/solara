@@ -101,7 +101,6 @@ async function siteFixture() {
     "../../store/engines": engines,
     "../omnibox/nativeBar": { useThemeTokens: () => ({}) },
     "../layout/pageState": { usePage: (id, select) => select({ security: null, blocked: 0, mediaAccess: null }) },
-    "../media/state": { useMedia: (select) => select({ sessions: {}, pipOpen: {} }) },
     "./translate": { isNeverTranslated: () => false, useTranslateState: () => ({ status: "idle" }) },
   });
   const site = compile("apps/browser/src/components/site/SitePanelHost.tsx", f.modules);

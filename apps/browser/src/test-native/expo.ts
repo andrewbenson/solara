@@ -137,7 +137,10 @@ const autoHideModule = {
   addListener: () => ({ remove: () => {} }),
 };
 
-const nativeModules: Record<string, object> = { ...shellNativeModules, ...solaraCoreNativeModules, SolaraAutoHide: autoHideModule, SolaraSettings: settingsModule, SolaraNewTab: newTabModule };
+export const displayCaptureTestState = { sharing: false };
+const mediaModule = { hasDisplayTabShare: () => displayCaptureTestState.sharing };
+
+const nativeModules: Record<string, object> = { ...shellNativeModules, ...solaraCoreNativeModules, SolaraAutoHide: autoHideModule, SolaraMedia: mediaModule, SolaraSettings: settingsModule, SolaraNewTab: newTabModule };
 const optionalNativeModules: Record<string, () => object | null> = { ...shellOptionalNativeModules, ...solaraCoreOptionalNativeModules };
 const testModules = () => (globalThis as { acTestNativeModules?: Record<string, object> }).acTestNativeModules;
 

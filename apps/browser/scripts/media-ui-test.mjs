@@ -4,7 +4,7 @@ import { createServer } from "node:http";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { inflateSync } from "node:zlib";
-import { launch, reporter, session, sleep } from "../../../scripts/lib/instance.mjs";
+import { launch, reporter, screenLocked, screenLockedPending, session, sleep } from "../../../scripts/lib/instance.mjs";
 import { fixturePage } from "../../../scripts/lib/fixture-html.mjs";
 import { mediaPickerFrames } from "./lib/media-picker-frames.mjs";
 
@@ -255,7 +255,7 @@ try {
 
   await rep.check("native-kinds", async () => {
     const kinds = await run(`return globalThis.expo.modules.SolaraHosted.kinds();`);
-    const want = ["media.cliPill", "media.tabBadge", "sidebar.mediaHover"];
+    const want = ["media.cliPill", "media.tabBadge", "media.sharePicker"];
     for (const kind of ["media.hoverPlayer", "media.sidebarPlayer"]) assert.ok(!kinds.includes(kind), `stale hosted player kind ${kind}`);
     const have = want.filter((k) => kinds.includes(k));
     if (have.length !== want.length) throw new Error(`native kinds missing: ${JSON.stringify(kinds)}`);
@@ -270,23 +270,32 @@ try {
     return { kinds: have };
   });
 
+  const capture = "globalThis.expo.modules.SolaraMedia";
+  const pendingShare = `return ${capture}.devDisplayCaptureState().then((json) => !JSON.parse(json).pending.b);`;
+  const fixtureShare = (request) => `return ${capture}.devDisplayCaptureFixture("b", ${JSON.stringify(JSON.stringify(request))});`;
+  const fixtureBar = (target) => `return ${capture}.devDisplayShareBarFixture("b", ${JSON.stringify(target)});`;
+  const showCaptureTab = async () => {
+    await run(`ac.actions.switchToTab("b"); return true;`);
+    await until("picker tab selected", `return shown() === "b";`);
+    const page = await app.page(url("b"), { timeout: 5000 });
+    try {
+      await page.eval(`document.readyState === "complete" || new Promise((done) => addEventListener("load", () => done(true), { once: true }))`, { timeout: 5000 });
+    } finally {
+      page.close();
+    }
+    if (prompts) await until("pooled capture tab placed", `return globalThis.expo.modules.SolaraWindowShell.describe("w1").then((json) => !!JSON.parse(json).split?.overlays?.b);`, 5000);
+  };
   if (prompts) await rep.check("share-picker-escape-at-launch", async () => {
     const request = { id: "share-at-launch", origin: "https://meet.test", frameOrigin: null, audio: { tab: true, screen: false, window: null },
-      sources: [{ id: "screen:fixture", kind: "screen", name: "Fixture Display", width: 1512, height: 982 }], pageUrl: url("b") };
-    await run(`ac.actions.switchToTab("b"); acMedia.useMedia.setState((m) => ({ displayRequests: { ...m.displayRequests, b: ${JSON.stringify(request)} } })); return true;`);
+      sources: [{ id: "screen:fixture", kind: "screen", name: "Fixture Display", width: 1512, height: 982 }] };
+    await showCaptureTab();
+    await until("capture fixture page ready", fixtureShare(request), 5000);
     try {
       await until("share picker focused", `return first("media.sharePicker").then((r) => r && r.opacity > 0.99 && r.focused ? true : null);`, 5000);
-      await run(`globalThis.__shareLog = []; const a = acNativeMedia.actions; globalThis.__shareReal = a.sharePicker; a.sharePicker = (w, t, e) => { __shareLog.push(e.action); }; return true;`);
-      try {
-        await run(`return ac.shell.devKeyEquivalent("w1", { key: "\\r", keyCode: 36, modifiers: [], send: true, asKey: true, wait: 30 }).then(() => true);`);
-        await until("Return reaches the first share picker after launch", `return __shareLog.includes("share") || null;`, 3000);
-      } finally {
-        await run(`acNativeMedia.actions.sharePicker = __shareReal; return true;`);
-      }
       await run(`return ac.shell.devKeyEquivalent("w1", { key: "\\u001b", keyCode: 53, modifiers: [], send: true, asKey: true, wait: 30 }).then(() => true);`);
-      await until("Escape cancels the first share picker after launch", `return !acMedia.useMedia.getState().displayRequests.b;`, 3000);
+      await until("Escape cancels the first share picker after launch", pendingShare, 3000);
     } finally {
-      await run(`acMedia.useMedia.setState((m) => { const { b, ...rest } = m.displayRequests; return { displayRequests: rest }; }); ac.actions.switchToTab("p"); return true;`);
+      await run(`return ${capture}.devDisplayCapture("b", "cancel", "", false).then(() => { ac.actions.switchToTab("p"); return true; });`);
     }
     return true;
   });
@@ -363,9 +372,11 @@ try {
     return { paused: await paused() };
   });
 
-  await rep.check("hover-player", async () => {
+  if (screenLocked()) rep.record("hover-player", { skip: screenLockedPending });
+  else await rep.check("hover-player", async () => {
     await run(`ac.actions.switchToTab("b"); return true;`);
-    await run(`return Promise.resolve(acMediaHover("w1", "p")).then(() => true);`);
+    const row = await until("pinned tab anchor", `return ac.sidebarRows.measureRow("w1", "p");`, 3000);
+    await run(`return hover(${JSON.stringify([Math.round(row.x + row.width / 2), Math.round(row.y + row.height / 2)])});`);
 
     const card = () => `return globalThis.expo.modules.SolaraHosted.sidebarHoverCard("w1").then(JSON.parse)`;
     if (shell) {
@@ -398,7 +409,7 @@ try {
       return row?.titleOverflow === live?.titleOverflow && row?.titleOverflow === later.titleOverflow && row.elapsed >= first.elapsed
         && Math.abs(row.marquee - live.marquee) <= 0.1 && Math.abs(row.marquee - later.marquee) <= 0.1;
     });
-    await run(`return Promise.resolve(acMediaHover("w1", null)).then(() => true);`);
+    await run(`return ac.shell.devSetPointer("w1", null).then(() => globalThis.expo.modules.SolaraHosted.dismissSidebarHover("w1"));`);
     await until("hover player gone", `return first("media.hoverPlayer").then((r) => !r);`, 3000);
     if (shell) await until("hover player card hidden", `${card()}.then((c) => !c || c.phase === "hidden");`, 3000);
     await sleep(300);
@@ -502,6 +513,7 @@ try {
       await sleep(400);
     }
   });
+  await showCaptureTab();
   const pickerWindow = await untilSnapshot("picker window geometry", (window) => window?.contentFrame?.width > 0);
   const pickerFrames = mediaPickerFrames(pickerWindow.windows.find((window) => window.id === "w1").contentFrame.width);
   const sameRect = (what, rect, want) => {
@@ -578,9 +590,8 @@ try {
       { id: "screen:fixture", kind: "screen", name: "Fixture Display", width: 1512, height: 982 },
       { id: "window:fixture", kind: "window", name: "Fixture Notes", app: "Notes" },
     ],
-    pageUrl: url("b"),
   };
-  const openShare = `acMedia.useMedia.setState((m) => ({ displayRequests: { ...m.displayRequests, b: ${JSON.stringify(SHARE)} } }));`;
+  const openShare = fixtureShare(SHARE);
   await rep.check("share-picker", async () => {
     const opened = await openPopover("media.sharePicker", openShare);
     sameRect("share", opened.rect, pickerFrames.share);
@@ -612,17 +623,22 @@ try {
       const back = await until("share picker focused again", `return first("media.sharePicker").then((r) => r && r.focused ? r : null);`, 3000);
       out.refocused = back.focused;
       await run(`return ac.shell.devKeyEquivalent("w1", { key: "\\u001b", keyCode: 53, modifiers: [], send: true, asKey: true, wait: 30 }).then(() => true);`);
-      await until("Escape cancels after the round trip", `return !acMedia.useMedia.getState().displayRequests.b;`, 3000);
-      await run(`${openShare} return true;`);
+      await until("Escape cancels after the round trip", pendingShare, 3000);
+      assert.equal(await run(openShare), true);
       await until("share picker reopened", `return first("media.sharePicker").then((r) => r && r.opacity > 0.99 && r.focused ? r : null);`, 3000);
     }
     await run(`return first("media.sharePicker").then((r) => click(centre(r.frames.cancel))).then(() => true);`);
-    await until("share request ends", `return !acMedia.useMedia.getState().displayRequests.b;`, 3000);
-    await run(`${openShare} return true;`);
+    await until("share request ends", pendingShare, 3000);
+    assert.equal(await run(openShare), true);
     const again = await until("share picker again", `return first("media.sharePicker").then((r) => r && r.opacity > 0.99 ? r : null);`, 3000);
     const below = [Math.round(again.card[0] + again.card[2] / 2), Math.round(again.card[1] + again.card[3] + 40)];
     await run(`return click(${JSON.stringify(below)}).then(() => true);`);
-    await until("share request ends", `return !acMedia.useMedia.getState().displayRequests.b;`, 3000);
+    await until("share request ends", pendingShare, 3000);
+    assert.equal(await run(openShare), true);
+    await until("picker focused before Return", `return first("media.sharePicker").then((r) => r?.focused && r?.opacity > 0.99);`, 3000);
+    await run(`return first("media.sharePicker").then((r) => click(centre(r.frames["tab:p"]))).then(() => true);`);
+    await run(`return ac.shell.devKeyEquivalent("w1", { key: "\\r", keyCode: 36, modifiers: [], send: true, asKey: true, wait: 30 }).then(() => true);`);
+    await until("Return answers the selected source", pendingShare, 3000);
     return out;
   });
   await rep.check("cli-pill-native-indicator", async () => {
@@ -647,30 +663,23 @@ try {
       await set(false).catch(() => {});
     }
   });
+  const settledShareBar = (title) => `return globalThis.expo.modules.SolaraWindowShell.describe("w1").then(JSON.parse).then((window) =>
+    window?.shareBand?.ticking === true ? null : first("media.shareBar").then((row) => row?.primary === ${JSON.stringify(title)} ? row : null));`;
   await rep.check("share-bar-state", async () => {
-    await until("share bar fixture page state", `return !!ac.pageState.getState().pages.b;`, 5000);
-    await run(`
-      ac.actions.switchToTab("b");
-      globalThis.__mediaShareFixture = { access: ac.pageState.getState().pages.b.mediaAccess, shares: acMedia.useMedia.getState().tabShares };
-      acMedia.useMedia.setState((m) => ({ tabShares: { ...m.tabShares, b: { capturedTabId: "b", origin: "https://meet.test", dismissed: {} } } }));
-      ac.pageState.setState((s) => ({ pages: { ...s.pages, b: { ...s.pages.b, mediaAccess: { camera: false, microphone: false, screen: true } } } }));
-      return true;`);
+    await showCaptureTab();
+    await until("share bar fixture page ready", fixtureBar("b"), 5000);
     try {
-      const shared = await until("share bar primary", `return first("media.shareBar").then((r) => r?.primary === "Stop Sharing" ? r : null);`, 5000);
+      const shared = await until("share bar primary", settledShareBar("Stop Sharing"), 5000);
       await crossCheckMedia("share bar shared rows and labels", "media.shareBar", [shared]);
       assert.equal(shared.labels.primary, "Stop Sharing");
       assert.equal(shared.labels.dismiss, "Dismiss");
-      await run(`acMedia.useMedia.setState((m) => ({ tabShares: { ...m.tabShares, b: { ...m.tabShares.b, capturedTabId: "p" } } })); return true;`);
-      const other = await until("share bar other tab primary", `return first("media.shareBar").then((r) => r?.primary === "Share This Tab Instead" ? r : null);`, 5000);
+      assert.equal(await run(fixtureBar("p")), true);
+      const other = await until("share bar other tab primary", settledShareBar("Share This Tab Instead"), 5000);
       await crossCheckMedia("share bar other tab rows and labels", "media.shareBar", [other]);
       assert.equal(other.labels.primary, "Share This Tab Instead");
       return { shared: shared.primary, other: other.primary };
     } finally {
-      await run(`
-        acMedia.useMedia.setState({ tabShares: __mediaShareFixture.shares });
-        ac.pageState.setState((s) => ({ pages: { ...s.pages, b: { ...s.pages.b, mediaAccess: __mediaShareFixture.access } } }));
-        delete globalThis.__mediaShareFixture;
-        return true;`);
+      await run(fixtureBar(""));
     }
   });
   await rep.check("small-bar-hover-state", async () => {

@@ -5,7 +5,6 @@ globalThis.__DEV__ = false;
 const { useBrowser } = await import("../store/browser.ts");
 const { chromeChanged } = await import("../store/liveTabs.ts");
 const { patchPage } = await import("../components/layout/pageState.ts");
-const { useMedia } = await import("../components/media/state.ts");
 const { startTabReveal } = await import("./tabReveal.ts");
 const stub = await import("../test-native/index.ts");
 
@@ -63,7 +62,7 @@ test("a switch Chrome made (DevTools, an extension) is shown once the store foll
   assert.deepEqual(revealed(), ["b"]);
 });
 
-test("a switch the native view can't show by itself ends any reveal in that window instead", () => {
+test("a switch the native view can't show by itself ends any reveal in that window instead", async () => {
   setup(["a", "b", "c", "d", "e", "f"], "a");
   S().updateTab("b", { navigation: null, unloaded: true });
   S().activate("b");
@@ -87,10 +86,11 @@ test("a switch the native view can't show by itself ends any reveal in that wind
   patchPage("e", { crashed: null });
   S().activate("a");
   revealed();
-  useMedia.setState({ tabShares: { f: { dismissed: {} } } });
+  const { displayCaptureTestState } = await import("../test-native/expo.ts");
+  displayCaptureTestState.sharing = true;
   S().activate("f");
-  assert.deepEqual(revealed(), ["drop over a"], "while a tab is shared, the share bar changes the page's height");
-  useMedia.setState({ tabShares: {} });
+  assert.deepEqual(revealed(), ["drop over a"], "a native share band changes the page's height");
+  displayCaptureTestState.sharing = false;
   S().activate("a");
   revealed();
   patchPage("a", { fullscreen: true });

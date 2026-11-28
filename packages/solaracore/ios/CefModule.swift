@@ -435,7 +435,6 @@ final class CefWebView: ExpoView, SolaraCoreWebViewDelegate, @preconcurrency RCT
   let onDownloadNavigation = EventDispatcher()
   let onPictureInPicture = EventDispatcher()
   let onActivateRequest = EventDispatcher()
-  let onDisplayMediaRequest = EventDispatcher()
   let onWindowClose = EventDispatcher()
   let onCommand = EventDispatcher()
   let onPageFocus = EventDispatcher()

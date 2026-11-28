@@ -8,6 +8,15 @@ public struct ShareTabSource: Decodable, Equatable, Sendable {
   public var favicon: String?
   public var profileId: String
   public var current: Bool
+
+  public init(id: String, title: String, url: String, favicon: String?, profileId: String, current: Bool) {
+    self.id = id
+    self.title = title
+    self.url = url
+    self.favicon = favicon
+    self.profileId = profileId
+    self.current = current
+  }
 }
 
 public struct ShareScreenSource: Decodable, Equatable, Sendable {
@@ -15,6 +24,13 @@ public struct ShareScreenSource: Decodable, Equatable, Sendable {
   public var name: String
   public var size: String?
   public var aspect: Double
+
+  public init(id: String, name: String, size: String?, aspect: Double) {
+    self.id = id
+    self.name = name
+    self.size = size
+    self.aspect = aspect
+  }
 }
 
 public struct ShareWindowSource: Decodable, Equatable, Sendable {
@@ -22,11 +38,23 @@ public struct ShareWindowSource: Decodable, Equatable, Sendable {
   public var title: String
   public var app: String?
   public var icon: String?
+
+  public init(id: String, title: String, app: String?, icon: String?) {
+    self.id = id
+    self.title = title
+    self.app = app
+    self.icon = icon
+  }
 }
 
 public struct ShareAudioState: Decodable, Equatable, Sendable {
   public var label: String
   public var value: Bool
+
+  public init(label: String, value: Bool) {
+    self.label = label
+    self.value = value
+  }
 }
 
 public struct SharePickerState: Decodable, Equatable, Sendable {
@@ -42,6 +70,21 @@ public struct SharePickerState: Decodable, Equatable, Sendable {
   public var audio: ShareAudioState?
   public var tileWidth: Double
   public var theme: MediaThemeState
+
+  public init(requestId: String, tabId: String, title: String, subtitle: String, tabs: [ShareTabSource], screens: [ShareScreenSource], windows: [ShareWindowSource], selected: String?, valid: Bool, audio: ShareAudioState?, tileWidth: Double, theme: MediaThemeState) {
+    self.requestId = requestId
+    self.tabId = tabId
+    self.title = title
+    self.subtitle = subtitle
+    self.tabs = tabs
+    self.screens = screens
+    self.windows = windows
+    self.selected = selected
+    self.valid = valid
+    self.audio = audio
+    self.tileWidth = tileWidth
+    self.theme = theme
+  }
 
   public static func decode(_ json: String) -> SharePickerState? {
     guard let data = json.data(using: .utf8) else { return nil }

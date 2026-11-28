@@ -2,7 +2,6 @@ import type { CliControlStatus } from "@solara/solaracore";
 import { nativeInstallCli } from "@solara/settings";
 import { installedCliVersion, readDocument, systemInfo, type CliInstallResult } from "@solara/shell";
 import { create } from "zustand";
-import { useBrowser } from "../store/browser";
 import { nativeSafeMode } from "../store/nativeStore";
 
 type Saved = { binPath?: string | null; error?: string | null };
@@ -65,7 +64,5 @@ export function installCliInBackground(reason: CliInstallReason): Promise<CliIns
     });
   return running;
 }
-
-export const stopCliControl = () => useBrowser.getState().updateSettings({ cliControl: false });
 
 if (__DEV__) (globalThis as { acCli?: unknown }).acCli = { store: useCli, indicator: useCliIndicator, install: installCliInBackground };

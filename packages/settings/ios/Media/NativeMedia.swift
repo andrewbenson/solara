@@ -25,16 +25,6 @@ enum NativeMedia {
     MediaImages.favicons.loader = { request in
       return await NativeHistoryCatalog.favicon(page: request.url, source: request.favicon, profileId: request.profileId, dark: request.dark)
     }
-    HostedViews.register(shareBar) { windowId in
-      let view = ShareBarView()
-      var target: (capturer: String, tabId: String) = ("", "")
-      view.onAction = { action(windowId, "shareBar", target.tabId, ["action": $0.rawValue, "capturer": target.capturer]) }
-      return content(shareBar, windowId, view) { json in
-        guard let state = ShareBarState.decode(json) else { return }
-        target = (state.capturer, state.tabId)
-        view.update(state)
-      }
-    }
     HostedViews.register(smallBar) { windowId in
       let view = SmallBarView()
       var tabId = ""
@@ -57,25 +47,9 @@ enum NativeMedia {
         update()
       }
     }
-    HostedViews.register(sharePicker) { windowId in
-      let view = SharePickerView()
-      let popover = PopoverView(body: view)
-      var tabId = ""
-      popover.onDismiss = { action(windowId, "sharePicker", tabId, ["action": "cancel"]) }
-      view.onAction = { [weak popover] event in
-        if case .height(let h) = event { popover?.set(bodyHeight: CGFloat(h)); return }
-        sharePicker(windowId, tabId, event)
-      }
-      return content(sharePicker, windowId, popover, takesFocus: true) { json in
-        guard let state = SharePickerState.decode(json), let placement = PopoverEnvelope.decode(json) else { return }
-        tabId = state.tabId
-        popover.set(placement: placement, dark: state.theme.dark)
-        view.update(state)
-      }
-    }
     HostedViews.register(cliPill) { windowId in
       let view = CliControlPillView()
-      view.onStop = { action(windowId, "cliStop") }
+      view.onStop = { NativeCliControl.shared.stop() }
       return content(cliPill, windowId, view) { json in
         if let state = CliPillState.decode(json) { view.update(state) }
       }
@@ -104,16 +78,6 @@ enum NativeMedia {
     let entry = WeakMediaView(view)
     mounted.append((kind, windowId, entry))
     return { mounted.removeAll { $0.view === entry } }
-  }
-
-  static func sharePicker(_ windowId: String, _ tabId: String, _ event: SharePickerAction) {
-    switch event {
-    case .select(let id): action(windowId, "sharePicker", tabId, ["action": "select", "id": id])
-    case .share(let id): action(windowId, "sharePicker", tabId, ["action": "share", "id": id ?? NSNull()])
-    case .cancel: action(windowId, "sharePicker", tabId, ["action": "cancel"])
-    case .audio(let on): action(windowId, "sharePicker", tabId, ["action": "audio", "value": on])
-    case .height: break
-    }
   }
 
   static func smallBarAction(_ windowId: String, _ tabId: String, _ event: SmallBarAction) {
@@ -150,7 +114,8 @@ enum NativeMedia {
     if kind == sidebarPlayer { views += NativeSidebar.players(windowId: windowId) }
     if kind == hoverPlayer { views += NativeSidebarHoverCard.players(windowId: windowId) }
     views += NativePaneOverlays.host(windowId)?.mediaViews(kind) ?? []
-    if kind == shareBar { views += NativeShareBand.bars(windowId) }
+    if kind == sharePicker { views += NativeDisplayCapture.views(windowID: windowId) }
+    if kind == shareBar { views += NativeShareBand.bars(windowId) + NativeDisplayCapture.inlineBars(windowId) }
     func frames(_ view: NSView, _ controls: [String: CGRect]) -> [String: [Double]] {
       guard let content = view.window?.contentView else { return [:] }
       return controls.mapValues { rect in

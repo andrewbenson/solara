@@ -74,7 +74,6 @@ enum NativeWindowShell {
       return true
     }
     NativeSplitChrome.start()
-    NativeShareBand.start()
     NativePeek.start()
     SettingsJS.shared.onConnect {
       for id in lifetimes.ids { lifetimes.host(id)?.sendPreferences() }

@@ -20,7 +20,6 @@ import type { Tab } from "../store/types";
 import { patchPage, pageOf, setBrowserId, setPopover, usePages } from "./layout/pageState";
 import { openFromPage } from "./layout/openFromPage";
 import { closeFolderPanelIn } from "./sidebar/tileFolderUi";
-import { requestDisplayMedia } from "./media/SharePicker";
 import { closeLittleSolaraOnEscape } from "./littleSolara/actions";
 import { answerExternalApp } from "./site/ExternalAppPrompt";
 import { showAutofillPrompt, showPasswordPrompt } from "./site/Prompts";
@@ -51,7 +50,6 @@ export type PageEventName =
   | "onFindResult"
   | "onFavicon"
   | "onMedia"
-  | "onDisplayMediaRequest"
   | "onExternalApp"
   | "onPasswordPrompt"
   | "onAutofillPrompt"
@@ -301,7 +299,6 @@ export function pageEventHandlers(session: PageSession): PageEventHandlers {
       if (!externalApp.closed) patchPage(tabId, { externalApp });
       else if (pageOf(tabId).externalApp?.id === externalApp.id) patchPage(tabId, { externalApp: null });
     },
-    onDisplayMediaRequest: (request) => requestDisplayMedia(tabId, request),
     onOpenWindow: (request: OpenWindowRequest) => {
       const t = tab();
       if (t) openFromPage(request, { windowId: t.windowId, profileId: t.profileId, tabId });

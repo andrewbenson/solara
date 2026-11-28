@@ -1280,6 +1280,11 @@ static void StartEarlyWindow() {
   return [SolaraCoreEngineBridge displayCaptureStateForTab:solaracore_host::TabWithBrowserId(browserId)];
 }
 
++ (void)answerDisplayCapture:(int)browserId receipt:(NSString *)receipt source:(NSString *)source audio:(BOOL)audio {
+  if (SolaraCoreTab *tab = solaracore_host::TabWithBrowserId(browserId))
+    [SolaraCoreEngineBridge answerDesktopCapture:receipt tab:tab source:source audio:audio];
+}
+
 + (BOOL)stopCapture:(int)browserId {
   SolaraCoreTab *tab = solaracore_host::TabWithBrowserId(browserId);
   return [tab respondsToSelector:@selector(stopCapture)] && [tab stopCapture];

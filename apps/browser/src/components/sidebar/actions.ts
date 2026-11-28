@@ -19,9 +19,9 @@ export async function bookmarkTabs(windowId: string, ids: string[], folder: stri
     try {
       parentId = await bookmarkWriter.addBookmarkFolder({ profileId, title });
     } catch (error) {
-      return reportBookmarkFailure(error);
+      return reportBookmarkFailure(error, windowId);
     }
   }
   const pages = ids.map((id) => store().tabs[id]).filter((t): t is Tab => !!t?.url);
-  if (pages.length) await submitBookmarks(profileId, pages.map((t) => ({ method: "addBookmark", args: [{ profileId, url: t.url, title: tabTitle(t), favicon: t.favicon, parentId }] }))).catch(reportBookmarkFailure);
+  if (pages.length) await submitBookmarks(profileId, pages.map((t) => ({ method: "addBookmark", args: [{ profileId, url: t.url, title: tabTitle(t), favicon: t.favicon, parentId }] }))).catch((error: unknown) => reportBookmarkFailure(error, windowId));
 }

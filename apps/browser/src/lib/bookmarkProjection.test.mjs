@@ -9,8 +9,7 @@ const { writeState } = await import("../store/nativeStore.ts");
 const { emitBookmarkProjection } = await import("../test-native/expo.ts");
 const { docs, documentWrites } = await import("../test-native/shell.ts");
 const { engineEvent, solaraCoreNativeModules } = await import("../test-native/solaracore.ts");
-const { seedBookmarkProjection, nextBookmarkProjectionOwner } = await import("../test-native/bookmarkProjection.ts");
-const { refreshBookmarkProjection } = await import("../store/bookmarkProjection.ts");
+const { seedBookmarkProjection, nextBookmarkProjectionOwner, refreshBookmarkProjection } = await import("../test-native/bookmarkProjection.ts");
 const S = () => useBrowser.getState();
 const tree = (engine, title = "Native", profile = "default") => {
   const bar = `bar@${engine || "default"}`, other = `other@${engine || "default"}`;

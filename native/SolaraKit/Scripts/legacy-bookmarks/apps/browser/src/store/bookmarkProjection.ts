@@ -1,3 +1,4 @@
+import { useBrowser } from "./browser";
 import { bookmarkProjection, bookmarkWriterState, type BookmarkProjection } from "@solara/settings";
 import type { BrowserState } from "./browser";
 import type { Bookmarks } from "./types";
@@ -81,3 +82,8 @@ export function refreshBookmarkProjection(store: Replica): boolean {
   install(store, { bookmarks: sameBookmarks ? current.bookmarks : bookmarks, bookmarksReady: sameReady ? current.bookmarksReady : ready });
   return true;
 }
+
+export const bookmarkCatalog = () => {
+  const { bookmarks, bookmarksReady } = useBrowser.getState();
+  return { bookmarks, bookmarksReady };
+};

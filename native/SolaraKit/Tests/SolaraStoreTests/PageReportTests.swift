@@ -17,6 +17,22 @@ func phaseAIssued(_ store: Store, _ id: String, generation: String = "G", revisi
 }
 
 @Suite struct PageReportTests {
+  @Test func currentPageOwnsItsFaviconAcrossNavigation() throws {
+    let (store, id) = try phaseAPageFixture()
+    try store.dispatch(phaseAReport(id, phaseACreated(store, id)))
+    try store.dispatch(phaseAReport(id, phaseANavigation()))
+    try store.dispatch(phaseAReport(id, ["type": "favicon", "generation": "G", "source": "https://page.example/icon.png"]))
+    #expect(store.state.tabs[id]?.favicon == "https://page.example/icon.png")
+    try store.dispatch(phaseAReport(id, phaseANavigation(url: "https://page.example/another")))
+    #expect(store.state.tabs[id]?.favicon == "https://page.example/icon.png")
+    try store.dispatch(phaseAReport(id, phaseANavigation(url: "https://elsewhere.example/", loading: true)))
+    #expect(store.state.tabs[id]?.favicon == "https://page.example/icon.png")
+    try store.dispatch(phaseAReport(id, phaseANavigation(url: "https://elsewhere.example/")))
+    #expect(store.state.tabs[id]?.favicon == nil)
+    try store.dispatch(phaseAReport(id, ["type": "favicon", "generation": "retired", "source": "https://page.example/icon.png"]))
+    #expect(store.state.tabs[id]?.favicon == nil)
+  }
+
   @Test func queuedWebKitReadyRetainsSignedBrowserIdentity() throws {
     for browserId in [-1001, -9_007_199_254_740_991, 0, 12, 9_007_199_254_740_991] {
       let (store, id) = try phaseAPageFixture(engine: "webkit")

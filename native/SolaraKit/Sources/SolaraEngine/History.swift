@@ -353,6 +353,7 @@ public final class LibraryCatalog {
   public func retireHistory(engineProfile: String, remainingEngineProfiles: [String]) {
     guard !remainingEngineProfiles.contains(where: { $0.jsEquals(engineProfile) }) else { return }
     retiredHistoryEngines.insert(JSKey(engineProfile))
+    favicons?.invalidate(engineProfile: engineProfile)
     libraries.removeValue(forKey: engineProfile)?.retire()
     histories.removeValue(forKey: engineProfile)
     pending.removeAll { $0.profile.jsEquals(engineProfile) }

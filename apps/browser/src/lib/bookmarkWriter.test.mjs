@@ -1,12 +1,13 @@
 import assert from "node:assert/strict";
 import { afterEach, beforeEach, test } from "node:test";
 const { useBrowser } = await import("../store/browser.ts");
-const { bookmarkWriter, projectNativeBookmarks, reportBookmarkFailure, submitBookmarks } = await import("./bookmarkWriter.ts");
+const { bookmarkWriter, reportBookmarkFailure, submitBookmarks } = await import("./bookmarkWriter.ts");
 const { BOOKMARK_REMAP_RETRY_MS, replaceBookmarkDocument, replaceBookmarkDocumentWithRecords, submitBookmarkMutations } = await import("@solara/settings");
 const { useToasts } = await import("../components/layout/toasts.ts");
 
 const { seedBookmarkProjection, nextBookmarkProjectionOwner } = await import("../test-native/bookmarkProjection.ts");
 
+const { bookmarkCatalog } = await import("../store/bookmarkProjection.ts");
 const S = () => useBrowser.getState();
 const folder = (id, title, children = []) => ({ kind: "folder", id, parentId: null, title, children, addedAt: 0 });
 const document = (extra = {}) => ({
@@ -77,21 +78,21 @@ afterEach(() => {
 
 test("without a native owner the facade refuses edits and preserves its draft", async () => {
   const draft = { profileId: "default", title: "Alpha", url: "https://alpha.example/" };
-  const before = S().bookmarks;
+  const before = bookmarkCatalog().bookmarks;
   await assert.rejects(bookmarkWriter.addBookmark(draft), /native|unavailable|paused/i);
-  assert.equal(S().bookmarks, before);
+  assert.equal(bookmarkCatalog().bookmarks, before);
   assert.equal(draft.title, "Alpha");
 });
 
-test("under a native owner an edit is submitted with the snapshot's binding, its id comes from the receipt, and the store projects the accepted document", async () => {
+test("under a native owner an edit is submitted with the snapshot's binding, its id comes from the receipt, and the catalog exposes the accepted document", async () => {
   const owner = (globalThis.acTestBookmarkWriter = new FakeOwner());
   const id = await bookmarkWriter.addBookmark({ profileId: "p", title: "Native", url: "https://native.example/" });
   assert.equal(id, "n1");
   assert.deepEqual(owner.submitted.map(({ engine, generation }) => ({ engine, generation })), [{ engine: "native", generation: "1" }]);
   assert.equal(owner.submitted[0].mutations[0].method, "addBookmark");
-  assert.equal(S().bookmarks.nodes.n1?.title, "Native");
-  assert.deepEqual(S().bookmarks.roots.p, { bar: "bar@native", other: "other@native" });
-  assert.ok(S().bookmarks.roots.default, "another engine's bookmarks stay in the store");
+  assert.equal(bookmarkCatalog().bookmarks.nodes.n1?.title, "Native");
+  assert.deepEqual(bookmarkCatalog().bookmarks.roots.p, { bar: "bar@native", other: "other@native" });
+  assert.ok(bookmarkCatalog().bookmarks.roots.default, "another engine's bookmarks stay available in the catalog");
 });
 
 test("UI edits use lightweight bindings and compact receipts without reading a full writer snapshot", async (t) => {
@@ -114,7 +115,7 @@ test("UI edits use lightweight bindings and compact receipts without reading a f
   assert.equal(await bookmarkWriter.addBookmark({ profileId: "p", title: "Compact", url: "https://compact.example/" }), "compact");
   assert.equal(bindings, 2);
   assert.equal(attempts, 2);
-  assert.equal(S().bookmarks.nodes.compact.title, "Compact");
+  assert.equal(bookmarkCatalog().bookmarks.nodes.compact.title, "Compact");
 });
 
 test("UI edits fall back on older optional APIs and full receipts retain their document", async (t) => {
@@ -135,9 +136,9 @@ test("UI edits fall back on older optional APIs and full receipts retain their d
 test("a refused native edit rejects, changes nothing in the store and never falls back to the JS reducers", async () => {
   const owner = (globalThis.acTestBookmarkWriter = new FakeOwner());
   owner.refuse = new Error("journal write failed");
-  const before = JSON.stringify(S().bookmarks);
+  const before = JSON.stringify(bookmarkCatalog().bookmarks);
   await assert.rejects(bookmarkWriter.addBookmark({ profileId: "default", title: "Lost", url: "https://lost.example/" }), /journal write failed/);
-  assert.equal(JSON.stringify(S().bookmarks), before);
+  assert.equal(JSON.stringify(bookmarkCatalog().bookmarks), before);
 });
 
 test("a harmless runtime remap preserves the same-engine route binding", async () => {
@@ -155,11 +156,11 @@ test("an older receipt never rolls the projection back over a newer one", () => 
   const owner = (globalThis.acTestBookmarkWriter = new FakeOwner());
   owner.revision = 21;
   owner.document = document({ a: { kind: "url", id: "a", parentId: "bar@native", title: "Newer", url: "https://a.example/", favicon: null, addedAt: 1 } });
-  assert.equal(projectNativeBookmarks("native", "21", JSON.stringify(owner.document)), true);
+  const newest = bookmarkCatalog().bookmarks;
   owner.revision = 20;
   owner.document = document({ a: { kind: "url", id: "a", parentId: "bar@native", title: "Older", url: "https://a.example/", favicon: null, addedAt: 1 } });
-  assert.equal(projectNativeBookmarks("native", "20", JSON.stringify(owner.document)), false);
-  assert.equal(S().bookmarks.nodes.a.title, "Newer");
+  assert.equal(bookmarkCatalog().bookmarks, newest);
+  assert.equal(bookmarkCatalog().bookmarks.nodes.a.title, "Newer");
 });
 
 test("one request id per call, kept across the mutations of a batch", async () => {
@@ -168,18 +169,7 @@ test("one request id per call, kept across the mutations of a batch", async () =
   await bookmarkWriter.addBookmark({ profileId: "p", title: "Three", url: "https://three.example/" });
   assert.deepEqual(owner.submitted.map((call) => [call.requestId, call.mutations.length]), [["batch-1", 2], [owner.submitted[1].requestId, 1]]);
   assert.notEqual(owner.submitted[1].requestId, "batch-1");
-  assert.deepEqual(S().bookmarks.nodes["bar@native"].children, ["n1", "n2", "n3"]);
-});
-
-test("a receipt for an engine the profile has since left keeps the current native roots", () => {
-  const owner = (globalThis.acTestBookmarkWriter = new FakeOwner());
-  owner.document = document({ a: { kind: "url", id: "a", parentId: "bar@native", title: "Current", url: "https://current.example/", favicon: null, addedAt: 1 } });
-  projectNativeBookmarks("native", "10", JSON.stringify(owner.document));
-  const current = S().bookmarks;
-  const stale = { nodes: {}, roots: { p: { bar: "bar@gone", other: "other@gone" } } };
-  assert.equal(projectNativeBookmarks("gone", "999", JSON.stringify(stale)), false);
-  assert.equal(S().bookmarks, current);
-  assert.equal(S().bookmarks.nodes.a.title, "Current");
+  assert.deepEqual(bookmarkCatalog().bookmarks.nodes["bar@native"].children, ["n1", "n2", "n3"]);
 });
 
 test("addBookmarkTree passes an index even without a parent", async () => {
@@ -261,24 +251,24 @@ for (const operation of ["submit", "replace"]) {
       }
       return real(...args);
     };
-    const before = JSON.stringify(S().bookmarks);
+    const before = JSON.stringify(bookmarkCatalog().bookmarks);
     await assert.rejects(perform(owner, operation, "moved-1"), (caught) => caught === refused);
     assert.equal(calls.length, 1, "nothing was sent with the new engine");
     assert.equal(owner.revision, 10);
-    assert.equal(JSON.stringify(S().bookmarks), before);
+    assert.equal(JSON.stringify(bookmarkCatalog().bookmarks), before);
   });
 
   test(`${operation} gives up at the remap deadline and never falls back to the JS store`, async (t) => {
     const clock = fakeClock(t);
     const owner = (globalThis.acTestBookmarkWriter = new FakeOwner());
     const error = (owner.refuse = staleBinding());
-    const before = JSON.stringify(S().bookmarks);
+    const before = JSON.stringify(bookmarkCatalog().bookmarks);
     await assert.rejects(perform(owner, operation, "exhausted-1", { method: "removeBookmark", args: ["n1"] }), (caught) => caught === error && caught.code === "staleBinding");
     const calls = operation === "submit" ? owner.submitted : owner.replaced;
     assert.ok(clock.elapsed() >= BOOKMARK_REMAP_RETRY_MS, `waited ${clock.elapsed()} ms`);
     assert.ok(clock.elapsed() < BOOKMARK_REMAP_RETRY_MS + 500);
     assert.deepEqual([...new Set(calls.map((call) => call.requestId))], ["exhausted-1"]);
-    assert.equal(JSON.stringify(S().bookmarks), before);
+    assert.equal(JSON.stringify(bookmarkCatalog().bookmarks), before);
     assert.equal(owner.revision, 10);
   });
 
@@ -297,11 +287,11 @@ for (const operation of ["submit", "replace"]) {
   }
 }
 
-test("a bookmark edit that wasn't saved tells the user in the focused window", (t) => {
+test("a bookmark edit that wasn't saved tells the user in its initiating window", (t) => {
   t.mock.method(console, "warn", () => {});
   const windowId = S().createWindow();
   S().setFocusedWindow(windowId);
-  reportBookmarkFailure(Object.assign(new Error("gave up"), { code: "staleBinding" }));
+  reportBookmarkFailure(Object.assign(new Error("gave up"), { code: "staleBinding" }), windowId);
   assert.equal(useToasts.getState().toasts[windowId]?.title, "Bookmark not saved");
 });
 
@@ -310,7 +300,7 @@ test("saved-unconfirmed failure says it may be saved and never invites a duplica
   t.mock.method(console, "warn", () => {});
   const windowId = S().createWindow();
   S().setFocusedWindow(windowId);
-  reportBookmarkFailure(Object.assign(new Error('bookmark replacement refused: savedUnconfirmed("directory sync", 5)'), { code: "refused" }));
+  reportBookmarkFailure(Object.assign(new Error('bookmark replacement refused: savedUnconfirmed("directory sync", 5)'), { code: "refused" }), windowId);
   const toast = useToasts.getState().toasts[windowId];
   assert.equal(toast?.title, "Bookmark save unconfirmed");
   assert.match(JSON.stringify(toast), /may have been saved/);
@@ -398,7 +388,7 @@ test("a malformed submit reply is never acknowledged as delivered", async () => 
   assert.deepEqual(delivered, []);
 });
 
-test("an expired retry refreshes the current projection without applying, retrying or reporting a save failure", async (t) => {
+test("an expired retry exposes the accepted snapshot without applying, retrying or reporting a save failure", async (t) => {
   const owner = (globalThis.acTestBookmarkWriter = new FakeOwner());
   const accepted = { kind: "url", id: "n1", parentId: "bar@native", title: "Already accepted", url: "https://accepted.example/", favicon: null, addedAt: 1 };
   owner.document = document({ n1: accepted });
@@ -412,7 +402,7 @@ test("an expired retry refreshes the current projection without applying, retryi
   const windowId = S().createWindow();
   S().setFocusedWindow(windowId);
   await assert.rejects(submitBookmarks("p", [{ method: "toggleBookmark", args: ["p", { title: "Again", url: accepted.url, favicon: null }] }], "expired-id"), (caught) => caught === error);
-  reportBookmarkFailure(error);
+  reportBookmarkFailure(error, windowId);
   assert.equal(owner.revision, 10);
   assert.equal(owner.submitted.length, 1);
   assert.equal(owner.submitted[0].requestId, "expired-id");
@@ -420,7 +410,7 @@ test("an expired retry refreshes the current projection without applying, retryi
   assert.deepEqual(delays, []);
   assert.deepEqual(warnings, []);
   assert.equal(useToasts.getState().toasts[windowId], undefined);
-  assert.equal(S().bookmarks.nodes.n1?.title, "Already accepted");
+  assert.equal(bookmarkCatalog().bookmarks.nodes.n1?.title, "Already accepted");
 });
 
 for (const operation of ["submit", "replace"]) {

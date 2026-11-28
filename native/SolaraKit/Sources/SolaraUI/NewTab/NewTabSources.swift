@@ -162,7 +162,7 @@ public final class NewTabSources {
       if node.isFolder {
         for child in node.children ?? [] { walk(child) }
       } else if let url = node.url, urls.insert(url).inserted {
-        rows.append(BookmarkRow(url: url, title: node.title, favicon: profiles[profileId]?.bookmarkIcons[url]))
+        rows.append(BookmarkRow(url: url, title: node.title, favicon: node.favicon ?? profiles[profileId]?.bookmarkIcons[url]))
       }
     }
     walk(roots.bar)

@@ -1,12 +1,14 @@
 import { persistenceRefused } from "./persistLatch";
-import { nativeSafeMode } from "../store/nativeStore";
+import { nativeOwnsWorkspace, nativeSafeMode } from "../store/nativeStore";
 import { faviconsFor, fetchFavicon, onHistoryChanged } from "@solara/solaracore";
-import { nativeStoreFavicon } from "@solara/settings";
+import * as settings from "@solara/settings";
+import { nativeSnapshot } from "@solara/store";
 import { iconTheme, readDocument, removeDocument, type IconTheme } from "@solara/shell";
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { create } from "zustand";
 import { pageOf, patchPage } from "../components/layout/pageState";
-import { batchStoreUpdates, useBrowser, type BrowserState } from "../store/browser";
+import { batchStoreUpdates, type BrowserState } from "../store/browser";
+import type { Tab } from "../store/types";
 import { engineProfile, isIncognitoProfile } from "../store/model";
 import { DEFAULT_PROFILE_ID } from "../store/settings";
 import { engineProfileLoaded, onLoadedProfilesChanged } from "./lazyProfiles";
@@ -15,15 +17,12 @@ import { webviews } from "./webviews";
 type Icons = {
   pages: Record<string, string | null>;
   srcs: Record<string, string>;
-  appearances: Record<string, [string, string]>;
 };
 
-const EMPTY: Icons = { pages: {}, srcs: {}, appearances: {} };
-const APPEARANCE_SWAP_MS = 5000;
+const EMPTY: Icons = { pages: {}, srcs: {} };
 const MAX_ICONS = 3000;
 const LOOKUP_DELAY_MS = 16;
 const LOOKUP_BATCH = 200;
-let appearanceChangedAt = -Infinity;
 
 type Favicons = {
   profiles: Record<string, Icons>;
@@ -37,17 +36,16 @@ export const pageKey = (url: string) => url.replace(/#.*$/, "");
 const siteOf = (url: string) => /^[a-z][\w+.-]*:\/\/[^/?#]*/i.exec(url)?.[0].toLowerCase() ?? "";
 export const faviconOutlived = (iconPage: string | null, url: string) => !!iconPage && !!url && siteOf(iconPage) !== siteOf(url);
 
-export function adoptIconPage(tabId: string) {
-  if (pageOf(tabId).iconPage === null) patchPage(tabId, { iconPage: useBrowser.getState().tabs[tabId]?.url || null });
+export function adoptIconPage(tabId: string, url?: string) {
+  if (pageOf(tabId).iconPage === null) noteIconPage(tabId, url);
 }
 
-export function noteIconPage(tabId: string) {
-  patchPage(tabId, { iconPage: useBrowser.getState().tabs[tabId]?.url || null });
+export function noteIconPage(tabId: string, url?: string) {
+  patchPage(tabId, { iconPage: url || null });
 }
 
-export function dropOutlivedFavicon(tabId: string, url: string, isLoading: boolean) {
-  const tab = useBrowser.getState().tabs[tabId];
-  if (!isLoading && tab?.favicon && faviconOutlived(pageOf(tabId).iconPage, url)) useBrowser.getState().updateTab(tabId, { favicon: null });
+export function shouldDropFavicon(tab: Pick<Tab, "id" | "favicon"> | undefined, url: string, isLoading: boolean) {
+  return !isLoading && !!tab?.favicon && faviconOutlived(pageOf(tab.id).iconPage, url);
 }
 
 type Change = (f: Favicons) => Favicons;
@@ -142,14 +140,13 @@ function lookUpPages(key: string, list: string[]) {
 
 const inflight = new Map<string, Promise<string | null>>();
 
-export function noteFavicon(tabId: string, src: string) {
-  const tab = useBrowser.getState().tabs[tabId];
-  if (!tab?.url || !src) return;
+export function noteFavicon(tab: Pick<Tab, "id" | "url" | "profileId">, src: string) {
+  if (!tab.url || !src || isIncognitoProfile(tab.profileId)) return;
   const key = cacheKey(tab.profileId);
   const page = pageKey(tab.url);
   const known = useFavicons.getState().profiles[key]?.srcs[src];
   if (known) return remember(key, page, src, known);
-  const handle = webviews.get(tabId);
+  const handle = webviews.get(tab.id);
   if (!handle) return;
   const id = `${key}|${src}`;
   let pending = inflight.get(id);
@@ -167,19 +164,15 @@ export function noteFavicon(tabId: string, src: string) {
 function remember(key: string, page: string, src: string, uri: string) {
   const icons = changes.length ? undefined : useFavicons.getState().profiles[key];
   if (icons && icons.pages[page] === uri && icons.srcs[src] === uri) return;
-  const dark = useBrowser.getState().ui.appDark;
-  const swapped = Date.now() - appearanceChangedAt < APPEARANCE_SWAP_MS;
   wrote(key, page);
   update(key, (icons) => {
     const previous = icons.pages[page];
     if (previous === uri && icons.srcs[src] === uri) return icons;
-    let appearances = icons.appearances;
-    if (swapped && previous && previous !== uri) appearances = { ...appearances, [page]: dark ? [previous, uri] : [uri, previous] };
     const startsOver = Object.keys(icons.pages).length >= MAX_ICONS;
     if (startsOver) touchAll();
     else touch(page);
     const pages = startsOver ? { [page]: uri } : { ...icons.pages, [page]: uri };
-    return { pages, srcs: icons.srcs[src] === uri ? icons.srcs : capped(icons.srcs, src, uri), appearances };
+    return { pages, srcs: icons.srcs[src] === uri ? icons.srcs : capped(icons.srcs, src, uri) };
   });
 }
 
@@ -215,7 +208,7 @@ function fetchMissing(profileId: string, url: string, src: string) {
   const pending = fetchFavicon(src, key)
     .then(async (image) => {
       const uri = image?.uri ?? null;
-      if (uri?.startsWith("data:image/png;base64,")) await nativeStoreFavicon(key, pageKey(url), src, uri.slice(22)).catch(() => null);
+      if (uri?.startsWith("data:image/png;base64,")) await settings.nativeStoreFavicon(key, pageKey(url), src, uri.slice(22)).catch(() => null);
       return uri;
     })
     .catch(() => null);
@@ -234,7 +227,6 @@ export function faviconFailed(profileId: string, uri: string) {
     return {
       pages: Object.fromEntries(Object.entries(icons.pages).map(([page, u]) => [page, u === uri ? null : u])),
       srcs: Object.fromEntries(Object.entries(icons.srcs).filter(([, u]) => u !== uri)),
-      appearances: icons.appearances,
     };
   });
 }
@@ -245,23 +237,18 @@ function lookupIn(key: string, url: string, src: string | null | undefined): str
   const icons = useFavicons.getState().profiles[key];
   if (!icons) return undefined;
   const page = pageKey(url);
-  const pair = icons.appearances[page];
-  if (pair) return pair[useBrowser.getState().ui.appDark ? 1 : 0];
   return (src ? icons.srcs[src] : undefined) ?? icons.pages[page] ?? undefined;
 }
 
-function lookupOrder(profileId?: string): string[] {
-  if (profileId && !isIncognitoProfile(profileId)) return [profileId];
-  return [...new Set([...(profileId ? [profileId] : []), DEFAULT_PROFILE_ID, ...useBrowser.getState().profileOrder])];
+function lookupScope(profileId?: string): string {
+  return profileId ?? DEFAULT_PROFILE_ID;
 }
 
 export function resolveFavicon(url: string, src?: string | null, profileId?: string): ResolvedFavicon | null {
   if (!url) return null;
-  for (const id of lookupOrder(profileId)) {
-    const uri = lookupIn(cacheKey(id), url, src);
-    if (uri) return { uri, profileId: id };
-  }
-  return null;
+  const id = lookupScope(profileId);
+  const uri = isIncognitoProfile(id) ? undefined : lookupIn(cacheKey(id), url, src);
+  return uri ? { uri, profileId: id } : null;
 }
 
 export type LaunchFavicons = {
@@ -276,8 +263,10 @@ export const LAUNCH_FAVICONS_LIMIT = 1024 * 1024;
 
 const serialized = (value: unknown) => JSON.stringify(value).length + 1;
 
-export function launchFavicons(tabs: { url: string; favicon: string | null; profileId: string }[]): LaunchFavicons {
+export function launchFavicons(tabs: { id?: string; url: string; favicon: string | null; profileId: string }[]): LaunchFavicons {
   const { profiles, themes } = useFavicons.getState();
+  const ids = tabs.flatMap((tab) => tab.id && tab.url && !isIncognitoProfile(tab.profileId) ? [tab.id] : []).slice(0, LAUNCH_ICON_LIMIT);
+  const native = nativeOwnsWorkspace() ? settings.nativeCachedFaviconURIs?.(ids) ?? {} : {};
   const look: LaunchFavicons = { images: [], profiles: {}, themes: {} };
   const indexOf = new Map<string, number>();
   let size = serialized(look);
@@ -287,9 +276,10 @@ export function launchFavicons(tabs: { url: string; favicon: string | null; prof
     const key = cacheKey(t.profileId);
     const icons = profiles[key];
     const page = pageKey(t.url);
-    const uri = icons?.pages[page];
-    if (!icons || !uri || uri.length > LAUNCH_URI_LIMIT || look.profiles[key]?.pages[page] !== undefined) continue;
-    const fromSrc = t.favicon ? icons.srcs[t.favicon] : undefined;
+    const nativeURI = t.id ? native[t.id] : undefined;
+    const uri = nativeURI ?? icons?.pages[page];
+    if (!uri || uri.length > LAUNCH_URI_LIMIT || look.profiles[key]?.pages[page] !== undefined) continue;
+    const fromSrc = t.favicon ? nativeURI ?? icons?.srcs[t.favicon] : undefined;
     const src = t.favicon && fromSrc && fromSrc.length <= LAUNCH_URI_LIMIT ? fromSrc : undefined;
     const fresh = [...new Set([uri, src].filter((u): u is string => !!u && !indexOf.has(u)))];
     const cost =
@@ -331,19 +321,17 @@ export function seedFavicons(seed: LaunchFavicons) {
       profiles[key] = {
         pages: { ...imagesOf(saved?.pages, images), ...icons.pages },
         srcs: { ...imagesOf(saved?.srcs, images), ...icons.srcs },
-        appearances: icons.appearances,
       };
     }
     return { profiles, themes: { ...themes, ...f.themes } };
   });
 }
 
-export const useAppearanceDark = () => useBrowser((s) => s.ui.appDark);
-
 function answered(url: string, profileId?: string): boolean {
   const { profiles } = useFavicons.getState();
   const page = pageKey(url);
-  return lookupOrder(profileId).every((id) => isIncognitoProfile(id) || profiles[cacheKey(id)]?.pages[page] !== undefined);
+  const id = lookupScope(profileId);
+  return isIncognitoProfile(id) || profiles[cacheKey(id)]?.pages[page] !== undefined;
 }
 
 type Watcher = { url: string; src?: string | null; profileId?: string; known?: boolean };
@@ -353,7 +341,7 @@ function check(w: Watcher) {
   const known = answered(w.url, w.profileId);
   if (known === w.known) return;
   w.known = known;
-  if (!known) for (const id of lookupOrder(w.profileId)) ask(cacheKey(id), pageKey(w.url));
+  if (!known) ask(cacheKey(lookupScope(w.profileId)), pageKey(w.url));
   else if (w.src && w.profileId && !resolveFavicon(w.url, w.src, w.profileId)) fetchMissing(w.profileId, w.url, w.src);
 }
 
@@ -380,46 +368,42 @@ function watch(w: Watcher) {
   };
 }
 
-export function useFavicon(url: string, src?: string | null, profileId?: string): ResolvedFavicon | null {
+export function useFavicon(url: string, src?: string | null, profileId?: string, dark?: boolean): ResolvedFavicon | null {
+  const owned = nativeOwnsWorkspace() && dark !== undefined;
+  const scope = profileId ?? DEFAULT_PROFILE_ID;
+  const request = JSON.stringify([url, src, scope, dark]);
+  const [native, setNative] = useState<{ request: string; uri: string } | null>(null);
+  useEffect(() => {
+    if (!owned || !url) return;
+    let generation = 0;
+    const refresh = () => {
+      const ticket = ++generation;
+      void settings.nativeFaviconURI?.(url, src ?? null, scope, dark)?.then((uri) => {
+        if (generation === ticket) setNative(uri ? { request, uri } : null);
+      }).catch(() => {});
+    };
+    const subscription = settings.onNativeFaviconInvalidated?.(refresh);
+    refresh();
+    return () => {
+      generation++;
+      subscription?.remove();
+    };
+  }, [owned, url, src, scope, dark, request]);
   const key = useFavicons(() => {
-    const found = resolveFavicon(url, src, profileId);
+    const found = owned && isIncognitoProfile(scope) ? null : resolveFavicon(url, src, owned ? scope : profileId);
     return found ? `${found.profileId} ${found.uri}` : null;
   });
-  const missing = !!url && !key;
-  const order = missing ? lookupOrder(profileId).join(" ") : "";
-  useEffect(() => (missing ? watch({ url, src, profileId }) : undefined), [missing, order, profileId, url, src]);
+  const missing = !owned && !!url && !key;
+  useEffect(() => (missing ? watch({ url, src, profileId }) : undefined), [missing, profileId, url, src]);
   const split = key?.indexOf(" ") ?? -1;
+  if (owned && native?.request === request) return { profileId: scope, uri: native.uri };
   return key ? { profileId: key.slice(0, split), uri: key.slice(split + 1) } : null;
-}
-
-export function faviconUri(url: string, profileId?: string, waitMs = 3000): Promise<string | null> {
-  const found = resolveFavicon(url, null, profileId);
-  if (found || !url) return Promise.resolve(found?.uri ?? null);
-  return new Promise((resolve) => {
-    let settled = false;
-    let stop = () => {};
-    const finish = (uri: string | null) => {
-      if (settled) return;
-      settled = true;
-      clearTimeout(timer);
-      unsubscribe();
-      stop();
-      resolve(uri);
-    };
-    const timer = setTimeout(() => finish(null), waitMs);
-    const unsubscribe = useFavicons.subscribe(() => {
-      const next = resolveFavicon(url, null, profileId);
-      if (next) finish(next.uri);
-    });
-    stop = watch({ url, src: null, profileId });
-    if (settled) stop();
-  });
 }
 
 const theming = new Set<string>();
 
-export function useFaviconTheme(url: string, src?: string | null, profileId?: string): IconTheme | null | undefined {
-  const uri = useFavicons(() => resolveFavicon(url, src, profileId)?.uri ?? null);
+export function useFaviconTheme(url: string, src?: string | null, profileId?: string, resolvedURI?: string | null): IconTheme | null | undefined {
+  const uri = useFavicons(() => resolvedURI === undefined ? resolveFavicon(url, src, profileId)?.uri ?? null : resolvedURI);
   const theme = useFavicons((f) => (uri ? f.themes[uri] : undefined));
   const pending = !!uri && theme === undefined;
   useEffect(() => {
@@ -455,7 +439,11 @@ function removeLegacyFiles(s: Pick<BrowserState, "profiles">) {
 }
 
 export function startFavicons() {
-  removeLegacyFiles(useBrowser.getState());
+  if (nativeOwnsWorkspace()) {
+    const profiles = nativeSnapshot()?.data.profiles as BrowserState["profiles"] | undefined;
+    if (profiles) removeLegacyFiles({ profiles });
+    return () => {};
+  }
   const stopLoads = onLoadedProfilesChanged(() => {
     for (const set of watchers.values()) for (const watcher of set) { watcher.known = undefined; check(watcher); }
   });
@@ -471,21 +459,8 @@ export function startFavicons() {
       return { ...icons, pages: Object.fromEntries(Object.entries(icons.pages).filter(([page]) => !gone.has(page))) };
     });
   });
-  const stop = useBrowser.subscribe((s, prev) => {
-    if (s.ui.appDark !== prev.ui.appDark) appearanceChangedAt = Date.now();
-    if (s.windows !== prev.windows && (changes.length || Object.keys(useFavicons.getState().profiles).some(isIncognitoProfile))) {
-      const open = new Set(Object.values(s.windows).map((w) => w.profileId));
-      for (const t of Object.values(s.tabs)) open.add(t.profileId);
-      queue((f) => {
-        const gone = Object.keys(f.profiles).filter((id) => isIncognitoProfile(id) && !open.has(id));
-        if (gone.length) touchAll();
-        return gone.length ? { ...f, profiles: Object.fromEntries(Object.entries(f.profiles).filter(([id]) => !gone.includes(id))) } : f;
-      }, true);
-    }
-  });
   return () => {
     history.remove();
     stopLoads();
-    stop();
   };
 }

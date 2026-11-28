@@ -251,6 +251,33 @@ enum NativeHistoryCatalog {
     return await ImageDecoding.decoded(result.data)
   }
 
+  static func faviconURI(page: String, source: String?, profileId: String, dark: Bool) async -> String? {
+    guard let state = NativeStoreHandle.store?.displayState,
+      state.profiles[profileId] != nil || state.windows.values.contains(where: { $0.profileId == profileId && $0.incognito }) else { return nil }
+    let profile = state.engineProfile(profileId)
+    guard let result = await catalog.favicons?.favicon(page: page, source: source, engineProfile: profile, appearance: dark) else { return nil }
+    return "data:image/png;base64," + result.data.base64EncodedString()
+  }
+
+  static func cachedFaviconURIs(_ tabIds: [String]) -> [String: String] {
+    guard let state = NativeStoreHandle.store?.displayState, let icons = catalog.favicons else { return [:] }
+    var bytes = 0
+    var uris: [String: String] = [:]
+    var appearances: [String: Bool] = [:]
+    for id in tabIds.prefix(240) {
+      guard let tab = state.tabs[id], !Ids.isIncognitoProfile(tab.profileId) else { continue }
+      let profile = state.engineProfile(tab.profileId)
+      let dark = appearances[tab.profileId] ?? NativeLayoutAppearance(state: state, profileId: tab.profileId, incognito: false).dark
+      appearances[tab.profileId] = dark
+      guard let icon = icons.cachedFavicon(page: tab.url, source: tab.favicon, engineProfile: profile, appearance: dark),
+        icon.data.count <= 12_000, bytes + icon.data.count <= 720_000,
+        icon.data.starts(with: [137, 80, 78, 71, 13, 10, 26, 10]) else { continue }
+      bytes += icon.data.count
+      uris[id] = "data:image/png;base64," + icon.data.base64EncodedString()
+    }
+    return uris
+  }
+
   static func devFaviconLookup(page: String, engineProfile: String) async -> [String: Any] {
     let result = await catalog.favicons?.favicon(page: page, engineProfile: engineProfile, appearance: false)
     return ["bytes": result?.data.count ?? 0, "source": result?.source ?? "missing"]

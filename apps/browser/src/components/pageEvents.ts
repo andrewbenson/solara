@@ -5,7 +5,7 @@ import { finishRNPageIssue, isPageCurrent, pageReport, updatePageContext, type P
 import { keepAliveCreated, keepAliveFailed, keepAliveGone, keepAliveHandled } from "../lib/keepAliveFeed";
 import { nativeOwnsWorkspace } from "../store/nativeStore";
 import { focus, switchToTab } from "../lib/actions";
-import { adoptIconPage, dropOutlivedFavicon, noteFavicon, noteIconPage } from "../lib/favicons";
+import { adoptIconPage, noteFavicon, noteIconPage, shouldDropFavicon } from "../lib/favicons";
 import { restoredThemeColor } from "../lib/launchLook";
 import { takeStartedNavigation } from "../lib/earlyNavigate";
 import { isQuitting } from "../lib/native";
@@ -256,7 +256,7 @@ export function pageEventHandlers(session: PageSession): PageEventHandlers {
       if (tab()?.muted) void webviews.get(tabId)?.setMuted(true);
     },
     onNavigationChange: ({ url: reported, title, canGoBack, canGoForward, isLoading, themeColor, themeColorSource, initialDocumentAccessed, committedInitial }) => {
-      adoptIconPage(tabId);
+      if (session.factsOwner === "js") adoptIconPage(tabId, tab()?.url);
       const url = initialDocumentAccessed && committedInitial ? "about:blank" : reported;
       const untouched = committedInitial === undefined ? reported === "" && !(tab()?.openerId && session.adoptId) : committedInitial && !initialDocumentAccessed;
       const target = session.pending ?? (session.lastPage === null ? (tab()?.navigation?.url ?? null) : null);
@@ -283,7 +283,7 @@ export function pageEventHandlers(session: PageSession): PageEventHandlers {
       }
       if (session.fromNewTab && url && !isBlank(url)) patchPage(tabId, { backToNewTab: true });
       if (session.factsOwner === "js") store().navigated(tabId, { url, title }, { isLoading, canGoBack, canGoForward, themeColor: shownTheme });
-      dropOutlivedFavicon(tabId, url, isLoading);
+      if (session.factsOwner === "js" && shouldDropFavicon(tab(), url, isLoading)) store().updateTab(tabId, { favicon: null });
       const lastPage = session.lastPage;
       if (lastPage !== null && pageKey(url) !== lastPage) {
         setPopover(tabId, null);
@@ -322,10 +322,12 @@ export function pageEventHandlers(session: PageSession): PageEventHandlers {
     onZoom: ({ zoom }) => store().updateTab(tabId, { zoom }),
     onFindResult: ({ count, active }) => store().setFind(tabId, { count, active }),
     onFavicon: (favicon) => {
-      if (!favicon || !tab()) return;
-      noteIconPage(tabId);
+      if (session.factsOwner !== "js" || !favicon) return;
+      const current = tab();
+      if (!current) return;
+      noteIconPage(tabId, current.url);
       store().faviconChanged(tabId, favicon);
-      noteFavicon(tabId, favicon);
+      noteFavicon(current, favicon);
     },
     onMedia: ({ playing, muted }) => {
       if (session.factsOwner === "js") store().updateLive(tabId, { playingAudio: playing });

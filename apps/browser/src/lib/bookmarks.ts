@@ -1,4 +1,4 @@
-import { refreshBookmarkProjection } from "../store/bookmarkProjection";
+import { refreshBookmarkProjection } from "../test-native/bookmarkProjection";
 import { onBookmarkProjectionChanged, onBookmarkWriterState, reloadBookmarkProjection } from "@solara/settings";
 import { useBrowser } from "../store/browser";
 

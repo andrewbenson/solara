@@ -23,7 +23,7 @@ import {
   type Transport,
   hlcWall,
 } from "@solara/sync";
-import { bookmarkWriterState, setBookmarkSyncLinks } from "@solara/settings";
+import { bookmarkWriterState, onBookmarkProjectionChanged, onBookmarkWriterState, setBookmarkSyncLinks } from "@solara/settings";
 import { create } from "zustand";
 import { useBrowser } from "../store/browser";
 import { nativeBusyWrites, nativeOwnsWorkspace, nativeSafeMode } from "../store/nativeStore";
@@ -2395,11 +2395,18 @@ let watchingBrowser = false;
 function watchBrowserChanges() {
   if (watchingBrowser) return;
   watchingBrowser = true;
+  const bookmarksChanged = () => {
+    if (!doc.enabled) return;
+    if (!pairingPending() && !running) void noteWhatThisMacHas("bm:");
+    if (!running) scheduleSync();
+  };
+  onBookmarkProjectionChanged(bookmarksChanged);
+  onBookmarkWriterState(bookmarksChanged);
   useBrowser.subscribe((s, prev) => {
-    if (doc.enabled && !pairingPending() && s.bookmarksReady !== prev.bookmarksReady) void noteWhatThisMacHas("bm:");
+    if (s.bookmarksReady !== prev.bookmarksReady && bookmarkWriterState().state === "legacy") bookmarksChanged();
     if (doc.enabled && !pairingPending() && s.historyReady !== prev.historyReady) void noteWhatThisMacHas("h:");
     if (!doc.enabled || running) return;
-    if (s.bookmarks !== prev.bookmarks || s.settings !== prev.settings || s.profiles !== prev.profiles || s.groups !== prev.groups) scheduleSync();
+    if (s.settings !== prev.settings || s.profiles !== prev.profiles || s.groups !== prev.groups || (s.bookmarks !== prev.bookmarks && bookmarkWriterState().state === "legacy")) scheduleSync();
   });
 }
 

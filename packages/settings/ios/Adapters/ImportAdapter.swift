@@ -287,8 +287,17 @@ final class ImportRunEngine: ImportEngine {
   }
 
   func adoptFavicons(profile: String, favicons: [ImportFaviconRow]) async {
-    let payload: [[String: Any]] = favicons.map { ["page": $0.page, "icon": $0.icon, "png": $0.png] }
-    _ = try? await SettingsJS.shared.invoke("replica.adoptFavicons", [profile, payload], timeout: 10)
+    guard !safeMode, profileExists(profile), !isPrivateProfile(profile),
+      let library = NativeHistoryCatalog.catalog.favicons else { return }
+    let engine = engineProfile(profile)
+    for row in favicons {
+      guard let data = Data(base64Encoded: row.png) else { continue }
+      library.adopt(page: row.page, source: row.icon, data: data, engineProfile: engine)
+    }
+    NotificationCenter.default.post(name: FaviconLibrary.didInvalidate, object: nil)
+    #if DEBUG
+    await SettingsJS.shared.devHoldImportAdoption()
+    #endif
   }
 
   func storeFavicons(profile: String, engineProfile: String, favicons: [ImportFaviconRow]) async {

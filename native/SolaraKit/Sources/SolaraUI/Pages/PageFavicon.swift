@@ -3,13 +3,14 @@ import SolaraEngine
 import SwiftUI
 
 @MainActor
+@Observable
 public final class PageFavicons {
   private let load: (_ url: String, _ favicon: String?, _ profileId: String, _ dark: Bool) async -> NSImage?
   private let bundledImage: (_ name: String) -> NSImage?
-  private var cache: [String: NSImage] = [:]
-  private var misses: Set<String> = []
-  private var bundledCache: [String: NSImage] = [:]
-  private var generation = 0
+  @ObservationIgnored private var cache: [String: NSImage] = [:]
+  @ObservationIgnored private var misses: Set<String> = []
+  @ObservationIgnored private var bundledCache: [String: NSImage] = [:]
+  private(set) var generation = 0
   nonisolated(unsafe) private var invalidationObserver: NSObjectProtocol?
 
   public init(
@@ -75,11 +76,17 @@ struct PageFavicon: View {
   var favicon: String?
   var profileId = ""
   var size: CGFloat = 16
-  @State private var image: NSImage?
+  @State private var loaded: (request: Request, image: NSImage)?
+
+  private struct Request: Equatable {
+    var key: String
+    var generation: Int
+  }
 
   var body: some View {
+    let request = Request(key: PageFavicons.key(url, favicon, profileId, dark: theme.dark), generation: favicons?.generation ?? 0)
     Group {
-      if let shown = image ?? favicons?.cached(url, favicon, profileId, dark: theme.dark) ?? favicons?.bundled(url, dark: theme.dark) {
+      if let shown = (loaded?.request == request ? loaded?.image : nil) ?? favicons?.cached(url, favicon, profileId, dark: theme.dark) ?? favicons?.bundled(url, dark: theme.dark) {
         Image(nsImage: shown)
           .resizable()
           .interpolation(.high)
@@ -99,7 +106,11 @@ struct PageFavicon: View {
       }
     }
     .frame(width: size, height: size)
-    .task(id: PageFavicons.key(url, favicon, profileId, dark: theme.dark)) { image = await favicons?.fetch(url, favicon, profileId, dark: theme.dark) }
+    .task(id: request) {
+      let image = await favicons?.fetch(url, favicon, profileId, dark: theme.dark)
+      guard !Task.isCancelled else { return }
+      loaded = image.map { (request, $0) }
+    }
     .accessibilityHidden(true)
   }
 

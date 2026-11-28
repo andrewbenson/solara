@@ -97,7 +97,7 @@ test("cleaned tabs leave Recently Cleaned a week after their clean-up", () => {
   assert.ok(S().cleanedTabs.some((c) => c.tab.url === "https://idle.example/"));
 });
 
-test("favicons: incognito icons stay in memory and in their own profile", async () => {
+test("favicons: incognito icons never enter the JavaScript compatibility cache", async () => {
   const { noteFavicon, resolveFavicon, useFavicons, startFavicons } = await import("../lib/favicons.ts");
   const { webviews } = await import("../lib/webviews.ts");
   const stop = startFavicons();
@@ -110,15 +110,15 @@ test("favicons: incognito icons stay in memory and in their own profile", async 
   webviews.set(normalTab, handle("data:image/png;base64,SITE"));
   webviews.set(privateTab, handle("data:image/png;base64,AAAA"));
 
-  noteFavicon(normalTab, "https://site.example/favicon.ico");
-  noteFavicon(privateTab, "https://secret.example/favicon.ico");
+  noteFavicon(S().tabs[normalTab], "https://site.example/favicon.ico");
+  noteFavicon(S().tabs[privateTab], "https://secret.example/favicon.ico");
   await new Promise((r) => setTimeout(r, 50));
 
   assert.equal(resolveFavicon("https://site.example/a")?.uri, "data:image/png;base64,SITE");
   assert.equal(resolveFavicon("https://secret.example/x"), null);
   assert.equal(resolveFavicon("https://secret.example/x", null, "default"), null);
-  assert.equal(resolveFavicon("https://secret.example/x", null, privateProfile)?.uri, "data:image/png;base64,AAAA");
-  assert.equal(resolveFavicon("https://site.example/a", null, privateProfile)?.uri, "data:image/png;base64,SITE");
+  assert.equal(resolveFavicon("https://secret.example/x", null, privateProfile), null);
+  assert.equal(useFavicons.getState().profiles[privateProfile], undefined);
 
   S().closeWindow(incognito);
   assert.equal(useFavicons.getState().profiles[privateProfile], undefined);

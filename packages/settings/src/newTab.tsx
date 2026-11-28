@@ -57,7 +57,6 @@ type NewTabModule = {
   setIdleTabs(json: string, epoch: number, revision: number): Promise<void>;
   setTabs(profileId: string, json: string, epoch: number): Promise<void>;
   setEngineProfile(profileId: string, engineProfile: string, bookmarkEngineProfile: string, epoch: number): Promise<void>;
-  setBookmarkIcons(profileId: string, engineProfile: string, json: string): Promise<void>;
   setActions(windowId: string, json: string): Promise<void>;
   setExtensions(windowId: string, json: string): Promise<void>;
   forgetWindow(windowId: string): Promise<void>;
@@ -106,7 +105,6 @@ export const newTabSources = {
   setIdleTabs: (snapshot: unknown, epoch: number, revision: number) => native?.setIdleTabs(JSON.stringify(snapshot), epoch, revision).catch(ignore),
   setTabs: (profileId: string, rows: unknown[], epoch: number) => native?.setTabs(profileId, JSON.stringify(rows), epoch).catch(ignore),
   setEngineProfile: (profileId: string, engineProfile: string, bookmarkEngineProfile: string, epoch: number) => native?.setEngineProfile(profileId, engineProfile, bookmarkEngineProfile, epoch).catch(ignore),
-  setBookmarkIcons: (profileId: string, engineProfile: string, icons: Record<string, string>) => native?.setBookmarkIcons(profileId, engineProfile, JSON.stringify(icons)).catch(ignore),
   setActions: (windowId: string, rows: unknown[]) => native?.setActions(windowId, JSON.stringify(rows)).catch(ignore),
   setExtensions: (windowId: string, rows: unknown[]) => native?.setExtensions(windowId, JSON.stringify(rows)).catch(ignore),
   forgetWindow: (windowId: string) => native?.forgetWindow(windowId).catch(ignore),

@@ -124,7 +124,7 @@ function harness({ owned = true, pooled = false, finishAccepted = true, quitting
 
 const semantics = (calls) => calls.filter(({ name }) => ["updateTab", "updateLive", "navigated", "closeTab"].includes(name));
 
-test("RN reservation skips only fact forwarding", () => {
+test("RN reservation leaves navigation and favicons with the native page", () => {
   const h = harness();
   h.emit("onNavigationChange", navigation());
   h.emit("onMedia", { playing: true, muted: false });
@@ -133,7 +133,7 @@ test("RN reservation skips only fact forwarding", () => {
   h.emit("onStatus", { text: "status" });
   h.emit("onPasswordPrompt", { origin: "https://a.test/" });
   assert.deepEqual(semantics(h.calls), []);
-  for (const name of ["setMuted", "browserId", "faviconChanged", "showPasswordPrompt"]) assert.ok(h.calls.some((call) => call.name === name), name);
+  for (const name of ["setMuted", "browserId", "showPasswordPrompt"]) assert.ok(h.calls.some((call) => call.name === name), name);
   assert.equal(h.page.status, "status");
 });
 
@@ -201,7 +201,7 @@ test("old generation event cannot affect replacement UI", () => {
   h.emit("onDiscarded", { url: "https://new.test/" }, freshReport);
   assert.equal(h.page.status, "");
   assert.equal(h.calls.filter(({ name }) => name === "browserId").length, 1);
-  assert.equal(h.calls.filter(({ name }) => name === "faviconChanged").length, 1);
+  assert.equal(h.calls.filter(({ name }) => name === "faviconChanged").length, 0);
   assert.equal(h.calls.filter(({ name }) => name === "showPasswordPrompt").length, 1);
   assert.equal(h.calls.filter(({ name }) => name === "setMuted").length, 2);
   assert.deepEqual(semantics(h.calls), []);

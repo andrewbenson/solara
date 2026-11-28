@@ -324,9 +324,9 @@ async function addBookmarkToFolder(windowId: string, tabId: string, folder: stri
     try {
       parentId = await bookmarkWriter.addBookmarkFolder({ profileId, title });
     } catch (error) {
-      return reportBookmarkFailure(error);
+      return reportBookmarkFailure(error, windowId);
     }
   }
-  await bookmarkWriter.addBookmark({ profileId, url: tab.url, title: tab.title, favicon: tab.favicon, parentId }).catch(reportBookmarkFailure);
+  await bookmarkWriter.addBookmark({ profileId, url: tab.url, title: tab.title, favicon: tab.favicon, parentId }).catch((error: unknown) => reportBookmarkFailure(error, windowId));
 }
 

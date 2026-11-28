@@ -1,5 +1,7 @@
 import type { CommandAction } from "@solara/core";
+import * as settings from "@solara/settings";
 import type { BrowserCommand } from "@solara/shell";
+import { bookmarkCatalog } from "../../store/bookmarkProjection";
 import { isBookmarked } from "../../store/bookmarks";
 import { useBrowser, type BrowserState } from "../../store/browser";
 import { activeTab, bookmarkProfileId, isPinnedRow, pinnedSectionTitle } from "../../store/model";
@@ -10,7 +12,13 @@ import { menuBarRevision, shortcutHint } from "../../lib/commandShortcuts";
 import type { Tab } from "../../store/types";
 import { organizeActions } from "./organizeActions";
 
-type Context = { s: BrowserState; windowId: string; tab: Tab | undefined };
+type Context = { s: BrowserState; windowId: string; tab: Tab | undefined; bookmarked: boolean };
+
+function bookmarkedPage(s: BrowserState, windowId: string, url: string | undefined): boolean {
+  if (!url) return false;
+  return settings.nativeIsBookmarked?.(url, windowId)
+    ?? isBookmarked(bookmarkCatalog().bookmarks, bookmarkProfileId(s, s.windows[windowId]), url);
+}
 
 type ActionDef = {
   command: BrowserCommand;
@@ -58,8 +66,7 @@ const DEFS: ActionDef[] = [
   { command: "findInPage", needs: page },
   {
     command: "bookmarkPage",
-    title: ({ s, windowId, tab }) =>
-      tab?.url && isBookmarked(s.bookmarks, bookmarkProfileId(s, s.windows[windowId]), tab.url) ? "Remove Bookmark" : "Bookmark This Page",
+    title: ({ bookmarked }) => bookmarked ? "Remove Bookmark" : "Bookmark This Page",
     keywords: ["add bookmark", "bookmark"],
     needs: page,
   },
@@ -96,10 +103,10 @@ const DEFS: ActionDef[] = [
 
 const actionId = (d: Pick<ActionDef, "command" | "arg">) => (d.arg ? `${d.command}:${d.arg}` : d.command);
 
-export function barActions(s: BrowserState, windowId: string): CommandAction[] {
+export function barActions(s: BrowserState, windowId: string, bookmarked = bookmarkedPage(s, windowId, activeTab(s, windowId)?.url)): CommandAction[] {
   const w = s.windows[windowId];
   const tab = activeTab(s, windowId);
-  const c: Context = { s, windowId, tab };
+  const c: Context = { s, windowId, tab, bookmarked };
   const out: CommandAction[] = [];
   for (const d of DEFS) {
     if (d.needs === "page" && !tab?.url) continue;
@@ -135,8 +142,9 @@ export function currentBarActions(windowId: string): CommandAction[] {
   const s = useBrowser.getState();
   let byWindow = barActionsOf.get(s);
   if (!byWindow) barActionsOf.set(s, (byWindow = new Map()));
-  const key = `${windowId}|${menuBarRevision()}`;
+  const bookmarked = bookmarkedPage(s, windowId, activeTab(s, windowId)?.url);
+  const key = `${windowId}|${menuBarRevision()}|${bookmarked}`;
   let actions = byWindow.get(key);
-  if (!actions) byWindow.set(key, (actions = barActions(s, windowId)));
+  if (!actions) byWindow.set(key, (actions = barActions(s, windowId, bookmarked)));
   return actions;
 }

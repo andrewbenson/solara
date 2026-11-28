@@ -7,6 +7,7 @@ import { openSettings } from "../components/settings/windows";
 import { useSidebarUi } from "../components/sidebar/state";
 import { useBrowser } from "../store/browser";
 import * as actions from "./actions";
+import { bookmarkCatalog } from "../store/bookmarkProjection";
 import { commandHandlers, runCommand } from "./commands";
 import * as favicons from "./favicons";
 import { probeStore } from "./perfProbe";
@@ -29,8 +30,19 @@ export function startDevHarness() {
     };
   }
 
+  const store = {
+    ...useBrowser,
+    getState: () => {
+      let catalog: ReturnType<typeof bookmarkCatalog> | undefined;
+      const readCatalog = () => catalog ??= bookmarkCatalog();
+      return { ...useBrowser.getState(),
+        get bookmarks() { return readCatalog().bookmarks; },
+        get bookmarksReady() { return readCatalog().bookmarksReady; },
+      };
+    },
+  };
   const ac = {
-    store: useBrowser, actions, runCommand, commandHandlers, webviews, shell, omnibox: omniboxDrivers, pages: pagesDrivers,
+    store, actions, runCommand, commandHandlers, webviews, shell, omnibox: omniboxDrivers, pages: pagesDrivers,
     pageState: usePages,
     reload: () => setTimeout(() => require("react-native").DevSettings.reload(), 100),
     panelFrameMarks: () => require("./perfMarks").panelFrameMarks() as [string, number][],

@@ -96,9 +96,8 @@ test("derived services start and stop the shared services", () => {
   const stop = runInNewContext(compile(derived + "\nstartDerivedServices();"), {
     startFavicons: service("favicons"),
     startHistory: service("history"),
-    startBookmarks: service("bookmarks"),
   });
-  assert.deepEqual(events, ["favicons", "bookmarks", "history"]);
+  assert.deepEqual(events, ["favicons", "history"]);
   stop();
-  assert.deepEqual(events.slice(3), ["stop favicons", "stop history", "stop bookmarks"]);
+  assert.deepEqual(events.slice(2), ["stop favicons", "stop history"]);
 });

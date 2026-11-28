@@ -12,6 +12,7 @@ import SolaraSyncAdapter
 public class SettingsModule: Module {
   private let bookmarkProjectionFeed = NativeBookmarkProjectionFeed()
   private var bookmarkProjectionObserver: NSObjectProtocol?
+  private var faviconObserver: NSObjectProtocol?
   private var bookmarkStateTask: Task<Void, Never>?
   public func definition() -> ModuleDefinition {
     Name("SolaraSettings")
@@ -24,7 +25,7 @@ public class SettingsModule: Module {
       }
     }.runOnQueue(.main)
 
-    Events("onEngineBackChanged", "onPanePopoversChanged", "onPopupCountsChanged", "onBookmarkProjectionChanged", "onAppIntegrationPresentation", "onSettingsCall", "onLiveReplica", "onLiveCloseGroup", "onBookmarkWriterState")
+    Events("onEngineBackChanged", "onPanePopoversChanged", "onPopupCountsChanged", "onBookmarkProjectionChanged", "onAppIntegrationPresentation", "onSettingsCall", "onLiveReplica", "onLiveCloseGroup", "onBookmarkWriterState", "onFaviconInvalidated")
 
     OnCreate {
       NativeBookmarkLaunch.select()
@@ -32,8 +33,12 @@ public class SettingsModule: Module {
       self.bookmarkProjectionObserver = NotificationCenter.default.addObserver(forName: NativeBookmarkOwner.projectionChanged, object: nil, queue: nil) { _ in
         projectionSink.module?.sendEvent("onBookmarkProjectionChanged", [:])
       }
+      self.faviconObserver = NotificationCenter.default.addObserver(forName: FaviconLibrary.didInvalidate, object: nil, queue: nil) { _ in
+        projectionSink.module?.sendEvent("onFaviconInvalidated", [:])
+      }
       _ = NativeLiveEngine.shared
       DispatchQueue.main.async { MainActor.assumeIsolated {
+        NativeBookmarkLaunch.start()
         PairingAdapter.install()
         PictureInPictureAdapter.install()
         NativeMediaPreferences.start()
@@ -64,6 +69,22 @@ public class SettingsModule: Module {
     OnDestroy {
       if let observer = self.bookmarkProjectionObserver { NotificationCenter.default.removeObserver(observer) }
       self.bookmarkProjectionObserver = nil
+      if let observer = self.faviconObserver { NotificationCenter.default.removeObserver(observer) }
+      self.faviconObserver = nil
+    }
+
+    AsyncFunction("faviconURI") { (page: String, source: String?, profileId: String, dark: Bool) async -> String? in
+      await NativeHistoryCatalog.faviconURI(page: page, source: source, profileId: profileId, dark: dark)
+    }
+
+    Function("cachedFaviconURIs") { (tabIds: [String]) -> [String: String] in
+      if Thread.isMainThread { return MainActor.assumeIsolated { NativeHistoryCatalog.cachedFaviconURIs(tabIds) } }
+      return DispatchQueue.main.sync { MainActor.assumeIsolated { NativeHistoryCatalog.cachedFaviconURIs(tabIds) } }
+    }
+
+    Function("isBookmarked") { (url: String, windowId: String) -> Bool in
+      if Thread.isMainThread { return MainActor.assumeIsolated { NativeBookmarkCommands.isBookmarked(url, windowId: windowId) } }
+      return DispatchQueue.main.sync { MainActor.assumeIsolated { NativeBookmarkCommands.isBookmarked(url, windowId: windowId) } }
     }
 
     Function("available") { () -> Bool in

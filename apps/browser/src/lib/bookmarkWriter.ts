@@ -1,8 +1,6 @@
-import { refreshBookmarkProjection } from "../store/bookmarkProjection";
 import { bookmarkWriterErrorCode, bookmarkWriterBinding, bookmarkWriterState, newBookmarkRequestID, submitBookmarkCommands, whileBookmarkEngineHolds } from "@solara/settings";
 import type { BookmarkDraft, RemovedBookmarks } from "../store/bookmarks";
 import { showToast } from "../components/layout/toasts";
-import { useBrowser } from "../store/browser";
 
 export type BookmarkMethod =
   | "addBookmark"
@@ -22,10 +20,6 @@ export class BookmarkConditionFailed extends Error {}
 
 export const isBookmarkConditionFailure = (error: unknown) => bookmarkWriterErrorCode(error) === "conditionFailed" || /bookmark replacement refused: conditionFailed\("/.test(error instanceof Error ? error.message : String(error));
 
-export function projectNativeBookmarks(_engine: string, _revision: string, _documentJSON: string): boolean {
-  return refreshBookmarkProjection(useBrowser);
-}
-
 export async function submitBookmarks(profileId: string, mutations: BookmarkMutation[], requestId = newBookmarkRequestID("bookmarks")): Promise<unknown[]> {
   const ownership = bookmarkWriterState();
   if (ownership.state !== "owned") throw new Error("Bookmark editing is paused while native ownership is unavailable");
@@ -34,15 +28,9 @@ export async function submitBookmarks(profileId: string, mutations: BookmarkMuta
   try {
     receipt = await whileBookmarkEngineHolds(profileId, { engine: first.engine, generation: first.generation }, (binding) => submitBookmarkCommands(profileId, mutations, binding, requestId));
   } catch (error) {
-    if (bookmarkWriterErrorCode(error) === "expired") {
-      refreshBookmarkProjection(useBrowser);
-      throw error;
-    }
     if (!isBookmarkConditionFailure(error)) throw error;
-    refreshBookmarkProjection(useBrowser);
     throw new BookmarkConditionFailed(error instanceof Error ? error.message : String(error));
   }
-  refreshBookmarkProjection(useBrowser);
   return receipt.results;
 }
 
@@ -52,15 +40,14 @@ const trimmed = (args: unknown[]) => {
   return out;
 };
 
-export const reportBookmarkFailure = (error: unknown, { toast = true }: { toast?: boolean } = {}) => {
+export const reportBookmarkFailure = (error: unknown, windowId?: string) => {
   if (bookmarkWriterErrorCode(error) === "expired") return;
   const message = error instanceof Error ? error.message : String(error);
   const uncertain = bookmarkWriterErrorCode(error) === "savedUnconfirmed" || /savedUnconfirmed|may have been saved/.test(message);
   console.warn(uncertain ? "[bookmarks] the edit may have been saved; changes are paused" : "[bookmarks] the edit was not saved", error);
-  if (!toast) return;
+  if (!windowId) return;
   try {
-    const windowId = useBrowser.getState().ui.focusedWindowId;
-    if (windowId) showToast(windowId, uncertain ? "Bookmark save unconfirmed" : "Bookmark not saved", uncertain ? "This change may have been saved. Bookmark edits and sync are paused until Solara restarts." : "Solara couldn't save that bookmark change. Try it again.");
+    showToast(windowId, uncertain ? "Bookmark save unconfirmed" : "Bookmark not saved", uncertain ? "This change may have been saved. Bookmark edits and sync are paused until Solara restarts." : "Solara couldn't save that bookmark change. Try it again.");
   } catch {}
 };
 

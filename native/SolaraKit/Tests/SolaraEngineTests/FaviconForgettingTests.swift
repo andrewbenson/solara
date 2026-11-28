@@ -30,6 +30,52 @@ private func forgettingUntil(_ condition: () -> Bool) async throws {
 private struct ForgettingTimeout: Error {}
 
 @Suite @MainActor struct FaviconForgettingTests {
+  @Test func reportedIconsKeepSeparateAppearanceVariants() async {
+    let client = ForgettingFaviconClient()
+    let library = FaviconLibrary(client: client)
+    let page = "https://site.test/"
+    await library.notePageIcon(page: page + "#light", source: page + "light", engineProfile: "p", dark: false) { Data([1]) }
+    await library.notePageIcon(page: page + "#dark", source: page + "dark", engineProfile: "p", dark: true) { Data([2]) }
+    #expect(await library.favicon(page: page, source: page + "dark", engineProfile: "p", appearance: false)?.data == Data([1]))
+    #expect(await library.favicon(page: page, source: page + "light", engineProfile: "p", appearance: true)?.data == Data([2]))
+    #expect(await library.favicon(page: page, engineProfile: "p", appearance: false)?.data == Data([1]))
+    #expect(client.reads == 0)
+    #expect(client.writes == 0)
+  }
+
+  @Test func aLateReportedIconCannotRestoreAnEndedPrivateSession() async throws {
+    let client = ForgettingFaviconClient()
+    let library = FaviconLibrary(client: client)
+    let page = "https://private.test/"
+    let profile = "incognito:w@p"
+    let request = Task {
+      await library.notePageIcon(page: page, source: page + "icon", engineProfile: profile, dark: false) {
+        await client.fetchFavicon(source: page + "icon", engineProfile: profile)
+      }
+    }
+    try await forgettingUntil { client.fetched != nil }
+    library.endPrivateSession(engineProfiles: [profile])
+    client.fetched?.resume(returning: Data([9]))
+    await request.value
+    #expect(library.cachedCount == 0)
+    #expect(await library.favicon(page: page, engineProfile: profile, appearance: false) == nil)
+    #expect(client.reads == 0)
+    #expect(client.writes == 0)
+  }
+
+  @Test func deletingOnePageKeepsAnUnrelatedLookupInFlight() async throws {
+    let client = ForgettingFaviconClient()
+    let library = FaviconLibrary(client: client)
+    let request = Task {
+      await library.favicon(page: "https://kept.test/", source: "https://kept.test/icon", engineProfile: "p", appearance: false)
+    }
+    try await forgettingUntil { client.fetched != nil }
+    library.invalidate(engineProfile: "p", pages: ["https://deleted.test/"])
+    client.fetched?.resume(returning: Data([9]))
+    #expect(await request.value?.data == Data([9]))
+    #expect(client.writes == 1)
+  }
+
   @Test func allWaitersForgetAnInvalidatedPrivateFetch() async throws {
     let client = ForgettingFaviconClient()
     let library = FaviconLibrary(client: client)

@@ -99,6 +99,7 @@ struct PageReportMemory: Sendable, Equatable {
   var newestEventSeq = 0
   var backToNewTab = false
   var historyKnown = false
+  var faviconPage: String? = nil
 
   var facts: PageFacts? {
     guard let generation else { return nil }

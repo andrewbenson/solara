@@ -4,7 +4,7 @@ import { onHostedEvent, SolaraHostedView } from "@solara/settings";
 import { memo, useLayoutEffect, useRef, useState } from "react";
 import { Image, Pressable, View, type ViewStyle } from "react-native";
 import { markHoverProps } from "../lib/hoverShift";
-import { faviconFailed, useAppearanceDark, useFavicon, useFaviconTheme } from "../lib/favicons";
+import { faviconFailed, useFavicon, useFaviconTheme } from "../lib/favicons";
 import { bundledSiteIcon } from "../lib/siteIcons";
 import { useTheme } from "../lib/theme";
 import { useWindowId } from "../store/hooks";
@@ -84,10 +84,9 @@ export const Favicon = memo(function Favicon({
   direct?: boolean;
 }) {
   const theme = useTheme();
-  useAppearanceDark();
-  const cached = useFavicon(url, direct ? null : favicon, profileId);
+  const cached = useFavicon(url, direct ? null : favicon, profileId, theme.dark);
   const resolved = direct && favicon ? { uri: favicon, profileId: "" } : cached;
-  const shape = useFaviconTheme(theme.dark || direct ? "" : url, favicon, profileId);
+  const shape = useFaviconTheme(theme.dark || direct ? "" : url, favicon, profileId, theme.dark || direct ? null : resolved?.uri);
   const white = shape?.kind === "template" && !!shape.stroke;
   const [broken, setBroken] = useState<string | null>(null);
   if (!url && !resolved) return <NewTabIcon size={size} />;

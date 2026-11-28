@@ -3,18 +3,11 @@ import { useMeetingAlert } from "../../live/alerts";
 import { useCalendar } from "../../live/calendar";
 import { measureRow, setSidebarUi } from "../sidebar/state";
 import { useFolderPanel } from "../sidebar/tileFolderUi";
-import { newTileFolder } from "../../store/tileFolders";
-import { nativeOwnsWorkspace, nativeWrite } from "../../store/nativeStore";
-import { useBrowser } from "../../store/browser";
+import { nativeWrite } from "../../store/nativeStore";
 import { encodeCommand } from "@solara/store";
 import { openInternalPage } from "./urls";
 
-const makeTileFolder = (ids: string[]) => {
-  if (nativeOwnsWorkspace()) return (nativeWrite(encodeCommand("newTileFolder", [ids]))?.result as string | undefined) ?? null;
-  const made = newTileFolder(useBrowser.getState(), ids);
-  if (made.folderId) useBrowser.setState(made.state);
-  return made.folderId;
-};
+const makeTileFolder = (ids: string[]) => (nativeWrite(encodeCommand("newTileFolder", [ids]))?.result as string | undefined) ?? null;
 
 export const pagesDrivers = {
   openInternalPage,

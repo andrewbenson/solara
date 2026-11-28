@@ -5,7 +5,6 @@ import { useBrowser, type BrowserState } from "../store/browser";
 import { restoreLaunchLook, saveLaunchLook } from "./launchLook";
 import { tabEngine } from "../store/engines";
 import { startFavicons } from "./favicons";
-import { startBookmarks } from "./bookmarks";
 import { startHistory } from "./history";
 import { flushNativeStore, flushProblem } from "@solara/store";
 import * as nativeSettings from "@solara/settings";
@@ -120,11 +119,9 @@ function savesNothing(reason: string) {
 
 function startDerivedServices() {
   const stopFavicons = startFavicons();
-  const stopBookmarks = startBookmarks();
   const stopHistory = startHistory();
   return () => {
     stopFavicons();
     stopHistory();
-    stopBookmarks();
   };
 }

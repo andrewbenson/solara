@@ -2,7 +2,7 @@ import { bookmarkProjection, bookmarkWriterState, type BookmarkProjection } from
 import type { BrowserState } from "./browser";
 import type { Bookmarks } from "./types";
 
-type Replica = { getState(): BrowserState; setState(partial: Partial<BrowserState>): void };
+type Replica = { setState(partial: Partial<BrowserState>): void };
 const authorized = new WeakSet<object>();
 const frozenBookmarks = new WeakSet<Bookmarks>();
 const projected = new WeakMap<Replica, BookmarkProjection>();
@@ -18,6 +18,15 @@ function sameProjection(a: BookmarkProjection, b: BookmarkProjection): boolean {
       const before = a.views[engine]!, next = b.views[engine];
       return !!next && before.revision === next.revision && before.hasView === next.hasView && before.readyForSync === next.readyForSync;
     });
+}
+
+function olderProjection(next: BookmarkProjection, last: BookmarkProjection): boolean {
+  if (next.owner !== last.owner) return BigInt(next.owner) < BigInt(last.owner);
+  if (next.generation !== last.generation) return BigInt(next.generation) < BigInt(last.generation);
+  return Object.entries(next.views).some(([engine, view]) => {
+    const before = last.views[engine];
+    return !!before && BigInt(view.revision) < BigInt(before.revision);
+  });
 }
 
 export const nativeBookmarksSelected = () => true;
@@ -49,35 +58,9 @@ export function guardBookmarkWrite(partial: Partial<BrowserState>, previous: Bro
   }
 }
 
-function install(store: Replica, partial: Partial<BrowserState>) {
-  authorized.add(partial);
-  try { store.setState(partial); } finally { authorized.delete(partial); }
-}
-
-export function refreshBookmarkProjection(store: Replica): boolean {
-  const state = bookmarkWriterState();
-  if (state.state === "legacy") return false;
-  protectBookmarkReplica(store.getState());
-  let next: BookmarkProjection;
-  try { next = bookmarkProjection(); } catch {
-    projectedPhase.delete(store);
-    if (Object.keys(store.getState().bookmarksReady).length) install(store, { bookmarksReady: Object.freeze({}) });
-    return false;
-  }
-  const last = projected.get(store);
-  if (last && BigInt(next.owner) < BigInt(last.owner)) return false;
-  if (last?.owner === next.owner) {
-    if (BigInt(next.generation) < BigInt(last.generation)) return false;
-    if (next.generation === last.generation) {
-      for (const [engine, view] of Object.entries(next.views)) {
-        const before = last.views[engine];
-        if (before && BigInt(view.revision) < BigInt(before.revision)) return false;
-      }
-    }
-  }
-  if (last && projectedPhase.get(store) === state.state && sameProjection(last, next)) return false;
+function catalogFromProjection(next: BookmarkProjection, phase: string) {
   const bookmarks: Bookmarks = { nodes: {}, roots: {} };
-  const ready: Record<string, true> = {};
+  const bookmarksReady: Record<string, true> = {};
   for (const [profile, binding] of Object.entries(next.profiles)) {
     const view = next.views[binding.engine];
     if (!view?.hasView) continue;
@@ -85,10 +68,49 @@ export function refreshBookmarkProjection(store: Replica): boolean {
     if (!roots || view.document.nodes[roots.bar]?.kind !== "folder" || view.document.nodes[roots.other]?.kind !== "folder") continue;
     bookmarks.roots[profile] = roots;
     Object.assign(bookmarks.nodes, view.document.nodes);
-    if (state.state === "owned" && view.readyForSync) ready[profile] = true;
+    if (phase === "owned" && view.readyForSync) bookmarksReady[profile] = true;
   }
-  freezeReplica(bookmarks, ready);
-  const current = store.getState();
+  freezeReplica(bookmarks, bookmarksReady);
+  return { bookmarks, bookmarksReady };
+}
+
+const emptyCatalog = catalogFromProjection({ owner: "0", generation: "0", profiles: {}, views: {} }, "legacy");
+let catalog: { projection: BookmarkProjection; phase: string; value: typeof emptyCatalog } | undefined;
+
+export function bookmarkCatalog() {
+  const phase = bookmarkWriterState().state;
+  try {
+    const projection = bookmarkProjection();
+    if (catalog && olderProjection(projection, catalog.projection)) return catalog.value;
+    if (catalog?.phase === phase && sameProjection(catalog.projection, projection)) return catalog.value;
+    const value = catalogFromProjection(projection, phase);
+    catalog = { projection, phase, value };
+    return value;
+  } catch {
+    catalog = undefined;
+    return emptyCatalog;
+  }
+}
+
+function install(store: Replica, partial: Partial<BrowserState>) {
+  authorized.add(partial);
+  try { store.setState(partial); } finally { authorized.delete(partial); }
+}
+
+export function applyBookmarkProjectionForTests(store: Replica, current: BrowserState): boolean {
+  const state = bookmarkWriterState();
+  if (state.state === "legacy") return false;
+  protectBookmarkReplica(current);
+  let next: BookmarkProjection;
+  try { next = bookmarkProjection(); } catch {
+    projectedPhase.delete(store);
+    if (Object.keys(current.bookmarksReady).length) install(store, { bookmarksReady: Object.freeze({}) });
+    return false;
+  }
+  const last = projected.get(store);
+  if (last && olderProjection(next, last)) return false;
+  if (last && projectedPhase.get(store) === state.state && sameProjection(last, next)) return false;
+  const { bookmarks, bookmarksReady: ready } = catalogFromProjection(next, state.state);
   projected.set(store, next);
   projectedPhase.set(store, state.state);
   const sameBookmarks = Object.keys(current.bookmarks.nodes).length === Object.keys(bookmarks.nodes).length

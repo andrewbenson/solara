@@ -66,6 +66,18 @@ enum NativeBookmarkLaunch {
   }
 
   @MainActor private static var profileObserver: NSObjectProtocol?
+  @MainActor private static var storeObserver: Int?
+
+  @MainActor static func start() {
+    guard storeObserver == nil else { return }
+    storeObserver = NativeStoreHandle.subscribeLifecycle {
+      guard NativeStoreHandle.ownsWorkspace, NativeStoreHandle.store != nil else { return }
+      Task { @MainActor in
+        guard NativeStoreHandle.ownsWorkspace else { return }
+        try? await ensureReady()
+      }
+    }
+  }
 
   @MainActor static func ensureReady() async throws {
     if profileObserver == nil {

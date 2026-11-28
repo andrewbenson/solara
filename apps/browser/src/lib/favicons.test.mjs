@@ -18,7 +18,7 @@ registerHooks({
     return next(specifier, context);
   },
 });
-const { adoptFaviconCache, adoptIconPage, dropOutlivedFavicon, faviconOutlived, noteIconPage, resolveFavicon, useFavicon } = await import("./favicons.ts");
+const { adoptFaviconCache, adoptIconPage, shouldDropFavicon, faviconOutlived, noteIconPage, resolveFavicon, useFavicon } = await import("./favicons.ts");
 const { useBrowser } = await import("../store/browser.ts");
 const { engineProfile } = await import("../store/model.ts");
 const { refreshLoadedProfiles, startProfileLoading } = await import("./lazyProfiles.ts");
@@ -72,16 +72,15 @@ test("an icon remembers its page across an engine switch, so the new engine's vi
   const windowId = S().createWindow({ url: netflix });
   const tabId = S().windows[windowId].tabIds[0];
   S().updateTab(tabId, { url: netflix });
-  adoptIconPage(tabId);
+  adoptIconPage(tabId, S().tabs[tabId].url);
   S().updateTab(tabId, { favicon: "https://assets.nflxext.com/favicon.ico" });
-  noteIconPage(tabId);
+  noteIconPage(tabId, S().tabs[tabId].url);
   S().navigated(tabId, { url: local, title: "" }, { isLoading: true });
-  dropOutlivedFavicon(tabId, local, true);
+  assert.equal(shouldDropFavicon(S().tabs[tabId], local, true), false);
   assert.equal(S().tabs[tabId].favicon, "https://assets.nflxext.com/favicon.ico");
-  adoptIconPage(tabId);
+  adoptIconPage(tabId, S().tabs[tabId].url);
   S().navigated(tabId, { url: local, title: "Local" }, { isLoading: false });
-  dropOutlivedFavicon(tabId, local, false);
-  assert.equal(S().tabs[tabId].favicon, null);
+  assert.equal(shouldDropFavicon(S().tabs[tabId], local, false), true);
 });
 
 test("an icon stays when the tab finishes loading another page on the icon's site", () => {
@@ -91,9 +90,9 @@ test("an icon stays when the tab finishes loading another page on the icon's sit
   const windowId = S().createWindow({ url: page });
   const tabId = S().windows[windowId].tabIds[0];
   S().updateTab(tabId, { url: page, favicon: "https://assets.nflxext.com/favicon.ico" });
-  noteIconPage(tabId);
+  noteIconPage(tabId, S().tabs[tabId].url);
   S().navigated(tabId, { url: "https://www.netflix.com/title/1", title: "" }, { isLoading: false });
-  dropOutlivedFavicon(tabId, "https://www.netflix.com/title/1", false);
+  assert.equal(shouldDropFavicon(S().tabs[tabId], "https://www.netflix.com/title/1", false), false);
   assert.equal(S().tabs[tabId].favicon, "https://assets.nflxext.com/favicon.ico");
 });
 

@@ -1,3 +1,4 @@
+import Foundation
 import SolaraModel
 
 extension Session {
@@ -43,7 +44,17 @@ extension Session {
       adoptedUrl: truthy(tab.adoptId) ? tab.url : nil, handoffSeq: handoff,
       webkitWithoutHandoff: engine == "webkit" && handoff == nil && !reestablished, wasNewTab: context.wasNewTab),
       live: PageLive(facts: facts), generation: generation, modelSerial: try nextPageModelSerial(),
-      wasNewTab: context.wasNewTab, newTabShownUrl: context.newTabShownUrl, contextRevision: context.revision)
+      wasNewTab: context.wasNewTab, newTabShownUrl: context.newTabShownUrl, contextRevision: context.revision,
+      faviconPage: tab.favicon == nil || tab.url.isEmpty ? nil : tab.url)
+  }
+
+  func faviconOutlivedPage(_ page: PageReportMemory, url: String, loading: Bool) -> Bool {
+    guard !loading, !url.isEmpty, let previous = page.faviconPage else { return false }
+    func site(_ url: String) -> String {
+      guard let range = url.range(of: #"^[a-z][\w+.-]*://[^/?#]*"#, options: [.regularExpression, .caseInsensitive]) else { return "" }
+      return url[range].lowercased()
+    }
+    return site(previous) != site(url)
   }
 
   public func preparePageIssue(id: String, report: JSONValue) throws -> PreparedPageIssue? {
@@ -226,7 +237,7 @@ extension Session {
 
   public func pageReport(_ id: String, _ report: JSONValue) throws {
     guard let type = report["type"]?.string else { throw CommandError("pageReport: missing type") }
-    let known: Set<String> = ["created", "context", "issued", "navigation", "media", "download", "discarded", "ready", "failed", "loadError", "moved", "restore", "advance", "gone", "keepAlive", "latch"]
+    let known: Set<String> = ["created", "context", "issued", "navigation", "favicon", "media", "download", "discarded", "ready", "failed", "loadError", "moved", "restore", "advance", "gone", "keepAlive", "latch"]
     guard known.contains(type) else { throw CommandError("pageReport: unknown type \(type)") }
     if type == "issued" { result = ["actions": [], "guard": .null] }
     let generation = report["generation"]?.string
@@ -295,6 +306,13 @@ extension Session {
     }
     guard let generation, var page = memory.pages[id], page.generation == generation else { return }
     guard let fence = memory.pageProducerFence[id], fence.generation == generation, !fence.retired else { return }
+    if type == "favicon" {
+      guard let source = report["source"]?.string, !source.isEmpty else { throw CommandError("pageReport: malformed favicon") }
+      page.faviconPage = tab.url.isEmpty ? nil : tab.url
+      memory.pages[id] = page
+      updateTab(id, TabUpdate(set: ["favicon": .string(source)]))
+      return
+    }
     if type == "keepAlive" || type == "latch" { applyPageFeed(id, report, type: type, page: &page); return }
     if type == "issued" {
       let prepared = try preparePageIssue(id: id, report: report)
@@ -316,7 +334,7 @@ extension Session {
     for effect in effects {
       applyPageLiveEffect(effect, report: report, page: &page)
       switch effect {
-      case .navigated(let url, let title, _, _, _):
+      case .navigated(let url, let title, let loading, _, _):
         if config.routesApplicationURLs, let destination = InternalPageDestination(url: url) {
           updateTab(id, TabUpdate(set: [
             "url": .string(destination.url), "title": .string(destination.page.title), "favicon": .null,
@@ -325,8 +343,13 @@ extension Session {
           memory.pages[id] = nil
           return
         }
+        var fields: JSONObject = ["url": .string(url), "title": .string(title)]
+        if tab.favicon != nil, faviconOutlivedPage(page, url: url, loading: loading) {
+          fields["favicon"] = .null
+          page.faviconPage = nil
+        }
         memory.pages[id] = page
-        updateTab(id, TabUpdate(set: ["url": .string(url), "title": .string(title)]), live: page.live.facts)
+        updateTab(id, TabUpdate(set: fields), live: page.live.facts)
       case .adoptNavigation(let url):
         memory.pages[id] = page
         updateTab(id, TabUpdate(set: ["navigation": navigationTo(url).jsonValue]), live: page.live.facts)
@@ -335,6 +358,7 @@ extension Session {
         updateTab(id, TabUpdate(set: ["url": .string(url)]), live: page.live.facts)
       case .closeTab: closeTab(id)
       case .resetToNewTab:
+        page.faviconPage = nil
         memory.pages[id] = page
         updateTab(id, TabUpdate(set: ["url": "", "title": "", "favicon": .null]), live: page.live.facts)
       default: break

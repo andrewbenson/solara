@@ -2,12 +2,13 @@ import SolaraModel
 import SolaraOmnibox
 
 public enum PageNativeReport {
-  public static let names: Set<String> = ["onNavigationChange", "onMedia", "onDownloadNavigation", "onDiscarded", "onReady", "onLoadError"]
+  public static let names: Set<String> = ["onNavigationChange", "onFavicon", "onMedia", "onDownloadNavigation", "onDiscarded", "onReady", "onLoadError"]
 
   public static func report(name: String, payload: JSONValue) -> JSONValue? {
     let type: String
     switch name {
     case "onNavigationChange": type = "navigation"
+    case "onFavicon": type = "favicon"
     case "onMedia": type = "media"
     case "onDownloadNavigation": type = "download"
     case "onDiscarded": type = "discarded"
@@ -16,6 +17,10 @@ public enum PageNativeReport {
     default: return nil
     }
     guard var fields = payload.object else { return nil }
+    if type == "favicon" {
+      guard let source = fields["url"]?.string, !source.isEmpty else { return nil }
+      return ["type": "favicon", "source": .string(source)]
+    }
     fields["type"] = .string(type)
     fields["generation"] = nil
     fields["registrationGeneration"] = nil

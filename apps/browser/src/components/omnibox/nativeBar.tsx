@@ -1,5 +1,5 @@
 import { displayUrl, type Suggestion } from "@solara/core";
-import { newTabSources, type NewTabMenuChoice } from "@solara/settings";
+import { onBookmarkProjectionChanged, newTabSources, type NewTabMenuChoice } from "@solara/settings";
 import { pickFiles, readDocument, showMenu, startDictation } from "@solara/shell";
 import { useEffect, useRef, useState, type RefObject } from "react";
 import { findNodeHandle } from "react-native";
@@ -7,11 +7,10 @@ import { claimFocusTag } from "../../lib/focusClaims";
 import { perfProbeEnabled } from "../../lib/perfProbe";
 import type { Theme } from "../../lib/theme";
 import { useBrowser } from "../../store/browser";
-import { activeTabId, bookmarkProfileId, engineProfile, viewTabIds } from "../../store/model";
+import { activeTabId, viewTabIds } from "../../store/model";
 import { journeyBarCommitted, journeyBarFocused, journeyKeystroke, journeyNavigate, journeySuggestions, journeyQueryInvalidated } from "../../lib/perfMarks";
 import { sampleOmniboxLatency } from "../../lib/perfMarks";
 import { currentBarActions } from "./actions";
-import { profileBookmarks } from "./profileBookmarks";
 import { useOmniboxDriver } from "./devDriver";
 import { runOmniboxFallback, type NativeActionOwnership } from "./nativeActions";
 import { openFromBar, switchFromBar, type Disposition } from "./open";
@@ -45,40 +44,21 @@ function debounced(run: () => void) {
 export function usePublishSources(windowId: string, profileId: string) {
   useEffect(() => {
     if (!profileId) return;
-    let bookmarks: unknown = null;
-    let bookmarkProfile = "";
     let actions = "";
     const offWorkspace = startWorkspaceSources(windowId, profileId, useBrowser, newTabSources);
-    const publishBookmarkIcons = debounced(() => {
-      const s = useBrowser.getState();
-      const icons: Record<string, string> = {};
-      for (const row of profileBookmarks(s.bookmarks, bookmarkProfileId(s, s.windows[windowId]))) {
-        if (row.favicon) icons[row.url] = row.favicon;
-      }
-      void newTabSources.setBookmarkIcons(profileId, engineProfile(bookmarkProfileId(s, s.windows[windowId])), icons);
-    });
     const publishActions = debounced(() => {
       const next = JSON.stringify(currentBarActions(windowId));
       if (next === actions) return;
       actions = next;
       void newTabSources.setActions(windowId, JSON.parse(next) as unknown[]);
     });
-    const check = () => {
-      const s = useBrowser.getState();
-      const bp = bookmarkProfileId(s, s.windows[windowId]);
-      if (s.bookmarks !== bookmarks || bp !== bookmarkProfile) {
-        bookmarks = s.bookmarks;
-        bookmarkProfile = bp;
-        publishBookmarkIcons.schedule();
-      }
-      publishActions.schedule();
-    };
-    check();
-    const off = useBrowser.subscribe(check);
+    publishActions.schedule();
+    const off = useBrowser.subscribe(publishActions.schedule);
+    const bookmarks = onBookmarkProjectionChanged(publishActions.schedule);
     return () => {
       off();
       offWorkspace();
-      publishBookmarkIcons.cancel();
+      bookmarks.remove();
       publishActions.cancel();
     };
   }, [windowId, profileId]);

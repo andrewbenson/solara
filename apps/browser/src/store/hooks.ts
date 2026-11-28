@@ -1,8 +1,7 @@
 import { createContext, useContext } from "react";
 import { useShallow } from "zustand/react/shallow";
-import { isBookmarked } from "./bookmarks";
 import { useBrowser } from "./browser";
-import { activeTabId, bookmarkProfileId, IDLE_LIVE, profileFor } from "./model";
+import { activeTabId, IDLE_LIVE, profileFor } from "./model";
 import type { Settings } from "./settings";
 import type { BrowserWindow, FindState, Profile, Tab, TabLive } from "./types";
 import { CLOSED_FIND, DEFAULT_WINDOW_UI } from "./ui";
@@ -78,8 +77,3 @@ export function useWindowUi() {
 }
 
 export const useSettings = <T>(select: (settings: Settings) => T): T => useBrowser((s) => select(s.settings));
-
-export function useIsBookmarked(url: string): boolean {
-  const id = useWindowId();
-  return useBrowser((s) => isBookmarked(s.bookmarks, bookmarkProfileId(s, s.windows[id]), url));
-}

@@ -39,7 +39,9 @@ final class ProfilesAdapter: ProfilesServices {
   }
 
   func stats(profileId: String) -> ProfileStats {
-    statsByProfile[profileId] ?? ProfileStats(historyPages: 0, bookmarks: 0)
+    let engine = NativeStoreHandle.store?.displayState.engineProfile(profileId) ?? (profileId == "default" ? "" : profileId)
+    return ProfileStats(historyPages: statsByProfile[profileId]?.historyPages ?? 0,
+      bookmarks: NativeHistoryCatalog.catalog.bookmarks(engineProfile: engine).urlCount)
   }
 
   func createProfile(name: String, color: ProfileColorValue, shareWith: String?) -> String {
@@ -118,7 +120,8 @@ final class ProfilesAdapter: ProfilesServices {
   }
 
   func pruneProfileFavicons(profileId: String) {
-    SettingsJS.shared.fire("profiles.pruneFavicons", profileId)
+    let profile = NativeStoreHandle.store?.displayState.engineProfile(profileId) ?? (profileId == "default" ? "" : profileId)
+    NativeHistoryCatalog.catalog.favicons?.invalidate(engineProfile: profile)
   }
 
   func clearBrowsingData(engineProfile: String, kinds: [BrowsingDataKind], since: Date?) async {
@@ -195,7 +198,7 @@ final class ProfilesAdapter: ProfilesServices {
     var result: [String: ProfileStats] = [:]
     for (id, entry) in dict {
       guard let entry = entry as? [String: Any] else { continue }
-      result[id] = ProfileStats(historyPages: entry.int("historyPages") ?? 0, bookmarks: entry.int("bookmarks") ?? 0)
+      result[id] = ProfileStats(historyPages: entry.int("historyPages") ?? 0, bookmarks: 0)
     }
     return result
   }

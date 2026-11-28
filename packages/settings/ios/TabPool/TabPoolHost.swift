@@ -559,6 +559,28 @@ final class TabPoolHost {
       }
       guard let data = try? JSONSerialization.data(withJSONObject: payload), let value = try? JSONValue.parse(data),
         let sequence = issuer.reserveEvent(binding, name: name, payload: value) else { return false }
+      if name == "onFavicon", let source = payload["url"] as? String, let page = token.page,
+        let tab = issuer.store.state.tabs[tabId], !tab.url.isEmpty, tab.favicon == source {
+        let state = issuer.store.state
+        let profile = state.engineProfile(tab.profileId)
+        let dark = NativeLayoutAppearance(state: state, profileId: tab.profileId, incognito: Ids.isIncognitoProfile(tab.profileId)).dark
+        issuer.afterIngress { [weak page] in
+          Task { @MainActor [weak page] in
+            guard page != nil, issuer.isCurrent(binding),
+              let current = issuer.store.displayState.tabs[tabId], current.url == tab.url, current.favicon == source else { return }
+            await NativeHistoryCatalog.catalog.favicons?.notePageIcon(page: tab.url, source: source, engineProfile: profile, dark: dark) { [weak page] in
+              await withCheckedContinuation { continuation in
+                guard let page else { return continuation.resume(returning: nil) }
+                PageCalls.run(page.view, "downloadFavicon", [source], resolve: { result in
+                  let uri = (result as? [String: Any])?["uri"] as? String
+                  let png = uri?.split(separator: ",", maxSplits: 1).last
+                  continuation.resume(returning: png.flatMap { Data(base64Encoded: String($0)) })
+                }, reject: { _, _ in continuation.resume(returning: nil) })
+              }
+            }
+          }
+        }
+      }
       issuer.afterIngress { [weak self] in self?.emitEvent(binding, name: name, payload: payload, eventSeq: sequence) }
       return true
     }

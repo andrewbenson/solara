@@ -53,6 +53,9 @@ type NativeSettingsModule = {
   liveStart(): Promise<void>;
   liveMeetingBrowser(snapshotJSON: string): Promise<void>;
   libraryCommand?(kind: string, engineProfile: string, payload: Record<string, unknown>): Promise<unknown>;
+  faviconURI?(page: string, source: string | null, profileId: string, dark: boolean): Promise<string | null>;
+  cachedFaviconURIs?(tabIds: string[]): Record<string, string>;
+  isBookmarked?(url: string, windowId: string): boolean;
   reply(id: number, resultJSON: string | null, error: string | null): Promise<void>;
   publish(topic: string, json: string): Promise<void>;
   addListener(event: "onEngineBackChanged", listener: () => void): EventSubscription;
@@ -61,6 +64,7 @@ type NativeSettingsModule = {
   addListener(event: "onAppIntegrationPresentation", listener: (event: AppIntegrationPresentation) => void): EventSubscription;
   addListener(event: "onBookmarkProjectionChanged", listener: (event: Record<string, never>) => void): EventSubscription;
   addListener(event: "onBookmarkWriterState", listener: (state: BookmarkWriterState) => void): EventSubscription;
+  addListener(event: "onFaviconInvalidated", listener: () => void): EventSubscription;
   addListener(event: "onSettingsCall", listener: (call: SettingsCall) => void): EventSubscription;
   addListener(event: "onLiveReplica", listener: (replica: LiveReplica) => void): EventSubscription;
   addListener(event: "onLiveCloseGroup", listener: (value: { groupId: string }) => void): EventSubscription;
@@ -164,6 +168,16 @@ export const navigateNativeSettings = (pane: string | null, profileId: string | 
 export const focusNativeSettingsSearch = () => native?.focusSearch().catch(() => {});
 
 export const startNativeHistoryCatalog = (profiles: string[]) => native?.startHistoryCatalog?.(profiles).catch(() => {});
+
+export const nativeFaviconURI = (page: string, source: string | null, profileId: string, dark: boolean) =>
+  native?.faviconURI?.(page, source, profileId, dark);
+
+export const nativeCachedFaviconURIs = (tabIds: string[]) => native?.cachedFaviconURIs?.(tabIds) ?? {};
+
+export const onNativeFaviconInvalidated = (listener: () => void) =>
+  native?.addListener("onFaviconInvalidated", listener);
+
+export const nativeIsBookmarked = (url: string, windowId: string) => native?.isBookmarked?.(url, windowId);
 
 const unavailableBookmarks = (reason: string): BookmarkWriterState => ({ state: "read-only-unavailable", reason });
 

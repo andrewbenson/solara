@@ -16,16 +16,27 @@ public final class SettingsJS {
   private var nextId = 0
   #if DEBUG
   private var importReplyNames: [Int: String] = [:]
-  private var heldImportReply: (Int, String?, String?)?
-  private var releasingImportReply = false
-  var devImportReplyHeld: Bool { heldImportReply != nil }
+  private var heldImportAdoption: (UUID, CheckedContinuation<Void, Never>)?
+  var devImportReplyHeld: Bool { heldImportAdoption != nil }
+
+  func devHoldImportAdoption() async {
+    let environment = ProcessInfo.processInfo.environment
+    guard environment["SOLARA_IMPORT_TEST_ACK"] == "holdAdoption", !(environment["SOLARA_DATA_DIR"] ?? "").isEmpty else { return }
+    let id = UUID()
+    devReleaseImportReply()
+    await withCheckedContinuation { continuation in
+      heldImportAdoption = (id, continuation)
+      DispatchQueue.main.asyncAfter(deadline: .now() + 10) { [weak self] in
+        guard self?.heldImportAdoption?.0 == id else { return }
+        self?.devReleaseImportReply()
+      }
+    }
+  }
 
   func devReleaseImportReply() {
-    guard let (id, result, error) = heldImportReply else { return }
-    heldImportReply = nil
-    releasingImportReply = true
-    reply(id, resultJSON: result, error: error)
-    releasingImportReply = false
+    let held = heldImportAdoption
+    heldImportAdoption = nil
+    held?.1.resume()
   }
   #endif
   private var topics: [String: [UUID: (Any?) -> Void]] = [:]
@@ -70,12 +81,8 @@ public final class SettingsJS {
   func reply(_ id: Int, resultJSON: String?, error: String?) {
     #if DEBUG
     let environment = ProcessInfo.processInfo.environment
-    if !releasingImportReply, !(environment["SOLARA_DATA_DIR"] ?? "").isEmpty {
+    if !(environment["SOLARA_DATA_DIR"] ?? "").isEmpty {
       let name = importReplyNames[id]
-      if environment["SOLARA_IMPORT_TEST_ACK"] == "holdAdoption", name == "replica.adoptFavicons" {
-        heldImportReply = (id, resultJSON, error)
-        return
-      }
       if environment["SOLARA_IMPORT_TEST_ACK"] == "rejectTheme", name == "import.adoptProfileTheme" {
         importReplyNames[id] = nil
         pending.removeValue(forKey: id)?.resume(returning: false)
@@ -96,7 +103,7 @@ public final class SettingsJS {
     pending = [:]
     #if DEBUG
     importReplyNames = [:]
-    heldImportReply = nil
+    devReleaseImportReply()
     #endif
     for continuation in waiting.values { continuation.resume(throwing: SettingsJSError(description: reason)) }
   }

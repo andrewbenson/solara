@@ -29,7 +29,7 @@ const { usePageProgress, setPageProgress } = await import("./pageProgress.ts");
 const { useSidebarUi, setSidebarUi } = await import("../components/sidebar/state.ts");
 const { useIsSleeping, noteDiscarded, noteReady } = await import("../lib/tabLifecycle.ts");
 const { usePage, usePages, patchPage } = await import("../components/layout/pageState.ts");
-const { useFavicons, useFavicon, useFaviconTheme, useAppearanceDark, pageKey } = await import("../lib/favicons.ts");
+const { useFavicons, useFavicon, useFaviconTheme, pageKey } = await import("../lib/favicons.ts");
 const { engineProfile } = await import("./model.ts");
 
 const S = () => useBrowser.getState();
@@ -205,16 +205,15 @@ test("page progress: a bar mounted mid-load starts at the current value, follows
 const key = engineProfile("default");
 const setIcons = (fn) =>
   useFavicons.setState((f) => {
-    const icons = f.profiles[key] ?? { pages: {}, srcs: {}, appearances: {} };
+    const icons = f.profiles[key] ?? { pages: {}, srcs: {} };
     return { ...f, profiles: { ...f.profiles, [key]: fn(icons) } };
   });
 const icon = (url, src) =>
   mount(({ url, src }) => {
-    useAppearanceDark();
     return { resolved: useFavicon(url, src, "default"), theme: useFaviconTheme(url, src, "default") };
   }, { props: { url, src } });
 
-test("an icon: arrives, changes, follows its page and its icon URL, its light/dark pair and theme, and goes", () => {
+test("an icon: arrives, changes, follows its page and its icon URL, its shape theme, and goes", () => {
   S().hydrate({});
   useBrowser.setState((s) => ({ ui: { ...s.ui, appDark: false } }));
   useFavicons.setState({ profiles: {}, themes: {} });
@@ -230,13 +229,7 @@ test("an icon: arrives, changes, follows its page and its icon URL, its light/da
   i.rerender({ url: page, src: "https://icons.example/b.ico" });
   setIcons((x) => ({ ...x, srcs: { ...x.srcs, "https://icons.example/b.ico": "file:///b.png" } }));
   assert.equal(i.value.resolved?.uri, "file:///b.png", "a new icon URL's image");
-  setIcons((x) => ({ ...x, appearances: { ...x.appearances, [pageKey(page)]: ["file:///light.png", "file:///dark.png"] } }));
-  assert.equal(i.value.resolved?.uri, "file:///light.png");
-  useBrowser.setState((s) => ({ ui: { ...s.ui, appDark: true } }));
-  assert.equal(i.value.resolved?.uri, "file:///dark.png", "dark appearance");
-  useBrowser.setState((s) => ({ ui: { ...s.ui, appDark: false } }));
-  assert.equal(i.value.resolved?.uri, "file:///light.png", "and back");
-  useFavicons.setState((f) => ({ ...f, profiles: { ...f.profiles, [key]: { pages: {}, srcs: {}, appearances: {} } } }));
+  useFavicons.setState((f) => ({ ...f, profiles: { ...f.profiles, [key]: { pages: {}, srcs: {} } } }));
   assert.equal(i.value.resolved, null, "gone");
   i.unmount();
 });

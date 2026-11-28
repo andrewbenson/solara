@@ -189,14 +189,23 @@ extension Session {
         memory.closingWindowUndos[windowId] = undo
         return
       }
-      let allowed: Set<String> = ["navigation", "media", "download", "discarded", "ready", "failed", "loadError", "moved", "advance"]
+      let allowed: Set<String> = ["navigation", "favicon", "media", "download", "discarded", "ready", "failed", "loadError", "moved", "advance"]
       guard allowed.contains(type), var seed = undo.heldPages[id], seed.generation == generation else { return }
+      if type == "favicon" {
+        guard let source = report["source"]?.string, !source.isEmpty else { throw CommandError("pageReport: malformed favicon") }
+        seed.tab.favicon = source
+        seed.page.faviconPage = seed.tab.url.isEmpty ? nil : seed.tab.url
+      }
       let others = undo.before.windows[windowId]?.tabIds.contains { $0 != id && undo.before.tabs[$0]?.profileId == seed.tab.profileId } ?? false
       let effects = try interpretPageReport(report, type: type, tab: seed.tab, page: &seed.page, hasOtherProfileTab: others, heldNavigationURL: seed.adoptNavigationURL)
       for effect in effects {
         applyPageLiveEffect(effect, report: report, page: &seed.page)
         switch effect {
-        case .navigated(let url, let title, _, _, _):
+        case .navigated(let url, let title, let loading, _, _):
+          if faviconOutlivedPage(seed.page, url: url, loading: loading) {
+            seed.tab.favicon = nil
+            seed.page.faviconPage = nil
+          }
           updateHeldPageURL(url, seed: &seed, before: undo.before)
           seed.tab.title = title
         case .adoptNavigation(let url):
@@ -207,6 +216,7 @@ extension Session {
           updateHeldPageURL("", seed: &seed, before: undo.before)
           seed.tab.title = ""
           seed.tab.favicon = nil
+          seed.page.faviconPage = nil
         case .closeTab: seed.restorable = false
         default: break
         }

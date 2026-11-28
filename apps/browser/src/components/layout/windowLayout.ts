@@ -47,15 +47,17 @@ export function useWindowLayoutPreferences() {
     topTabs: value.topTabs,
     sidebarOpen: value.sidebarOpen,
     sidebarWidth: value.sidebarWidth,
+    savedSidebarWidth: value.savedSidebarWidth,
     addressBar: value.addressBar && (value.sidebarOpen || switchOn("sidebarSlide")),
   }));
   const fallback = useWindowReplicaFallback(windowId, (s) => ({
     topTabs: (s.windows[windowId]?.tabLayout ?? s.settings.tabLayout) === "top",
     sidebarOpen: s.windows[windowId]?.sidebarOpen ?? true,
     sidebarWidth: sidebarWidthOf(s.windows[windowId], s.settings, nativeSidebarShell(windowId)),
+    savedSidebarWidth: sidebarWidthOf(s.windows[windowId], s.settings, false),
     addressBar: addressBarInSidebar(s, windowId),
   }));
-  return native ?? fallback ?? { topTabs: false, sidebarOpen: true, sidebarWidth: layout.sidebarWidth, addressBar: false };
+  return native ?? fallback ?? { topTabs: false, sidebarOpen: true, sidebarWidth: layout.sidebarWidth, savedSidebarWidth: layout.sidebarWidth, addressBar: false };
 }
 
 export function useWindowReplicaFallback<T>(windowId: string, select: (state: BrowserState) => T): T | null {

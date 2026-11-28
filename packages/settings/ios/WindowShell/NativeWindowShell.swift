@@ -202,7 +202,8 @@ final class ShellHost {
 
   private func preferencesJSON(_ preferences: WindowLayoutPreferences, activeTabId: String?, paneTabIds: [String], split: JSONValue, peekTabId: String?) -> String? {
     NativeTopStrip.json(["generation": windowGeneration, "revision": layoutRevision, "topTabs": preferences.topTabs,
-      "sidebarOpen": preferences.sidebarOpen, "sidebarWidth": preferences.sidebarWidth, "addressBar": preferences.addressBarInSidebar,
+      "sidebarOpen": preferences.sidebarOpen, "sidebarWidth": preferences.sidebarWidth,
+      "savedSidebarWidth": preferences.savedSidebarWidth, "addressBar": preferences.addressBarInSidebar,
       "activeTabId": activeTabId.map { $0 as Any } ?? NSNull(), "paneTabIds": paneTabIds,
       "split": split.foundation, "peekTabId": peekTabId.map { $0 as Any } ?? NSNull()])
   }

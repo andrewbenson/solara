@@ -53,6 +53,22 @@ struct WindowLayoutContractTests {
     #expect(!WindowLayoutPreferences(window: window, settings: state.settings).addressBarInSidebar)
   }
 
+  @Test func resizingStartsFromSavedWidthInBothLayouts() throws {
+    var state = try projectionState()
+    state.settings["sidebarWidth"] = 212
+    var window = try #require(state.windows["w"])
+    window.sidebarIconsOnly = true
+
+    let native = WindowLayoutPreferences(window: window, settings: state.settings)
+    #expect(native.sidebarWidth == SidebarRail.width)
+    #expect(native.savedSidebarWidth == 212)
+
+    window.sidebarWidth = 247
+    let legacy = WindowLayoutPreferences(window: window, settings: state.settings, legacyGuest: true)
+    #expect(legacy.sidebarWidth == 84)
+    #expect(legacy.savedSidebarWidth == 247)
+  }
+
   @Test(arguments: [false, true])
   func closedRightSidebarPreservesItsSideAndHiddenFrame(rail: Bool) throws {
     var state = try projectionState()

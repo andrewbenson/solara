@@ -31,10 +31,6 @@ export function sidePanelWidthOf(window: SidebarWindow, settings: Pick<Settings,
   return window?.sidePanelWidth ?? settings.extensionSidePanelWidth ?? SIDE_PANEL_DEFAULT_WIDTH;
 }
 
-export function useEffectiveSidebarWidth(windowId: string, nativeShell: boolean): number {
-  return useBrowser((s) => sidebarWidthOf(s.windows[windowId], s.settings, nativeShell));
-}
-
 export function setWindowSidebar(windowId: string, patch: WindowSidebarPatch) {
   if (nativeOwnsWorkspace()) return nativeWrite(encodeCommand("setWindowSidebar", [windowId, patch]));
   return writeState(useBrowser, (s) => {
@@ -72,7 +68,7 @@ export function commitSidebarWidth(windowId: string, width: number, nativeShell 
 
 export function sidebarPositionSupported(windowId?: string): boolean {
   const app = requireOptionalNativeModule<{ apiVersion?: number; sidebarPosition?: boolean }>("SolaraApp");
-  return app?.apiVersion === 113 && app.sidebarPosition === true && nativeOwnsWorkspace() && (windowId === undefined || windowNativeLayout(windowId));
+  return app?.apiVersion === 114 && app.sidebarPosition === true && nativeOwnsWorkspace() && (windowId === undefined || windowNativeLayout(windowId));
 }
 
 export function sidebarPositionOf(window: Pick<BrowserWindow, "sidebarPosition"> | undefined, settings: Pick<Settings, "sidebarPosition" | "fileOwn">): "left" | "right" {

@@ -54,6 +54,7 @@ export type WindowLayoutPreferences = {
   topTabs: boolean;
   sidebarOpen: boolean;
   sidebarWidth: number;
+  savedSidebarWidth: number;
   addressBar: boolean;
   activeTabId: string | null;
   paneTabIds: string[];

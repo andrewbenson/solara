@@ -24,16 +24,17 @@ public struct WindowLayoutPreferences: Equatable, Sendable {
   public let topTabs: Bool
   public let sidebarOpen: Bool
   public let sidebarWidth: Double
+  public let savedSidebarWidth: Double
   public let sidebarRail: Bool
   public let addressBarInSidebar: Bool
 
   public init(window: BrowserWindow, settings: Settings, nativeRail: Bool = true, legacyGuest: Bool = false) {
     topTabs = (window.tabLayout ?? settings.string("tabLayout")) == "top"
     sidebarOpen = window.sidebarOpen
-    let savedWidth = window.effectiveSidebarWidth(settings)
+    savedSidebarWidth = window.effectiveSidebarWidth(settings)
     let iconsOnly = nativeRail && window.effectiveSidebarIconsOnly(settings)
-    sidebarRail = !topTabs && nativeRail && (iconsOnly || SidebarRail.contains(width: savedWidth))
-    sidebarWidth = legacyGuest ? (iconsOnly ? 84 : savedWidth) : (sidebarRail ? SidebarRail.width : savedWidth)
+    sidebarRail = !topTabs && nativeRail && (iconsOnly || SidebarRail.contains(width: savedSidebarWidth))
+    sidebarWidth = legacyGuest ? (iconsOnly ? 84 : savedSidebarWidth) : (sidebarRail ? SidebarRail.width : savedSidebarWidth)
     addressBarInSidebar = !topTabs && (!sidebarRail || !sidebarOpen) && settings.string("addressBar") == "sidebar"
   }
 }

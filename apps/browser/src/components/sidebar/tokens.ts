@@ -1,9 +1,5 @@
-import { nativeSidebarShell } from "./sidebarShell";
 import { useTheme } from "../../lib/theme";
-import { useBrowser } from "../../store/browser";
-import { sidebarWidthOf } from "../../store/sidebarRail";
 import type { GroupColor } from "../../store/types";
-import { useSidebarUi } from "./state";
 
 const DARK = {
   groupFill: "rgba(255,255,255,0.1)",
@@ -120,9 +116,3 @@ export function withAlpha(hex: string, alpha: number): string {
 
 export const SIDEBAR_MIN_WIDTH = 160;
 export const SIDEBAR_MAX_WIDTH = 400;
-
-export function useSidebarWidth(windowId: string): number {
-  const saved = useBrowser((s) => sidebarWidthOf(s.windows[windowId], s.settings, nativeSidebarShell(windowId)));
-  const dragging = useSidebarUi((u) => u.dragWidth[windowId]);
-  return dragging ?? saved;
-}

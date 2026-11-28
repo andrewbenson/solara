@@ -63,9 +63,7 @@ try {
   assert.deepEqual(titles(changed).slice(3, 6), ["Recently Closed", reclosed, "Window (1 Tab)"]);
   assert.equal(changed.find(({ title }) => title === "Show History…").key, "y");
   if (mode !== "--baseline") {
-    await app.eval(`
-      return expo.modules.SolaraShell.setMenuState({ recentlyClosed: [{ id: "stale", title: "Stale JS Row" }] });
-    `);
+    assert.equal(await app.eval('return typeof expo.modules.SolaraShell.setMenuState;'), "undefined");
     assert.deepEqual(titles(await menu()), titles(changed));
   }
   assert.deepEqual(await app.eval("return ac.commandHandlers.stats();"), initial);

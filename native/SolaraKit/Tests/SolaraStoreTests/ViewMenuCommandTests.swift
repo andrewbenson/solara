@@ -47,6 +47,32 @@ import Testing
     #expect(ViewMenuCommand.row("toggleAddressBar", arg: nil, windowId: "s", state: state)?.enabled == false)
   }
 
+  @Test func anEmptySenderIDStillAllowsWindowlessViewSettings() throws {
+    let store = makeStore(BrowserState(settings: Settings.hydrated(from: nil)))
+    let before = store.state.settings.bool("showFullUrl")
+    try run("toggleFullUrl", windowId: "", store: store)
+    #expect(store.state.settings.bool("showFullUrl") == !before)
+  }
+
+  @Test func sidebarRailCommandsTargetOnlyEligibleWindows() throws {
+    let store = makeStore(withSmall(fixture()))
+    try run("setSidebarPosition", arg: "right", store: store)
+    #expect(store.state.windows["w"]?.effectiveSidebarPosition(store.state.settings) == "right")
+    try run("toggleSidebarIconsOnly", store: store)
+    #expect(store.state.windows["w"]?.effectiveSidebarIconsOnly(store.state.settings) == true)
+    #expect(try run("setSidebarPosition", arg: "left", windowId: "s", store: store).commands.isEmpty)
+    #expect(try run("toggleSidebarIconsOnly", windowId: "stale", store: store).commands.isEmpty)
+    #expect(store.state.windows["w"]?.effectiveSidebarIconsOnly(store.state.settings) == true)
+  }
+
+  @Test func closingInvokerCannotRedirectAViewAction() throws {
+    let store = makeStore(withSmall(fixture()))
+    try store.dispatch(Command("setWindowClosing", ["s", true]))
+    let plan = try run("toggleSidebar", windowId: "s", store: store)
+    #expect(plan.commands.isEmpty && plan.focusWindow == nil)
+    #expect(store.state.windows["w"]?.sidebarOpen == true)
+  }
+
   @Test func onlyAnInternalPageReachedFromNewTabOffersBackToNewTab() throws {
     var state = fixture()
     state.tabs["a"]?.url = ""

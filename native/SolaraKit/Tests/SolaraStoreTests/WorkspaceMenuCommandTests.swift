@@ -23,6 +23,34 @@ import Testing
     return plan
   }
 
+  @Test func aLittleWindowStartsWithTheCommandBarOpen() throws {
+    let store = makeStore(fixture())
+    let plan = try run("newLittleSolara", arg: "default", store: store)
+    #expect(!plan.commands.isEmpty)
+    let little = try #require(store.state.windows.values.first { $0.isSmall })
+    #expect(little.profileId == "default")
+    #expect(store.state.windowUi[little.id]?.panelOpen == true)
+  }
+
+  @Test(arguments: ["newTab", "closeTab", "selectTab", "restoreClosed"])
+  func staleInvokerCannotMutateTheFocusedWindow(command: String) throws {
+    let store = makeStore(fixture())
+    let before = store.state
+    let plan = try run(command, arg: "1", windowId: "removed", store: store)
+    #expect(plan.commands.isEmpty && plan.close == nil)
+    #expect(store.state == before)
+  }
+
+  @Test func movingAPinnedRowToTopAppsUsesTheActiveTab() throws {
+    let store = makeStore(fixture())
+    try store.dispatch(Command("pinTabs", [["b"], true, true]))
+    #expect(store.state.tabs["b"]?.isPinnedRow == true)
+    try run("togglePin", arg: "tile", store: store)
+    #expect(store.state.tabs["b"]?.pinned == true)
+    #expect(store.state.tabs["b"]?.isPinnedRow == false)
+    #expect(store.state.tabs["a"]?.pinned == false)
+  }
+
   @Test func newTabUsesTheCanonicalStoreAction() throws {
     let store = makeStore(fixture())
     let plan = try run("newTab", store: store)

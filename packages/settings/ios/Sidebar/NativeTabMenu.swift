@@ -443,6 +443,28 @@ enum NativeSidebarUndo {
   private static var serial = -300_000
   private static var watches: [String: (store: Store, subscription: Int, id: Int)] = [:]
 
+  static func tidy(windowId: String, profileId: String? = nil, store: Store) {
+    guard store.state.windows[windowId] != nil, !store.memory.closingWindows.contains(windowId),
+      let result = (try? store.dispatch(Command("tidyPins", [.string(windowId), JSONValue(profileId)]), origin: .native))?.result,
+      let tidied = try? TidiedPins(json: result) else { return }
+    FrameUpdates.flush()
+    func count(_ number: Int, _ noun: String) -> String { "\(number) \(noun)\(number == 1 ? "" : "s")" }
+    let pins = tidied.pins, folders = tidied.folders, duplicates = tidied.duplicates
+    let closed = duplicates > 0 ? "Closed \(count(duplicates, pins > 0 ? "duplicate" : "Duplicate Pin"))" : nil
+    let title = pins > 0 ? "Tidied \(count(pins, "Pin")) into \(count(folders, "Folder"))" : closed ?? ""
+    guard !title.isEmpty else { return }
+    stop(windowId)
+    serial -= 1
+    let id = serial
+    let generation = NativeStoreHandle.ownershipGeneration
+    NativeSplitChrome.showNativeToast(.init(id: id, title: title, message: pins > 0 ? closed : nil, icon: "sparkles", action: "Undo"), windowId: windowId) { [weak store] in
+      guard let store, WorkspaceWrites.store === store, NativeStoreHandle.ownershipGeneration == generation,
+        store.state.windows[windowId] != nil, !store.memory.closingWindows.contains(windowId) else { return }
+      _ = try? store.dispatch(Command("untidyPins", [result]), origin: .native)
+      FrameUpdates.flush()
+    }
+  }
+
   static func clear(windowId: String, store: Store) {
     guard store.state.windows[windowId] != nil,
       let cleared = (try? store.dispatch(Command("clearUnpinnedTabs", [.string(windowId)]), origin: .native))?.result,

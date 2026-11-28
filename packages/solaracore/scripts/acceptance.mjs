@@ -8420,7 +8420,7 @@ try {
 
   await check("quit-js-hung", async () => {
     const windowId = await appUp("app-quit-hung.out.log");
-    await evalApp(`ac.store.getState().updateSettings({ warnBeforeQuitting: false }); return expo.modules.SolaraShell.setMenuState({ warnBeforeQuitting: false })`);
+    await evalApp(`ac.store.getState().updateSettings({ warnBeforeQuitting: false });`);
     const from = appLog.join().length;
     const started = Date.now();
     void instance.eval(`ac.shell.devKeyEquivalent("${windowId}", { key: "q", keyCode: 12, modifiers: ["command"], focus: "window" });

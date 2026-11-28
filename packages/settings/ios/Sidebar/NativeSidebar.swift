@@ -396,9 +396,7 @@ final class SidebarHost {
     case .folderMenu(let folderId):
       if !NativeTileFolders.folderMenu(windowId: windowId, folderId: folderId) { NSLog("[sidebar] folderMenu refused: native store unavailable, dispatch failed or target stale") }
     case .tidy:
-      if let result = run("tidyPins", [.string(windowId), JSONValue(hostState?.profileId)]) {
-        call("tidied", "", ["result": result.text()])
-      }
+      if let store = WorkspaceWrites.store { NativeSidebarUndo.tidy(windowId: windowId, profileId: hostState?.profileId, store: store) }
     case .clear:
       if let store = WorkspaceWrites.store { NativeSidebarUndo.clear(windowId: windowId, store: store) }
     case .cleanUp(let choice):
@@ -422,18 +420,6 @@ final class SidebarHost {
       }
     case .live(let action, let folderId, let id, let meta): NativeSidebarLive.action(action, windowId: windowId, folderId: folderId, id: id, background: meta)
     case .media(let tabId, let action): NativeMediaStack.perform(windowId: windowId, tabId: tabId, action: action)
-    }
-  }
-
-  private func run(_ name: String, _ args: [JSONValue]) -> JSONValue? {
-    guard let store = WorkspaceWrites.store, store.state.windows[windowId] != nil else { return nil }
-    do {
-      let result = try store.dispatch(Command(name, args), origin: .native).result
-      FrameUpdates.flush()
-      return result == .null ? nil : result
-    } catch {
-      NSLog("[sidebar] %@ refused: %@", name, String(describing: error))
-      return nil
     }
   }
 

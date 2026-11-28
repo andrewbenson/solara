@@ -142,7 +142,6 @@ export type AppEvent =
   | { type: "willQuit" }
   | { type: "quitCancelled" }
   | { type: "appearance"; dark: boolean }
-  | { type: "quitWarningSuppressed" }
   | { type: "resignActive" }
   | { type: "screenLocked" }
   | { type: "switcherReleased" }
@@ -188,13 +187,6 @@ export type OpenWindowOptions = {
   chromeWindow?: string;
   pointer?: [number, number];
   animated?: boolean;
-};
-
-export type MenuState = {
-  warnBeforeQuitting: boolean;
-  warnBeforeClosingWindow?: boolean;
-  undoReopensClosedTab?: boolean;
-  downloadsInProgress?: number;
 };
 
 export type ConfirmOptions = {
@@ -258,7 +250,6 @@ export type ShellNative = {
   windowIds(): Promise<string[]>;
   setAppearance(mode: "auto" | "light" | "dark"): Promise<void>;
   isDarkAppearance(): Promise<boolean>;
-  setMenuState(state: MenuState): Promise<void>;
   replyToTerminate(ok: boolean): Promise<void>;
   confirm(options: ConfirmOptions): Promise<{ confirmed: boolean; suppressed: boolean }>;
   prompt(options: PromptOptions): Promise<string | null>;
@@ -363,7 +354,6 @@ export const windowIds = () => Shell.windowIds();
 export const setAppearance = (mode: "auto" | "light" | "dark") => Shell.setAppearance(mode);
 export const isDarkAppearance = () => Shell.isDarkAppearance();
 
-export const setMenuState = (state: MenuState) => Shell.setMenuState(state);
 export const replyToTerminate = (ok: boolean) => Shell.replyToTerminate(ok);
 
 export const confirm = (options: ConfirmOptions) => Shell.confirm(options);

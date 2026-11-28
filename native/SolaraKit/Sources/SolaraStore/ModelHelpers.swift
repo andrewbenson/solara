@@ -98,9 +98,9 @@ public extension BrowserState {
     activeTabId(windowId).flatMap { tabs[$0] }
   }
 
-  func resolveWindowId(_ id: String?) -> String? {
-    if let id, windows[id] != nil { return id }
-    let main = { (w: String) in windows[w].map { !$0.isSmall } ?? false }
+  func resolveWindowId(_ id: String?, excluding closing: Set<String> = []) -> String? {
+    if let id, windows[id] != nil, !closing.contains(id) { return id }
+    let main = { (w: String) in !closing.contains(w) && self.windows[w]?.isSmall == false }
     return ui.focusOrder.first(where: main) ?? windowOrder.first(where: main)
   }
 

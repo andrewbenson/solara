@@ -4,7 +4,7 @@ import { test } from "node:test";
 import ts from "typescript";
 
 const routes = [
-  ["./NativeSidebar.tsx", "sidebar.action", ["click", "close", "middleClick", "rename", "backToPinned", "tileDoubleClick", "toggleMute", "groupMenu", "toggleGroup", "closeGroup", "folder", "folderMenu", "scrolled", "renamed", "tidy", "clear", "cleanUp", "tabMenu", "tabMenuChoice", "tabMenuSelectionChoice", "groupMenuChoice", "sidebarMenu", "overflowMenu", "live", "removedPin", "cleared", "clicked", "newTab"], ["handled", "tidied"]],
+  ["./NativeSidebar.tsx", "sidebar.action", ["click", "close", "middleClick", "rename", "backToPinned", "tileDoubleClick", "toggleMute", "groupMenu", "toggleGroup", "closeGroup", "folder", "folderMenu", "scrolled", "renamed", "tidy", "clear", "cleanUp", "tabMenu", "tabMenuChoice", "tabMenuSelectionChoice", "groupMenuChoice", "sidebarMenu", "overflowMenu", "live", "removedPin", "cleared", "clicked", "newTab", "tidied"], ["handled"]],
   ["./NativeSidebar.tsx", "SHELL_TOPIC", ["drop", "toggleDownloads", "commitWidth", "iconsOnly", "profileMenu", "manageProfiles"], ["liveWidth"]],
   ["../layout/NativeTopStrip.tsx", "topStrip.peek.action", ["drop", "profileMenu", "toggleDownloads"], ["live"]],
 ];

@@ -62,6 +62,16 @@ import Testing
     #expect(route.json == c["route"])
   }
 
+  @Test func aWindowlessCommandSkipsAClosingWindow() {
+    var state = BrowserState()
+    state.windows["closing"] = BrowserWindow(id: "closing", profileId: "default", incognito: false, frame: nil, createdAt: 0)
+    state.windows["open"] = BrowserWindow(id: "open", profileId: "default", incognito: false, frame: nil, createdAt: 1)
+    state.windowOrder = ["closing", "open"]
+    state.ui.focusOrder = state.windowOrder
+    let route = CommandRoute.resolve("reload", windowId: nil, state: state, closing: ["closing"])
+    #expect(route.windowId == "open")
+  }
+
   @Test func theFixtureNamesItsRecorder() throws {
     let provenance = try #require(Self.fixture()["provenance"]?.object)
     #expect(provenance["recorder"]?.string == "apps/browser/scripts/native/record-command-routes.mjs")

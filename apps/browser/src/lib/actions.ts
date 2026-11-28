@@ -5,12 +5,8 @@ import "../components/layout/profilePager";
 import { profileNames, requestCreateProfile, type CreateProfilePreset } from "../components/profiles/CreateProfile";
 import { useBrowser, type CreateWindowOptions } from "../store/browser";
 import { nativeOwnsWorkspace } from "../store/nativeStore";
-import { closeTogether } from "../store/closedTogether";
-import { rootOf } from "../store/groups";
-import { closesWindow, engineProfile, isIncognitoProfile, plural, resolveWindowId } from "../store/model";
-import { groupLabel } from "../store/organize";
+import { closesWindow, engineProfile, isIncognitoProfile, resolveWindowId } from "../store/model";
 import { leavesEmptyWindow, windowClosingWithTab } from "../store/newTabBar";
-import { removeTabs } from "../store/tabs";
 import { engineIdOf, sharingProfiles } from "../store/profiles";
 import { closeWindowAnimated } from "./closeAnimated";
 import { applyHeldReports } from "./nativeEvents";
@@ -58,57 +54,6 @@ export async function closeTab(tabId: string, successor?: string) {
   const closesItsWindow = now.tabs[tabId]?.windowId === w.id && now.peeks[w.id]?.tabId !== tabId && closesWindow(now, tabId) && !leavesEmptyWindow(now, tabId);
   if (last && closesItsWindow) return closeWindowAnimated(w.id);
   store().closeTab(tabId, successor);
-}
-
-export async function closeTabs(windowId: string, ids: string[]) {
-  if (ids.length <= 1) return ids[0] ? closeTab(ids[0]) : undefined;
-  const s = store();
-  const w = s.windows[windowId];
-  const lastId = ids.at(-1)!;
-  if (!w || !s.tabs[lastId]) return;
-  const probe = removeTabs(s, ids.slice(0, -1), false);
-  const last = closesWindow(probe, lastId) && !leavesEmptyWindow(probe, lastId);
-  const closingWindow = windowClosingWithTab(probe, lastId);
-  if (closingWindow && s.settings.warnBeforeClosingWindow) {
-    const { confirmed, suppressed } = await confirm({ ...closeWindowDialog(closingWindow), suppression: "Don’t ask me again", windowId });
-    if (suppressed) store().updateSettings({ warnBeforeClosingWindow: false });
-    if (!confirmed) return;
-    applyHeldReports();
-  } else if (last && s.settings.warnBeforeClosingLastTab && !w.incognito) {
-    const { confirmed, suppressed } = await confirm({ ...closeWindowDialog(windowId), suppression: "Don’t ask me again", windowId });
-    if (suppressed) store().updateSettings({ warnBeforeClosingLastTab: false });
-    if (!confirmed) return;
-    applyHeldReports();
-  }
-  const now = store();
-  const open = ids.filter((id) => now.tabs[id]?.windowId === windowId);
-  now.setSelection(windowId, []);
-  if (!open.length) return;
-  const rest = removeTabs(now, open.filter((id) => id !== open.at(-1)), false);
-  const closesItsWindow = closesWindow(rest, open.at(-1)!) && !leavesEmptyWindow(rest, open.at(-1)!);
-  if (last && closesItsWindow) return closeWindowAnimated(windowId);
-  closeTogether(open);
-}
-
-export async function closeGroup(groupId: string) {
-  const s = store();
-  const group = s.groups[groupId];
-  const w = group && s.windows[group.windowId];
-  if (!group || !w) return;
-  if (s.settings.warnBeforeClosingTabGroup && !rootOf(s.groups, groupId)?.pinned) {
-    const tabs = plural(group.tabIds.length, "tab");
-    const { confirmed, suppressed } = await confirm({
-      title: `Close “${groupLabel(s, group)}”?`,
-      message: w.incognito ? `Its ${tabs} close with it.` : `Its ${tabs} close with it. History › Recently Closed Groups brings it back.`,
-      confirmTitle: "Close Group",
-      suppression: "Don’t ask me again",
-      windowId: w.id,
-    });
-    if (suppressed) store().updateSettings({ warnBeforeClosingTabGroup: false });
-    if (!confirmed) return;
-    applyHeldReports();
-  }
-  if (store().groups[groupId]) store().closeGroup(groupId);
 }
 
 export function toggleMute(tabId: string) {
@@ -167,11 +112,6 @@ export async function moveTabToProfile(tabId: string, target: string) {
     if (!confirmed) return;
   }
   store().moveTabToProfile(tabId, profileId);
-}
-
-export function moveTabToWindow(tabId: string, target: string) {
-  const windowId = store().moveTabsToWindow([tabId], target === "new" ? null : target);
-  if (windowId) focus(windowId);
 }
 
 export function switchProfile(windowId: string, profileId: string, animated = false) {

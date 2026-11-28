@@ -31,7 +31,7 @@ test("the rail is as wide as the traffic lights need and never overwrites the fu
   rail.setSidebarIconsOnly(windowId, true);
   assert.equal(rail.sidebarWidthOf(S().windows[windowId], S().settings, true), rail.SIDEBAR_RAIL_WIDTH);
   assert.equal(S().settings.sidebarWidth, 240);
-  rail.toggleSidebarIconsOnly(windowId);
+  rail.setSidebarIconsOnly(windowId, false);
   assert.equal(S().settings.sidebarIconsOnly, false);
   assert.equal(rail.sidebarWidthOf(S().windows[windowId], S().settings, true), 240);
 });

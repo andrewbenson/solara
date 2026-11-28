@@ -174,6 +174,8 @@ const inPage = async (id, expression) => {
 };
 const pageState = (id) => inPage(id, "({token:window.loadToken, paused:tone.paused, pauses:window.pauseCount, time:tone.currentTime})");
 const mediaLeg = async (tabId, target) => rep.check(`${tabId} to ${target}: playing and split behavior matches JavaScript`, async () => {
+  const expectedWindow = target.startsWith("window:") ? target.slice(7) : "w1";
+  const expectedProfile = target.startsWith("profile:") ? target.slice(8) : "default";
   const observations = [];
   for (const path of ["JavaScript", "Swift"]) {
     await run(`st().activate(${JSON.stringify(tabId)}); return settle(400);`);
@@ -191,10 +193,12 @@ const mediaLeg = async (tabId, target) => rep.check(`${tabId} to ${target}: play
     const before = await capture();
     const expected = await shape();
     if (path === "Swift") await open(tabId, target);
-    else if (target.startsWith("window:")) await run(`ac.actions.moveTabToWindow(${JSON.stringify(tabId)}, ${JSON.stringify(target.slice(7))}); return true;`);
-    else await run(`return ac.actions.moveTabToProfile(${JSON.stringify(tabId)}, ${JSON.stringify(target.slice(8))}).then(() => true);`);
-    const expectedWindow = target.startsWith("window:") ? target.slice(7) : "w1";
-    const expectedProfile = target.startsWith("profile:") ? target.slice(8) : "default";
+    else if (target.startsWith("window:")) await run(`
+      const windowId = st().moveTabsToWindow([${JSON.stringify(tabId)}], ${JSON.stringify(expectedWindow)});
+      if (windowId) ac.actions.focus(windowId);
+      return true;
+    `);
+    else await run(`return ac.actions.moveTabToProfile(${JSON.stringify(tabId)}, ${JSON.stringify(expectedProfile)}).then(() => true);`);
     await until("moved tab owner", () => run(`const t = st().tabs[${JSON.stringify(tabId)}]; return t && t.windowId === ${JSON.stringify(expectedWindow)} && t.profileId === ${JSON.stringify(expectedProfile)};`));
     await until("moved page available", () => pageState(tabId));
     await sleep(800);

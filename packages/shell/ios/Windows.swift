@@ -49,7 +49,7 @@ public enum WindowHost {
   }
   @MainActor public static func closeForeignKeyWindow() -> Bool { WindowManager.shared.closeForeignKeyWindow() }
   @MainActor public static func closeAuxiliaryWindow(_ id: String) -> Bool {
-    guard WindowManager.shared.auxKinds[id] != nil else { return WindowManager.shared.closeForeignKeyWindow() }
+    guard WindowManager.shared.auxKinds[id] != nil else { return false }
     WindowManager.shared.close(id: id)
     return true
   }
@@ -946,7 +946,7 @@ final class WindowManager: NSObject, NSWindowDelegate {
   }
 
   func confirmQuit() {
-    if MenuState.current.warnBeforeQuitting {
+    if NativeMenuCommands.quitFacts?().warnBeforeQuitting == true {
       let alert = NSAlert()
       alert.messageText = "Are you sure you want to quit \(Bundle.main.productName)?"
       alert.informativeText = "Your windows and tabs will be restored the next time you open it."
@@ -955,7 +955,7 @@ final class WindowManager: NSObject, NSWindowDelegate {
       alert.showsSuppressionButton = true
       alert.suppressionButton?.title = "Don't ask again"
       let response = alert.runModal()
-      if alert.suppressionButton?.state == .on { emit?("onAppEvent", ["type": "quitWarningSuppressed"]) }
+      if alert.suppressionButton?.state == .on { NativeMenuCommands.suppressQuitWarning?() }
       guard response == .alertFirstButtonReturn else { return }
     }
     NSApp.terminate(nil)
@@ -1038,7 +1038,7 @@ final class WindowManager: NSObject, NSWindowDelegate {
   fileprivate static func confirmActiveDownloads() -> Bool { shared.confirmActiveDownloads() }
 
   private func confirmActiveDownloads() -> Bool {
-    let count = MenuState.current.downloadsInProgress
+    let count = NativeMenuCommands.quitFacts?().downloadsInProgress ?? 0
     guard count > 0 else { return true }
     let alert = NSAlert()
     alert.messageText = "Are you sure you want to quit \(Bundle.main.productName)?"
@@ -1129,7 +1129,7 @@ enum UpdateQuitApproval {
 
   static func approve() -> Bool {
     approvedUntil = nil
-    guard MenuState.current.downloadsInProgress > 0 else { return true }
+    guard (NativeMenuCommands.quitFacts?().downloadsInProgress ?? 0) > 0 else { return true }
     guard WindowManager.confirmActiveDownloads() else { return false }
     approvedUntil = Date().addingTimeInterval(lifetime)
     return true

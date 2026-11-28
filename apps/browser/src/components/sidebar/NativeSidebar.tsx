@@ -7,7 +7,6 @@ import { addNativeSettingsHandlers } from "../settings/nativeSettings";
 import { applyHoverProbe } from "./hover";
 import { applyNativeRenameState, resetNativeRenames } from "./renameMirror";
 import { setSidebarUi, sidebarUi } from "./state";
-import { showTidiedPinsToast } from "./tidyPinsUi";
 import { requestCreateProfile } from "../profiles/CreateProfile";
 import { useTabDrag } from "../layout/tabDrag";
 import { nativeLayoutFeed, useNativeLayoutFeed } from "../layout/nativeLayoutFeed";
@@ -78,15 +77,13 @@ addNativeSettingsHandlers({
     windowId: string,
     name: string,
     id: string,
-    extra: { kind?: "tab" | "group"; result?: string; seq?: number; windows?: Record<string, number> },
+    extra: { kind?: "tab" | "group"; seq?: number; windows?: Record<string, number> },
   ) => {
     if (__DEV__ && name === "renameState") return void applyNativeRenameState(windowId, extra.kind ?? null, id, Number(extra.seq ?? 0));
     if (__DEV__ && name === "renameReset") return resetNativeRenames(extra.windows ?? {});
     switch (name) {
       case "handled":
         return;
-      case "tidied":
-        return extra.result ? showTidiedPinsToast(windowId, JSON.parse(extra.result)) : undefined;
     }
   },
 });

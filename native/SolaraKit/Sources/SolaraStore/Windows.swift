@@ -12,6 +12,7 @@ public struct CreateWindowOptions: Sendable {
   public var background: Bool?
   public var chromeWindow: String?
   public var newTabCommand: Bool?
+  public var openPanel: Bool?
 
   public init() {}
 }
@@ -125,6 +126,7 @@ extension Session {
       next.ui.lastProfileId = s.ui.lastProfileId
     }
     set(next)
+    if small, o.openPanel == true { openPanel(id, "", nil) }
     return id
   }
 

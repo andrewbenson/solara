@@ -228,6 +228,7 @@ extension Session {
       options.background = o["background"]?.truthy
       options.chromeWindow = optionalString(o, "chromeWindow")
       options.newTabCommand = o["newTabCommand"]?.truthy
+      options.openPanel = o["openPanel"]?.truthy
       result = .string(createWindow(options))
     case "setChromeWindowClosePending":
       memory.closingWindowUndos[try a.requireString(0)]?.chromeClosePending = a.bool(1)

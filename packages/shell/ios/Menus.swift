@@ -41,19 +41,7 @@ struct MenuState {
 
   static var current = MenuState()
 
-  var warnBeforeQuitting = false
-  var warnBeforeClosingWindow = false
   var undoReopensClosedTab = false
-  var downloadsInProgress = 0
-
-  init() {}
-
-  init(_ d: [String: Any]) {
-    warnBeforeQuitting = d["warnBeforeQuitting"] as? Bool ?? false
-    warnBeforeClosingWindow = d["warnBeforeClosingWindow"] as? Bool ?? false
-    undoReopensClosedTab = d["undoReopensClosedTab"] as? Bool ?? false
-    downloadsInProgress = d["downloadsInProgress"] as? Int ?? 0
-  }
 }
 
 protocol Rebindable: NSMenuItem {
@@ -180,6 +168,8 @@ enum SwitcherHold {
 }
 
 public enum NativeMenuCommands {
+  nonisolated(unsafe) public static var quitFacts: (() -> (warnBeforeQuitting: Bool, downloadsInProgress: Int))?
+  nonisolated(unsafe) public static var suppressQuitWarning: (() -> Void)?
   nonisolated(unsafe) public static var switcherRelease: (() -> Bool)?
   nonisolated(unsafe) public static var handlers: [String: (String?) -> Void] = [:]
   nonisolated(unsafe) public static var sidebarPositionInWindow: ((String) -> Bool)?

@@ -14,17 +14,15 @@ import {
   replyToTerminate,
   restoreFullScreen,
   setAppearance,
-  setMenuState,
   setThinScrollBars,
   setTrafficLightsCenter,
   setWindowTitle,
   windowIds,
-  type MenuState,
 } from "@solara/shell";
 import { Appearance } from "react-native";
 import { cancelBookmarkQuit, flushBookmarkJournal } from "@solara/settings";
 import { nativeOwnsWorkspace } from "../store/nativeStore";
-import { useBrowser, type BrowserState } from "../store/browser";
+import { useBrowser } from "../store/browser";
 import { setLastTabKeepsWindow } from "../store/newTabBar";
 import { isUtilityWindowId } from "../components/settings/windows";
 import { openingLightsCenter } from "../components/layout/windowLayout";
@@ -35,7 +33,7 @@ import { runCommand } from "./commands";
 import { startShortcutHints } from "./commandShortcuts";
 import { finishAnimatedCloses } from "./closeAnimated";
 import { setFocusSenders } from "./focusClaims";
-import { cancelAbandonedFocusMoves, settlingCommandFocus } from "./focusHandoff";
+import { cancelAbandonedFocusMoves } from "./focusHandoff";
 import { flushPersistence, resumePersistence } from "./persist";
 import { startWindowCloseGuard } from "./windowClose";
 
@@ -64,7 +62,7 @@ export function startNativeSync() {
 
   setFocusSenders(claimFocus, cancelFocusMove);
   cancelAbandonedFocusMoves();
-  onCommand((e) => settlingCommandFocus(e, runCommand));
+  onCommand(runCommand);
   startWindowCloseGuard();
   usePages.subscribe(keepAlivePagesChanged);
   onOpenURLs((urls, pointer, profile) => openExternalUrls(urls, pointer, profile));
@@ -82,7 +80,6 @@ export function startNativeSync() {
     const s = store.getState();
     if (e.type === "appearance" && !nativeOwnsWorkspace()) s.setAppDark(e.dark);
     if (e.type === "reopen") createWindow();
-    if (e.type === "quitWarningSuppressed") s.updateSettings({ warnBeforeQuitting: false });
     if (e.type === "willQuit") {
       if (quitting) return;
       if (__DEV__ && quitHandlerCounts) quitHandlerCounts.willQuit++;
@@ -121,36 +118,14 @@ export function startNativeSync() {
   windows.listen();
 
   startShortcutHints();
-  let lastMenu = "";
-  let menuTimer: ReturnType<typeof setTimeout> | undefined;
-  const syncMenu = () => {
-    menuTimer = undefined;
-    const state = menuState(store.getState());
-    const json = JSON.stringify(state);
-    if (lastMenu === json) return;
-    lastMenu = json;
-    void setMenuState(state);
-  };
-
   windows.sync(store.getState());
-  syncMenu();
   windows.restoreFullScreen(store.getState());
   store.subscribe((s, prev) => {
     windows.sync(s, prev);
-    menuTimer ??= setTimeout(syncMenu, 120);
   });
   store.subscribe((s, prev) => {
     if (s.settings.appearance !== prev.settings.appearance) void setAppearance(s.settings.appearance);
     if (s.settings.pageScrollBars !== prev.settings.pageScrollBars) void setThinScrollBars(s.settings.pageScrollBars === "thin");
   });
   void windows.sweep();
-}
-
-export function menuState(s: BrowserState): MenuState {
-  return {
-    warnBeforeQuitting: s.settings.warnBeforeQuitting,
-    warnBeforeClosingWindow: s.settings.warnBeforeClosingWindow,
-    undoReopensClosedTab: s.settings.undoReopensClosedTab,
-    downloadsInProgress: s.downloads.filter((d) => d.state === "downloading").length,
-  };
 }

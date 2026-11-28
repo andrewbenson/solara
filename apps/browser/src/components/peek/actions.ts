@@ -40,13 +40,3 @@ export function openPeekInSplit(windowId: string) {
   const peek = peekIn(windowId);
   if (peek) void windowPeekAction(windowId, peek.tabId, "split");
 }
-
-export function runPeekCommand(command: string, windowId: string) {
-  const s = useBrowser.getState();
-  const peek = s.peeks[windowId];
-  if (!peek || s.windowUi[windowId]?.panel.open) return;
-  if (command === "openFile") return openPeekAsTab(windowId);
-  if (command !== "closeTab") return;
-  if (s.find[peek.tabId]?.open) void windowPeekAction(windowId, peek.tabId, "closeFind");
-  else dismissPeek(windowId);
-}

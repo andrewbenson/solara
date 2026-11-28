@@ -53,7 +53,7 @@ public struct CommandRoute: Equatable, Sendable {
     }
     let small = { (id: String?) in id.flatMap { state.windows[$0]?.isSmall } ?? false }
     if small(target) && littleSolaraCommands.contains(command) { return CommandRoute(.littleSolara, windowId: target) }
-    if let peekWindow = state.resolveWindowId(target), let peek = state.peeks[peekWindow] {
+    if let peekWindow = state.resolveWindowId(target, excluding: closing), let peek = state.peeks[peekWindow] {
       let peekTab = present(peek.tabId)
       if command == "openFile" { return CommandRoute(.peekPromote, windowId: peekWindow, tabId: peekTab) }
       if command == "closeTab" && state.windowUi[peekWindow]?.panelOpen != true {
@@ -71,10 +71,15 @@ public struct CommandRoute: Equatable, Sendable {
       target = session.mainWindowFor(state, present(state.windows[id]?.profileId))
       focusWindow = target
     }
-    if invokerCommands.contains(command) { return CommandRoute(.invoker, windowId: state.resolveWindowId(invokedFrom), focusWindow: focusWindow) }
-    guard let windowId = state.resolveWindowId(target) else { return CommandRoute(.noWindow, focusWindow: focusWindow) }
+    if invokerCommands.contains(command) { return CommandRoute(.invoker, windowId: state.resolveWindowId(invokedFrom, excluding: closing), focusWindow: focusWindow) }
+    guard let windowId = state.resolveWindowId(target, excluding: closing) else { return CommandRoute(.noWindow, focusWindow: focusWindow) }
     let peekTab = littleSolaraPageCommands.contains(command) ? present(state.peeks[windowId]?.tabId) : nil
     return CommandRoute(.main, windowId: windowId, focusWindow: focusWindow, tabId: peekTab ?? present(state.activeTabId(windowId)))
+  }
+
+  static func acceptsWorkspaceInvoker(_ id: String?, state: BrowserState, closing: Set<String>) -> Bool {
+    guard let id = present(id) else { return true }
+    return !closing.contains(id) && (state.windows[id] != nil || utilityWindowIds.contains(id))
   }
 
   private static func present(_ id: String?) -> String? {

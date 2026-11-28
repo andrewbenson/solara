@@ -82,7 +82,7 @@ enum NativeWorkspaceCommands {
     NativeDownloadsPanel.start()
     ToolbarView.commandURLFocusAllowed = { NativeCommandBarFocus.developerAllowed($0, field: $1) }
     ToolbarView.commandURLDidFocus = { NativeCommandBarFocus.developerDidFocus($0, field: $1) }
-    for command in WorkspaceMenuCommand.commands.union(ViewMenuCommand.commands).union(PageMenuCommand.commands).union(FindMenuCommand.commands).union(BookmarkMenuCommand.commands).union(NativeBookmarkCommands.formCommands).union(CopyLinkCommand.commands).union(BrowserServiceCommand.commands).union(TabFocusCommand.commands).union(["togglePageEngine"]).union(PinnedPageCommand.commands).union(NativeSidebarMenus.commands).union(["focusCommandBar", "cast", "restoreArcFolders", "showHistory", "manageBookmarks", "clearBrowsingData"]) {
+    for command in WorkspaceMenuCommand.commands.union(ViewMenuCommand.commands).union(PageMenuCommand.commands).union(FindMenuCommand.commands).union(BookmarkMenuCommand.commands).union(NativeBookmarkCommands.formCommands).union(CopyLinkCommand.commands).union(BrowserServiceCommand.commands).union(TabFocusCommand.commands).union(["togglePageEngine"]).union(PinnedPageCommand.commands).union(NativeSidebarMenus.commands).union(["focusCommandBar", "cast", "restoreArcFolders", "showHistory", "manageBookmarks", "clearBrowsingData", "switchProfile", "nextProfile", "previousProfile"]) {
       NativeMenuCommands.argumentHandlers[command] = { arg, windowId in perform(command, arg: arg, windowId: windowId) }
     }
     NativeMenuCommands.keepsMenuDispatch = ViewMenuCommand.commands.union(PageMenuCommand.commands).union(BookmarkMenuCommand.commands).union(NativeBookmarkCommands.formCommands).union(CopyLinkCommand.commands).union(BrowserServiceCommand.commands).union(TabFocusCommand.commands).union(["showHistory", "manageBookmarks"])
@@ -94,11 +94,20 @@ enum NativeWorkspaceCommands {
       if command == "findInPage", windowId == NativeSettingsWindow.windowId { return true }
       if command == "returnToPinnedUrl" { return NativePinnedPageCommands.available(windowId: windowId) }
       guard WorkspaceMenuCommand.commands.contains(command) else { return nil }
-      guard NativeStoreHandle.ownsWorkspace, let state = NativeStoreHandle.store?.state else {
+      guard NativeStoreHandle.ownsWorkspace, let store = NativeStoreHandle.store else {
         return command == "reopenClosedTab" || command == "reopenClosedWindow" ? false : nil
       }
-      if command == "closeTab", windowId == nil, WindowHost.hasClosableForeignKeyWindow { return true }
-      return WorkspaceMenuCommand.available(command, arg: arg, windowId: windowId, state: state)
+      if command == "closeTab", (windowId == nil && WindowHost.hasClosableForeignKeyWindow || windowId.map(CommandRoute.utilityWindowIds.contains) == true) { return true }
+      return WorkspaceMenuCommand.available(command, arg: arg, windowId: windowId, state: store.state, closing: store.memory.closingWindows)
+    }
+    NativeMenuCommands.quitFacts = {
+      let state = NativeStoreHandle.ownsWorkspace ? NativeStoreHandle.store?.state : nil
+      return (state?.settings.bool("warnBeforeQuitting") ?? false,
+              state?.downloads.filter { $0.state == "downloading" }.count ?? 0)
+    }
+    NativeMenuCommands.suppressQuitWarning = {
+      guard let store = WorkspaceWrites.store else { return }
+      _ = try? store.dispatch(Command("updateSettings", [["warnBeforeQuitting": false]]), origin: .native)
     }
     WindowHost.closeRequest = { id in perform("closeWindow", windowId: id) }
   }
@@ -145,15 +154,22 @@ enum NativeWorkspaceCommands {
       let destinations = !changes.windows.isEmpty || !changes.profiles.isEmpty || !changes.tabs.isEmpty
         || !changes.lists.isDisjoint(with: ["profileOrder", "windowOrder", "ui"])
         || changes.settingsChanged.contains("defaultProfileId") || changes.settingsRemoved.contains("defaultProfileId")
-      guard history || destinations else { return }
+      let undo = changes.settingsChanged.contains("undoReopensClosedTab") || changes.settingsRemoved.contains("undoReopensClosedTab")
+      guard history || destinations || undo else { return }
       Task { @MainActor in
         guard let store, menuStore === store else { return }
         if history { refreshHistoryMenu() }
         if destinations { refreshDestinations() }
+        if undo { refreshMenuUndo() }
       }
     }
     refreshHistoryMenu()
     refreshDestinations()
+    refreshMenuUndo()
+  }
+
+  private static func refreshMenuUndo() {
+    ShellMenus.setUndoReopensClosedTab(menuStore?.state.settings.bool("undoReopensClosedTab") ?? false)
   }
 
   private static func refreshDestinations() {
@@ -200,8 +216,23 @@ enum NativeWorkspaceCommands {
   }
 
   private static func performView(_ command: String, arg: String?, windowId: String?) -> Bool {
-    guard NativeStoreHandle.ownsWorkspace, let store = NativeStoreHandle.store else { return false }
-    guard let outcome = ViewMenuCommand.perform(command, arg: arg, windowId: windowId, store: store) else { return false }
+    guard let store = WorkspaceWrites.store else { return true }
+    if command == "setSidebarPosition" {
+      guard let target = store.state.resolveWindowId(windowId, excluding: store.memory.closingWindows),
+        NativeSidebarPositionCapability.enabled, NativeWindowShell.nativeLayoutActive(target) else { return true }
+    }
+    if command == "openSplitPane" {
+      if let plan = ViewMenuCommand.plan(command, arg: arg, windowId: windowId, state: store.state, closing: store.memory.closingWindows),
+        let target = plan.commands.first?.args.first?.string {
+        if let focus = plan.focusWindow {
+          _ = try? store.dispatch(Command("setFocusedWindow", [.string(focus)]), origin: .native)
+          ShellScripting.showWindow(focus)
+        }
+        NativeSplitChrome.openPane(windowId: target)
+      }
+      return true
+    }
+    guard let outcome = ViewMenuCommand.perform(command, arg: arg, windowId: windowId, store: store) else { return true }
     if let target = outcome.focusWindow { ShellScripting.showWindow(target) }
     if let appearance = outcome.appearance { ShellScripting.setAppearance(appearance) }
     FrameUpdates.flush()
@@ -433,9 +464,23 @@ enum NativeWorkspaceCommands {
       return true
     }
     if command == "moveLittleSolaraToProfile" {
-      guard NativeStoreHandle.ownsWorkspace, let store = NativeStoreHandle.store else { return false }
-      if let windowId, let arg { moveLittleSolara(windowId, to: arg, store: store) }
+      if let store = WorkspaceWrites.store, let windowId, let arg { moveLittleSolara(windowId, to: arg, store: store) }
       return true
+    }
+    if let windowId, let store = WorkspaceWrites.store, let window = store.state.windows[windowId], window.isSmall {
+      switch command {
+      case "switchProfile":
+        if let arg { moveLittleSolara(windowId, to: arg, store: store) }
+        return true
+      case "nextProfile", "previousProfile":
+        let profiles = store.state.profileOrder
+        if profiles.count > 1, let current = profiles.firstIndex(of: window.profileId) {
+          let next = (current + (command == "nextProfile" ? 1 : -1) + profiles.count) % profiles.count
+          moveLittleSolara(windowId, to: profiles[next], store: store)
+        }
+        return true
+      default: break
+      }
     }
     if command == "cast" { return NativeCast.command(windowID: windowId) }
     if command == "togglePageEngine" { return NativeEngineCommands.perform(command, arg: arg, windowId: windowId) }
@@ -454,13 +499,14 @@ enum NativeWorkspaceCommands {
     if PageMenuCommand.commands.contains(command) { return performPage(command, arg: arg, windowId: windowId) }
     if command == "findInPage", windowId == NativeSettingsWindow.windowId { NativeSettingsWindow.focusSearch(); return true }
     if FindMenuCommand.commands.contains(command) { return performFind(command, windowId: windowId) }
-    guard NativeStoreHandle.ownsWorkspace, let store = NativeStoreHandle.store,
-      WorkspaceMenuCommand.commands.contains(command) else { return false }
+    guard WorkspaceMenuCommand.commands.contains(command) else { return false }
     if command == "closeTab", windowId == nil, WindowHost.closeForeignKeyWindow() { return true }
-    if let windowId, store.state.windows[windowId] == nil, command == "closeTab" || command == "closeWindow" {
-      return WindowHost.closeAuxiliaryWindow(windowId)
+    if let windowId, CommandRoute.utilityWindowIds.contains(windowId), command == "closeTab" || command == "closeWindow" {
+      _ = WindowHost.closeAuxiliaryWindow(windowId)
+      return true
     }
-    guard let plan = WorkspaceMenuCommand.plan(command, arg: arg, windowId: windowId, state: store.state) else { return false }
+    guard let store = WorkspaceWrites.store, let plan = WorkspaceMenuCommand.plan(command, arg: arg, windowId: windowId,
+      state: store.state, closing: store.memory.closingWindows) else { return true }
     if let close = plan.close {
       switch close {
       case .window(let id): closeWindow(id, store: store)
@@ -468,8 +514,18 @@ enum NativeWorkspaceCommands {
       }
       return true
     }
+    guard let action = plan.commands.first else { return true }
+    if let target = action.args.first?.string, action.name == "closeGroup" || action.name == "tidyPins" {
+      if let focus = plan.focusWindow {
+        _ = try? store.dispatch(Command("setFocusedWindow", [.string(focus)]), origin: .native)
+        ShellScripting.showWindow(focus)
+      }
+      if action.name == "closeGroup" { _ = NativeGroupActions.close(target) }
+      else { NativeSidebarUndo.tidy(windowId: target, store: store) }
+      return true
+    }
     let before = store.state
-    let focusWindow = before.resolveWindowId(windowId)
+    let focusWindow = plan.focusWindow ?? before.resolveWindowId(windowId, excluding: store.memory.closingWindows)
     let opensPanel = command == "newTab" && plan.commands.first?.name == "openPanel"
     let closesPanel = plan.commands.first?.name == "closePanel"
     if command == "newTab", let focusWindow {
@@ -795,11 +851,10 @@ enum NativeWorkspaceCommands {
       before.profiles[profileId] != nil, !store.memory.closingWindows.contains(id), !pending.contains(id) else { return }
     let tab = before.activeTab(id)
     let url = tab?.url ?? ""
-    var options: JSONObject = ["small": true, "profileId": .string(profileId)]
+    var options: JSONObject = ["small": true, "profileId": .string(profileId), "openPanel": .bool(url.isEmpty)]
     if !url.isEmpty { options["url"] = .string(url) }
     if let frame = window.frame { options["frame"] = .array(frame.map(JSONValue.number)) }
     guard let replacement = (try? store.dispatch(Command("createWindow", [.object(options)]), origin: .native))?.result?.string else { return }
-    if url.isEmpty { _ = try? store.dispatch(Command("openPanel", [.string(replacement), ""]), origin: .native) }
     materializeChanges(before: before, after: store.state)
     animateClose(id, after: replacement, forgetTab: tab?.id, store: store)
   }

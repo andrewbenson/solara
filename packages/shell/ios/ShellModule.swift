@@ -544,11 +544,6 @@ public class ShellModule: Module {
 
     AsyncFunction("isDarkAppearance") { () -> Bool in ShellModule.isDark }.runOnQueue(.main)
 
-    AsyncFunction("setMenuState") { (state: [String: Any]) in
-      MenuState.current = MenuState(state)
-      MainMenu.refresh()
-    }.runOnQueue(.main)
-
     AsyncFunction("replyToTerminate") { (ok: Bool) in WindowManager.shared.replyToTerminate(ok) }.runOnQueue(.main)
 
     AsyncFunction("confirm") { (options: [String: Any], promise: Promise) in
@@ -921,6 +916,12 @@ private enum ShellContextMenuTest {
 public enum ShellMenus {
   public static var extensionCatalog: (() -> [[String: Any]])?
   public static func refreshExtensions() { MainMenu.refresh() }
+
+  public static func setUndoReopensClosedTab(_ enabled: Bool) {
+    guard MenuState.current.undoReopensClosedTab != enabled else { return }
+    MenuState.current.undoReopensClosedTab = enabled
+    MainMenu.refresh()
+  }
 
   public static func setShortcutSettings(overrides: [(String, [String])], precedence: [(String, String)]) {
     MainMenu.setShortcutSettings(overrides: overrides, precedence: precedence)

@@ -59,7 +59,7 @@ test("an empty Peek tab id in a hand-made state is no tab, the way the original'
   assert.deepEqual(commandRoute(state, "closeTab", w), { kind: "peekDismiss", windowId: w, focusWindow: null, tabId: null });
 });
 
-test("runCommand's own switches handle exactly the route's command sets", () => {
+test("the JavaScript window switch only handles utility commands", () => {
   const source = readFileSync(new URL("./commands.ts", import.meta.url), "utf8");
   const labels = (start) => {
     const a = source.indexOf(start);
@@ -67,10 +67,8 @@ test("runCommand's own switches handle exactly the route's command sets", () => 
     assert.ok(a >= 0 && b > a, start);
     return sorted(new Set([...source.slice(a, b).matchAll(/case "(\w+)":/g)].map((m) => m[1])));
   };
-  const handledInSwift = new Set(["openFile", "focusCommandBar", "manageExtensions", "openProfileMenu"]);
-  const routedInJs = (set) => sorted([...set].filter((command) => !handledInSwift.has(command)));
-  assert.deepEqual(labels("function runWindowCommand("), routedInJs(WINDOW_LEVEL_COMMANDS));
-  assert.deepEqual(labels("function runLittleSolaraCommand("), routedInJs(LITTLE_SOLARA_COMMANDS));
+  assert.deepEqual(labels("function runWindowCommand("), ["importBrowserData", "keyboardShortcuts", "openSettings"]);
+  assert.doesNotMatch(source, /function runLittleSolaraCommand\b/);
 });
 
 test("every route kind is covered", () => {

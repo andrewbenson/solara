@@ -21,38 +21,51 @@ public enum WorkspaceMenuCommand {
   public static let commands: Set<String> = [
     "newTab", "closeTab", "reopenClosedTab", "restoreClosed", "duplicateTab", "moveTabUp", "moveTabDown",
     "moveTabToWindow", "moveTabToProfile", "selectTab", "selectLastTab", "nextTab", "previousTab",
-    "newWindow", "newIncognitoWindow", "closeWindow", "reopenClosedWindow", "mergeAllWindows", "togglePinnedRow",
+    "newWindow", "newIncognitoWindow", "newLittleSolara", "closeWindow", "reopenClosedWindow", "mergeAllWindows",
+    "togglePin", "togglePinnedRow", "closeTabGroup", "tidyPins",
   ]
 
   public static let unavailableInSmall: Set<String> = [
     "duplicateTab", "moveTabUp", "moveTabDown", "moveTabToWindow", "moveTabToProfile", "selectTab", "selectLastTab", "nextTab", "previousTab", "mergeAllWindows",
+    "togglePin", "closeTabGroup", "tidyPins",
   ]
 
-  public static func available(_ command: String, arg: String? = nil, windowId: String?, state: BrowserState) -> Bool? {
+  public static func available(_ command: String, arg: String? = nil, windowId: String?, state: BrowserState, closing: Set<String> = []) -> Bool? {
     guard commands.contains(command), command != "togglePinnedRow" else { return nil }
+    guard CommandRoute.acceptsWorkspaceInvoker(windowId, state: state, closing: closing) else { return false }
     if let windowId, state.windows[windowId]?.isSmall == true, unavailableInSmall.contains(command) { return false }
     if command == "reopenClosedWindow" { return !state.closedWindows.isEmpty }
     if command == "reopenClosedTab" { return !state.closedTabs.isEmpty || !state.closedGroups.isEmpty || !state.closedWindows.isEmpty }
-    guard let plan = plan(command, arg: arg, windowId: windowId, state: state) else { return false }
+    guard let plan = plan(command, arg: arg, windowId: windowId, state: state, closing: closing) else { return false }
     return !plan.commands.isEmpty || plan.close != nil
   }
 
-  public static func plan(_ command: String, arg: String? = nil, windowId requested: String?, state: BrowserState) -> WorkspaceMenuPlan? {
+  public static func plan(_ command: String, arg: String? = nil, windowId requested: String?, state: BrowserState, closing: Set<String> = []) -> WorkspaceMenuPlan? {
     guard commands.contains(command) else { return nil }
+    guard CommandRoute.acceptsWorkspaceInvoker(requested, state: state, closing: closing) else { return WorkspaceMenuPlan() }
     if command == "togglePinnedRow" {
-      let route = CommandRoute.resolve(command, windowId: requested, state: state, closing: [])
+      let route = CommandRoute.resolve(command, windowId: requested, state: state, closing: closing)
       guard route.kind == .main, let windowId = route.windowId else { return WorkspaceMenuPlan() }
       return WorkspaceMenuPlan(commands: [Command("togglePinnedRows", [.string(windowId)])], focusWindow: route.focusWindow)
     }
     if let requested, state.windows[requested]?.isSmall == true, unavailableInSmall.contains(command) {
-      let session = Session(state: state, memory: StoreMemory(), env: PlainWebAddressing(), config: StoreConfig(), now: 0)
-      guard let target = session.mainWindowFor(state), let redirected = plan(command, arg: arg, windowId: target, state: state) else { return WorkspaceMenuPlan() }
+      var memory = StoreMemory()
+      memory.closingWindows = closing
+      let session = Session(state: state, memory: memory, env: PlainWebAddressing(), config: StoreConfig(), now: 0)
+      guard let target = session.mainWindowFor(state, state.windows[requested]?.profileId),
+        let redirected = plan(command, arg: arg, windowId: target, state: state, closing: closing) else { return WorkspaceMenuPlan() }
       return WorkspaceMenuPlan(commands: redirected.commands, close: redirected.close, focusWindow: target)
     }
     func run(_ name: String, _ args: [JSONValue] = []) -> WorkspaceMenuPlan { WorkspaceMenuPlan(commands: [Command(name, args)]) }
+    if command == "newLittleSolara" {
+      var options: JSONObject = ["small": true, "openPanel": true]
+      if let arg { options["profileId"] = .string(arg) }
+      return run("createWindow", [.object(options)])
+    }
     if command == "newWindow" || command == "newIncognitoWindow" {
       let source = requested.flatMap { state.windows[$0] != nil ? $0 : nil }
-        ?? state.ui.focusOrder.first { state.windows[$0] != nil } ?? state.windowOrder.first { state.windows[$0] != nil }
+        ?? state.ui.focusOrder.first { state.windows[$0] != nil && !closing.contains($0) }
+        ?? state.windowOrder.first { state.windows[$0] != nil && !closing.contains($0) }
       let window = source.flatMap { state.windows[$0] }
       let profile = window.flatMap { $0.incognito ? $0.originalProfileId : $0.profileId }.flatMap { state.profiles[$0] != nil ? $0 : nil }
       var options: JSONObject = [:]
@@ -61,7 +74,7 @@ public enum WorkspaceMenuCommand {
       return run("createWindow", [.object(options)])
     }
     if command == "reopenClosedWindow" { return run("reopenClosedWindow") }
-    guard let windowId = state.resolveWindowId(requested), let window = state.windows[windowId] else {
+    guard let windowId = state.resolveWindowId(requested, excluding: closing), let window = state.windows[windowId] else {
       if command == "newTab" { return run("createWindow", [["newTabCommand": true]]) }
       if command == "reopenClosedTab" { return run("reopenCommandClosed", [.null]) }
       if command == "restoreClosed", let arg { return run("restoreClosed", [.string(arg), .null]) }
@@ -100,6 +113,16 @@ public enum WorkspaceMenuCommand {
       return ids.isEmpty ? WorkspaceMenuPlan() : WorkspaceMenuPlan(close: .tabs(windowId: windowId, tabIds: ids))
     case "reopenClosedTab": return run("reopenCommandClosed", [targetWindow])
     case "restoreClosed": return arg.map { run("restoreClosed", [.string($0), targetWindow]) } ?? WorkspaceMenuPlan()
+    case "togglePin":
+      guard let tab else { return WorkspaceMenuPlan() }
+      let id = JSONValue.string(tab.id)
+      if arg == "row" { return run("pinTabs", [[id], true, .bool(!tab.isPinnedRow)]) }
+      if arg == "tile" { return tab.isPinnedRow ? run("pinTabs", [[id], true, false]) : WorkspaceMenuPlan() }
+      return run("togglePin", [id])
+    case "closeTabGroup":
+      guard let tab, let group = Groups.innermostGroupOf(state.groups, tab.id) else { return WorkspaceMenuPlan() }
+      return run("closeGroup", [.string(group.id)])
+    case "tidyPins": return run("tidyPins", [targetWindow])
     case "duplicateTab": return tab.map { run("duplicateTab", [.string($0.id)]) } ?? WorkspaceMenuPlan()
     case "moveTabUp", "moveTabDown":
       return tab.map { run("moveTabBy", [.string($0.id), .number(command == "moveTabDown" ? 1 : -1)]) } ?? WorkspaceMenuPlan()

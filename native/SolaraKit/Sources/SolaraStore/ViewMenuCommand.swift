@@ -33,7 +33,8 @@ public struct BrowserMenuRow: Equatable, Sendable {
 public enum ViewMenuCommand {
   public static let commands: Set<String> = [
     "toggleOpenLinksInLittleSolara", "setAppearance", "toggleFullUrl", "toggleJavaScriptFromAppleEvents", "toggleAddressBar",
-    "setBookmarksBar", "toggleBookmarksBar", "toggleTabLayout", "toggleSidebar", "downloads", "focusNextPane", "focusPreviousPane",
+    "setSidebarPosition", "toggleSidebarIconsOnly", "setBookmarksBar", "toggleBookmarksBar", "toggleTabLayout", "toggleSidebar",
+    "downloads", "openSplitPane", "focusNextPane", "focusPreviousPane",
   ]
 
   public static func row(_ command: String, arg: String?, windowId: String?, state: BrowserState, product: String = "Solara") -> BrowserMenuRow? {
@@ -66,6 +67,7 @@ public enum ViewMenuCommand {
 
   public static func plan(_ command: String, arg: String?, windowId requested: String?, state: BrowserState, closing: Set<String>) -> ViewMenuPlan? {
     guard commands.contains(command) else { return nil }
+    guard CommandRoute.acceptsWorkspaceInvoker(requested, state: state, closing: closing) else { return ViewMenuPlan() }
     let route = CommandRoute.resolve(command, windowId: requested, state: state, closing: closing)
     func settings(_ patch: JSONObject, appearance: Bool = false) -> ViewMenuPlan {
       ViewMenuPlan(commands: [Command("updateSettings", [.object(patch)])], appliesAppearance: appearance)
@@ -80,6 +82,16 @@ public enum ViewMenuCommand {
       case "setAppearance":
         guard let arg, ["auto", "light", "dark"].contains(arg) else { return ViewMenuPlan() }
         return settings(["appearance": .string(arg)], appearance: true)
+      case "setSidebarPosition", "toggleSidebarIconsOnly":
+        guard let target = state.resolveWindowId(route.windowId, excluding: closing),
+          let window = state.windows[target], !window.isSmall else { return ViewMenuPlan() }
+        let id = JSONValue.string(target)
+        if command == "setSidebarPosition" {
+          guard let arg, ["left", "right"].contains(arg), state.settings.fileSource("sidebarPosition") == nil else { return ViewMenuPlan() }
+          return ViewMenuPlan(commands: [Command("setSidebarPosition", [id, .string(arg)])])
+        }
+        guard (window.tabLayout ?? state.settings.string("tabLayout")) != "top" else { return ViewMenuPlan() }
+        return ViewMenuPlan(commands: [Command("setWindowSidebar", [id, ["sidebarIconsOnly": .bool(!window.effectiveSidebarIconsOnly(state.settings))]])])
       case "toggleAddressBar":
         return settings(["addressBar": .string(state.settings.string("addressBar") == "sidebar" ? "toolbar" : "sidebar")])
       case "setBookmarksBar":
@@ -87,7 +99,7 @@ public enum ViewMenuCommand {
         return settings(["bookmarksBar": .string(arg)])
       case "toggleBookmarksBar":
         let mode = state.settings.string("bookmarksBar")
-        let active = state.resolveWindowId(route.windowId).flatMap { state.activeTabId($0) }
+        let active = state.resolveWindowId(route.windowId, excluding: closing).flatMap { state.activeTabId($0) }
         let onPage = active.flatMap { state.tabs[$0] }.map { !$0.url.isEmpty } ?? false
         let shown = mode == "always" || (mode == "newTab" && !onPage)
         return settings(["bookmarksBar": .string(shown ? "never" : "always")])
@@ -103,6 +115,7 @@ public enum ViewMenuCommand {
       case "toggleTabLayout": return run("toggleTabLayout", [target])
       case "toggleSidebar": return run("toggleSidebar", [target])
       case "downloads": return run("setDownloadsOpen", [target, .bool(!(state.windowUi[windowId]?.downloadsOpen ?? false))])
+      case "openSplitPane": return run("openSplitPane", [target])
       case "focusNextPane": return run("focusPane", [target, .number(1)])
       case "focusPreviousPane": return run("focusPane", [target, .number(-1)])
       default: return nil

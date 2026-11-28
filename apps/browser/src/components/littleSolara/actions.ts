@@ -1,20 +1,17 @@
 import { nativeWorkspaceCommand } from "@solara/settings";
 import { type LinkRoute, routeLinkTabs } from "@solara/solaracore";
 import { focus, openWindow } from "../../lib/actions";
-import { closeWindowAnimated, isWindowClosing } from "../../lib/closeAnimated";
+import { closeWindowAnimated } from "../../lib/closeAnimated";
 import { routedLinks, type RoutedLinks } from "../../lib/linkRoutes";
 import { runsJavaScript } from "../../lib/scriptUrls";
 import { useBrowser } from "../../store/browser";
-import { activeTabId } from "../../store/model";
 import { isSmall, lastActiveProfile, mainWindowFor } from "../../store/small";
 import { nativeOwnsWorkspace } from "../../store/nativeStore";
 
 const store = () => useBrowser.getState();
 
-export function openLittleSolara(url?: string, profileId?: string, adoptId?: string, linkPointer?: [number, number]): string {
-  const id = store().createWindow({ small: true, url, profileId, adoptId, linkPointer });
-  if (!url) store().openPanel(id, "");
-  return id;
+function openLittleSolara(url: string, profileId?: string, adoptId?: string, linkPointer?: [number, number]): string {
+  return store().createWindow({ small: true, url, profileId, adoptId, linkPointer });
 }
 
 const opensInLittleSolara = (url: string) => /^(https?|file):/i.test(url);
@@ -65,28 +62,6 @@ function openLinksInMainWindow(urls: string[], profileId: string, adoptIds: (str
     }
   });
   if (target) focus(target);
-}
-
-export function moveLittleSolaraToProfile(windowId: string, profileId: string) {
-  if (nativeOwnsWorkspace() && nativeWorkspaceCommand("moveLittleSolaraToProfile", profileId, windowId)) return;
-  const s = store();
-  const w = s.windows[windowId];
-  if (!w || !isSmall(s, windowId) || isWindowClosing(windowId) || !s.profiles[profileId] || w.profileId === profileId) return;
-  const tabId = activeTabId(s, windowId);
-  const url = (tabId ? s.tabs[tabId]?.url : undefined) || undefined;
-  const id = store().createWindow({ small: true, url, profileId, frame: w.frame });
-  if (!url) store().openPanel(id, "");
-  closeWindowAnimated(windowId, id, () => {
-    if (tabId) useBrowser.setState((now) => ({ closedTabs: now.closedTabs.filter((c) => c.tabId !== tabId) }));
-  });
-}
-
-export function cycleLittleSolaraProfile(windowId: string, delta: 1 | -1) {
-  const s = store();
-  const w = s.windows[windowId];
-  if (!w || s.profileOrder.length < 2) return;
-  const i = s.profileOrder.indexOf(w.profileId);
-  moveLittleSolaraToProfile(windowId, s.profileOrder[(i + delta + s.profileOrder.length) % s.profileOrder.length]!);
 }
 
 export function closeLittleSolara(windowId: string) {

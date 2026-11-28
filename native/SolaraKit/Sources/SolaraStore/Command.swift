@@ -32,7 +32,7 @@ public struct Command: Sendable, Equatable {
 
   public static let known: Set<String> = [
     "pageReport", "registerKeepAliveRuntime", "importWorkspace", "setWindowLayout", "setSidebarPosition",
-    "setWindowSidebar", "newTab", "settleNewTab", "closeTab", "closeTabs", "activate", "activateNumberedTab",
+    "setWindowSidebar", "newTab", "settleNewTab", "closeTab", "closeTabs", "activate", "activateNumberedTab", "prepareVisiblePanePages", "activateVisiblePane",
     "switchPageEngine", "handOffPin", "activateIndex", "cycle", "navigate", "updateTab", "navigated", "faviconChanged",
     "closeCommandTabs", "openSidebarLiveItem", "reopenCommandClosed", "restoreCommandWindow", "duplicateTab", "togglePin", "moveTab",
     "moveTabBy", "createWindow", "closeWindow", "setChromeWindowClosePending", "commitChromeWindowClose", "restoreClosingWindow", "forgetClosedWindow", "setWindowKeptOnClose",
@@ -199,6 +199,7 @@ extension Session {
                 successor: a[1]?["successor"]?.string.flatMap { $0.isEmpty ? nil : $0 })
     case "activate": activate(try a.requireString(0))
     case "prepareVisiblePanePages": prepareVisiblePanePages(a.strings(0))
+    case "activateVisiblePane": activateVisiblePane(try a.requireString(0), tabId: try a.requireString(1))
     case "activateNumberedTab":
       if let tabId = SidebarQuery(state).numberedTab(windowId: try a.requireString(0), number: a.int(1)) { activate(tabId) }
     case "switchPageEngine": switchPageEngine(try a.requireString(0), engine: try a.requireString(1), url: a.string(2))

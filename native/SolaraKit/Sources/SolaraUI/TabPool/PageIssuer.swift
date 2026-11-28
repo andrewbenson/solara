@@ -152,6 +152,14 @@ public final class PageIssuer {
   var retainedNativeExecutions: Int { nativeExecutions.count }
   private let deliver: PageRegistry.Deliver
   private var bindings: [String: PageHostBinding] = [:]
+  private struct RNFollowRequest: Equatable {
+    let windowId: String
+    let navigation: Navigation?
+  }
+
+  private var rnFollowRequests: [PageIdentity: RNFollowRequest] = [:]
+  private var rnFollowSubscription: Int?
+  private var scheduledRNFollows: Set<PageIdentity> = []
   private var protectionRuntimeID: UUID?
   private var hasBegunRuntime = false
   private var mediaEnded = false
@@ -199,6 +207,47 @@ public final class PageIssuer {
     deliveryConfigured = deliveryConfigured && snapshotConfigured && callConfigured
     if !callConfigured { NSLog("[store] PageRegistry call configuration failed; page registration refused") }
 
+  }
+
+  deinit {
+    if let rnFollowSubscription { store.unsubscribe(rnFollowSubscription) }
+  }
+
+  public func startFollowingRNPage(_ binding: PageHostBinding) {
+    guard binding.host == .reactNative, rnFollowRequests[binding.identity] == nil,
+      isCurrent(binding), let tab = store.state.tabs[binding.tabId] else { return }
+    rnFollowRequests[binding.identity] = RNFollowRequest(windowId: tab.windowId, navigation: tab.navigation)
+    if rnFollowSubscription == nil {
+      rnFollowSubscription = store.subscribe { [weak self] commit in
+        let ids = commit.changes.tabs.upserted
+        guard !ids.isEmpty else { return }
+        DispatchQueue.main.async { [weak self] in self?.followChangedRNPages(ids) }
+      }
+    }
+    scheduleRNFollow(binding)
+  }
+
+  private func followChangedRNPages(_ ids: [String]) {
+    let state = store.state
+    for id in ids {
+      guard let binding = bindings[id], let previous = rnFollowRequests[binding.identity],
+        let tab = state.tabs[id] else { continue }
+      let request = RNFollowRequest(windowId: tab.windowId, navigation: tab.navigation)
+      guard request != previous else { continue }
+      rnFollowRequests[binding.identity] = request
+      scheduleRNFollow(binding)
+    }
+  }
+
+  private func scheduleRNFollow(_ binding: PageHostBinding) {
+    let identity = binding.identity
+    guard scheduledRNFollows.insert(identity).inserted else { return }
+    DispatchQueue.main.async { [weak self, weak binding] in
+      guard let self else { return }
+      self.scheduledRNFollows.remove(identity)
+      guard let binding, self.rnFollowRequests[identity] != nil else { return }
+      _ = self.follow(binding)
+    }
   }
 
   public func beginRuntime(_ id: UUID) {
@@ -327,6 +376,11 @@ public final class PageIssuer {
   private func retireInScope(_ binding: PageHostBinding) {
     guard !binding.retired else { return }
     binding.retired = true
+    if rnFollowRequests.removeValue(forKey: binding.identity) != nil, rnFollowRequests.isEmpty,
+      let subscription = rnFollowSubscription {
+      store.unsubscribe(subscription)
+      rnFollowSubscription = nil
+    }
     if bindings[binding.tabId] === binding {
       bindings[binding.tabId] = nil
       if !mediaEnded {
@@ -457,16 +511,48 @@ public final class PageIssuer {
         binding.eventSeq < 9_007_199_254_740_991 else { return nil }
       binding.eventSeq += 1
       let sequence = binding.eventSeq
+      if name == "onDownloadNavigation", dismissDownloadingPeekInScope(binding, payload: payload) { return nil }
       if var report = PageNativeReport.report(name: name, payload: payload)?.object {
         report["eventSeq"] = JSONValue(sequence)
         guard self.report(binding, report: .object(report)) else { return nil }
       }
+      applyRendererEventInScope(binding, name: name, payload: payload)
       store.enqueuePageReport(id: binding.tabId, report: ["type": "latch",
         "generation": .string(binding.sessionGeneration), "eventSeq": JSONValue(sequence)])
       store.sequence {}
       guard currentInScope(binding, requirePage: true) else { return nil }
       return sequence
     }
+  }
+
+  private func dismissDownloadingPeekInScope(_ binding: PageHostBinding, payload: JSONValue) -> Bool {
+    if let committed = payload["committedUrl"], !committed.isNull {
+      guard let url = committed.string, url.isEmpty || url == "about:blank" else { return false }
+    }
+    if let skipped = payload["skipped"], skipped.bool == nil { return false }
+    let state = store.state
+    guard let tab = state.tabs[binding.tabId], state.peeks[tab.windowId]?.tabId == binding.tabId else { return false }
+    return (try? store.dispatch(Command("closePeek", [.string(tab.windowId)]), origin: .engine)) != nil
+  }
+
+  private func applyRendererEventInScope(_ binding: PageHostBinding, name: String, payload: JSONValue) {
+    let id = binding.tabId
+    let command: Command
+    switch name {
+    case "onZoom":
+      guard let zoom = payload["zoom"]?.number, zoom.isFinite, zoom > 0 else { return }
+      command = Command("updateTab", [.string(id), ["zoom": .number(zoom)]])
+    case "onFindResult":
+      guard let count = payload["count"]?.int, let active = payload["active"]?.int else { return }
+      command = Command("setFind", [.string(id), ["count": JSONValue(count), "active": JSONValue(active)]])
+    case "onPageFocus", "onPagePress":
+      let state = store.state
+      guard let tab = state.tabs[id], state.activeTabId(tab.windowId) != id else { return }
+      command = Command("activateVisiblePane", [.string(tab.windowId), .string(id)])
+    default:
+      return
+    }
+    _ = try? store.dispatch(command, origin: .engine)
   }
 
   public func eventEnvelope(_ binding: PageHostBinding, name: String, payload: JSONValue, eventSeq: Int? = nil) -> JSONValue? {
@@ -529,16 +615,6 @@ public final class PageIssuer {
         navigationSeq.map({ $0 >= 0 && $0 <= 9_007_199_254_740_991 }) ?? true else { return }
       binding.executedNavigationSeq = navigationSeq
       try? store.confirmPageExecutionInScope(binding.tabId, generation: binding.sessionGeneration)
-    }
-  }
-
-  public func executionFlags(_ binding: PageHostBinding, navigationSeq: Int?) -> (startedEarly: Bool, sameProfileMove: Bool)? {
-    store.sequence {
-      guard currentInScope(binding, requirePage: true),
-        let snapshot = try? store.pageHostSnapshotInScope(binding.tabId, generation: binding.sessionGeneration),
-        let tab = snapshot.state.tabs[binding.tabId],
-        navigationSeq == tab.navigation.flatMap({ Int(exactly: $0.seq) }) else { return nil }
-      return (binding.executedNavigationSeq != nil && binding.executedNavigationSeq == navigationSeq, binding.movedTo(navigationSeq))
     }
   }
 
@@ -745,7 +821,10 @@ public final class PageIssuer {
       if action["type"]?.string == "clearNewTabShown" {
         binding.context.newTabShownUrl = nil
         let consumed = prepared.guardValue
-        afterSequence { binding.onClearNewTabShown(binding, consumed) }
+        afterSequence { [weak self, weak binding] in
+          guard let self, let binding, self.isCurrent(binding) else { return }
+          binding.onClearNewTabShown(binding, consumed)
+        }
       } else if action["type"]?.string == "load", let url = action["url"]?.string {
         binding.perform(.loadUrl(url, action["userInitiated"]?.bool ?? false)) { _ in }
       }

@@ -1,7 +1,7 @@
 import { nativeWorkspaceCommand } from "@solara/settings";
 import { unwrapPageEvent, type OpenWindowRequest, type PageEngine, type PageCreated, type PageIssue, type StoreReportDisposition, type ViewEventName, type WebViewProps } from "@solara/solaracore";
 import { reportsKnownHistory } from "./layout/backAction";
-import { finishRNPageIssue, isPageCurrent, pageReport, updatePageContext, type PageContext, type PageIdentity, type PageIssuePreview } from "@solara/store";
+import { isPageCurrent, updatePageContext, type PageContext, type PageIdentity } from "@solara/store";
 import { keepAliveCreated, keepAliveFailed, keepAliveGone, keepAliveHandled } from "../lib/keepAliveFeed";
 import { nativeOwnsWorkspace } from "../store/nativeStore";
 import { focus, switchToTab } from "../lib/actions";
@@ -14,7 +14,7 @@ import { noteIssued, webviews } from "../lib/webviews";
 import { handoffLoaded } from "../lib/pageHandoff";
 import { useBrowser } from "../store/browser";
 import { setPageProgress } from "../store/pageProgress";
-import { engineProfile, navigationTo } from "../store/model";
+import { navigationTo } from "../store/model";
 import { splitOf } from "../store/splits";
 import type { Tab } from "../store/types";
 import { patchPage, pageOf, setBrowserId, setPopover, usePages } from "./layout/pageState";
@@ -29,14 +29,8 @@ import { closePeekOnEscape } from "./peek/actions";
 export type PageSession = {
   tabId: string;
   factsOwner: "js" | "native";
-  navigationOwner: "js" | "native";
   identity: PageIdentity | null;
-  following: boolean;
-  followAgain: boolean;
   engine: PageEngine;
-  peekOf: string | undefined;
-  profileId: string;
-  adoptId: string | undefined;
   pending: string | null;
   lastPage: string | null;
   adopted: string | null;
@@ -84,21 +78,15 @@ const isBlank = (url: string) => !url || url === "about:blank";
 const hostOf = (url: string) => url.match(/^[a-z][\w+.-]*:\/\/([^/?#]*)/i)?.[1]?.toLowerCase() ?? "";
 const pageKey = (url: string) => url.replace(/#.*$/, "");
 
-export function newPageSession(tabId: string, engine: PageEngine, peekOf: string | undefined, handoff: { seq?: number } | null): PageSession {
+export function newPageSession(tabId: string, engine: PageEngine, handoff: { seq?: number } | null): PageSession {
   const t = useBrowser.getState().tabs[tabId];
   const navigation = t?.navigation;
   const adoptId = t?.adoptId;
   return {
     tabId,
     factsOwner: nativeOwnsWorkspace() ? "native" : "js",
-    navigationOwner: "js",
     identity: null,
-    following: false,
-    followAgain: false,
     engine,
-    peekOf,
-    profileId: t?.profileId ?? "",
-    adoptId,
     pending: navigation?.url ?? (adoptId ? (t?.url ?? null) : null),
     lastPage: null,
     adopted: null,
@@ -115,8 +103,9 @@ export function currentPageContext(tabId: string): PageContext {
   const page = pageOf(tabId);
   const previous = contexts.get(tabId);
   const value = { navigationSeq: useBrowser.getState().tabs[tabId]?.navigation?.seq ?? null, wasNewTab: !!page.wasNewTab, newTabShownUrl: page.newTabShown?.url ?? null };
-  if (previous && previous.navigationSeq === value.navigationSeq && previous.wasNewTab === value.wasNewTab && previous.newTabShownUrl === value.newTabShownUrl) return previous;
-  const contextRevision = (previous?.contextRevision ?? 0) + 1;
+  const sameOverlay = previous && previous.wasNewTab === value.wasNewTab && previous.newTabShownUrl === value.newTabShownUrl;
+  if (sameOverlay && previous.navigationSeq === value.navigationSeq) return previous;
+  const contextRevision = sameOverlay ? previous.contextRevision : (previous?.contextRevision ?? 0) + 1;
   if (!Number.isSafeInteger(contextRevision)) throw new Error("page context revision exhausted");
   const context = { ...value, contextRevision };
   contexts.set(tabId, context);
@@ -137,14 +126,13 @@ export function releasePageSession(session: PageSession, preserveKeepAlive = fal
   }
 }
 
-export function observePageIdentity(session: PageSession, identity: PageIdentity, navigationOwner: "js" | "native" = "js", nativeContextRevision?: number): boolean {
+export function observePageIdentity(session: PageSession, identity: PageIdentity, host: "rn" | "pool" = "rn", nativeContextRevision?: number): boolean {
   if (identity.tabId !== session.tabId || !isPageCurrent(identity)) return false;
   const changedIdentity = !session.identity || session.identity.sessionGeneration !== identity.sessionGeneration || session.identity.registrationGeneration !== identity.registrationGeneration;
   if (changedIdentity) session.identity = identity;
   session.factsOwner = "native";
-  session.navigationOwner = navigationOwner;
   sessions.set(session.tabId, session);
-  if (changedIdentity) keepAliveCreated(identity, navigationOwner === "native" ? "pool" : "rn");
+  if (changedIdentity) keepAliveCreated(identity, host);
   if (nativeContextRevision !== undefined && Number.isSafeInteger(nativeContextRevision) && nativeContextRevision >= 0) {
     const context = currentPageContext(session.tabId);
     const contextRevision = Math.max(context.contextRevision, nativeContextRevision + 1);
@@ -157,7 +145,7 @@ export function observePageIdentity(session: PageSession, identity: PageIdentity
 export function acceptPageReport(session: PageSession, report: StoreReportDisposition): boolean {
   if (report.kind === "rejected") return false;
   if (report.kind === "fallback") return session.factsOwner === "js";
-  return observePageIdentity(session, { tabId: session.tabId, sessionGeneration: report.sessionGeneration, registrationGeneration: report.registrationGeneration }, session.navigationOwner);
+  return observePageIdentity(session, { tabId: session.tabId, sessionGeneration: report.sessionGeneration, registrationGeneration: report.registrationGeneration });
 }
 
 export function notePageEventHandled(session: PageSession, report: StoreReportDisposition) {
@@ -175,34 +163,9 @@ export function deliverPageEvent(session: PageSession, name: ViewEventName, payl
   return true;
 }
 
-export function followNavigation(session: PageSession, navigation: Tab["navigation"] | undefined, allowRetry = true) {
+export function followNavigation(session: PageSession, navigation: Tab["navigation"] | undefined) {
+  if (session.factsOwner === "native" || !navigation) return;
   const { tabId } = session;
-  if (session.navigationOwner === "native") return;
-  if (session.factsOwner === "native") {
-    if (!session.identity || !isPageCurrent(session.identity)) return;
-    if (session.following) { session.followAgain = true; return; }
-    const context = publishPageContext(tabId);
-    const response = pageReport(tabId, { type: "issued", generation: session.identity.sessionGeneration, navigation: navigation ?? null, startedEarly: false, ...context });
-    const preview = response?.result as PageIssuePreview | undefined;
-    if (!preview?.guard) return;
-    session.following = true;
-    const identity = session.identity;
-    let retryRejected = false;
-    void finishRNPageIssue(tabId, preview.guard).then(({ accepted }) => {
-      retryRejected = !accepted && allowRetry;
-    }).catch(() => {
-      retryRejected = allowRetry;
-    }).finally(() => {
-      session.following = false;
-      const requestedAgain = session.followAgain;
-      session.followAgain = false;
-      if ((requestedAgain || retryRejected) && session.identity === identity && isPageCurrent(identity)) {
-        queueMicrotask(() => followNavigation(session, useBrowser.getState().tabs[tabId]?.navigation, requestedAgain));
-      }
-    });
-    return;
-  }
-  if (!navigation) return;
   noteIssued(tabId, navigation.seq);
   if (session.arrived) {
     session.arrived = false;
@@ -226,18 +189,18 @@ export function pageEventHandlers(session: PageSession): PageEventHandlers {
   const { tabId, engine } = session;
   const tab = () => useBrowser.getState().tabs[tabId];
   const store = () => useBrowser.getState();
-  const prewarmOnly = () => !tab()?.navigation && !session.adoptId;
+  const prewarmOnly = () => !tab()?.navigation && !tab()?.adoptId;
   const activateSplitPane = () => {
+    if (session.factsOwner === "native") return;
     const t = tab();
     if (t && splitOf(store(), tabId) && store().windows[t.windowId]?.activeTabIds[t.profileId] !== tabId) store().activate(tabId);
   };
 
   const handlers: PageEventHandlers = {
     onPageCreated: (created: PageCreated) => {
-      if (!observePageIdentity(session, created, session.navigationOwner)) return;
-      keepAliveCreated(created, session.navigationOwner === "native" ? "pool" : "rn");
+      if (!observePageIdentity(session, created)) return;
+      keepAliveCreated(created, "rn");
       publishPageContext(tabId);
-      followNavigation(session, tab()?.navigation);
     },
     onPageIssue: (issue: PageIssue) => {
       if (!session.identity || issue.sessionGeneration !== session.identity.sessionGeneration || issue.registrationGeneration !== session.identity.registrationGeneration || !isPageCurrent(issue)) return;
@@ -248,7 +211,6 @@ export function pageEventHandlers(session: PageSession): PageEventHandlers {
         const matchesNavigation = consumed === null ? navigation === null : !!consumed && !!navigation && consumed.seq === navigation.seq && consumed.url === navigation.url && !!consumed.userInitiated === !!navigation.userInitiated;
         if (issue.contextRevision === context.contextRevision && matchesNavigation) patchPage(tabId, { newTabShown: null });
       }
-      if (issue.retry) queueMicrotask(() => followNavigation(session, tab()?.navigation));
     },
     onReady: (browserId) => {
       setBrowserId(tabId, browserId);
@@ -258,7 +220,7 @@ export function pageEventHandlers(session: PageSession): PageEventHandlers {
     onNavigationChange: ({ url: reported, title, canGoBack, canGoForward, isLoading, themeColor, themeColorSource, initialDocumentAccessed, committedInitial }) => {
       if (session.factsOwner === "js") adoptIconPage(tabId, tab()?.url);
       const url = initialDocumentAccessed && committedInitial ? "about:blank" : reported;
-      const untouched = committedInitial === undefined ? reported === "" && !(tab()?.openerId && session.adoptId) : committedInitial && !initialDocumentAccessed;
+      const untouched = committedInitial === undefined ? reported === "" && !(tab()?.openerId && tab()?.adoptId) : committedInitial && !initialDocumentAccessed;
       const target = session.pending ?? (session.lastPage === null ? (tab()?.navigation?.url ?? null) : null);
       if (target === null && prewarmOnly()) {
         if (isBlank(url)) return;
@@ -300,8 +262,8 @@ export function pageEventHandlers(session: PageSession): PageEventHandlers {
       session.pending = null;
       const t = tab();
       if (!t) return;
-      if (session.peekOf !== undefined && (!committedUrl || isBlank(committedUrl))) {
-        if (store().peeks[t.windowId]?.tabId === tabId) store().closePeek(t.windowId);
+      if (session.factsOwner === "js" && store().peeks[t.windowId]?.tabId === tabId && (!committedUrl || isBlank(committedUrl))) {
+        store().closePeek(t.windowId);
         return;
       }
       const s = store();
@@ -319,8 +281,8 @@ export function pageEventHandlers(session: PageSession): PageEventHandlers {
     onProgress: (progress) => {
       if (!prewarmOnly()) setPageProgress(tabId, progress);
     },
-    onZoom: ({ zoom }) => store().updateTab(tabId, { zoom }),
-    onFindResult: ({ count, active }) => store().setFind(tabId, { count, active }),
+    onZoom: ({ zoom }) => { if (session.factsOwner === "js") store().updateTab(tabId, { zoom }); },
+    onFindResult: ({ count, active }) => { if (session.factsOwner === "js") store().setFind(tabId, { count, active }); },
     onFavicon: (favicon) => {
       if (session.factsOwner !== "js" || !favicon) return;
       const current = tab();

@@ -54,7 +54,10 @@ public class SettingsModule: Module {
         }
         NativeEngineCommands.backChanged = {
           DispatchQueue.main.async {
-            MainActor.assumeIsolated { NativeToolbarPresenter.refreshContributions() }
+            MainActor.assumeIsolated {
+              NativeToolbarPresenter.refreshContributions()
+              NativePaneOverlays.navigationChanged()
+            }
             projectionSink.module?.sendEvent("onEngineBackChanged", [:])
           }
         }

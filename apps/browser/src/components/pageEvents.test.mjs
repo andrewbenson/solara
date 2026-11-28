@@ -16,7 +16,7 @@ const sleepPolicySource = read("../lib/tabSleepPolicy.ts");
 const settle = () => new Promise((resolve) => setImmediate(resolve));
 const navigation = (url = "https://a.test/", more = {}) => ({ url, title: url, isLoading: false, canGoBack: true, canGoForward: false, themeColor: null, ...more });
 
-function harness({ owned = true, pooled = false, finishAccepted = true, quitting = false } = {}) {
+function harness({ owned = true, pooled = false, quitting = false } = {}) {
   const calls = [];
   const page = { wasNewTab: true, newTabShown: null, backToNewTab: false, popups: [], status: "" };
   const state = { profiles: { p: {} }, peeks: {}, tabs: { t: { id: "t", url: "https://a.test/", title: "A", profileId: "p", windowId: "w", muted: true, navigation: { seq: 1, url: "https://a.test/" } }, other: { profileId: "p" } }, live: { t: { isLoading: false, canGoBack: true, discarded: false } }, windows: { w: { id: "w", profileId: "p", tabIds: ["t", "other"], activeTabIds: { p: "t" } } } };
@@ -29,30 +29,9 @@ function harness({ owned = true, pooled = false, finishAccepted = true, quitting
   const identity = { tabId: "t", sessionGeneration: "G", registrationGeneration: 1 };
   let authority = identity;
   const current = (candidate) => candidate.tabId === authority.tabId && candidate.sessionGeneration === authority.sessionGeneration && candidate.registrationGeneration === authority.registrationGeneration;
-  let preview = null;
-  let finishCount = 0;
-  let handlers;
   const storeAPI = {
     isPageCurrent: current,
     updatePageContext: (candidate, context) => { calls.push({ name: "context", args: [candidate, context] }); return current(candidate); },
-    pageReport: (tabId, report) => {
-      calls.push({ name: "pageReport", args: [tabId, report] });
-      if (report.type !== "issued") return {};
-      const guard = { sessionGeneration: report.generation, navigation: report.navigation, contextRevision: report.contextRevision, modelSerial: 1, startedEarly: false, sameProfileMove: false };
-      preview = { actions: [...(report.newTabShownUrl ? [{ type: "clearNewTabShown" }] : []), ...(report.navigation ? [{ type: "load", url: report.navigation.url, userInitiated: false }] : [])], guard };
-      return { result: preview };
-    },
-    finishRNPageIssue: async (tabId, guard) => {
-      finishCount++;
-      calls.push({ name: "finish", args: [tabId, guard] });
-      if (finishAccepted instanceof Error) throw finishAccepted;
-      if (!finishAccepted) return { accepted: false };
-      for (const action of preview.actions) {
-        if (action.type === "clearNewTabShown") { calls.push({ name: "nativeClear", args: [] }); handlers.onPageIssue({ ...identity, accepted: true, clearNewTabShown: true, contextRevision: guard.contextRevision, navigation: guard.navigation }); }
-        else calls.push({ name: "nativeLoad", args: [action.url] });
-      }
-      return { accepted: true };
-    },
   };
   const globals = {};
   const modules = {};
@@ -100,9 +79,9 @@ function harness({ owned = true, pooled = false, finishAccepted = true, quitting
   const lifecycle = load("tabLifecycle", lifecycleSource);
   mocks["../lib/tabLifecycle"] = lifecycle;
   const events = load("pageEvents", source);
-  const session = events.newPageSession("t", "chromium", undefined, null);
-  handlers = events.pageEventHandlers(session);
-  if (owned) events.observePageIdentity(session, identity, pooled ? "native" : "js");
+  const session = events.newPageSession("t", "chromium", null);
+  const handlers = events.pageEventHandlers(session);
+  if (owned) events.observePageIdentity(session, identity, pooled ? "pool" : "rn");
   const props = { transferKey: "t", acceptStoreReport: (report) => events.acceptPageReport(session, report), onStoreEventHandled: (report) => events.notePageEventHandled(session, report), ...handlers };
   const report = { kind: "reserved", sessionGeneration: "G", registrationGeneration: 1 };
   const emit = (name, payload, disposition = owned ? report : { kind: "fallback" }) => webView.deliverWebViewEvent(props, name, { ...payload, storeReport: disposition });
@@ -119,7 +98,7 @@ function harness({ owned = true, pooled = false, finishAccepted = true, quitting
     return { emit: (event) => listener(event), stop };
   };
   calls.length = 0;
-  return { calls, state, page, events, session, handlers, webView, props, identity, report, emit, hold, startPool, lifecycle, webviews, setAuthority: (value) => { authority = value; }, setQuitting: (value) => { quitting = value; }, finishes: () => finishCount };
+  return { calls, state, page, events, session, handlers, webView, props, identity, report, emit, hold, startPool, lifecycle, webviews, setAuthority: (value) => { authority = value; }, setQuitting: (value) => { quitting = value; } };
 }
 
 const semantics = (calls) => calls.filter(({ name }) => ["updateTab", "updateLive", "navigated", "closeTab"].includes(name));
@@ -137,13 +116,13 @@ test("RN reservation leaves navigation and favicons with the native page", () =>
   assert.equal(h.page.status, "status");
 });
 
-test("RN native facts still issue one load and UI callbacks", async () => {
+test("RN navigation leaves loads to the native host", async () => {
   const h = harness();
   h.events.followNavigation(h.session, h.state.tabs.t.navigation);
   await settle();
   h.emit("onNavigationChange", navigation("https://b.test/"));
   h.emit("onNavigationChange", navigation("https://c.test/"));
-  assert.equal(h.calls.filter(({ name }) => name === "nativeLoad").length, 1);
+  assert.equal(h.calls.filter(({ name }) => name === "nativeLoad").length, 0);
   assert.equal(h.calls.filter(({ name }) => name === "jsLoad").length, 0);
 });
 
@@ -234,18 +213,13 @@ test("fallback JS facts still work", () => {
   assert.equal(h.calls.filter(({ name }) => name === "jsLoad").length, 1);
 });
 
-test("New Tab same URL clears before RN load", async () => {
+test("native clear uses the same overlay revision across navigation", () => {
   const h = harness();
   h.page.newTabShown = { url: "https://a.test/", title: "A" };
-  h.events.publishPageContext("t");
+  const shown = h.events.publishPageContext("t");
   h.state.tabs.t.navigation = { seq: 2, url: "https://a.test/" };
-  h.events.followNavigation(h.session, h.state.tabs.t.navigation);
-  await settle();
-  const names = h.calls.map(({ name }) => name);
-  assert.ok(names.indexOf("context") < names.indexOf("pageReport"));
-  assert.ok(names.indexOf("nativeClear") < names.indexOf("nativeLoad"));
+  h.handlers.onPageIssue({ ...h.identity, clearNewTabShown: true, contextRevision: shown.contextRevision, navigation: h.state.tabs.t.navigation });
   assert.equal(h.page.newTabShown, null);
-  assert.equal(h.calls.find(({ name }) => name === "pageReport").args[1].newTabShownUrl, "https://a.test/");
 });
 
 test("pooled New Tab same URL ignores delayed context props", () => {
@@ -331,16 +305,6 @@ test("native ready preserves profile release bookkeeping without changing discar
   assert.equal(h.calls.filter(({ name, args }) => name === "releaseProfile" && args[0] === "p").length, 1);
   h.lifecycle.releaseUnusedProfiles();
   assert.equal(h.calls.filter(({ name }) => name === "releaseProfile").length, 1);
-});
-
-test("failed RN finalization retries once and handles rejection", async () => {
-  const h = harness({ finishAccepted: new Error("gone") });
-  h.events.followNavigation(h.session, h.state.tabs.t.navigation);
-  await settle();
-  await settle();
-  assert.equal(h.finishes(), 2);
-  assert.equal(h.session.following, false);
-  assert.equal(h.calls.filter(({ name }) => name === "jsLoad" || name === "nativeClear").length, 0);
 });
 
 test("RN context prop setters do not attach before the complete prop batch", () => {
@@ -445,8 +409,8 @@ test("pooled created acknowledges its own stamp and requests a complete feed", (
 
 test("a throwing UI handler marks the session protective before a later event can acknowledge it", () => {
   const h = harness();
-  h.state.updateTab = () => { throw new Error("UI failure"); };
-  assert.throws(() => h.emit("onZoom", { zoom: 1.5 }, { ...h.report, eventSeq: 5 }), /UI failure/);
+  h.state.faviconChanged = () => { throw new Error("UI failure"); };
+  assert.throws(() => h.emit("onFavicon", { url: "icon", urls: [] }, { ...h.report, eventSeq: 5 }), /UI failure/);
   assert.equal(h.calls.filter((call) => call.name === "keepAliveFailed").length, 1);
   assert.equal(h.calls.filter((call) => call.name === "keepAliveHandled").length, 0);
 });

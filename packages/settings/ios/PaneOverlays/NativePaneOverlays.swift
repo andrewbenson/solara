@@ -59,8 +59,7 @@ enum NativePaneOverlays {
     _ = SettingsJS.shared.observe(topic) { value in apply(value) }
     _ = SettingsJS.shared.observe("pane.navigation") { value in
       navigation = (value as? [String: Any])?["windows"] as? [String: [String: Any]] ?? [:]
-      navigationRevision &+= 1
-      for host in hosts.values { host.relayout() }
+      navigationChanged()
     }
     _ = SettingsJS.shared.observe("pane.navigationMenu") { value in
       guard let value = value as? [String: Any], let windowId = value["windowId"] as? String,
@@ -84,6 +83,11 @@ enum NativePaneOverlays {
       MainActor.assumeIsolated { refresh(windowId) }
     }
     apply(SettingsJS.shared.latestValue(topic))
+  }
+
+  static func navigationChanged() {
+    navigationRevision &+= 1
+    for host in hosts.values { host.relayout() }
   }
 
   static var navigation: [String: [String: Any]] = [:]
@@ -858,7 +862,6 @@ private final class NativeNavigationSwipe {
   private let target = NativeSwipeTarget(frame: .zero)
   private let controller = NavigationSwipeController()
   var capsule: SwipeCapsuleView { controller.capsule }
-  private var presentation: [String: Any] = [:]
   private var configurationRevision: Int?
   private var configurationPresentationRevision: UInt64?
   private var stopped = false
@@ -910,35 +913,55 @@ private final class NativeNavigationSwipe {
     guard configurationRevision != revision || configurationPresentationRevision != presentationRevision else { return }
     configurationRevision = revision
     configurationPresentationRevision = presentationRevision
-    self.presentation = presentation
     #if DEBUG || SOLARA_PERF_TRACE
     LayoutTrace.event("navigationConfigure", "\(windowId) \(registration.tabID) \(revision) \(presentationRevision)")
     #endif
-    let pageID = state.tabs[registration.tabID]?.pageIn.flatMap { $0.isEmpty ? nil : $0 } ?? registration.tabID
+    let pageID = self.pageID(in: state)
     let live = state.live[pageID]
-    let newTabShown = presentation["newTabShown"] as? Bool == true
-    target.canSwipeBack = !newTabShown && (live?.canGoBack == true || presentation["backToNewTab"] as? Bool == true || presentation["engineBack"] as? Bool == true || presentation["backToOpener"] as? Bool == true)
-    target.canSwipeForward = newTabShown || live?.canGoForward == true
-    controller.profileId = state.tabs[registration.tabID]?.profileId ?? ""
+    let history = historyFacts(pageID)
+    let tab = state.tabs[registration.tabID]
+    let opener = tab?.openerId.flatMap { state.tabs[$0] }
+    let openerBack = history.historyKnown && live != nil && opener?.windowId == windowId && opener?.profileId == tab?.profileId
+      && state.peeks[windowId]?.tabId != registration.tabID && Splits.splitOf(state, registration.tabID) == nil
+      && !state.inPinnedContainer(registration.tabID)
+    target.canSwipeBack = !history.newTabShown && (live?.canGoBack == true || history.backToNewTab || NativeEngineCommands.hasBack(pageID) || openerBack)
+    target.canSwipeForward = history.newTabShown || live?.canGoForward == true
+    controller.profileId = tab?.profileId ?? ""
     if let theme = presentation["theme"] as? [String: Any] {
       controller.theme = SwipeCapsuleTheme(dark: theme["dark"] as? Bool ?? false, textPrimary: theme["textPrimary"] as? String ?? "#000000D9", textSecondary: theme["textSecondary"] as? String ?? "#00000080")
     }
   }
 
+  private func pageID(in state: BrowserState) -> String {
+    state.tabs[registration.tabID]?.pageIn.flatMap { $0.isEmpty ? nil : $0 } ?? registration.tabID
+  }
+
+  private func historyFacts(_ pageID: String) -> (newTabShown: Bool, backToNewTab: Bool, historyKnown: Bool) {
+    NativeStoreHandle.store?.menuHistoryFacts(pageID) ?? (false, false, false)
+  }
+
   private func history(_ direction: SwipeCapsuleDirection, _ completion: @escaping ([NavigationSwipeItem]) -> Void) {
-    guard current, let registry = PageIssuer.shared?.registry else { return }
+    guard current, let registry = PageIssuer.shared?.registry, let state = NativeStoreHandle.store?.state else { return }
+    let pageID = self.pageID(in: state)
+    let history = historyFacts(pageID)
     if registration.registrationGeneration == 0 {
-      completion(direction == .back && presentation["backToNewTab"] as? Bool == true ? [.init(title: "New Tab", url: "", offset: 0, newTab: true)] : [])
+      completion(direction == .back && history.backToNewTab && !history.newTabShown ? [.init(title: "New Tab", url: "", offset: 0, newTab: true)] : [])
       return
     }
+    let scope = NativeEngineCommands.pageScope(registration.tabID)
+    let shown = history.newTabShown
+    if shown && direction == .back { completion([]); return }
     registry.call(registration, command: .navigationEntries) { [weak self] result in
-      guard let self, self.current, case .success(let value) = result, let entries = value.foundation as? [[String: Any]] else { return }
+      guard let self, self.current, let scope, let currentScope = NativeEngineCommands.pageScope(self.registration.tabID),
+        currentScope.identity == scope.identity, currentScope.documentRevision == scope.documentRevision,
+        currentScope.tab.navigation == scope.tab.navigation, currentScope.tab.url == scope.tab.url,
+        self.historyFacts(pageID).newTabShown == shown,
+        case .success(let value) = result, let entries = value.foundation as? [[String: Any]] else { return }
       let current = entries.firstIndex { $0["current"] as? Bool == true } ?? -1
       let step = direction == .back ? -1 : 1
       var items: [NavigationSwipeItem] = []
-      let shown = self.presentation["newTabShown"] as? Bool == true
-      if current >= 0, !shown {
-        var index = current + step
+      if shown || current >= 0 {
+        var index = shown ? max(current, 0) : current + step
         while entries.indices.contains(index), items.count < 15 {
           let entry = entries[index]
           let url = entry["url"] as? String ?? ""
@@ -947,19 +970,15 @@ private final class NativeNavigationSwipe {
           index += step
         }
       }
-      if shown {
-        Task { @MainActor [weak self] in
-          guard let self, self.current else { return }
-          let value = await SettingsAdapters.js("pane.navigationHistory", self.windowId, self.registration.tabID, Double(self.generation), step)
-          guard self.current, let rows = value as? [[String: Any]] else { return }
-          completion(rows.map { .init(title: $0["title"] as? String ?? "", url: $0["url"] as? String ?? "", offset: $0["offset"] as? Int ?? 0) })
-        }
-      } else {
-        if step < 0, self.presentation["backToNewTab"] as? Bool == true, items.count < 15 {
-          items.append(.init(title: "New Tab", url: "", offset: -max(0, current), newTab: true))
-        }
-        completion(items)
+      if shown, items.isEmpty, let binding = PageIssuer.shared?.binding(identity: scope.identity),
+        let url = binding.context.newTabShownUrl {
+        let title = binding.navigation?["title"]?.string ?? ""
+        items.append(.init(title: title.isEmpty ? url : title, url: url, offset: 0))
       }
+      if step < 0, self.historyFacts(pageID).backToNewTab, items.count < 15 {
+        items.append(.init(title: "New Tab", url: "", offset: -max(0, current), newTab: true))
+      }
+      completion(items)
     }
   }
 
@@ -1034,11 +1053,10 @@ private final class NativeNavigationSwipe {
   #endif
 
   private func navigate(_ action: NavigationSwipeAction) {
-    guard current, let registry = PageIssuer.shared?.registry else { return }
-    let state = NativeStoreHandle.store?.state
-    let pageID = state?.tabs[registration.tabID]?.pageIn.flatMap { $0.isEmpty ? nil : $0 } ?? registration.tabID
-    let live = state?.live[pageID]
-    let shown = presentation["newTabShown"] as? Bool == true
+    guard current, let registry = PageIssuer.shared?.registry, let state = NativeStoreHandle.store?.state else { return }
+    let pageID = self.pageID(in: state)
+    let live = state.live[pageID]
+    let shown = historyFacts(pageID).newTabShown
     var compatibility: [String: Any]?
     switch action {
     case .step(let direction):

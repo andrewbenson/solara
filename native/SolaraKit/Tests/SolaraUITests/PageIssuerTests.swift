@@ -901,3 +901,91 @@ private func heldPageAnswer(_ command: PageCommand = .livePage, incognito: Bool,
     #expect(throws: (any Error).self) { try PageIssueGuard(json: ["sessionGeneration": "G", "modelSerial": -1]) }
   }
 }
+
+@MainActor
+@Suite struct RNPageFollowingTests {
+  private func flushFollowing() async {
+    for _ in 0..<2 {
+      await withCheckedContinuation { continuation in
+        DispatchQueue.main.async { continuation.resume() }
+      }
+    }
+  }
+
+  @Test func mountedPageFollowsTheLatestStoreRequestOnce() async throws {
+    for engine in [PageEngine.chromium, .webKit] {
+      let fixture = try IssuerFixture(engine: engine, host: .reactNative)
+      fixture.issuer.startFollowingRNPage(fixture.binding)
+      try fixture.store.dispatch(Command("navigate", [.string(fixture.id), "https://intermediate.example/"]))
+      try fixture.store.dispatch(Command("navigate", [.string(fixture.id), "https://latest.example/"]))
+      await flushFollowing()
+      #expect(fixture.producer.commands == [.loadUrl("https://latest.example/", true)])
+      try fixture.store.dispatch(Command("updateTab", [.string(fixture.id), ["title": "Latest"]]))
+      await flushFollowing()
+      #expect(fixture.producer.commands.count == 1)
+    }
+  }
+
+  @Test func queuedFollowAndRendererEventCannotClaimAReplacement() async throws {
+    let fixture = try IssuerFixture(host: .reactNative)
+    fixture.issuer.startFollowingRNPage(fixture.binding)
+    try fixture.store.dispatch(Command("navigate", [.string(fixture.id), "https://next.example/"]))
+    let producer = IssuerProducer()
+    let context = PageHostContext.initial(navigationSeq: fixture.store.state.tabs[fixture.id]?.navigation.flatMap { Int(exactly: $0.seq) },
+      wasNewTab: false, cached: nil)
+    let replacement = try #require(fixture.issuer.attach(tabId: fixture.id, engine: .chromium, host: .reactNative,
+      owner: producer, context: context, perform: producer.perform))
+    #expect(replacement.identity != fixture.binding.identity)
+    #expect(fixture.issuer.reserveEvent(fixture.binding, name: "onPageFocus", payload: [:]) == nil)
+    fixture.issuer.retire(fixture.binding)
+    await flushFollowing()
+    #expect(fixture.producer.commands.isEmpty)
+    #expect(producer.commands.isEmpty)
+    fixture.issuer.startFollowingRNPage(replacement)
+    await flushFollowing()
+    #expect(producer.commands == [.loadUrl("https://next.example/", true)])
+  }
+
+  @Test func aDownloadDismissesOnlyTheCurrentPeek() async throws {
+    let fixture = try IssuerFixture(host: .reactNative)
+    let window = try #require(fixture.store.state.tabs[fixture.id]?.windowId)
+    #expect(fixture.issuer.report(fixture.binding, report: ["type": "media", "playing": true]))
+    let peek = try #require(try fixture.store.dispatch(Command("openPeek", [.string(fixture.id), "https://download.example/"])).result?.string)
+    let producer = IssuerProducer()
+    let context = PageHostContext.initial(navigationSeq: fixture.store.state.tabs[peek]?.navigation.flatMap { Int(exactly: $0.seq) },
+      wasNewTab: false, cached: nil)
+    let binding = try #require(fixture.issuer.attach(tabId: peek, engine: .chromium, host: .reactNative, owner: producer,
+      context: context, perform: producer.perform))
+    fixture.issuer.startFollowingRNPage(binding)
+    _ = fixture.issuer.reserveEvent(binding, name: "onDownloadNavigation", payload: ["committedUrl": nil, "skipped": true])
+    #expect(fixture.store.state.peeks[window] == nil)
+    #expect(fixture.store.state.activeTabId(window) == fixture.id)
+    #expect(fixture.store.state.live[fixture.id]?.playingAudio == true)
+    #expect(fixture.issuer.reserveEvent(binding, name: "onPageFocus", payload: [:]) == nil)
+    await flushFollowing()
+    #expect(producer.commands.isEmpty)
+  }
+
+  @Test func rendererFocusSelectsOnlyAnUncoveredVisiblePane() throws {
+    let fixture = try IssuerFixture(host: .reactNative)
+    let window = try #require(fixture.store.state.tabs[fixture.id]?.windowId)
+    let secondary = try #require(try fixture.store.dispatch(Command("newTab", [.string(window),
+      ["url": "https://split.example/", "background": true]])).result?.string)
+    let producer = IssuerProducer()
+    let context = PageHostContext.initial(navigationSeq: fixture.store.state.tabs[secondary]?.navigation.flatMap { Int(exactly: $0.seq) },
+      wasNewTab: false, cached: nil)
+    let binding = try #require(fixture.issuer.attach(tabId: secondary, engine: .chromium, host: .reactNative,
+      owner: producer, context: context, perform: producer.perform))
+    _ = fixture.issuer.reserveEvent(binding, name: "onPageFocus", payload: [:])
+    #expect(fixture.store.state.activeTabId(window) == fixture.id)
+    try fixture.store.dispatch(Command("createSplit", [[.string(fixture.id), .string(secondary)]]))
+    try fixture.store.dispatch(Command("openPeek", [.string(fixture.id), "https://peek.example/"]))
+    _ = fixture.issuer.reserveEvent(binding, name: "onPagePress", payload: [:])
+    #expect(fixture.store.state.activeTabId(window) == fixture.id)
+    #expect(fixture.store.state.peeks[window] != nil)
+    try fixture.store.dispatch(Command("closePeek", [.string(window)]))
+    _ = fixture.issuer.reserveEvent(binding, name: "onPagePress", payload: [:])
+    #expect(fixture.store.state.activeTabId(window) == secondary)
+  }
+
+}

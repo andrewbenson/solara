@@ -133,7 +133,7 @@ export type ExtensionActionResult = "none" | "popup" | "sidePanel";
 export type PageNativeIdentity = { tabId: string; sessionGeneration: string; registrationGeneration: number };
 export type StoreReportDisposition = { kind: "fallback" } | ({ kind: "reserved"; eventSeq?: number } & Omit<PageNativeIdentity, "tabId">) | { kind: "rejected"; sessionGeneration?: string; registrationGeneration?: number };
 export type PageCreated = PageNativeIdentity & { generation: string; reestablished?: boolean };
-export type PageIssue = PageNativeIdentity & { accepted?: boolean; clearNewTabShown?: boolean; retry?: boolean; contextRevision?: number; navigation?: { seq: number; url: string; userInitiated?: boolean } | null };
+export type PageIssue = PageNativeIdentity & { accepted?: boolean; clearNewTabShown?: boolean; contextRevision?: number; navigation?: { seq: number; url: string; userInitiated?: boolean } | null };
 
 export type WebViewProps = ViewProps & {
   acceptStoreReport?: (report: StoreReportDisposition) => boolean;

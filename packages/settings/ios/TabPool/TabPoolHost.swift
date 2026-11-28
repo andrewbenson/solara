@@ -45,7 +45,7 @@ final class TabPoolHost {
   private var following: Set<String> = []
   private var placeholderPagesDue: Set<String> = []
   private var placeholderPagesAllowed: Set<String> = []
-  private var scheduledFollows: Set<String> = []
+  private var scheduledFollows: Set<PageIdentity> = []
   private let shellNSWindows = NSMapTable<NSString, NSWindow>.strongToWeakObjects()
 
   func start() {
@@ -477,7 +477,7 @@ final class TabPoolHost {
             self?.emitEvent(binding, name: "onPageIssue", payload: ["clearNewTabShown": true,
               "contextRevision": consumed.contextRevision,
               "navigation": PageValue(json: consumed.json["navigation"] ?? .null).foundation])
-          }, onNeedsFollow: { [weak self] _ in self?.scheduleFollow(tabId) },
+          }, onNeedsFollow: { [weak self] binding in self?.scheduleFollow(binding) },
           perform: { [weak token] command, finish in
             guard let token, let page = token.page else { return finish(.failure(.noPage(tabId))) }
             if case .loadUrl(let url, let userInitiated) = command {
@@ -587,6 +587,7 @@ final class TabPoolHost {
   }
 
   private func emitEvent(_ binding: PageHostBinding, name: String, payload: [String: Any], eventSeq: Int? = nil) {
+    guard name == "onPageGone" || PageIssuer.shared?.isCurrent(binding) == true else { return }
     var envelope: [String: Any] = ["tabId": binding.tabId, "name": name, "payload": payload,
       "generation": binding.sessionGeneration, "sessionGeneration": binding.sessionGeneration,
       "registrationGeneration": binding.registrationGeneration, "contextRevision": binding.context.contextRevision, "factsOwner": "native", "navigationOwner": "native"]
@@ -607,14 +608,14 @@ final class TabPoolHost {
     _ = issuer.follow(binding)
   }
 
-  private func scheduleFollow(_ tabId: String) {
-    guard scheduledFollows.insert(tabId).inserted else { return }
-    DispatchQueue.main.async { [weak self] in
-      MainActor.assumeIsolated {
-        guard let self else { return }
-        self.scheduledFollows.remove(tabId)
-        if let entry = self.pages[tabId] { self.follow(entry) }
-      }
+  private func scheduleFollow(_ binding: PageHostBinding) {
+    let identity = binding.identity
+    guard scheduledFollows.insert(identity).inserted else { return }
+    DispatchQueue.main.async { [weak self, weak binding] in
+      guard let self else { return }
+      self.scheduledFollows.remove(identity)
+      guard let binding, let entry = self.pages[binding.tabId], entry.token.binding === binding else { return }
+      self.follow(entry)
     }
   }
 

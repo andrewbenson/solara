@@ -71,14 +71,6 @@ public class StoreModule: Module {
       pageMain { RNPageReports.isCurrent(tabId: tabId, sessionGeneration: sessionGeneration) }
     }
 
-    AsyncFunction("finishRNPageIssue") { (tabId: String, guardJSON: String, promise: Promise) in
-      nonisolated(unsafe) let reply = promise
-      MainActor.assumeIsolated {
-        RNPageReports.finish(tabId: tabId, guardJSON: guardJSON,
-          resolve: { reply.resolve($0) }, reject: { reply.reject($0, $1) })
-      }
-    }.runOnQueue(.main)
-
     Function("status") { () -> [String: Any] in
       let syncRedesign = LaunchSwitch(rawValue: "SOLARA_SYNC_REDESIGN").map { LaunchSwitches.shared.isOn($0, defaultOn: false) } ?? false
       var status: [String: Any]
@@ -110,13 +102,7 @@ public class StoreModule: Module {
     }
 
     Function("dispatch") { (commandJSON: String, sinceRev: Int) -> String? in
-      guard let bridge = NativeStore.shared?.bridge else { return nil }
-      guard needsPagePreparation(commandJSON) else { return bridge.dispatch(commandJSON, sinceRev: sinceRev) }
-      return pageMain {
-        bridge.dispatch(json: commandJSON, sinceRev: sinceRev, prepare: { commands in
-          try MainActor.assumeIsolated { try RNPageReports.normalize(commands) }
-        }).text()
-      }
+      NativeStore.shared?.bridge.dispatch(commandJSON, sinceRev: sinceRev)
     }
 
     Function("catchUp") { (sinceRev: Int) -> String? in
@@ -178,12 +164,6 @@ final class EventSink: @unchecked Sendable {
   init(module: StoreModule) {
     self.module = module
   }
-}
-
-private func needsPagePreparation(_ commandJSON: String) -> Bool {
-  guard let parsed = try? JSONValue.parse(commandJSON), parsed["fromSync"]?.truthy != true else { return false }
-  let commands = parsed["commands"].map { $0.array ?? [$0] } ?? parsed.array ?? [parsed]
-  return commands.contains { $0["name"]?.string == "pageReport" && $0["args"]?.array?.dropFirst().first?["type"]?.string == "issued" }
 }
 
 @MainActor private func devTabSleep(_ action: String) async -> String {

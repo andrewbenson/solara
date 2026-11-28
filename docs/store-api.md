@@ -211,7 +211,6 @@ The report types are:
 | --- | --- |
 | `created` | `engine: "chromium" | "webkit"`, optional nullable `handoffSeq`, optional `reestablished`, and PageContext |
 | `context` | PageContext |
-| `issued` | nullable `navigation: { url, seq, userInitiated? }`, `startedEarly`, optional `sameProfileMove`, and PageContext |
 | `navigation` | `url`, `title`, `isLoading`, `canGoBack`, `canGoForward`; optional nullable `themeColor`, optional `initialDocumentAccessed`, `committedInitial`, `committedUrl`, `eventSeq` |
 | `media` | `playing`, optional `muted`, `eventSeq` |
 | `ready` | `browserId`, optional `tabId`, `eventSeq` |
@@ -272,9 +271,13 @@ missing-identity envelopes are rejected. Little Solara uses a pooled producer to
 RN's pre-Expo native tap reserves and settles facts before emitting UI events. Its private `storeReport` disposition
 is `fallback`, `reserved` with the original session, or `rejected` with an optional original session. Rejected owned
 events never become fallback. WebView checks disposition before decoding and checks current native authority again
-when each held handler actually executes, including its captured registration. JS retains navigation following for
-RN and UI effects for both hosts (history/favicon/prompts/status/media/overlay); pooled navigation following is native.
-There are no duplicate JS created/gone/navigation/media/download/discard/ready writes on the owned path. Ready still records loaded profiles for resource release. Sleeping hooks read owned live.discarded; native Library destinations settle their URL and title without issuing a renderer navigation.
+when each held handler actually executes, including its captured registration. Swift follows committed
+navigation for both hosts. The RN host begins following after the renderer starts and coalesces changes on the
+main queue. It follows only the exact mounted registration and session. Swift also settles renderer zoom, find
+counts, focus between visible split panes, and dismissal of a Peek whose navigation only started a download.
+JS retains presentation projections for both hosts, including favicon, prompts, status, media, and overlays.
+There are no duplicate JS created/gone/navigation/media/download/discard/ready writes on the owned path.
+Ready still records loaded profiles for resource release. Sleeping hooks read owned live.discarded.
 
 Automatic sleeping is native by default (`LaunchSwitch.nativeTabSleep`). `status().nativeTabSleep` is the runner's
 lock-backed running value, not just the launch switch; JS's `nativeTabSleepRunning()` also requires native workspace
@@ -290,14 +293,11 @@ release.
 `isPageCurrent(identity): boolean` and `updatePageContext(identity, context): boolean` additionally validate the exact
 `registrationGeneration` and `sessionGeneration`; JS uses them for held-event delivery and synchronous context
 publication. Their native ABI takes tab id, session string, registration number and (for update) JSON context.
-None creates identity. RN `issued`
-returns a nonconsuming `{ actions, guard }` preview. PageIssueGuard contains `sessionGeneration`, complete nullable
-`navigation`, `contextRevision`, `modelSerial`, `startedEarly`, `sameProfileMove`. Always finalize even an empty
-preview using `finishRNPageIssue(tabId, guard): Promise<{ accepted: boolean }>` (the same native
-`PageCommand.finishPageIssue` executor). JS never executes preview load/clear actions or clears on completion.
-Native acceptance emits the matching UI clear before any engine-event UI notifications. The clear carries the consumed contextRevision and complete nullable navigation; JS clears only an overlay whose current revision and navigation still match. Rejected candidates leave
-current following pending; JS retries a rejected completion once from the current request and coalesces intervening
-follow requests. Owned `startNavigation` effects issue no raw JS load.
+None creates identity. The New Tab overlay revision tracks changes to the overlay context.
+The navigation sequence independently identifies the current request. Swift accepts a navigation and clears its
+matching overlay before calling the engine. The clear notification includes the consumed context revision and
+complete nullable navigation so a delayed notification cannot clear a newer overlay. Owned `startNavigation`
+effects issue no raw JS loads.
 
 All legacy, G3 and typed native calls use one PageIssuer. Standalone `issue` enters Store.sequence;
 `issueInScope` uses Store.withinSequence without a nested drain and requires existing ingress ownership (Debug

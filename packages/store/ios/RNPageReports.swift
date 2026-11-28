@@ -117,11 +117,7 @@ enum RNPageReports {
           payload["navigation"] = PageValue(json: consumed.json["navigation"] ?? .null).foundation
           emit("onPageIssue", payload)
         },
-        onNeedsFollow: { binding in
-          var payload = identity(binding)
-          payload["retry"] = true
-          emit("onPageIssue", payload)
-        }, perform: { [weak attachment] command, finish in
+        perform: { [weak attachment] command, finish in
           guard let attachment, let page = attachment.page else { finish(.failure(.noPage(tabId))); return }
           if case .loadUrl(let url, let userInitiated) = command {
             var current: SolaraModel.Navigation?
@@ -150,6 +146,7 @@ enum RNPageReports {
     issuer.store.sequence {
       guard issuer.ensurePageEstablished(binding) else { return }
       action()
+      issuer.startFollowingRNPage(binding)
     }
   }
 
@@ -257,38 +254,6 @@ enum RNPageReports {
     return issuer.updateContext(binding, context: context)
   }
 
-  static func finish(tabId: String, guardJSON: String, resolve: @escaping (Any?) -> Void, reject: @escaping (String, String) -> Void) {
-    guard let issuer, let binding = issuer.binding(tabId: tabId), binding.host == .reactNative,
-      binding.runtimeID == runtimeID else { resolve(["accepted": false]); return }
-    do {
-      let guardValue = try PageIssueGuard(json: JSONValue.parse(guardJSON))
-      issuer.issue(tabId: tabId, identity: binding.identity, command: .finishPageIssue(guardValue)) { result in
-        switch result {
-        case .success(let value): resolve(value.foundation)
-        case .failure: resolve(["accepted": false])
-        }
-      }
-    } catch { issuer.afterSequence { reject("ERR_PAGE_ARGS", "Invalid page issue guard") } }
-  }
-
-  static func normalize(_ commands: [Command]) throws -> [Command] {
-    guard let issuer else { return commands }
-    return commands.map { command in
-      guard command.name == "pageReport", command.args.count >= 2,
-        let tabId = command.args[0].string, let generation = command.args[1]["generation"]?.string,
-        let binding = issuer.binding(tabId: tabId), binding.host == .reactNative,
-        binding.sessionGeneration == generation, binding.runtimeID == runtimeID else { return command }
-      var command = command
-      if command.args[1]["type"]?.string == "issued", var report = command.args[1].object {
-        let flags = issuer.executionFlags(binding, navigationSeq: safeInteger(report["navigation"]?["seq"]))
-        report["startedEarly"] = .bool(flags?.startedEarly ?? false)
-        report["sameProfileMove"] = .bool(flags?.sameProfileMove ?? false)
-        command.args[1] = .object(report)
-      }
-      return command
-    }
-  }
-
   private static func context(_ value: JSONValue) -> PageHostContext? {
     PageHostContext(json: value)
   }
@@ -296,12 +261,6 @@ enum RNPageReports {
   private static func navigation(_ value: SolaraModel.Navigation?) -> TabNavigationRequest? {
     guard let value, let sequence = Int(exactly: value.seq) else { return nil }
     return TabNavigationRequest(seq: sequence, url: toAppUrl(value.url), userInitiated: value.userInitiated ?? false)
-  }
-
-  private static func safeInteger(_ value: JSONValue?) -> Int? {
-    guard let number = value?.number, number.isFinite, number.rounded() == number,
-      number >= 0, number <= 9_007_199_254_740_991 else { return nil }
-    return Int(exactly: number)
   }
 
   private static func identity(_ binding: PageHostBinding) -> [String: Any] {

@@ -15,6 +15,7 @@ import { persistEngine } from "../lib/engines";
 import { tabEngine } from "../store/engines";
 import { webviewRef } from "../lib/webviews";
 import { useBrowser } from "../store/browser";
+import { nativeOwnsWorkspace, nativeWrite } from "../store/nativeStore";
 import { setPageProgress } from "../store/pageProgress";
 import { shallowEqual, useProfilesValue, useStoreWhile, useTabValue } from "../store/tabWatch";
 import { useWindowId } from "../store/hooks";
@@ -139,6 +140,10 @@ export function LegacyContentCard({ small }: { small: boolean }) {
 
   useEffect(() => {
     if (pooled) return;
+    if (nativeOwnsWorkspace()) {
+      nativeWrite({ name: "prepareVisiblePanePages", args: [[windowId]] });
+      return;
+    }
     const s = useBrowser.getState();
     for (const id of Object.keys(panes)) {
       const t = s.tabs[id];
@@ -146,7 +151,7 @@ export function LegacyContentCard({ small }: { small: boolean }) {
       const holder = holderOf(s, id);
       s.updateTab(id, holder ? { pageIn: holder.id, unloaded: undefined } : wake(t));
     }
-  }, [panes, pooled]);
+  }, [panes, pooled, windowId]);
 
   const leaving = useTabDrag((d) => (!pooled && d.windowId === windowId && d.tabIds.length && (d.outside || !!(d.lifted ?? d.onPage)) ? d.tabIds : null));
   const successor = useMemo(() => {
@@ -432,7 +437,9 @@ const TabPane = memo(function TabPane({
       radius={fullscreen ? 0 : layout.cardRadius}
       pointerEvents={!visible || covered ? "none" : pooled ? "box-none" : "auto"}
       onTouchStart={() => {
-        if (visible && !focused) useBrowser.getState().activate(tabId);
+        if (!visible || focused) return;
+        if (nativeOwnsWorkspace()) nativeWrite({ name: "activateVisiblePane", args: [windowId, tabId] });
+        else useBrowser.getState().activate(tabId);
       }}
       style={{
         position: "absolute",
@@ -524,10 +531,7 @@ function EngineWebView({ tabId, visible, warm, peekOf, engine }: TabWebViewProps
   const theme = useTheme();
   const backdrop = useMemo(() => opaqueCard(theme), [theme.card, theme.windowTint[0], theme.windowTint[1]]);
 
-  const [session] = useState(() => newPageSession(tabId, engine, peekOf, takeHandOff(tabId, engine)));
-  session.profileId = profileId;
-  session.adoptId = adoptId;
-  session.peekOf = peekOf;
+  const [session] = useState(() => newPageSession(tabId, engine, takeHandOff(tabId, engine)));
   const handlers = useMemo(() => pageEventHandlers(session), [session]);
 
   const contextKey = usePages((s) => {
@@ -537,10 +541,10 @@ function EngineWebView({ tabId, visible, warm, peekOf, engine }: TabWebViewProps
   const pageContext = useMemo(() => currentPageContext(tabId), [navigation?.seq, contextKey]);
   const seq = navigation?.seq;
   useEffect(() => {
-    followNavigation(session, navigation);
+    if (session.factsOwner === "js") followNavigation(session, navigation);
   }, [seq]);
   useEffect(() => {
-    persistEngine(tabId, engine);
+    if (session.factsOwner === "js") persistEngine(tabId, engine);
     return () => {
       releasePageSession(session);
       if (session.factsOwner === "js") noteGone(tabId);

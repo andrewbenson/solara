@@ -194,12 +194,6 @@ type NavigationCompatibilityAction = { kind: "back" | "forward" } | ({ kind: "it
 const nativeNavigationCurrent = (windowId: string, tabId: string, generation: number) => generation > 0 && windowNativeLayoutGeneration(windowId) === generation && store().tabs[tabId]?.windowId === windowId;
 
 addNativeSettingsHandlers({
-  "pane.navigationHistory": async (windowId: string, tabId: string, generation: number, direction: -1 | 1) => {
-    if (!nativeNavigationCurrent(windowId, tabId, generation)) return [];
-    const handle = webviews.get(tabId);
-    const items = await historyItems(tabId, direction);
-    return nativeNavigationCurrent(windowId, tabId, generation) && webviews.get(tabId) === handle ? items : [];
-  },
   "pane.navigationCompatibility": (windowId: string, tabId: string, generation: number, registrationGeneration: number, sourceUrl: string, action: NavigationCompatibilityAction) => {
     const facts = nativePageFacts(tabId);
     const pageCurrent = () => {

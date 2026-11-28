@@ -118,6 +118,14 @@ public enum Splits {
 }
 
 extension Session {
+  func activateVisiblePane(_ windowId: String, tabId: String) {
+    let current = state
+    guard current.peeks[windowId] == nil, !memory.closingWindows.contains(windowId),
+      current.activeTabId(windowId) != tabId,
+      Splits.visiblePaneIds(current, windowId: windowId).contains(tabId) else { return }
+    activate(tabId)
+  }
+
   func prepareVisiblePanePages(_ windowIds: [String]) {
     let before = state
     var tabs = before.tabs

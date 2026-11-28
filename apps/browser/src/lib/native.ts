@@ -28,7 +28,7 @@ import { isUtilityWindowId } from "../components/settings/windows";
 import { openingLightsCenter } from "../components/layout/windowLayout";
 import { openWindow as createWindow } from "./actions";
 import { createWindowSync, type WindowPort } from "./windowSync";
-import { openExternalUrls } from "../components/littleSolara/actions";
+import { openExternalUrls } from "./linkRoutes";
 import { runCommand } from "./commands";
 import { startShortcutHints } from "./commandShortcuts";
 import { finishAnimatedCloses } from "./closeAnimated";
@@ -65,7 +65,7 @@ export function startNativeSync() {
   onCommand(runCommand);
   startWindowCloseGuard();
   usePages.subscribe(keepAlivePagesChanged);
-  onOpenURLs((urls, pointer, profile) => openExternalUrls(urls, pointer, profile));
+  if (!nativeOwnsWorkspace()) onOpenURLs((urls, _pointer, profile) => openExternalUrls(urls, profile));
   void lastTabClosesWindow().then((closes) => setLastTabKeepsWindow(!closes));
   onDownload((d) => store.getState().upsertDownload(d));
 
@@ -112,7 +112,7 @@ export function startNativeSync() {
     port: shellWindowPort,
     getState: store.getState,
     isQuitting,
-    lightsCenter: (s, id) => (s.windows[id]?.kind === "small" ? null : openingLightsCenter(s, id)),
+    lightsCenter: openingLightsCenter,
     isUtilityWindow: isUtilityWindowId,
   });
   windows.listen();

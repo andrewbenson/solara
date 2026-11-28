@@ -3,7 +3,6 @@ import { test } from "node:test";
 import { registerHooks } from "node:module";
 registerHooks({
   resolve(specifier, context, next) {
-    if (specifier === "../components/littleSolara/actions" && context.parentURL?.endsWith("/lib/windowClose.ts")) return { url: "data:text/javascript,export const closeLittleSolara = () => {}", shortCircuit: true };
     return next(specifier, context);
   },
 });

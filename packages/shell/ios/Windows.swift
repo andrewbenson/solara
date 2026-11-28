@@ -1,8 +1,13 @@
 import AppKit
 import os
 
+public enum LittleWindowEvent: Sendable {
+  case focused, frame([Double]), closed
+}
+
 public enum WindowHost {
   public static var makeWindow: (() -> NSWindow)?
+  @MainActor public static var littleWindowEvent: ((String, LittleWindowEvent) -> Void)?
   @MainActor public static var closeRequest: ((String) -> Bool)?
   @MainActor public static var publishesWindowTeardown: Bool { WindowManager.shared.publishesWindowTeardown }
   @MainActor public static func beginCommandFocus(_ command: String, windowId: String) -> Int? {
@@ -31,11 +36,12 @@ public enum WindowHost {
     FocusHandoff.shared.cancel(in: window)
   }
   @MainActor public static func contentView(_ id: String) -> NSView? { WindowManager.shared.windows[id]?.contentView }
-  @MainActor public static func openBrowserWindow(_ id: String, frame: [Double]?, incognito: Bool, profile: String, title: String, focus: Bool, chromeWindow: String?, small: Bool, size: [Double]?) {
-    WindowManager.shared.open(id: id, frame: frame, incognito: incognito, title: title, focus: focus, kind: small ? "small" : "browser", profile: profile, size: size, chromeWindow: chromeWindow, animated: true)
+  @MainActor public static func openBrowserWindow(_ id: String, frame: [Double]?, incognito: Bool, profile: String, title: String, focus: Bool, chromeWindow: String?, small: Bool, size: [Double]?, claim: String? = nil, pointer: NSPoint? = nil) {
+    WindowManager.shared.open(id: id, frame: frame, incognito: incognito, title: title, focus: focus, kind: small ? "small" : "browser", profile: profile, size: size, chromeWindow: chromeWindow, claim: claim, pointer: pointer, animated: true)
   }
+  @MainActor public static func setBrowserWindowTitle(_ id: String, title: String) { WindowManager.shared.setTitle(id: id, title: title) }
   @MainActor public static func closeBrowserWindow(_ id: String) { WindowManager.shared.close(id: id) }
-  @MainActor public static func cancelWindowClose(_ id: String) { WindowManager.shared.focus(id: id, cancellingClose: true) }
+  @MainActor public static func cancelWindowClose(_ id: String, restoreFocus: Bool = true) { WindowManager.shared.cancelClose(id: id, restoreFocus: restoreFocus) }
 
   @MainActor public static func retainLastWindow(_ id: String, committingClose: Bool = false) -> Bool {
     WindowManager.shared.retainLastWindow(id: id, committingClose: committingClose)
@@ -242,6 +248,18 @@ final class WindowManager: NSObject, NSWindowDelegate {
   private static let behindTimeout = 1.5
   private static let typeAheadWait = 2.5
 
+  func nativeLittleWindow(_ id: String) -> Bool {
+    smallIds.contains(id) && MainActor.assumeIsolated { WindowHost.littleWindowEvent != nil }
+  }
+
+  private func reportLittle(_ id: String, _ event: LittleWindowEvent) -> Bool {
+    MainActor.assumeIsolated {
+      guard let report = WindowHost.littleWindowEvent else { return false }
+      report(id, event)
+      return true
+    }
+  }
+
   func open(
     id: String, frame: [Double]?, incognito: Bool, title: String, focus: Bool, kind: String = "browser", profile: String? = nil,
     size: [Double]? = nil, behind: String? = nil, chromeWindow: String? = nil, claim: String? = nil, pointer: NSPoint? = nil,
@@ -270,7 +288,7 @@ final class WindowManager: NSObject, NSWindowDelegate {
     }
     if small, let claim, ChromeWindows.takeDismissed(appWindow: claim) {
       NotificationCenter.default.post(name: Notification.Name("SolaraPrivateWindowClosed"), object: nil, userInfo: ["id": id])
-      emit?("onWindowEvent", ["type": "close", "id": id])
+      if !reportLittle(id, .closed) { emit?("onWindowEvent", ["type": "close", "id": id]) }
       return
     }
     if incognito { privateIds.insert(id) }
@@ -736,7 +754,7 @@ final class WindowManager: NSObject, NSWindowDelegate {
     if let replacement, replacement != id, windows[replacement] != nil {
       return whenRevealed(replacement) {
         DispatchQueue.main.asyncAfter(deadline: .now() + WindowMotion.Style.little.entranceDuration) { [weak window] in
-          window?.orderOut(nil)
+          if let window { ChromeWindows.orderOutForLittleClose(window) }
           finish()
         }
       }
@@ -794,6 +812,11 @@ final class WindowManager: NSObject, NSWindowDelegate {
     window.close()
   }
 
+  func cancelClose(id: String, restoreFocus: Bool) {
+    closingIntents.remove(id)
+    if restoreFocus { focus(id: id) }
+  }
+
   func focus(id: String, cancellingClose: Bool = false) {
     if cancellingClose { closingIntents.remove(id) }
     if isRetained(id), termination.isTerminating { return }
@@ -830,7 +853,7 @@ final class WindowManager: NSObject, NSWindowDelegate {
   func windowDidBecomeKey(_ notification: Notification) {
     guard let window = notification.object as? NSWindow, let id = id(of: window) else { return }
     if isMainWindow(window) { lastPlaced = window }
-    emit?("onWindowEvent", ["type": "focus", "id": id])
+    if !smallIds.contains(id) || !reportLittle(id, .focused) { emit?("onWindowEvent", ["type": "focus", "id": id]) }
   }
 
   func windowWillClose(_ notification: Notification) {
@@ -848,8 +871,8 @@ final class WindowManager: NSObject, NSWindowDelegate {
     fullScreenIds.remove(id)
     fullScreenTransitions.remove(id)
     auxKinds[id] = nil
-    smallIds.remove(id)
-    if closingFromJS.remove(id) == nil {
+    let small = smallIds.remove(id) != nil
+    if closingFromJS.remove(id) == nil, !small || !reportLittle(id, .closed) {
       emit?("onWindowEvent", ["type": "close", "id": id])
     }
     DispatchQueue.main.async {
@@ -928,7 +951,10 @@ final class WindowManager: NSObject, NSWindowDelegate {
       UserDefaults.standard.set(lastFrame, forKey: Self.lastFrameKey)
     }
     let f = window.frame
-    emit?("onWindowEvent", ["type": "frame", "id": id, "frame": [f.minX, f.minY, f.width, f.height]])
+    let frame = [f.minX, f.minY, f.width, f.height].map { Double($0) }
+    if !smallIds.contains(id) || !reportLittle(id, .frame(frame)) {
+      emit?("onWindowEvent", ["type": "frame", "id": id, "frame": frame])
+    }
   }
 
   var appEventsObserved = false

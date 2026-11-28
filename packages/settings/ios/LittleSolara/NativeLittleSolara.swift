@@ -1,4 +1,5 @@
 import AppKit
+import SolaraCore
 import SolaraShaders
 import SolaraShell
 import Foundation
@@ -13,6 +14,10 @@ enum NativeLittleSolara {
   private static var installed = false
   nonisolated private static let activeIds = Mutex<Set<String>>([])
   private static var hasHosts = false
+  private static weak var windowStore: Store?
+  private static var windowSubscription: Int?
+  private static var windowLifecycle: Int?
+  nonisolated private static let smallWindows = Mutex<Set<String>>([])
   private static let lifetimes: ShellLifetimes<LittleSolaraHost> = {
     let lifetimes = ShellLifetimes<LittleSolaraHost> { $0.stop() }
     lifetimes.onIds = { ids in
@@ -47,6 +52,103 @@ enum NativeLittleSolara {
         }
       }
       return host.shell
+    }
+  }
+
+  static func startWindowLifecycle() {
+    guard windowLifecycle == nil else { return }
+    install()
+    WindowHost.littleWindowEvent = receiveWindowEvent
+    windowLifecycle = NativeStoreHandle.subscribeLifecycle { bindWindows() }
+  }
+
+  private static func bindWindows() {
+    let store = WorkspaceWrites.store
+    guard windowStore !== store else { return }
+    if let windowSubscription { windowStore?.unsubscribe(windowSubscription) }
+    let previous = smallWindows.withLock { ids in
+      let previous = ids
+      ids.removeAll()
+      return previous
+    }
+    for id in previous { WindowHost.closeBrowserWindow(id) }
+    windowStore = store
+    let generation = NativeStoreHandle.ownershipGeneration
+    windowSubscription = store?.subscribe { [weak store] commit in
+      let changes = commit.changes
+      let tracked = smallWindows.withLock { $0 }
+      let state = commit.state
+      let littleChanged = changes.windows.upserted.contains { state.windows[$0]?.isSmall == true }
+        || changes.windows.removed.contains { tracked.contains($0) }
+        || changes.tabs.upserted.contains { state.tabs[$0].map { tracked.contains($0.windowId) } == true }
+      guard littleChanged else { return }
+      Task { @MainActor in
+        guard let store, windowStore === store, WorkspaceWrites.store === store,
+          NativeStoreHandle.ownershipGeneration == generation else { return }
+        syncWindows(store)
+      }
+    }
+    if let store, !NativeStoreHandle.frozen { syncWindows(store) }
+  }
+
+  static func syncWindows(_ store: Store) {
+    guard windowStore === store else { return }
+    let state = store.state
+    let ids = state.windowOrder.filter { state.windows[$0]?.isSmall == true }
+    let live = Set(ids)
+    let existing = smallWindows.withLock { ids in
+      let existing = ids
+      ids = live
+      return existing
+    }
+    let removed = existing.subtracting(live)
+    for id in removed { WindowHost.closeBrowserWindow(id) }
+    for id in ids {
+      guard let window = state.windows[id], !store.memory.closingWindows.contains(id) else { continue }
+      let tab = state.activeTab(id)
+      let title = tab.map { $0.customTitle ?? $0.title } ?? "New Tab"
+      if WindowHost.contentView(id) != nil {
+        WindowHost.setBrowserWindowTitle(id, title: title)
+        continue
+      }
+      guard !existing.contains(id) else { continue }
+      let claim = tab?.adoptId.flatMap { $0.hasPrefix("link:") ? $0 : nil }
+      let pointer = window.linkPointer.flatMap { value in
+        value.count == 2 ? NSPoint(x: value[0], y: value[1]) : nil
+      }
+      WindowHost.openBrowserWindow(id, frame: window.frame, incognito: false, profile: state.engineProfile(window.profileId),
+        title: title, focus: state.ui.focusedWindowId == id, chromeWindow: nil, small: true,
+        size: state.settings["littleSolaraSize"]?.array?.compactMap(\.number), claim: claim, pointer: pointer)
+    }
+  }
+
+  private static func receiveWindowEvent(_ id: String, _ event: LittleWindowEvent) {
+    guard let store = windowStore, WorkspaceWrites.store === store, !NativeStoreHandle.frozen else { return }
+    let ownership = NativeStoreHandle.ownershipGeneration
+    if case .closed = event, WindowHost.publishesWindowTeardown, store.state.windows[id]?.isSmall == true {
+      _ = try? store.dispatch(Command("setWindowClosing", [.string(id), true]), origin: .native)
+    }
+    DispatchQueue.main.async {
+      guard WorkspaceWrites.store === store, NativeStoreHandle.ownershipGeneration == ownership,
+        !NativeStoreHandle.frozen, WindowHost.publishesWindowTeardown,
+        store.state.windows[id]?.isSmall == true else { return }
+      let command: Command
+      switch event {
+      case .closed:
+        guard WindowHost.contentView(id) == nil else { return }
+        _ = try? store.dispatch([
+          Command("closeWindow", [.string(id)]), Command("setWindowClosing", [.string(id), false]),
+        ], origin: .native)
+        return
+      case .focused:
+        guard !store.memory.closingWindows.contains(id), WindowHost.contentView(id)?.window?.isKeyWindow == true ||
+          ProcessInfo.processInfo.environment["SOLARA_BACKGROUND"] == "1" else { return }
+        command = Command("setFocusedWindow", [.string(id)])
+      case .frame(let frame):
+        guard !store.memory.closingWindows.contains(id), WindowHost.contentView(id) != nil else { return }
+        command = Command("setWindowFrame", [.string(id), .array(frame.map(JSONValue.number))])
+      }
+      _ = try? store.dispatch(command, origin: .native)
     }
   }
 

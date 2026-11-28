@@ -92,6 +92,21 @@ extension Session {
     return id
   }
 
+  public func replaceLittleSolara(_ id: String, profileId: String) -> (windowId: String, forgetTab: String?)? {
+    let s = state
+    guard let window = s.windows[id], window.isSmall, !window.incognito, window.profileId != profileId,
+      s.profiles[profileId] != nil, !memory.closingWindows.contains(id) else { return nil }
+    let tab = s.activeTab(id)
+    memory.closingWindows.insert(id)
+    var options = CreateWindowOptions()
+    options.small = true
+    options.profileId = profileId
+    options.url = tab?.url
+    options.frame = window.frame
+    options.openPanel = tab?.url.isEmpty != false
+    return (createWindow(options), tab?.id)
+  }
+
   public func createWindow(_ o: CreateWindowOptions = CreateWindowOptions()) -> String {
     let s = state
     let id = newId("w")

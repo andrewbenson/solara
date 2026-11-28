@@ -119,6 +119,7 @@ public final class PageHostBinding {
 @MainActor
 public final class PageIssuer {
   public static var shared: PageIssuer?
+  public static var consumeLittleWindowEvent: (@MainActor (PageIssuer, PageHostBinding, String) -> Bool)?
   public static var consumePageOpen: (@MainActor (PageIssuer, PageHostBinding, JSONObject) -> Void)?
   public static var consumePeekEscape: (@MainActor (PageIssuer, PageHostBinding) -> Bool)?
   public static var consumeLifecycleEvent: (@MainActor (PageIssuer, PageHostBinding, String, JSONValue) -> Bool)?
@@ -500,9 +501,12 @@ public final class PageIssuer {
       return nil
     }
     let escape = name == "onCommand" && payload["command"]?.string == "escape"
-    if escape, store.sequence({
+    if escape || name == "onWindowClose", store.sequence({
       guard ensurePageEstablished(binding), currentInScope(binding, requirePage: true) else { return false }
-      return Self.consumeLifecycleEvent?(self, binding, name, payload) == true || Self.consumePeekEscape?(self, binding) == true
+      if escape, Self.consumeLifecycleEvent?(self, binding, name, payload) == true || Self.consumePeekEscape?(self, binding) == true {
+        return true
+      }
+      return Self.consumeLittleWindowEvent?(self, binding, name) == true
     }) { return nil }
     let sequence = reserveEventInScope(binding, name: name, payload: payload)
     if !mediaEnded, sequence != nil, name == "onMediaAccess" {

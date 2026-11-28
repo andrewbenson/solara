@@ -14,48 +14,56 @@ public struct OpenURLBatch: Sendable, Equatable {
 }
 
 public enum OpenURLInbox {
-  static var pending: [(urls: [String], sourceApp: String?)] = []
-  static var pendingRouted: [OpenURLBatch] = []
+  static var pending: [(urls: [String], sourceApp: String?, pointer: NSPoint)] = []
+  static var pendingRouted: [(batch: OpenURLBatch, pointer: NSPoint)] = []
   static var pendingOutside: [(urls: [URL], sourceApp: String?)] = []
-  static var pendingPointer = NSPoint.zero
   static var deliver: (([String], NSPoint, String?) -> Void)?
+  @MainActor public static var nativeDeliver: (@MainActor ([String], NSPoint, String?) -> Bool)?
   nonisolated(unsafe) public static var hook: (([String], String?) -> [OpenURLBatch])?
   nonisolated(unsafe) public static var hookPending = false
+
+  private static var canDeliver: Bool {
+    MainActor.assumeIsolated { nativeDeliver != nil || deliver != nil }
+  }
 
   public static func receive(_ urls: [URL], sourceApp: String? = nil) {
     let pointer = NSEvent.mouseLocation
     let strings = urls.map(\.absoluteString)
-    guard deliver != nil, !hookPending else {
-      pending.append((strings, sourceApp))
-      pendingPointer = pointer
+    guard canDeliver, !hookPending else {
+      pending.append((strings, sourceApp, pointer))
       return
     }
     hand(strings, sourceApp: sourceApp, pointer: pointer)
   }
 
   static func hand(_ urls: [String], sourceApp: String?, pointer: NSPoint) {
-    guard let deliver else { return }
     let batches = hook?(urls, sourceApp) ?? [OpenURLBatch(urls: urls)]
-    for batch in batches where !batch.urls.isEmpty { deliver(batch.urls, pointer, batch.profile) }
+    for batch in batches where !batch.urls.isEmpty { send(batch, pointer: pointer) }
+  }
+
+  private static func send(_ batch: OpenURLBatch, pointer: NSPoint) {
+    if MainActor.assumeIsolated({ nativeDeliver?(batch.urls, pointer, batch.profile) == true }) { return }
+    if let deliver { deliver(batch.urls, pointer, batch.profile) }
+    else { pendingRouted.append((batch, pointer)) }
   }
 
   static func deliverRouted(_ batch: OpenURLBatch) {
-    guard let deliver, !hookPending else {
-      pendingRouted.append(batch)
-      pendingPointer = NSEvent.mouseLocation
+    let pointer = NSEvent.mouseLocation
+    guard canDeliver, !hookPending else {
+      pendingRouted.append((batch, pointer))
       return
     }
-    deliver(batch.urls, NSEvent.mouseLocation, batch.profile)
+    send(batch, pointer: pointer)
   }
 
-  static func flushPending() {
-    guard deliver != nil, !hookPending else { return }
+  public static func flushPending() {
+    guard canDeliver, !hookPending else { return }
     let routed = pendingRouted
     pendingRouted = []
-    for batch in routed { deliver?(batch.urls, pendingPointer, batch.profile) }
+    for item in routed { send(item.batch, pointer: item.pointer) }
     let waiting = pending
     pending = []
-    for batch in waiting { hand(batch.urls, sourceApp: batch.sourceApp, pointer: pendingPointer) }
+    for batch in waiting { hand(batch.urls, sourceApp: batch.sourceApp, pointer: batch.pointer) }
   }
 
   public static func hooksReady(_ newHook: (([String], String?) -> [OpenURLBatch])?) {
@@ -460,7 +468,10 @@ public class ShellModule: Module {
     }.runOnQueue(.main)
 
     AsyncFunction("retainLastWindow") { (id: String, committingClose: Bool?) -> Bool in WindowManager.shared.retainLastWindow(id: id, committingClose: committingClose ?? false) }.runOnQueue(.main)
-    AsyncFunction("closeWindow") { (id: String) in WindowManager.shared.close(id: id) }.runOnQueue(.main)
+    AsyncFunction("closeWindow") { (id: String) in
+      guard !WindowManager.shared.nativeLittleWindow(id) else { return }
+      WindowManager.shared.close(id: id)
+    }.runOnQueue(.main)
     AsyncFunction("animateWindowClose") { (id: String, after: String?, promise: Promise) in
       WindowManager.shared.animateClose(id: id, after: after) { promise.resolve(nil) }
     }.runOnQueue(.main)

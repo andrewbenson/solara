@@ -56,6 +56,20 @@ enum NativePageOpens {
         open(receipt, request: request, issuer: issuer)
       }
     }
+    PageIssuer.consumeLittleWindowEvent = { issuer, binding, event in
+      let state = issuer.store.state
+      guard let windowId = state.tabs[binding.tabId]?.windowId, state.windows[windowId]?.isSmall == true else { return false }
+      guard let receipt = Receipt(issuer, binding) else { return true }
+      issuer.afterIngress {
+        guard receipt.isCurrent(issuer), issuer.store.state.activeTabId(windowId) == binding.tabId else { return }
+        if event == "onWindowClose" {
+          _ = NativeWorkspaceCommands.perform("closeWindow", windowId: windowId)
+        } else {
+          escape(receipt.source, store: issuer.store)
+        }
+      }
+      return true
+    }
     SolaraCoreWebView.setOpenWindowGuard { tabId in
       let check: (@Sendable () -> Bool)? = MainActor.assumeIsolated {
         guard let issuer = PageIssuer.shared, issuer.store.state.tabs[tabId] != nil else { return nil }
@@ -65,6 +79,28 @@ enum NativePageOpens {
       return check
     }
     lifecycle = NativeStoreHandle.subscribeLifecycle { reconcile() }
+  }
+
+  private static func escape(_ source: PageOpenSource, store: Store) {
+    let windowId = source.windowId
+    let tabId = source.tabId
+    let command = LittleSolaraEscape.resolve(source, state: store.state, memory: store.memory,
+      popup: NativeExtensionActionPopup.visibleWindowId == windowId, popover: NativeSelectionTools.popoverSnapshot()[tabId] != nil)
+    switch command {
+    case .popup:
+      NativeExtensionActionPopup.close(windowId: windowId)
+    case .popover:
+      _ = NativeSelectionTools.setPopover(tabId, value: nil)
+    case .panel:
+      _ = try? store.dispatch(Command("closePanel", [.string(windowId)]), origin: .native)
+    case .find:
+      _ = try? store.dispatch(Command("setFind", [.string(tabId), ["open": false, "active": 0, "count": .null]]), origin: .native)
+      NativeWorkspaceCommands.restoreContentFocus(windowId: windowId, store: store, tabId: tabId, stopFinding: true)
+    case .window:
+      _ = NativeWorkspaceCommands.perform("closeWindow", windowId: windowId)
+    case nil:
+      break
+    }
   }
 
   private static func reconcile() {

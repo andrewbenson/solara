@@ -16,6 +16,8 @@ NS_ASSUME_NONNULL_BEGIN
 @property(class, readonly) BOOL launchedHidden;
 @property(class, readonly) BOOL testBuild;
 @property(class, readonly) BOOL isStarted;
+@property(class, readonly) BOOL launchLinksReady;
+@property(class, readonly) NSNotificationName launchLinksDidBecomeReady;
 @property(class, readonly) NSArray<NSString *> *loadedProfileNames;
 + (BOOL)isProfileLoaded:(NSString *)profile NS_SWIFT_NAME(isProfileLoaded(_:));
 @property(class, readonly) NSNotificationName profileDidLoad;

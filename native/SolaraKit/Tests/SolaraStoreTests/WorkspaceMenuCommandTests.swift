@@ -51,6 +51,87 @@ import Testing
     #expect(store.state.tabs["a"]?.pinned == false)
   }
 
+  @Test func littleLinkCanOnlyAdoptAChildOnceAndCannotOpenDuringClose() throws {
+    let store = makeStore(fixture())
+    let created = try store.dispatch(Command("createWindow", [["small": true, "url": "https://source.example/"]]), origin: .native)
+    let window = try #require(created.result?.string)
+    let tab = try #require(store.state.activeTabId(window))
+    let source = try #require(PageOpenSource(state: store.state, memory: store.memory, tabId: tab))
+    let open: JSONObject = ["url": "https://child.example/", "disposition": "littleSolara", "adoptId": "tab:child"]
+    try store.transact(origin: .engine) { $0.openFromPage(source, request: open) }
+    try store.transact(origin: .engine) { $0.openFromPage(source, request: open) }
+    #expect(store.state.windows.values.filter { $0.isSmall }.count == 2)
+    try store.dispatch(Command("setWindowClosing", [.string(window), true]), origin: .native)
+    try store.transact(origin: .engine) { $0.openFromPage(source, request: ["url": "https://queued.example/", "disposition": "littleSolara"]) }
+    #expect(store.state.windows.values.filter { $0.isSmall }.count == 2)
+  }
+
+  @Test func externalLittleWindowPreservesTheLaunchOfferAndPointer() throws {
+    var state = fixture()
+    state.settings["openLinksInLittleSolara"] = true
+    let store = makeStore(state)
+    try store.transact { session in
+      #expect(session.openExternalLinks(["https://closed.example/", "FILE:///page"], engineProfile: "",
+        adoptIds: [nil, "link:1"], dismissed: [0], pointer: [200, 300]) == nil)
+    }
+    let id = try #require(store.state.windowOrder.first { store.state.windows[$0]?.isSmall == true })
+    #expect(store.state.windows[id]?.linkPointer == [200, 300])
+    #expect(store.state.activeTab(id)?.adoptId == "link:1")
+    #expect(store.state.windows[id]?.profileId == "default")
+    try store.transact { session in
+      #expect(session.openExternalLinks(["about:blank"], engineProfile: nil, adoptIds: [], dismissed: [], pointer: nil) == "w")
+    }
+    #expect(store.state.windows.values.filter { $0.isSmall }.count == 1)
+  }
+
+  @Test func littleEscapeHonorsOverlaysAndRejectsAnOldPageReceipt() throws {
+    let store = makeStore(fixture())
+    let created = try store.dispatch(Command("createWindow", [["small": true, "openPanel": true]]))
+    let id = try #require(created.result?.string)
+    let tab = try #require(store.state.activeTabId(id))
+    let source = try #require(PageOpenSource(state: store.state, memory: store.memory, tabId: tab))
+    func escape(popup: Bool = false, popover: Bool = false) -> LittleSolaraEscape? {
+      LittleSolaraEscape.resolve(source, state: store.state, memory: store.memory, popup: popup, popover: popover)
+    }
+    #expect(escape(popup: true, popover: true) == .popup)
+    #expect(escape(popover: true) == .popover)
+    #expect(escape() == .panel)
+    try store.dispatch(Command("closePanel", [.string(id)]))
+    try store.dispatch(Command("setFind", [.string(tab), ["open": true]]))
+    #expect(escape() == .find)
+    try store.dispatch(Command("setFind", [.string(tab), ["open": false]]))
+    #expect(escape() == .window)
+    try store.dispatch(Command("navigate", [.string(tab), "https://replacement.example/"]))
+    #expect(escape() == nil)
+  }
+
+  @Test func littleProfileReplacementFencesItsSourceBeforeOpening() throws {
+    let store = makeStore(fixture())
+    let profile = try #require(try store.dispatch(Command("createProfile", [["name": "Work"]])).result?.string)
+    let frame: JSONValue = [20, 30, 400, 300]
+    let created = try store.dispatch(Command("createWindow", [["small": true, "frame": frame, "url": "https://source.example/"]]))
+    let id = try #require(created.result?.string)
+    let oldTab = try #require(store.state.activeTabId(id))
+    let source = try #require(PageOpenSource(state: store.state, memory: store.memory, tabId: oldTab))
+    var replacement: String?
+    try store.transact { session in
+      let outcome = session.replaceLittleSolara(id, profileId: profile)
+      #expect(outcome?.forgetTab == oldTab)
+      replacement = outcome?.windowId
+      #expect(session.replaceLittleSolara(id, profileId: profile) == nil)
+      session.openFromPage(source, request: ["url": "https://queued.example/", "disposition": "littleSolara"])
+    }
+    let target = try #require(replacement)
+    #expect(store.memory.closingWindows.contains(id))
+    #expect(store.state.windows[target]?.profileId == profile)
+    #expect(store.state.windows[target]?.frame == [20, 30, 400, 300])
+    #expect(store.state.activeTab(target)?.url == "https://source.example/")
+    #expect(store.state.windows.values.filter { $0.isSmall }.count == 2)
+    try store.dispatch([Command("closeWindow", [.string(id)]), Command("forgetClosedTab", [.string(oldTab)])])
+    #expect(store.state.ui.focusedWindowId == target)
+    #expect(!store.state.closedTabs.contains { $0.tabId == oldTab })
+  }
+
   @Test func newTabUsesTheCanonicalStoreAction() throws {
     let store = makeStore(fixture())
     let plan = try run("newTab", store: store)

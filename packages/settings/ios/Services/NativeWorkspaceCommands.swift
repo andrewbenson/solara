@@ -53,6 +53,7 @@ enum NativeWorkspaceCommands {
   private static weak var urlStore: Store?
   private static var urlStoreListener: Int?
   private static var urlLifecycle: Int?
+  private static var launchLinksObserver: NSObjectProtocol?
 
   private static func observeApplicationURLs() {
     let store = NativeStoreHandle.ownsWorkspace ? NativeStoreHandle.store : nil
@@ -71,18 +72,57 @@ enum NativeWorkspaceCommands {
     }
   }
 
+  private static func openExternalLinks(_ inputs: [String], pointer: NSPoint, profile: String?) -> Bool {
+    guard SolaraCoreHost.launchLinksReady, let store = WorkspaceWrites.store else { return false }
+    let before = store.state
+    let urls = inputs.filter { input in
+      if before.settings.bool("allowJavaScriptFromAppleEvents") { return true }
+      let resolved = resolveInput(toAppUrl(input.jsTrim()), search: searchUrlPrefix(before.settings))
+      return ![input, resolved].contains { url in
+        let trimmed = url.unicodeScalars.drop(while: { $0.value <= 32 })
+        return String(String.UnicodeScalarView(trimmed.filter { ![9, 10, 13].contains($0.value) })).lowercased().hasPrefix("javascript:")
+      }
+    }
+    guard !urls.isEmpty else { return true }
+    let route = profile == nil ? SolaraCoreWebView.routeLinkTabs(urls) : [:]
+    let routedProfile = profile ?? route["profile"] as? String
+    let adopt = (route["adoptIds"] as? [Any] ?? []).map { $0 as? String }
+    let dismissed = Set(route["dismissed"] as? [Int] ?? [])
+    var focus: String?
+    guard (try? store.transact { session in
+      focus = session.openExternalLinks(urls, engineProfile: routedProfile, adoptIds: adopt, dismissed: dismissed,
+        pointer: [Double(pointer.x), Double(pointer.y)])
+    }) != nil else { return true }
+    materializeChanges(before: before, after: store.state)
+    if let focus { ShellScripting.showWindow(focus) }
+    FrameUpdates.flush()
+    return true
+  }
+
   static func install() {
     ShortcutsAdapter.install()
     if menuLifecycle == nil {
       menuLifecycle = NativeStoreHandle.subscribeLifecycle { bindMenus() }
     }
     NativeBookmarkCommands.installMenu()
-    if urlLifecycle == nil { urlLifecycle = NativeStoreHandle.subscribeLifecycle { observeApplicationURLs() } }
+    if urlLifecycle == nil {
+      NativeLittleSolara.startWindowLifecycle()
+      OpenURLInbox.nativeDeliver = { urls, pointer, profile in
+        openExternalLinks(urls, pointer: pointer, profile: profile)
+      }
+      launchLinksObserver = NotificationCenter.default.addObserver(forName: SolaraCoreHost.launchLinksDidBecomeReady, object: nil, queue: .main) { _ in
+        MainActor.assumeIsolated { OpenURLInbox.flushPending() }
+      }
+      urlLifecycle = NativeStoreHandle.subscribeLifecycle {
+        observeApplicationURLs()
+        OpenURLInbox.flushPending()
+      }
+    }
     NativePinnedPageCommands.start()
     NativeDownloadsPanel.start()
     ToolbarView.commandURLFocusAllowed = { NativeCommandBarFocus.developerAllowed($0, field: $1) }
     ToolbarView.commandURLDidFocus = { NativeCommandBarFocus.developerDidFocus($0, field: $1) }
-    for command in WorkspaceMenuCommand.commands.union(ViewMenuCommand.commands).union(PageMenuCommand.commands).union(FindMenuCommand.commands).union(BookmarkMenuCommand.commands).union(NativeBookmarkCommands.formCommands).union(CopyLinkCommand.commands).union(BrowserServiceCommand.commands).union(TabFocusCommand.commands).union(["togglePageEngine"]).union(PinnedPageCommand.commands).union(NativeSidebarMenus.commands).union(["focusCommandBar", "cast", "restoreArcFolders", "showHistory", "manageBookmarks", "clearBrowsingData", "switchProfile", "nextProfile", "previousProfile"]) {
+    for command in WorkspaceMenuCommand.commands.union(ViewMenuCommand.commands).union(PageMenuCommand.commands).union(FindMenuCommand.commands).union(BookmarkMenuCommand.commands).union(NativeBookmarkCommands.formCommands).union(CopyLinkCommand.commands).union(BrowserServiceCommand.commands).union(TabFocusCommand.commands).union(["togglePageEngine"]).union(PinnedPageCommand.commands).union(NativeSidebarMenus.commands).union(["focusCommandBar", "cast", "restoreArcFolders", "showHistory", "manageBookmarks", "clearBrowsingData", "switchProfile", "nextProfile", "previousProfile", "openProfileMenu"]) {
       NativeMenuCommands.argumentHandlers[command] = { arg, windowId in perform(command, arg: arg, windowId: windowId) }
     }
     NativeMenuCommands.keepsMenuDispatch = ViewMenuCommand.commands.union(PageMenuCommand.commands).union(BookmarkMenuCommand.commands).union(NativeBookmarkCommands.formCommands).union(CopyLinkCommand.commands).union(BrowserServiceCommand.commands).union(TabFocusCommand.commands).union(["showHistory", "manageBookmarks"])
@@ -469,6 +509,9 @@ enum NativeWorkspaceCommands {
     }
     if let windowId, let store = WorkspaceWrites.store, let window = store.state.windows[windowId], window.isSmall {
       switch command {
+      case "openProfileMenu":
+        littleProfileMenu(windowId: windowId, store: store)
+        return true
       case "switchProfile":
         if let arg { moveLittleSolara(windowId, to: arg, store: store) }
         return true
@@ -719,13 +762,18 @@ enum NativeWorkspaceCommands {
 
   static func materializeChanges(before: BrowserState, after: BrowserState) {
     for id in after.windowOrder where before.windows[id] == nil {
-      guard let window = after.windows[id] else { continue }
+      guard let window = after.windows[id], !window.isSmall else { continue }
       let title = after.activeTab(id).map { $0.customTitle ?? $0.title } ?? "New Tab"
       WindowHost.openBrowserWindow(id, frame: window.frame, incognito: window.incognito,
         profile: after.engineProfile(window.profileId), title: title, focus: after.ui.focusedWindowId == id,
-        chromeWindow: window.chromeWindow, small: window.isSmall, size: after.settings["littleSolaraSize"]?.array?.compactMap(\.number))
+        chromeWindow: window.chromeWindow, small: false, size: nil)
     }
-    for id in before.windowOrder where after.windows[id] == nil { WindowHost.closeBrowserWindow(id) }
+    for id in before.windowOrder where after.windows[id] == nil && before.windows[id]?.isSmall != true { WindowHost.closeBrowserWindow(id) }
+    if let store = WorkspaceWrites.store, before.windowOrder != after.windowOrder,
+      after.windowOrder.contains(where: { before.windows[$0] == nil && after.windows[$0]?.isSmall == true }) ||
+      before.windowOrder.contains(where: { after.windows[$0] == nil && before.windows[$0]?.isSmall == true }) {
+      NativeLittleSolara.syncWindows(store)
+    }
   }
 
   private static func createProfile(store: Store) -> String? {
@@ -847,42 +895,45 @@ enum NativeWorkspaceCommands {
 
   private static func moveLittleSolara(_ id: String, to profileId: String, store: Store) {
     let before = store.state
-    guard let window = before.windows[id], window.isSmall, !window.incognito, window.profileId != profileId,
-      before.profiles[profileId] != nil, !store.memory.closingWindows.contains(id), !pending.contains(id) else { return }
-    let tab = before.activeTab(id)
-    let url = tab?.url ?? ""
-    var options: JSONObject = ["small": true, "profileId": .string(profileId), "openPanel": .bool(url.isEmpty)]
-    if !url.isEmpty { options["url"] = .string(url) }
-    if let frame = window.frame { options["frame"] = .array(frame.map(JSONValue.number)) }
-    guard let replacement = (try? store.dispatch(Command("createWindow", [.object(options)]), origin: .native))?.result?.string else { return }
+    guard !pending.contains(id) else { return }
+    var replacement: (windowId: String, forgetTab: String?)?
+    guard (try? store.transact { session in
+      replacement = session.replaceLittleSolara(id, profileId: profileId)
+    }) != nil, let replacement else { return }
+    prepareLittleClose(id)
     materializeChanges(before: before, after: store.state)
-    animateClose(id, after: replacement, forgetTab: tab?.id, store: store)
+    animateClose(id, after: replacement.windowId, forgetTab: replacement.forgetTab, store: store)
+  }
+
+  private static func prepareLittleClose(_ id: String) {
+    NativeCommandBarFocus.cancel(windowId: id)
+    WindowHost.endCommandFocus(id)
+    NativeLittleSolara.host(id)?.dismissOverlays()
   }
 
   private static func animateClose(_ id: String, after replacement: String? = nil, forgetTab: String? = nil, store: Store) {
     guard let window = store.state.windows[id] else { return }
     let leaving = Set(window.tabIds)
     let generation = NativeStoreHandle.ownershipGeneration
-    guard (try? store.dispatch(Command("setWindowClosing", [.string(id), true]), origin: .native)) != nil else { return }
-    if window.isSmall { NativeLittleSolara.host(id)?.dismissOverlays() }
+    if replacement == nil {
+      guard (try? store.dispatch(Command("setWindowClosing", [.string(id), true]), origin: .native)) != nil else { return }
+      if window.isSmall { prepareLittleClose(id) }
+    }
     WindowHost.animateClose(id, after: replacement) {
       let sameStore = NativeStoreHandle.store === store
-      if sameStore { _ = try? store.dispatch(Command("setWindowClosing", [.string(id), false]), origin: .native) }
+      @MainActor func cancel() {
+        _ = try? store.dispatch(Command("setWindowClosing", [.string(id), false]), origin: .native)
+        WindowHost.cancelWindowClose(id, restoreFocus: !window.isSmall)
+      }
       guard NativeStoreHandle.ownsWorkspace, NativeStoreHandle.ownershipGeneration == generation, sameStore else {
-        if sameStore { WindowHost.cancelWindowClose(id) }
+        if sameStore { cancel() }
         return
       }
       guard store.state.windows[id] != nil else { return }
-      guard WorkspaceClosePolicy.canFinishClose(windowId: id, leaving: leaving, state: store.state) else {
-        WindowHost.cancelWindowClose(id)
-        return
-      }
-      var commands = [Command("closeWindow", [.string(id)])]
+      guard WorkspaceClosePolicy.canFinishClose(windowId: id, leaving: leaving, state: store.state) else { return cancel() }
+      var commands = [Command("closeWindow", [.string(id)]), Command("setWindowClosing", [.string(id), false])]
       if let forgetTab { commands.append(Command("forgetClosedTab", [.string(forgetTab)])) }
-      guard (try? store.dispatch(commands, origin: .native)) != nil, store.state.windows[id] == nil else {
-        WindowHost.cancelWindowClose(id)
-        return
-      }
+      guard (try? store.dispatch(commands, origin: .native)) != nil, store.state.windows[id] == nil else { return cancel() }
       WindowHost.closeBrowserWindow(id)
       FrameUpdates.flush()
     }

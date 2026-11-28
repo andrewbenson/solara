@@ -3,8 +3,6 @@ import { useBrowser } from "../store/browser";
 import { nativeOwnsWorkspace } from "../store/nativeStore";
 import { tabsClosingWithWindow } from "../store/model";
 import { closeWindowDialog } from "./closeWindowDialog";
-import { isSmall } from "../store/small";
-import { closeLittleSolara } from "../components/littleSolara/actions";
 import { closeWindowAnimated } from "./closeAnimated";
 
 const MIN_TABS = 2;
@@ -22,7 +20,6 @@ export async function requestClose(windowId: string) {
   const s = useBrowser.getState();
   const w = s.windows[windowId];
   if (!w) return;
-  if (isSmall(s, windowId)) return closeLittleSolara(windowId);
   if (await retainLastWindow(windowId)) return;
   if (!useBrowser.getState().windows[windowId]) return;
   const count = closingTabs(windowId).length;

@@ -9,6 +9,7 @@ public struct StoreMemory: Sendable, Equatable {
   var privateSessionGenerations: [JSKey: String] = [:]
   public var closingWindows: Set<String> = []
   var closingWindowUndos: [String: ClosingWindowUndo] = [:]
+  var recentLittleAdoptions: [String] = []
   var peekGenerations: [String: UInt64] = [:]
   var dismissingPeeks: Set<String> = []
   var hydrating = false

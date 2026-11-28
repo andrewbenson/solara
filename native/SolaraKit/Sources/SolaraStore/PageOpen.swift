@@ -28,6 +28,20 @@ public struct PageOpenSource: Equatable, Sendable {
   }
 }
 
+public enum LittleSolaraEscape: Equatable, Sendable {
+  case popup, popover, panel, find, window
+
+  public static func resolve(_ source: PageOpenSource, state: BrowserState, memory: StoreMemory, popup: Bool, popover: Bool) -> Self? {
+    guard state.windows[source.windowId]?.isSmall == true, state.activeTabId(source.windowId) == source.tabId,
+      source == PageOpenSource(state: state, memory: memory, tabId: source.tabId) else { return nil }
+    if popup { return .popup }
+    if popover { return .popover }
+    if state.windowUi[source.windowId]?.panelOpen == true { return .panel }
+    if state.find[source.tabId]?.json["open"]?.truthy == true { return .find }
+    return .window
+  }
+}
+
 extension Session {
   public func openFromPage(_ receipt: PageOpenSource, request: JSONObject, pinned: Bool = false) {
     let s = state
@@ -47,8 +61,13 @@ extension Session {
       _ = openPeek(opener, url, from: request["point"].flatMap { try? PeekPoint(value: $0) })
       return
     }
-    if disposition == "littleSolara" || (window.isSmall && disposition == "foreground" && adopt != nil
-      && s.settings["littleSolaraKeepsNewTabLinks"]?.truthy == true) {
+    let opensLittle = disposition == "littleSolara" || (window.isSmall && disposition == "foreground" && adopt != nil
+      && s.settings.bool("littleSolaraKeepsNewTabLinks"))
+    if let adopt, window.isSmall || opensLittle {
+      guard !memory.recentLittleAdoptions.contains(adopt), !s.tabs.values.contains(where: { $0.adoptId == adopt }) else { return }
+      memory.recentLittleAdoptions = Array(memory.recentLittleAdoptions.suffix(255)) + [adopt]
+    }
+    if opensLittle {
       var options = CreateWindowOptions()
       options.small = true
       options.profileId = receipt.profileId
@@ -94,5 +113,66 @@ extension Session {
     options.profileId = receipt.profileId
     options.background = window.isSmall || disposition == "background" || receipt.profileId != window.profileId
     _ = newTab(window.id, options)
+  }
+}
+
+extension Session {
+  public func openExternalLinks(
+    _ urls: [String], engineProfile: String?, adoptIds: [String?], dismissed: Set<Int>, pointer: [Double]?
+  ) -> String? {
+    let before = state
+    let last = lastActiveProfile(before)
+    let routedProfile = engineProfile.flatMap { engine in
+      before.engineProfile(last) == engine ? last : before.profileOrder.first { before.engineProfile($0) == engine }
+    }
+    let profile = routedProfile ?? last
+    var offers = Set<String>()
+    let links = urls.enumerated().compactMap { index, url -> (url: String, adoptId: String?)? in
+      guard !dismissed.contains(index) else { return nil }
+      let adopt = routedProfile != nil && adoptIds.indices.contains(index) ? adoptIds[index] : nil
+      if let adopt, !offers.insert(adopt).inserted { return nil }
+      return (url, adopt)
+    }
+    guard let first = links.first else { return nil }
+    let scheme = first.url.prefix { $0 != ":" }.lowercased()
+    if links.count == 1, before.settings.bool("openLinksInLittleSolara"),
+      first.url.contains(":"), ["http", "https", "file"].contains(scheme) {
+      var options = CreateWindowOptions()
+      options.profileId = profile
+      options.url = first.url
+      options.adoptId = first.adoptId
+      options.small = true
+      options.linkPointer = pointer
+      _ = createWindow(options)
+      return nil
+    }
+    var target = mainWindowFor(before, profile)
+    for link in links {
+      let s = state
+      guard let id = target, let window = s.windows[id] else {
+        var options = CreateWindowOptions()
+        options.profileId = profile
+        options.url = link.url
+        options.adoptId = link.adoptId
+        target = createWindow(options)
+        continue
+      }
+      let blank = window.tabIds.count == 1 ? s.tabs[window.tabIds[0]] : nil
+      let reusable = blank.flatMap { tab in
+        tab.url.isEmpty && tab.navigation == nil && tab.profileId == profile && s.windowUi[id]?.panelOpen != true ? tab.id : nil
+      }
+      if let reusable, link.adoptId == nil {
+        navigate(reusable, link.url)
+      } else {
+        var options = NewTabOptions()
+        options.url = link.url
+        options.profileId = profile
+        options.adoptId = link.adoptId
+        _ = newTab(id, options)
+        if let reusable { closeTabs([reusable], lastClosesWindow: true) }
+      }
+    }
+    if let target { setFocusedWindow(target) }
+    return target
   }
 }

@@ -19,7 +19,6 @@ import { splitOf } from "../store/splits";
 import type { Tab } from "../store/types";
 import { patchPage, pageOf, setBrowserId, setPopover, usePages } from "./layout/pageState";
 import { closeFolderPanelIn } from "./sidebar/tileFolderUi";
-import { closeLittleSolaraOnEscape } from "./littleSolara/actions";
 import { answerExternalApp } from "./site/ExternalAppPrompt";
 import { showAutofillPrompt, showPasswordPrompt } from "./site/Prompts";
 
@@ -316,7 +315,7 @@ export function pageEventHandlers(session: PageSession): PageEventHandlers {
     onCommand: ({ command, text, modifiers }) => {
       if (command === "copyLinkToHighlight") void nativeWorkspaceCommand("copyQuoteLink", JSON.stringify({ tabId }), null);
       else if (command === "escape" && usePages.getState().popover[tabId]) setPopover(tabId, null);
-      else if (command === "escape" && !closeFolderPanelIn(tab()?.windowId)) closeLittleSolaraOnEscape(tabId);
+      else if (command === "escape") closeFolderPanelIn(tab()?.windowId);
     },
     onPageMessage: () => {},
     onDiscarded: (url) => {

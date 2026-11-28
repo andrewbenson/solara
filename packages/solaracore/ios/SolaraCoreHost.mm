@@ -240,6 +240,7 @@ NSArray<NSURL *> *gLaunchLinks;
 NSArray<NSURL *> *gEarlyLittleLinks;
 bool gLinksHandled = false;
 bool gJSStarted = false;
+static bool gLaunchLinksReady = false;
 void (^gEventHandler)(NSString *, NSDictionary *);
 void (^gChromeUIHandler)(NSString *, NSDictionary *);
 void (^gCastUIHandler)(NSString *, NSDictionary *);
@@ -428,11 +429,15 @@ static void StartLaunchTab() {
   ParkLaunchLinks(links, dir, session);
   if (TestSwitch("SOLARA_TEST_EARLY_LINK_AFTER_JS")) TryEarlyLittleWindow();
   NSDictionary *hint = session[@"launchTab"];
-  if (![hint isKindOfClass:NSDictionary.class]) return;
-  NSString *key = hint[@"id"], *url = hint[@"url"], *profile = hint[@"profile"];
-  if (![key isKindOfClass:NSString.class] || ![url isKindOfClass:NSString.class] || ![profile isKindOfClass:NSString.class]) return;
-  [SolaraCoreWebView startLaunchTab:key url:url profile:profile];
-  if (SolaraCoreTab *tab = SolaraCoreTabParking.launchTab) [SolaraCoreEarlyWindow attachPage:tab key:key];
+  if ([hint isKindOfClass:NSDictionary.class]) {
+    NSString *key = hint[@"id"], *url = hint[@"url"], *profile = hint[@"profile"];
+    if ([key isKindOfClass:NSString.class] && [url isKindOfClass:NSString.class] && [profile isKindOfClass:NSString.class]) {
+      [SolaraCoreWebView startLaunchTab:key url:url profile:profile];
+      if (SolaraCoreTab *tab = SolaraCoreTabParking.launchTab) [SolaraCoreEarlyWindow attachPage:tab key:key];
+    }
+  }
+  gLaunchLinksReady = true;
+  [NSNotificationCenter.defaultCenter postNotificationName:SolaraCoreHost.launchLinksDidBecomeReady object:nil];
 }
 
 static bool gLaunchedHidden;
@@ -1429,6 +1434,14 @@ static void StartEarlyWindow() {
     }];
   }
   return sources;
+}
+
++ (BOOL)launchLinksReady {
+  return gLaunchLinksReady;
+}
+
++ (NSNotificationName)launchLinksDidBecomeReady {
+  return @"SolaraLaunchLinksDidBecomeReady";
 }
 
 + (BOOL)isStarted {

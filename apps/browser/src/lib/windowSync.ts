@@ -50,20 +50,16 @@ export function createWindowSync({ port, getState, isQuitting, lightsCenter, isU
     });
 
   const sync = (s: BrowserState, prev?: BrowserState) => {
-    const opens = windowOpens(s, s.windowOrder.filter((id) => !open.has(id)), !prev);
+    const opens = windowOpens(s, s.windowOrder.filter((id) => !open.has(id) && s.windows[id]?.kind !== "small"), !prev);
     for (const { id, focus, behind } of opens) {
       const w = s.windows[id]!;
       open.add(id);
       titles.set(id, windowTitle(s, id));
       const profile = engineProfile(w.profileId);
-      const claim = w.kind === "small" ? s.tabs[w.tabIds[0] ?? ""]?.adoptId : undefined;
-      const small = w.kind === "small"
-        ? { kind: "small" as const, size: s.settings.littleSolaraSize, ...(claim?.startsWith("link:") ? { claim } : {}), ...(w.linkPointer ? { pointer: w.linkPointer } : {}) }
-        : {};
       const made = w.chromeWindow ? { chromeWindow: w.chromeWindow } : {};
       port.open(
         id,
-        { frame: w.frame, incognito: w.incognito, title: titles.get(id), focus, profile, ...(behind ? { behind } : {}), ...(prev && w.kind !== "small" && !w.chromeWindow ? { animated: true } : {}), ...small, ...made },
+        { frame: w.frame, incognito: w.incognito, title: titles.get(id), focus, profile, ...(behind ? { behind } : {}), ...(prev && !w.chromeWindow ? { animated: true } : {}), ...made },
         lightsCenter(s, id),
       );
     }
@@ -98,6 +94,7 @@ export function createWindowSync({ port, getState, isQuitting, lightsCenter, isU
           if (!isUtilityWindow(id)) port.close(id);
           continue;
         }
+        if (s.windows[id]?.kind === "small") continue;
         const title = windowTitle(s, id);
         titles.set(id, title);
         port.setTitle(id, title);

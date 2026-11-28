@@ -93,7 +93,6 @@ const shell: Modules["SolaraShell"] = {
   setAppearance: () => Promise.resolve(),
   isDarkAppearance: () => Promise.resolve(false),
   setMenuState: () => Promise.resolve(),
-  setMenuBookmarks: () => Promise.resolve(),
   replyToTerminate: () => Promise.resolve(),
   confirm: () => Promise.resolve({ confirmed: false, suppressed: false }),
   prompt: () => Promise.resolve(null),
@@ -101,7 +100,7 @@ const shell: Modules["SolaraShell"] = {
 
 const appEvents = nativeEvents();
 const app: Modules["SolaraApp"] & { apiVersion: number } = {
-  apiVersion: 114,
+  apiVersion: 115,
   waitForLaunchIdle: () => Promise.resolve(false),
   cancelLaunchIdle: () => Promise.resolve(),
   launchChromeCommittedAt: () => Promise.resolve(null),

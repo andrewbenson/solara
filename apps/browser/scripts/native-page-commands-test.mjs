@@ -192,6 +192,15 @@ try {
   }
   const bookmark = await run(`return ac.bookmarks.addBookmark({ profileId: "default", title: "Command bookmark", url: ${JSON.stringify(`${base}/bookmark`)} });`);
   const folder = await run('return ac.bookmarks.addBookmarkFolder({ profileId: "default", title: "Command folder" });');
+  const bookmarkRows = () => run('return expo.modules.SolaraApp.devMenuItems("Bookmarks", null);');
+  await until("native Bookmarks menu refresh", async () => {
+    const rows = await bookmarkRows();
+    const bar = rows.find(row => row.title === "Bookmarks Bar")?.items ?? [];
+    return rows.some(row => row.title === "Command bookmark")
+      && bar.some(row => row.title === "Command bookmark")
+      && bar.some(row => row.title === "Command folder");
+  });
+  pass("Bookmarked pages and folders appear in the native menu");
   async function openBookmarkIn(windowId, tabId) {
     const before = await nativeState();
     if (!baseline) {

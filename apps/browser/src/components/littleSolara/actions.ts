@@ -1,12 +1,9 @@
 import { nativeWorkspaceCommand } from "@solara/settings";
 import { type LinkRoute, routeLinkTabs } from "@solara/solaracore";
-import { showMenu } from "@solara/shell";
 import { focus, openWindow } from "../../lib/actions";
-import { menuShortcut } from "../../lib/commandShortcuts";
 import { closeWindowAnimated, isWindowClosing } from "../../lib/closeAnimated";
 import { routedLinks, type RoutedLinks } from "../../lib/linkRoutes";
 import { runsJavaScript } from "../../lib/scriptUrls";
-import { profileAccent } from "../../lib/theme";
 import { useBrowser } from "../../store/browser";
 import { activeTabId } from "../../store/model";
 import { isSmall, lastActiveProfile, mainWindowFor } from "../../store/small";
@@ -108,19 +105,8 @@ export function cycleLittleSolaraProfile(windowId: string, delta: 1 | -1) {
   moveLittleSolaraToProfile(windowId, s.profileOrder[(i + delta + s.profileOrder.length) % s.profileOrder.length]!);
 }
 
-export async function openLittleSolaraProfileMenu(windowId: string) {
-  const s = store();
-  const current = s.windows[windowId]?.profileId;
-  const choice = await showMenu(
-    s.profileOrder.map((id) => ({
-      id,
-      title: s.profiles[id]!.name,
-      checked: id === current,
-      swatch: profileAccent(s.profiles[id]),
-      ...menuShortcut(`switchProfile:${id}`, s),
-    })),
-  );
-  if (choice) moveLittleSolaraToProfile(windowId, choice);
+export function openLittleSolaraProfileMenu(windowId: string) {
+  nativeWorkspaceCommand("openProfileMenu", null, windowId);
 }
 
 export function closeLittleSolara(windowId: string) {

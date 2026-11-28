@@ -11,6 +11,42 @@ enum NativeBookmarkCommands {
   static var cancelConfirmation = false
   static var confirmations: [[String: String]] = []
   #endif
+  private static var menuObserver: NSObjectProtocol?
+  private static var menuProfile: String?
+  private static var menuEngine: String?
+
+  static func installMenu() {
+    guard menuObserver == nil else { return }
+    ShellMenus.setBookmarkMenuSource { menu() }
+    menuObserver = NotificationCenter.default.addObserver(forName: NativeBookmarkOwner.projectionChanged, object: nil, queue: .main) { _ in
+      MainActor.assumeIsolated { ShellMenus.refreshBookmarkMenus() }
+    }
+  }
+
+  static func setMenuProfile(_ profile: String?, engine: String?) {
+    guard menuProfile != profile || menuEngine != engine else { return }
+    menuProfile = profile
+    menuEngine = engine
+    ShellMenus.refreshBookmarkMenus()
+  }
+
+  private static func menu() -> NativeBookmarkMenu {
+    guard let profile = menuProfile, let engine = menuEngine, let owner = NativeBookmarkOwner.displayCurrent,
+      let snapshot = try? owner.snapshot(profile: profile), snapshot.hasView, snapshot.binding.engine == engine else { return NativeBookmarkMenu() }
+    let rows = BookmarkMenuProjection(document: snapshot.document, profile: profile, engine: engine)
+    func row(_ value: BookmarkMenuProjection.Row) -> NativeBookmarkMenu.Row {
+      NativeBookmarkMenu.Row(id: value.id, title: value.title, url: value.url, children: value.children?.map(row))
+    }
+    return NativeBookmarkMenu(folders: rows.folders.map(row), recent: rows.recent.map(row),
+      bar: rows.bar.map(row), other: rows.other.map(row))
+  }
+
+  static func isBookmarked(_ url: String?, windowId: String?) -> Bool {
+    guard let url, !url.isEmpty, let windowId, let editing = NativeBookmarkEditing(windowId: windowId),
+      let view = editing.snapshot() else { return false }
+    return BookmarkMenuProjection.contains(url: url, document: view.document, profile: editing.profile, engine: view.binding.engine)
+  }
+
   private struct ToggleKey: Hashable {
     let profile: String
     let url: String

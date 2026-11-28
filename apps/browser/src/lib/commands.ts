@@ -36,7 +36,6 @@ import { openSplitPane } from "../components/layout/splitActions";
 import { commandRoute } from "./commandRoute";
 import { runSidebarCommand } from "../components/sidebar/commands";
 import { numberedTabs } from "../components/sidebar/entries";
-import { openProfileMenu } from "../components/ProfileIndicator";
 import { groupOf, multiSelection } from "../store/organize";
 import { reopenClosedTogether } from "../store/closedTogether";
 import { newWindowProfile, originalProfile } from "../store/small";
@@ -45,7 +44,6 @@ import {
   cycleLittleSolaraProfile,
   moveLittleSolaraToProfile,
   openLittleSolara,
-  openLittleSolaraProfileMenu,
 } from "../components/littleSolara/actions";
 import { runPeekCommand } from "../components/peek/actions";
 import { toggleDeveloperModeFor } from "../components/site/developerMode";
@@ -218,8 +216,6 @@ export function runCommand({ command, arg, windowId: requested }: CommandEvent) 
       const group = groupOf(s, tabId);
       return group ? void closeGroup(group.id) : undefined;
     }
-    case "openProfileMenu":
-      return s.windows[windowId]?.incognito ? undefined : void openProfileMenu(windowId);
     case "duplicateTab":
       return tab ? void s.duplicateTab(tab.id) : undefined;
     case "moveTabToProfile":
@@ -317,9 +313,6 @@ function runLittleSolaraCommand(command: string, arg: string | null | undefined,
       return;
     case "previousProfile":
       cycleLittleSolaraProfile(windowId, -1);
-      return;
-    case "openProfileMenu":
-      void openLittleSolaraProfileMenu(windowId);
       return;
   }
 }

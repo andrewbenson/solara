@@ -14,55 +14,6 @@ enum NativeBookmarksBar {
     LaunchSwitches.shared.isOn(.nativeBookmarksBar)
   }
 
-  static func registerMenuSource() {
-    NativeBookmarkMenuSource.read = { profile in
-      nonisolated(unsafe) var result: [String: Any]?
-      MainActor.assumeIsolated {
-        guard let owner = NativeBookmarkOwner.displayCurrent, let snapshot = try? owner.snapshot(profile: profile), snapshot.hasView else { return }
-        result = bookmarkMenus(snapshot.document, profile: profile, engine: snapshot.binding.engine)
-      }
-      return result
-    }
-  }
-
-  static func bookmarkMenus(_ document: JSONValue, profile: String, engine: String) -> [String: Any] {
-    let nodes = document["nodes"]?.object ?? [:]
-    let roots = BookmarkFlat.roots(engine)
-    let bar = document["roots"]?[profile]?["bar"]?.string ?? roots.bar
-    let other = document["roots"]?[profile]?["other"]?.string ?? roots.other
-    func children(_ id: String) -> [String] { nodes[id]?["children"]?.array?.compactMap(\.string).filter { nodes[$0] != nil } ?? [] }
-    func tree(_ parent: String, depth: Int = 0) -> [[String: Any]] {
-      children(parent).compactMap { id in
-        guard let node = nodes[id] else { return nil }
-        let title = node["title"]?.string ?? ""
-        if node["kind"] == "url" { return ["id": id, "title": title.isEmpty ? node["url"]?.string ?? "" : title, "url": node["url"]?.string ?? ""] }
-        return ["id": id, "title": title, "children": depth < 6 ? tree(id, depth: depth + 1) : []]
-      }
-    }
-    let rootKeys: Set<JSKey> = [JSKey(bar), JSKey(other)]
-    func belongs(_ id: String) -> Bool {
-      var current: String? = id
-      var seen = Set<JSKey>()
-      var depth = 0
-      while let id = current, depth < 64, seen.insert(JSKey(id)).inserted {
-        depth += 1
-        if rootKeys.contains(JSKey(id)) { return true }
-        current = nodes[id]?["parentId"]?.string
-      }
-      return false
-    }
-    let recent = nodes.enumerated().filter { $0.element.value["kind"] == "url" && belongs($0.element.key) }.sorted {
-      let a = $0.element.value["addedAt"]?.number ?? 0, b = $1.element.value["addedAt"]?.number ?? 0
-      return a == b ? $0.offset < $1.offset : a > b
-    }.prefix(5).map { entry -> [String: Any] in
-      let node = entry.element.value, url = node["url"]?.string ?? "", title = node["title"]?.string ?? ""
-      return ["id": entry.element.key, "title": title.isEmpty ? url : title, "url": url]
-    }
-    let folders: [[String: Any]] = [["id": bar, "title": "Bookmarks Bar"], ["id": other, "title": "Other Bookmarks"]]
-      + (children(bar) + children(other)).filter { nodes[$0]?["kind"] == "folder" }.map { ["id": $0, "title": nodes[$0]?["title"]?.string ?? ""] }
-    return ["bookmarkFolders": folders, "recentBookmarks": recent, "bookmarksBar": tree(bar), "otherBookmarks": tree(other)]
-  }
-
   static func register() {
     guard enabled else { return }
     HostedViews.register(kind) { windowId, state in

@@ -67,7 +67,7 @@ test("runCommand's own switches handle exactly the route's command sets", () => 
     assert.ok(a >= 0 && b > a, start);
     return sorted(new Set([...source.slice(a, b).matchAll(/case "(\w+)":/g)].map((m) => m[1])));
   };
-  const handledInSwift = new Set(["openFile", "focusCommandBar", "manageExtensions"]);
+  const handledInSwift = new Set(["openFile", "focusCommandBar", "manageExtensions", "openProfileMenu"]);
   const routedInJs = (set) => sorted([...set].filter((command) => !handledInSwift.has(command)));
   assert.deepEqual(labels("function runWindowCommand("), routedInJs(WINDOW_LEVEL_COMMANDS));
   assert.deepEqual(labels("function runLittleSolaraCommand("), routedInJs(LITTLE_SOLARA_COMMANDS));

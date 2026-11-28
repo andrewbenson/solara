@@ -213,7 +213,10 @@ enum NativeSidebarMenus {
       if let active { _ = NativeWorkspaceRename.begin(windowId: windowId, kind: .tab, id: active) }
     case "changeTabIcon":
       if let active { NativeSidebarIconPicker.open(windowId: windowId, kind: "tab", id: active) }
-    case "openProfileMenu": profiles(windowId: windowId)
+    case "openProfileMenu":
+      if window.isSmall {
+        Task { @MainActor in NativeWorkspaceCommands.littleProfileMenu(windowId: windowId, store: store) }
+      } else { profiles(windowId: windowId) }
     case "cleanUpTabs": run("clean", window: window, devices: [], store: store)
     case "closeAllTabs": run("closeAll", window: window, devices: [], store: store)
     default: return false
@@ -225,13 +228,12 @@ enum NativeSidebarMenus {
     guard let store = WorkspaceWrites.store, let window = store.state.windows[windowId], !window.incognito else { return }
     let hints = CommandShortcutSnapshot().hints(state: store.state)
     let resolved = hints.values.compactMap(GroupMenu.menuKey)
-    let dots = NativeLayoutAppearance.chrome(state: store.state, windowId: windowId, addressBar: false,
-      dropOver: false, windowFullscreen: false)?.dots ?? []
+    let profiles = WorkspaceMenuDestinations.profileRows(state: store.state, window: window)
     var menu: [[String: Any]] = []
-    for dot in dots {
-      var row: [String: Any] = ["id": "switch:\(dot.id)", "title": dot.name, "checked": window.profileId == dot.id]
-      if let color = dot.color { row["swatch"] = color }
-      let key = hints[JSKey("switchProfile:\(dot.id)")].flatMap(GroupMenu.menuKey)
+    for profile in profiles {
+      var row: [String: Any] = ["id": "switch:\(profile.id)", "title": profile.title, "checked": profile.current,
+                                 "swatch": NativeLayoutAppearance.profileSwatch(store.state.profiles[profile.id])]
+      let key = hints[JSKey("switchProfile:\(profile.id)")].flatMap(GroupMenu.menuKey)
       if let key {
         row["key"] = key.key
         row["modifiers"] = key.modifiers
@@ -240,8 +242,8 @@ enum NativeSidebarMenus {
       if key?.modifiers.contains("command") != true {
         let modifiers = (key?.modifiers ?? []) + ["command"]
         if !resolved.contains(where: { $0.key == key?.key && Set($0.modifiers) == Set(modifiers) }) {
-          row["id"] = "window:\(dot.id)"
-          row["title"] = "\(dot.name) ↗"
+          row["id"] = "window:\(profile.id)"
+          row["title"] = "\(profile.title) ↗"
           row["alternate"] = true
           row["checked"] = false
           row["modifiers"] = modifiers

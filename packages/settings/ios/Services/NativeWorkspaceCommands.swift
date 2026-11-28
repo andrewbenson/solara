@@ -35,14 +35,15 @@ enum NativeWorkspaceCommands {
   private static var findFocus: [Int: FindFocus] = [:]
   private static var expiredFindRequests: [Int] = []
   private static var lastFindRequest = 0
-  private static var historyLifecycle: Int?
-  private static var historyListener: Int?
-  private static var historyStore: Store?
+  private static var menuLifecycle: Int?
+  private static var menuListener: Int?
+  private static var menuStore: Store?
 
   static func install() {
-    if historyLifecycle == nil {
-      historyLifecycle = NativeStoreHandle.subscribeLifecycle { bindHistoryMenu() }
+    if menuLifecycle == nil {
+      menuLifecycle = NativeStoreHandle.subscribeLifecycle { bindMenus() }
     }
+    NativeBookmarkCommands.installMenu()
     NativePinnedPageCommands.start()
     NativeDownloadsPanel.start()
     ToolbarView.commandURLFocusAllowed = { NativeCommandBarFocus.developerAllowed($0, field: $1) }
@@ -93,33 +94,73 @@ enum NativeWorkspaceCommands {
       forward = store.menuHistoryFacts(page.id).newTabShown || live?.canGoForward == true
     }
     let engine = command == "togglePageEngine" ? tabId.map { store.pageEngine($0, in: state) } ?? "chromium" : "chromium"
-    var bookmarked = false
-    if command == "bookmarkPage", let window, let page, !page.url.isEmpty,
-      let nodes = NativeBookmarkEditing(windowId: window.id)?.snapshot()?.document["nodes"]?.object {
-      bookmarked = nodes.values.contains { $0["kind"]?.string == "url" && $0["url"]?.string == page.url }
-    }
+    let bookmarked = command == "bookmarkPage" && NativeBookmarkCommands.isBookmarked(page?.url, windowId: window?.id)
     let context = BrowserMenuContext(state: state, windowId: windowId, pageId: tabId, opensPeek: peek != nil, internalPage: internalPage,
       loading: live?.isLoading == true, back: back, forward: forward, engine: engine, bookmarked: bookmarked, product: Bundle.main.productName)
     return context.row(command, arg: arg)
   }
 
-  private static func bindHistoryMenu() {
+  private static func bindMenus() {
     let store = NativeStoreHandle.ownsWorkspace ? NativeStoreHandle.store : nil
-    guard store !== historyStore else { return }
-    if let historyListener { historyStore?.unsubscribe(historyListener) }
-    historyStore = store
-    historyListener = store?.subscribe { [weak store] commit in
-      guard !commit.changes.lists.isDisjoint(with: ["closedTabs", "closedWindows", "closedGroups"]) else { return }
+    guard store !== menuStore else { return }
+    if let menuListener { menuStore?.unsubscribe(menuListener) }
+    menuStore = store
+    menuListener = store?.subscribe { [weak store] commit in
+      let changes = commit.changes
+      let history = !changes.lists.isDisjoint(with: ["closedTabs", "closedWindows", "closedGroups"])
+      let destinations = !changes.windows.isEmpty || !changes.profiles.isEmpty || !changes.tabs.isEmpty
+        || !changes.lists.isDisjoint(with: ["profileOrder", "windowOrder", "ui"])
+        || changes.settingsChanged.contains("defaultProfileId") || changes.settingsRemoved.contains("defaultProfileId")
+      guard history || destinations else { return }
       Task { @MainActor in
-        guard let store, historyStore === store else { return }
-        refreshHistoryMenu()
+        guard let store, menuStore === store else { return }
+        if history { refreshHistoryMenu() }
+        if destinations { refreshDestinations() }
       }
     }
     refreshHistoryMenu()
+    refreshDestinations()
+  }
+
+  private static func refreshDestinations() {
+    guard let store = menuStore else {
+      ShellMenus.setWorkspaceDestinations(profiles: [], windows: [])
+      NativeBookmarkCommands.setMenuProfile(nil, engine: nil)
+      return
+    }
+    let state = store.state
+    let menu = WorkspaceMenuDestinations(state: state, windowId: state.ui.focusedWindowId, closing: store.memory.closingWindows)
+    ShellMenus.setWorkspaceDestinations(profiles: menu.profiles.map { ($0.id, $0.title, $0.current) },
+                                        windows: menu.windows.map { ($0.id, $0.title) })
+    NativeBookmarkCommands.setMenuProfile(menu.bookmarkProfile, engine: state.engineProfile(menu.bookmarkProfile))
+  }
+
+  static func littleProfileMenu(windowId: String, store: Store) {
+    let state = store.state
+    guard WorkspaceWrites.store === store, let window = state.windows[windowId],
+      window.isSmall, !store.memory.closingWindows.contains(windowId) else { return }
+    let profiles = WorkspaceMenuDestinations.profileRows(state: state, window: window)
+    guard !profiles.isEmpty else { return }
+    let shortcuts = CommandShortcutSnapshot().hints(state: state)
+    let rows: [[String: Any]] = profiles.map { profile in
+      var row: [String: Any] = ["id": profile.id, "title": profile.title, "checked": profile.current,
+                                 "swatch": NativeLayoutAppearance.profileSwatch(state.profiles[profile.id])]
+      if let hint = shortcuts[JSKey("switchProfile:\(profile.id)")], let key = GroupMenu.menuKey(hint) {
+        row["key"] = key.key
+        row["modifiers"] = key.modifiers
+      }
+      return row
+    }
+    let ownership = NativeStoreHandle.ownershipGeneration
+    ShellMenus.choose(rows) { [weak store] choice in
+      guard let choice, let store, WorkspaceWrites.store === store,
+        NativeStoreHandle.ownershipGeneration == ownership else { return }
+      moveLittleSolara(windowId, to: choice, store: store)
+    }
   }
 
   private static func refreshHistoryMenu() {
-    let menu = historyStore.map { RecentlyClosedMenu(state: $0.state) }
+    let menu = menuStore.map { RecentlyClosedMenu(state: $0.state) }
     ShellMenus.setRecentlyClosed(entries: menu?.entries.map { ($0.id, $0.title) } ?? [],
                                  groups: menu?.groups.map { ($0.id, $0.title) } ?? [])
   }

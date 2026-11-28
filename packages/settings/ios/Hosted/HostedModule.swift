@@ -56,7 +56,6 @@ public class HostedModule: Module {
       DispatchQueue.main.async {
         FrameUpdates.readOnMain {
           HostedViews.emit = { body in sink.module?.sendEvent("onHostedEvent", body) }
-          NativeBookmarksBar.registerMenuSource()
           NativeStatusBubble.register(); NativeSidebar.register(); NativeTabPickers.register()
           NativeToolTour.register()
           HostedPersonalize.register()

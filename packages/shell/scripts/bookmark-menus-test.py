@@ -9,7 +9,7 @@ parser.add_argument("--scratch", required=True)
 args = parser.parse_args()
 source = (Path(__file__).resolve().parents[1] / "ios/Menus.swift").read_text()
 state = source[:source.index("protocol Rebindable")]
-build = source[source.index("  private static func buildBookmarkMenus"):source.index("  private static func buildExtensions")]
+build = source[source.index("  static var bookmarkMenuSource"):source.index("  private static func buildExtensions")]
 folders = source[source.index("  private static func emptyItem"):source.index("  static func dockMenu")]
 marker = "private final class BookmarkMenuUpdate"
 delegate = source[source.index(marker):] if marker in source else ""
@@ -31,7 +31,6 @@ enum MainMenu {
   static func prepare() {
     for index in 0..<3 { bookmarks.addItem(NSMenuItem(title: "Fixed \(index)", action: nil, keyEquivalent: "")) }
   }
-  static func refresh() { buildBookmarkMenus(MenuState.current) }
   static var root: NSMenu { bookmarks }
   static var destinations: NSMenu { bookmarkToFolder }
 '''
@@ -43,24 +42,29 @@ func update(_ menu: NSMenu) {
   check(menu.delegate != nil, "lazy menu retains its delegate")
   menu.delegate?.menuNeedsUpdate?(menu)
 }
-func link(_ id: String, _ title: String) -> [String: Any] {
-  ["id": id, "title": title, "url": "https://fixture.example/\(id)"]
+typealias Row = NativeBookmarkMenu.Row
+func link(_ id: String, _ title: String) -> Row {
+  Row(id: id, title: title, url: "https://fixture.example/\(id)")
 }
-func fixture(_ recent: String) -> [String: Any] {
-  ["bookmarkFolders": [["id": "bulk", "title": "Large"]], "recentBookmarks": [link("recent", recent)],
-   "bookmarksBar": [
-    ["id": "holder", "title": "Space (Arc)", "children": [["id": "group", "title": "Group", "children": [link("web", "Web")]]]],
-    ["id": "bulk", "title": "Large", "children": (0..<3000).map { link("n\($0)", "Bookmark \($0)") }],
-    ["id": "empty", "title": "Empty folder", "children": [[String: Any]]()],
-    link("fallback", "")], "otherBookmarks": [[String: Any]]()]
+func fixture(_ recent: String) -> NativeBookmarkMenu {
+  NativeBookmarkMenu(folders: [Row(id: "bulk", title: "Large")], recent: [link("recent", recent)],
+    bar: [
+      Row(id: "holder", title: "Space (Arc)", children: [Row(id: "group", title: "Group", children: [link("web", "Web")])]),
+      Row(id: "bulk", title: "Large", children: (0..<3000).map { link("n\($0)", "Bookmark \($0)") }),
+      Row(id: "empty", title: "Empty folder", children: []),
+      link("fallback", ""),
+    ])
 }
 MainMenu.prepare()
-MenuState.setBookmarks(fixture("Old recent"))
-MainMenu.refresh()
+var reads = 0
+var recent = "Old recent"
+MainMenu.bookmarkMenuSource = { reads += 1; return fixture(recent) }
+MainMenu.refreshBookmarkMenus()
 check(MainMenu.root.numberOfItems == 3, "closed Bookmarks keeps only its fixed commands")
 check(MainMenu.destinations.numberOfItems == 0, "closed destinations remains unmaterialized")
-MenuState.setBookmarks(fixture("Latest recent"))
-MainMenu.refresh()
+check(reads == 0, "closed menus do not read the native source")
+recent = "Latest recent"
+MainMenu.refreshBookmarkMenus()
 let root = MainMenu.root
 update(root)
 check(root.items.map(\.title) == ["Fixed 0", "Fixed 1", "Fixed 2", "", "Recent Bookmarks", "Latest recent", "", "Bookmarks Bar", "Other Bookmarks"], "root reads latest snapshot and keeps fixed commands and sections")
@@ -88,26 +92,19 @@ check(bulk.numberOfItems == 0, "3000 native leaves are deferred until folder ope
 update(bulk)
 check(bulk.numberOfItems == 3002, "large folder and footer populate when requested")
 let previous = ObjectIdentifier(root.items[7])
-MenuState.setBookmarks(["bookmarksBar": [link("new-profile", "New profile")], "otherBookmarks": [[String: Any]]()])
-MainMenu.refresh()
+MainMenu.bookmarkMenuSource = { NativeBookmarkMenu(bar: [link("new-profile", "New profile")]) }
+MainMenu.refreshBookmarkMenus()
 check(ObjectIdentifier(root.items[7]) == previous, "an edit does not rebuild closed native menus")
 update(root)
 let changed = root.items[4].submenu!
 update(changed)
 check(changed.items.map(\.title) == ["New profile"], "reopened root follows current profile snapshot")
-NativeBookmarkMenuSource.read = { profile in
-  check(profile == "native-profile", "native metadata preserves profile identity")
-  return fixture("Native recent")
-}
-MenuState.setBookmarks(["bookmarkNative": ["profileId": "native-profile", "revision": 1]])
-MainMenu.refresh()
+MainMenu.bookmarkMenuSource = nil
+MainMenu.refreshBookmarkMenus()
 update(root)
-check(root.items[5].title == "Native recent", "native metadata resolves the authoritative menu source")
-NativeBookmarkMenuSource.read = nil
-MenuState.setBookmarks(["bookmarkNative": ["profileId": "not-ready", "revision": 2]])
-MainMenu.refresh()
-update(root)
-check(!root.items.contains { $0.title == "Native recent" }, "unavailable native source clears the old profile menu")
+let emptyBar = root.items[4].submenu!
+update(emptyBar)
+check(emptyBar.items.map(\.title) == ["Empty"], "unavailable native source clears the old profile menu")
 print("PASS: native bookmark menus defer root and descendants, retain actions and refresh latest state")
 '''
 Path(args.scratch).mkdir(parents=True, exist_ok=True)

@@ -547,12 +547,6 @@ public class ShellModule: Module {
       MenuState.current = MenuState(state)
       MainMenu.refresh()
     }.runOnQueue(.main)
-    Function("bookmarkNativeSourceVersion") { 1 }
-
-    AsyncFunction("setMenuBookmarks") { (bookmarks: [String: Any]) in
-      MenuState.setBookmarks(bookmarks)
-      MainMenu.refresh()
-    }.runOnQueue(.main)
 
     AsyncFunction("replyToTerminate") { (ok: Bool) in WindowManager.shared.replyToTerminate(ok) }.runOnQueue(.main)
 
@@ -930,6 +924,17 @@ public enum ShellMenus {
   @MainActor public static func setRecentlyClosed(entries: [(id: String, title: String)], groups: [(id: String, title: String)]) {
     MainMenu.setRecentlyClosed(entries: entries, groups: groups)
   }
+
+  public static func setWorkspaceDestinations(profiles: [(id: String, title: String, current: Bool)], windows: [(id: String, title: String)]) {
+    MainMenu.setWorkspaceDestinations(profiles: profiles, windows: windows)
+  }
+
+  public static func setBookmarkMenuSource(_ read: @escaping @MainActor () -> NativeBookmarkMenu) {
+    MainMenu.bookmarkMenuSource = { MainActor.assumeIsolated { read() } }
+    refreshBookmarkMenus()
+  }
+
+  public static func refreshBookmarkMenus() { MainMenu.refreshBookmarkMenus() }
 
   static var emit: ((String, [String: Any]) -> Void)?
 

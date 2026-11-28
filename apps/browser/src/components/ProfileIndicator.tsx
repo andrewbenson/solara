@@ -63,7 +63,7 @@ export function ProfileIndicator({ room, captionAligned = false }: { room: numbe
   return (
     <View {...hoverProps} tooltip={incognito ? undefined : "Switch between profiles"} style={{ marginTop: captionAligned ? 0 : 0.5 }}>
       <ProfileNameMeasure title={title} />
-      <Pressable accessible accessibilityRole="button" accessibilityLabel={title} onPress={() => !incognito && void openProfileMenu(windowId)} disabled={incognito}>
+      <Pressable accessible accessibilityRole="button" accessibilityLabel={title} onPress={() => !incognito && void nativeWorkspaceCommand("openProfileMenu", null, windowId)} disabled={incognito}>
         {({ pressed }) => (
           <View
             style={{
@@ -89,8 +89,4 @@ export function ProfileIndicator({ room, captionAligned = false }: { room: numbe
       </Pressable>
     </View>
   );
-}
-
-export function openProfileMenu(windowId: string) {
-  nativeWorkspaceCommand("openProfileMenu", null, windowId);
 }

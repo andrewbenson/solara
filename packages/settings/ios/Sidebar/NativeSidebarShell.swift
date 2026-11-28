@@ -1174,7 +1174,7 @@ struct NativeLayoutAppearance {
     let dots = SidebarPagerView.profileIDs(state: state, windowId: windowId).enumerated().compactMap { index, id -> SidebarChromeDot? in
       guard let profile = state.profiles[id] else { return nil }
       return SidebarChromeDot(id: id, name: profile.name, slot: Double(index), icon: profile.icon,
-        shortcut: shortcuts[JSKey("switchProfile:\(id)")], color: customTheme(profile).map(ThemeMath.accent) ?? swatches[profile.color] ?? swatches["plum"])
+        shortcut: shortcuts[JSKey("switchProfile:\(id)")], color: profileSwatch(profile))
     }
     let controls = look.controls(state: state, window: window, downloadsHint: shortcuts[JSKey("downloads")])
     let product = Bundle.main.productName
@@ -1198,6 +1198,10 @@ struct NativeLayoutAppearance {
   }
 
   private static let swatches = ["plum": "#C07A98", "blue": "#4691C3", "purple": "#7873AF", "pink": "#D37B8B", "red": "#C1575C", "orange": "#D87249", "yellow": "#E3AC38", "green": "#3EB489", "neutral": "#8E8E93"]
+
+  static func profileSwatch(_ profile: Profile?) -> String {
+    customTheme(profile).map(ThemeMath.accent) ?? swatches[profile?.color ?? "plum"] ?? swatches["plum"]!
+  }
 
   private static func customTheme(_ profile: Profile?) -> ProfileThemeValue? {
     profile?.theme.flatMap { try? JSONDecoder().decode(ProfileThemeValue.self, from: Data($0.text().utf8)) }

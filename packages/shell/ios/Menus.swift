@@ -4,8 +4,32 @@ public enum NativeSidebarPositionCapability {
   nonisolated(unsafe) public static var enabled = false
 }
 
-public enum NativeBookmarkMenuSource {
-  nonisolated(unsafe) public static var read: ((String) -> [String: Any]?)?
+public struct NativeBookmarkMenu {
+  public struct Row {
+    public let id: String
+    public let title: String
+    public let url: String?
+    public let children: [Row]?
+
+    public init(id: String, title: String, url: String? = nil, children: [Row]? = nil) {
+      self.id = id
+      self.title = title
+      self.url = url
+      self.children = children
+    }
+  }
+
+  public let folders: [Row]
+  public let recent: [Row]
+  public let bar: [Row]
+  public let other: [Row]
+
+  public init(folders: [Row] = [], recent: [Row] = [], bar: [Row] = [], other: [Row] = []) {
+    self.folders = folders
+    self.recent = recent
+    self.bar = bar
+    self.other = other
+  }
 }
 
 struct MenuState {
@@ -15,82 +39,19 @@ struct MenuState {
     let current: Bool
   }
 
-  struct Bookmark {
-    let id: String
-    let title: String
-    let url: String?
-    let children: [Bookmark]?
-  }
-
   static var current = MenuState()
 
-  var profiles: [Entry] = []
-  var windows: [Entry] = []
-  var bookmarkFolders: [Entry] = []
-  var recentBookmarks: [Bookmark] = []
-  var bookmarksBar: [Bookmark] = []
-  var otherBookmarks: [Bookmark] = []
-  var bookmarksRevision: Int?
   var warnBeforeQuitting = false
   var warnBeforeClosingWindow = false
   var undoReopensClosedTab = false
   var downloadsInProgress = 0
   var shortcuts: [String: [String]] = [:]
   var shortcutPrecedence: [String: String] = [:]
-  var extensions: [(id: String, title: String, icon: String?)] = []
   var fromApp = false
 
   init() {}
 
-  static func bookmarks(_ list: Any?) -> [Bookmark] {
-    (list as? [[String: Any]] ?? []).map {
-      Bookmark(
-        id: $0["id"] as? String ?? "", title: $0["title"] as? String ?? "", url: $0["url"] as? String,
-        children: $0["children"] == nil ? nil : bookmarks($0["children"]))
-    }
-  }
-
-  private(set) static var sentBookmarks: (state: MenuState, revision: Int)?
-
-  static func setBookmarks(_ source: [String: Any]) {
-    let d: [String: Any]
-    if let metadata = source["bookmarkNative"] as? [String: Any], let profile = metadata["profileId"] as? String {
-      d = NativeBookmarkMenuSource.read?(profile) ?? [:]
-    } else { d = source }
-    var state = MenuState()
-    state.bookmarkFolders = (d["bookmarkFolders"] as? [[String: Any]] ?? []).map {
-      Entry(id: $0["id"] as? String ?? "", title: $0["title"] as? String ?? "", current: $0["current"] as? Bool ?? false)
-    }
-    state.recentBookmarks = bookmarks(d["recentBookmarks"])
-    state.bookmarksBar = bookmarks(d["bookmarksBar"])
-    state.otherBookmarks = bookmarks(d["otherBookmarks"])
-    let revision = (sentBookmarks?.revision ?? 0) + 1
-    sentBookmarks = (state, revision)
-    current.bookmarkFolders = state.bookmarkFolders
-    current.recentBookmarks = state.recentBookmarks
-    current.bookmarksBar = state.bookmarksBar
-    current.otherBookmarks = state.otherBookmarks
-    current.bookmarksRevision = revision
-  }
-
   init(_ d: [String: Any]) {
-    func entries(_ key: String) -> [Entry] {
-      (d[key] as? [[String: Any]] ?? []).map {
-        Entry(id: $0["id"] as? String ?? "", title: $0["title"] as? String ?? "", current: $0["current"] as? Bool ?? false)
-      }
-    }
-    profiles = entries("profiles")
-    windows = entries("windows")
-    if d["bookmarksBar"] == nil, let sent = MenuState.sentBookmarks {
-      (bookmarkFolders, recentBookmarks, bookmarksBar, otherBookmarks) =
-        (sent.state.bookmarkFolders, sent.state.recentBookmarks, sent.state.bookmarksBar, sent.state.otherBookmarks)
-      bookmarksRevision = sent.revision
-    } else {
-      bookmarkFolders = entries("bookmarkFolders")
-      recentBookmarks = Self.bookmarks(d["recentBookmarks"])
-      bookmarksBar = Self.bookmarks(d["bookmarksBar"])
-      otherBookmarks = Self.bookmarks(d["otherBookmarks"])
-    }
     warnBeforeQuitting = d["warnBeforeQuitting"] as? Bool ?? false
     warnBeforeClosingWindow = d["warnBeforeClosingWindow"] as? Bool ?? false
     undoReopensClosedTab = d["undoReopensClosedTab"] as? Bool ?? false
@@ -98,9 +59,7 @@ struct MenuState {
     shortcuts = d["shortcuts"] as? [String: [String]] ?? [:]
     shortcutPrecedence = (d["shortcutPrecedence"] as? [String: Any] ?? [:]).compactMapValues { $0 as? String }
     fromApp = true
-    extensions = (d["extensions"] as? [[String: Any]] ?? []).map {
-      (id: $0["id"] as? String ?? "", title: $0["title"] as? String ?? "", icon: $0["icon"] as? String)
-    }
+
   }
 }
 
@@ -698,6 +657,7 @@ enum MainMenu {
     NSApp.helpMenu = top("Help", helpItems())
 
     built = nil
+    refreshBookmarkMenus()
     refresh()
     return main
   }
@@ -840,7 +800,19 @@ enum MainMenu {
     return image
   }
 
-  private static var built: (profiles: [MenuState.Entry], windows: [MenuState.Entry], bookmarks: Int?, extensions: [String])?
+  private static var built: (profiles: [MenuState.Entry], windows: [MenuState.Entry], extensions: [String])?
+  private static var profileEntries: [MenuState.Entry] = []
+  private static var windowEntries: [MenuState.Entry] = []
+
+  static func setWorkspaceDestinations(profiles: [(id: String, title: String, current: Bool)], windows: [(id: String, title: String)]) {
+    let profiles = profiles.map { MenuState.Entry(id: $0.id, title: $0.title, current: $0.current) }
+    let windows = windows.map { MenuState.Entry(id: $0.id, title: $0.title, current: false) }
+    guard profiles != profileEntries || windows != windowEntries else { return }
+    profileEntries = profiles
+    windowEntries = windows
+    refresh()
+  }
+
   private static var recentlyClosed: [MenuState.Entry] = []
   private static var recentlyClosedGroups: [MenuState.Entry] = []
 
@@ -855,20 +827,18 @@ enum MainMenu {
   }
 
   static func refresh() {
-    var state = MenuState.current
-    let catalogRows: [(id: String, title: String, icon: String?)]? = MainActor.assumeIsolated {
-      (ShellMenus.extensionCatalog?()).map { rows in
-        rows.map { (id: $0["id"] as? String ?? "", title: $0["title"] as? String ?? "", icon: $0["icon"] as? String) }
+    let state = MenuState.current
+    let extensionRows: [(id: String, title: String, icon: String?)] = MainActor.assumeIsolated {
+      (ShellMenus.extensionCatalog?() ?? []).map {
+        (id: $0["id"] as? String ?? "", title: $0["title"] as? String ?? "", icon: $0["icon"] as? String)
       }
     }
-    if let catalogRows { state.extensions = catalogRows }
     let last = built
-    let extensionKeys = state.extensions.map { "\($0.id)|\($0.title)|\($0.icon ?? "")" }
-    built = (state.profiles, state.windows, state.bookmarksRevision, extensionKeys)
-    if last?.profiles != state.profiles { buildProfileMenus(state) }
-    if last?.windows != state.windows { buildMoveToWindow(state) }
-    if state.bookmarksRevision == nil || last?.bookmarks != state.bookmarksRevision { buildBookmarkMenus(state) }
-    if last?.extensions != extensionKeys { buildExtensions(state) }
+    let extensionKeys = extensionRows.map { "\($0.id)|\($0.title)|\($0.icon ?? "")" }
+    built = (profileEntries, windowEntries, extensionKeys)
+    if last?.profiles != profileEntries { buildProfileMenus() }
+    if last?.windows != windowEntries { buildMoveToWindow() }
+    if last?.extensions != extensionKeys { buildExtensions(extensionRows) }
     if last == nil { buildHistory() }
     if let undo, (undo.target != nil) != state.undoReopensClosedTab {
       undo.target = state.undoReopensClosedTab ? MenuTarget.shared : nil
@@ -877,9 +847,9 @@ enum MainMenu {
     applyShortcuts(state.shortcuts)
   }
 
-  private static func buildProfileMenus(_ state: MenuState) {
+  private static func buildProfileMenus() {
     moveToProfile.removeAllItems()
-    for p in state.profiles {
+    for p in profileEntries {
       let item = CommandItem(p.title, "moveTabToProfile", arg: p.id)
       item.tracksChecked = false
       item.state = p.current ? .on : .off
@@ -889,9 +859,9 @@ enum MainMenu {
     moveToProfile.addItem(CommandItem("New Profile…", "moveTabToProfile", arg: "new"))
 
     profiles.removeAllItems()
-    profilesItem.isHidden = state.profiles.count < 2
+    profilesItem.isHidden = profileEntries.count < 2
     profilesSeparator.isHidden = profilesItem.isHidden
-    for (i, p) in state.profiles.enumerated() {
+    for (i, p) in profileEntries.enumerated() {
       let item = CommandItem(p.title, "switchProfile", arg: p.id, key: i < 9 ? "\(i + 1)" : "", .control)
       item.tracksChecked = false
       item.state = p.current ? .on : .off
@@ -907,49 +877,53 @@ enum MainMenu {
     profiles.addItem(CommandItem("New Profile…", "newProfile"))
 
     littleSolaraInProfile.removeAllItems()
-    littleSolaraInProfileItem.isHidden = state.profiles.count < 2
-    for p in state.profiles { littleSolaraInProfile.addItem(CommandItem(p.title, "newLittleSolara", arg: p.id)) }
+    littleSolaraInProfileItem.isHidden = profileEntries.count < 2
+    for p in profileEntries { littleSolaraInProfile.addItem(CommandItem(p.title, "newLittleSolara", arg: p.id)) }
   }
 
-  private static func buildMoveToWindow(_ state: MenuState) {
+  private static func buildMoveToWindow() {
     moveToWindow.removeAllItems()
-    for w in state.windows { moveToWindow.addItem(CommandItem(w.title, "moveTabToWindow", arg: w.id)) }
-    if !state.windows.isEmpty { moveToWindow.addItem(.separator()) }
+    for w in windowEntries { moveToWindow.addItem(CommandItem(w.title, "moveTabToWindow", arg: w.id)) }
+    if !windowEntries.isEmpty { moveToWindow.addItem(.separator()) }
     moveToWindow.addItem(CommandItem("New Window", "moveTabToWindow", arg: "new"))
   }
 
-  private static func buildBookmarkMenus(_: MenuState) {
+  static var bookmarkMenuSource: (() -> NativeBookmarkMenu)?
+
+  static func refreshBookmarkMenus() { buildBookmarkMenus() }
+
+  private static func buildBookmarkMenus() {
     deferBookmarkMenu(bookmarkToFolder) { menu in
-      let state = MenuState.current
+      let state = bookmarkMenuSource?() ?? NativeBookmarkMenu()
       menu.removeAllItems()
-      for f in state.bookmarkFolders { menu.addItem(CommandItem(f.title, "addBookmarkToFolder", arg: f.id)) }
+      for f in state.folders { menu.addItem(CommandItem(f.title, "addBookmarkToFolder", arg: f.id)) }
       menu.addItem(.separator())
       menu.addItem(CommandItem("New Folder…", "addBookmarkToFolder", arg: "new"))
     }
     deferBookmarkMenu(bookmarks) { menu in
-      let state = MenuState.current
+      let state = bookmarkMenuSource?() ?? NativeBookmarkMenu()
       while menu.items.count > bookmarksFixedCount { menu.removeItem(at: bookmarksFixedCount) }
       menu.addItem(.separator())
-      if !state.recentBookmarks.isEmpty {
+      if !state.recent.isEmpty {
         let header = NSMenuItem(title: "Recent Bookmarks", action: nil, keyEquivalent: "")
         header.isEnabled = false
         menu.addItem(header)
-        addBookmarks(state.recentBookmarks, to: menu)
+        addBookmarks(state.recent, to: menu)
         menu.addItem(.separator())
       }
-      menu.addItem(folderItem("Bookmarks Bar", state.bookmarksBar, holdsArcHolders: true))
-      menu.addItem(folderItem("Other Bookmarks", state.otherBookmarks))
+      menu.addItem(folderItem("Bookmarks Bar", state.bar, holdsArcHolders: true))
+      menu.addItem(folderItem("Other Bookmarks", state.other))
     }
   }
 
-  private static func buildExtensions(_ state: MenuState) {
+  private static func buildExtensions(_ rows: [(id: String, title: String, icon: String?)]) {
     extensions.removeAllItems()
-    for ext in state.extensions {
+    for ext in rows {
       let item = CommandItem(ext.title, "openExtension", arg: ext.id)
       item.image = extensionIcon(ext.icon)
       extensions.addItem(item)
     }
-    if !state.extensions.isEmpty { extensions.addItem(.separator()) }
+    if !rows.isEmpty { extensions.addItem(.separator()) }
     extensions.addItem(CommandItem("Add Extension…", "addExtension"))
     extensions.addItem(CommandItem("Manage Extensions…", "manageExtensions"))
     extensions.addItem(CommandItem("Pin Extensions…", "pinExtensions"))
@@ -1236,7 +1210,7 @@ enum MainMenu {
     objc_setAssociatedObject(menu, &BookmarkMenuUpdate.key, delegate, .OBJC_ASSOCIATION_RETAIN)
   }
 
-  private static func folderItem(_ title: String, _ children: [MenuState.Bookmark], id: String? = nil, holdsArcHolders: Bool = false, arcHolder: Bool = false) -> NSMenuItem {
+  private static func folderItem(_ title: String, _ children: [NativeBookmarkMenu.Row], id: String? = nil, holdsArcHolders: Bool = false, arcHolder: Bool = false) -> NSMenuItem {
     let item = NSMenuItem(title: title, action: nil, keyEquivalent: "")
     let menu = NSMenu(title: title)
     deferBookmarkMenu(menu) { menu in
@@ -1255,7 +1229,7 @@ enum MainMenu {
     return item
   }
 
-  private static func hasGroupLinks(_ nodes: [MenuState.Bookmark]) -> Bool {
+  private static func hasGroupLinks(_ nodes: [NativeBookmarkMenu.Row]) -> Bool {
     nodes.contains { node in
       if let children = node.children { return hasGroupLinks(children) }
       let url = (node.url ?? "").lowercased()
@@ -1263,7 +1237,7 @@ enum MainMenu {
     }
   }
 
-  private static func addBookmarks(_ nodes: [MenuState.Bookmark], to menu: NSMenu, holdsArcHolders: Bool = false) {
+  private static func addBookmarks(_ nodes: [NativeBookmarkMenu.Row], to menu: NSMenu, holdsArcHolders: Bool = false) {
     for node in nodes {
       if let children = node.children {
         menu.addItem(folderItem(node.title, children, id: node.id, arcHolder: holdsArcHolders && node.title.hasSuffix(" (Arc)")))
@@ -1275,9 +1249,8 @@ enum MainMenu {
 
   static func dockMenu() -> NSMenu {
     let menu = NSMenu()
-    let state = MenuState.current
-    if state.profiles.count > 1 {
-      for p in state.profiles {
+    if profileEntries.count > 1 {
+      for p in profileEntries {
         let item = CommandItem("New \(p.title) Window", "newWindow", arg: p.id)
         item.windowless = true
         menu.addItem(item)
@@ -1293,9 +1266,9 @@ enum MainMenu {
     let small = CommandItem("New Little \(Bundle.main.productName) Window", "newLittleSolara")
     small.windowless = true
     menu.addItem(small)
-    if state.profiles.count > 1 {
+    if profileEntries.count > 1 {
       let inProfile = NSMenu(title: "New Little \(Bundle.main.productName) Window in Profile")
-      for p in state.profiles {
+      for p in profileEntries {
         let item = CommandItem(p.title, "newLittleSolara", arg: p.id)
         item.windowless = true
         inProfile.addItem(item)

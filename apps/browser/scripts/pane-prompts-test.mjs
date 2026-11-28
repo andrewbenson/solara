@@ -446,36 +446,61 @@ try {
         await crossPrompt(to, "password", movedPassword);
         await untilSnapshot("password prompt tab ownership", (_, state) => state.tabs.some((tab) => tab.id === "a" && tab.windowId === to), to);
       }
-      const other = `${base.replace("127.0.0.1", "localhost")}/other`;
+      const other = `${base}/other?permission-handoff`;
       await run(`ac.store.getState().navigate("a", ${JSON.stringify(other)}, { userInitiated: true }); return true;`);
       if (!inline) {
         await until("navigation drops the password prompt", `return promptIn(${JSON.stringify(to)}, "password").then((p) => !p || null);`, 8000);
         await promptGone(to, "password");
       }
-      await until("the localhost page", `return ac.store.getState().tabs.a?.url === ${JSON.stringify(other)} && !ac.store.getState().live.a?.isLoading || null;`, 10000);
-      const target = await until("its DevTools target", async () => (await app.pageTarget(other)) ?? null, 5000);
-      const cdp = await devtools(target);
-      try {
-        await cdp.send("Runtime.evaluate", { expression: "navigator.geolocation.getCurrentPosition(() => {}, () => {}); true", userGesture: true });
-      } finally {
-        cdp.close();
-      }
+      await until("the handoff page", `return ac.store.getState().tabs.a?.url === ${JSON.stringify(other)} && !ac.store.getState().live.a?.isLoading || null;`, 10000);
+      const askLocation = async () => {
+        const target = await until("its DevTools target", async () => (await app.pageTarget(other)) ?? null, 5000);
+        const cdp = await devtools(target);
+        try {
+          await cdp.send("Runtime.evaluate", { expression: "navigator.geolocation.getCurrentPosition(() => {}, () => {}); true", userGesture: true });
+        } finally {
+          cdp.close();
+        }
+      };
+      await askLocation();
       const movedPermission = await until("a permission prompt in the new window", `return promptIn(${JSON.stringify(to)}, "permission");`, 8000);
       await crossPrompt(to, "permission", movedPermission);
       const request = await run(`return prompts().then((p) => p.permission);`);
+      if (!request) throw new Error("the source permission disappeared before the move");
       await run(`ac.store.getState().moveTabsToWindow(["a"], "w1"); return true;`);
-      if (inline) {
-        await until("the inline handoff retires its permission", `return prompts().then((p) => !p.permission || null);`, 5000);
-        if (await run(`return M.devPromptAnswer("a", "permission", ${JSON.stringify(request.id)}, "deny", "");`))
-          throw new Error("the rehosted page accepted the old permission receipt");
-        await promptGone(to, "permission");
-        return { to, retired: true };
-      }
-      const returnedPermission = await until("the permission prompt follows it back to w1", `return promptIn("w1", "permission");`, 5000);
-      await crossPrompt("w1", "permission", returnedPermission);
       await untilSnapshot("permission prompt tab ownership", (_, state) => state.tabs.some((tab) => tab.id === "a" && tab.windowId === "w1"));
+      const browserId = inline ? await until("the inline browser attaches to w1", `
+        const browserId = JSON.parse(expo.modules.SolaraStoreAdapter.pageFacts("a") ?? "null")?.ready?.browserId;
+        return browserId ? C.devWindowNumber(browserId).then((window) => window === ${number} ? browserId : null) : null;
+      `, 8000) : request.browserId;
+      const replaced = browserId !== request.browserId;
+      if (replaced) {
+        await until("the replaced browser's permission retires", `return prompts().then((p) => !p.permission || null);`, 5000);
+        await until("the replacement page finishes loading", `return ac.store.getState().live.a?.isLoading === false || null;`, 10000);
+        await askLocation();
+      }
+      const returnedPermission = await until(replaced ? "the replacement browser prompts in w1" : "the permission prompt follows it back to w1",
+        `return promptIn("w1", "permission");`, 5000);
+      await crossPrompt("w1", "permission", returnedPermission);
       const left = await run(`return native(${JSON.stringify(to)}).then((d) => !!(d && d.tabs && d.tabs.a));`);
       if (left) throw new Error("the old window still draws tab a's prompts");
+      const returned = await run(`return prompts().then((p) => p.permission);`);
+      if (returned?.origin !== request.origin || returned?.browserId !== browserId || (replaced && returned.id === request.id) ||
+          JSON.stringify(returned?.permissions) !== JSON.stringify(request.permissions))
+        throw new Error(`the destination has the wrong permission: ${JSON.stringify({ request, returned, browserId })}`);
+      if (await run(`return !!ac.store.getState().windows[${JSON.stringify(to)}];`)) await promptGone(to, "permission");
+      if (inline) {
+        if (request.id !== returned.id && await run(`return M.devPromptAnswer("a", "permission", ${JSON.stringify(request.id)}, "deny", "");`))
+          throw new Error("the destination accepted the retired permission receipt");
+        const shown = await until("the destination shows the current receipt", `return promptIn("w1", "permission").then((p) => p?.key === ${JSON.stringify(returned.id)} ? p : null);`, 5000);
+        await sleep(800);
+        await run(`return click(${number}, ${JSON.stringify(centre(shown.controls["Don't Allow"]))});`);
+        await until("the answer consumes the destination receipt", `return prompts().then((p) => !p.permission || null);`, 5000);
+        await promptGone("w1", "permission");
+        if (await run(`return M.devPromptAnswer("a", "permission", ${JSON.stringify(returned.id)}, "allow", "");`))
+          throw new Error("the answered permission receipt was accepted again");
+        return { to, browserId, replaced, answered: true };
+      }
       await run(`ac.store.getState().navigate("a", ${JSON.stringify(`${base}/other`)}, { userInitiated: true }); return true;`);
       await until("navigation drops it", `return promptIn("w1", "permission").then((p) => !p || null);`, 8000);
       await promptGone("w1", "permission");

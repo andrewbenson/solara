@@ -114,6 +114,27 @@ private func heldPageAnswer(_ command: PageCommand = .livePage, incognito: Bool,
 
 @MainActor
 @Suite struct PageIssuerTests {
+  @Test func inlinePermissionRegistrationRetiresWhenPoolTakesOver() throws {
+    let fixture = try IssuerFixture(host: .reactNative, deliver: { $0() })
+    let inlineRegistration = try #require(fixture.binding.registration)
+    var retired: [PageRegistration] = []
+    _ = fixture.issuer.registry.observe { event in
+      if case .retired(let registration) = event { retired.append(registration) }
+    }
+
+    let pooled = IssuerProducer()
+    let replacement = try #require(fixture.issuer.attach(tabId: fixture.id, engine: .chromium, host: .pooled,
+      owner: pooled, context: fixture.binding.context, perform: pooled.perform))
+    #expect(retired == [inlineRegistration])
+    #expect(fixture.issuer.binding(identity: fixture.binding.identity) == nil)
+    #expect(fixture.issuer.binding(tabId: fixture.id) === replacement)
+    #expect(fixture.issuer.isCurrent(replacement))
+
+    fixture.issuer.retire(fixture.binding)
+    #expect(retired == [inlineRegistration])
+    #expect(fixture.issuer.isCurrent(replacement))
+  }
+
   @MainActor
   @Test func lateReadyRefreshesWithoutACommitAndRetirementEvictsOnlyItsBinding() throws {
     let held = HeldDeliveries()
